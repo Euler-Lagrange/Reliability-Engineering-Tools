@@ -1,0 +1,528 @@
+from __future__ import annotations
+
+import json
+import os
+import sys
+import threading
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+try:
+    from openpyxl import load_workbook
+except ImportError:  # pragma: no cover - covered in runtime environments with deps
+    load_workbook = None
+
+from common.cancellation import CancellationError
+from fmea.runtime import execute_run_request as fmea_execute, validate_run_request as fmea_validate
+from bom_compare.runtime import execute_run_request as bom_execute, validate_run_request as bom_validate
+from failure_rate.runtime import execute_run_request as fr_execute, validate_run_request as fr_validate
+from refdes_extractor.runtime import execute_run_request as refdes_execute, validate_run_request as refdes_validate
+
+FMEA_WORKFLOWS = {"piece_part_generate", "bom_only", "fill_gaps"}
+BOM_COMPARE_WORKFLOWS = {"bom_compare_group", "bom_compare_custom"}
+FAILURE_RATE_WORKFLOWS = {"failure_rate_link"}
+REFDES_WORKFLOWS = {"refdes_extract"}
+
+
+def route_validate(body: dict) -> dict:
+    wf = str(body.get("workflowId", "")).strip()
+    if wf in BOM_COMPARE_WORKFLOWS:
+        return bom_validate(body)
+    if wf in FAILURE_RATE_WORKFLOWS:
+        return fr_validate(body)
+    if wf in REFDES_WORKFLOWS:
+        return refdes_validate(body)
+    return fmea_validate(body)
+
+
+def route_execute(body: dict, **kwargs) -> dict:
+    wf = str(body.get("workflowId", "")).strip()
+    if wf in BOM_COMPARE_WORKFLOWS:
+        return bom_execute(body, **kwargs)
+    if wf in FAILURE_RATE_WORKFLOWS:
+        return fr_execute(body, **kwargs)
+    if wf in REFDES_WORKFLOWS:
+        return refdes_execute(body, **kwargs)
+    return fmea_execute(body, **kwargs)
+
+
+PROTOCOL_VERSION = "0.1.0"
+EMIT_LOCK = threading.Lock()
+ACTIVE_RUN_LOCK = threading.Lock()
+ACTIVE_RUN: "ActiveRun | None" = None
+
+
+@dataclass
+class Envelope:
+    kind: str
+    payload: dict[str, Any]
+    request_id: str | None = None
+    run_id: str | None = None
+
+    def to_json(self) -> str:
+        body = {
+            "protocol_version": PROTOCOL_VERSION,
+            "id": f"msg_{uuid.uuid4().hex[:12]}",
+            "kind": self.kind,
+            "request_id": self.request_id,
+            "run_id": self.run_id,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "payload": self.payload,
+        }
+        return json.dumps(body, ensure_ascii=True)
+
+
+@dataclass
+class ActiveRun:
+    run_id: str
+    request_id: str | None
+    processor: Any | None = None
+    cancel_requested: threading.Event = field(default_factory=threading.Event)
+    lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    def bind_processor(self, processor: Any) -> None:
+        with self.lock:
+            self.processor = processor
+            if self.cancel_requested.is_set():
+                processor.cancel.cancel()
+
+    def request_cancel(self) -> None:
+        with self.lock:
+            self.cancel_requested.set()
+            if self.processor is not None:
+                self.processor.cancel.cancel()
+
+
+def emit(kind: str, payload: dict[str, Any], request_id: str | None = None, run_id: str | None = None) -> None:
+    with EMIT_LOCK:
+        sys.stdout.write(Envelope(kind=kind, payload=payload, request_id=request_id, run_id=run_id).to_json())
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+
+
+def _normalize_cell(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _select_sheet(workbook: Any, requested_sheet: str | None) -> Any:
+    if requested_sheet and requested_sheet in workbook.sheetnames:
+        return workbook[requested_sheet]
+    return workbook[workbook.sheetnames[0]]
+
+
+def _extract_header_and_rows(worksheet: Any) -> tuple[int, list[str], list[dict[str, str]], int]:
+    header_row_index = 0
+    headers: list[str] = []
+    preview_rows: list[dict[str, str]] = []
+    data_row_count = 0
+
+    for row_index, row in enumerate(worksheet.iter_rows(values_only=True), start=1):
+        normalized_row = [_normalize_cell(value) for value in row]
+        if not any(normalized_row):
+            continue
+
+        if not headers:
+            header_row_index = row_index
+            headers = [value or f"Column {index + 1}" for index, value in enumerate(normalized_row)]
+            continue
+
+        row_payload = {
+            header: value
+            for header, value in zip(headers, normalized_row)
+            if header and value
+        }
+        if not row_payload:
+            continue
+
+        data_row_count += 1
+        if len(preview_rows) < 3:
+            preview_rows.append(row_payload)
+
+    if not headers:
+        raise ValueError("Could not locate a non-empty header row in the selected worksheet.")
+
+    return header_row_index, headers, preview_rows, data_row_count
+
+
+def inspect_input(path: Path, requested_sheet: str | None) -> dict[str, Any]:
+    if load_workbook is None:
+        raise RuntimeError("openpyxl is not available")
+
+    workbook = load_workbook(path, read_only=True, data_only=True)
+    try:
+        worksheet = _select_sheet(workbook, requested_sheet)
+        header_row_index, headers, preview_rows, data_row_count = _extract_header_and_rows(worksheet)
+        return {
+            "path": str(path),
+            "sheet": worksheet.title,
+            "header_row": header_row_index,
+            "row_count": data_row_count,
+            "columns": headers,
+            "preview_rows": preview_rows,
+        }
+    finally:
+        workbook.close()
+
+
+def analyze_template(path: Path, requested_sheet: str | None) -> dict[str, Any]:
+    if load_workbook is None:
+        raise RuntimeError("openpyxl is not available")
+
+    workbook = load_workbook(path, read_only=False, data_only=False)
+    try:
+        worksheet = _select_sheet(workbook, requested_sheet)
+        header_row_index, headers, _, _ = _extract_header_and_rows(worksheet)
+        freeze_panes = worksheet.freeze_panes
+        return {
+            "path": str(path),
+            "sheet": worksheet.title,
+            "header_row": header_row_index,
+            "columns": headers,
+            "merged_range_count": len(worksheet.merged_cells.ranges),
+            "freeze_panes": str(freeze_panes) if freeze_panes is not None else None,
+            "protected_sheet": bool(getattr(worksheet.protection, "sheet", False)),
+        }
+    finally:
+        workbook.close()
+
+
+def _active_run() -> ActiveRun | None:
+    with ACTIVE_RUN_LOCK:
+        return ACTIVE_RUN
+
+
+def _set_active_run(run: ActiveRun) -> None:
+    global ACTIVE_RUN
+    with ACTIVE_RUN_LOCK:
+        ACTIVE_RUN = run
+
+
+def _clear_active_run(run_id: str) -> None:
+    global ACTIVE_RUN
+    with ACTIVE_RUN_LOCK:
+        if ACTIVE_RUN and ACTIVE_RUN.run_id == run_id:
+            ACTIVE_RUN = None
+
+
+def _parse_log_level(message: str) -> str:
+    upper = message.upper()
+    if " ERROR:" in upper:
+        return "error"
+    if " WARNING:" in upper:
+        return "warning"
+    if " DEBUG:" in upper:
+        return "debug"
+    return "info"
+
+
+def _emit_run_status(run_id: str, status: str, stage: str, message: str) -> None:
+    emit(
+        "status",
+        {
+            "status": status,
+            "stage": stage,
+            "message": message,
+        },
+        run_id=run_id,
+    )
+
+
+def _emit_run_progress(
+    run_id: str,
+    stage: str,
+    message: str,
+    percent: int,
+    current: int | None = None,
+    total: int | None = None,
+) -> None:
+    emit(
+        "progress",
+        {
+            "stage": stage,
+            "message": message,
+            "percent": percent,
+            "current": current,
+            "total": total,
+        },
+        run_id=run_id,
+    )
+
+
+def _emit_run_log(run_id: str, message: str) -> None:
+    emit(
+        "log",
+        {
+            "level": _parse_log_level(message),
+            "line": message,
+        },
+        run_id=run_id,
+    )
+
+
+def _run_in_background(run: ActiveRun, body: dict[str, Any]) -> None:
+    try:
+        result = route_execute(
+            body,
+            log_callback=lambda message: _emit_run_log(run.run_id, message),
+            status_callback=lambda status, stage, message: _emit_run_status(run.run_id, status, stage, message),
+            progress_callback=lambda stage, message, percent, current, total: _emit_run_progress(
+                run.run_id,
+                stage,
+                message,
+                percent,
+                current,
+                total,
+            ),
+            processor_ready_callback=run.bind_processor,
+        )
+        _emit_run_status(run.run_id, "success", "Complete", "Run completed successfully.")
+        emit("result", result, run_id=run.run_id)
+    except CancellationError as exc:
+        message = str(exc) or "Operation cancelled by user."
+        _emit_run_status(run.run_id, "cancelled", "Cancelled", message)
+        emit("cancelled", {"message": message}, run_id=run.run_id)
+    except Exception as exc:  # pragma: no cover - exercised in integration runtime
+        message = str(exc) or "Unknown backend execution failure."
+        _emit_run_status(run.run_id, "failure", "Run failed", message)
+        emit("backend_error", {"message": message}, run_id=run.run_id)
+    finally:
+        _clear_active_run(run.run_id)
+
+
+FLET_CONFIG_NAMESPACES = [
+    "bom_compare",
+    "failure_rate",
+    "fmea_generator",
+    "refdes_extractor",
+    "refdes_extractor_darkstar",
+    "refdes_test",
+    "reliability_tools_global",
+]
+
+
+def _read_flet_config(body: dict[str, Any]) -> dict[str, Any]:
+    """Read Flet-era config files (read-only, never mutates)."""
+    home = Path.home()
+    namespace = str(body.get("namespace", "")).strip()
+
+    if namespace:
+        namespaces = [namespace] if namespace in FLET_CONFIG_NAMESPACES else []
+    else:
+        namespaces = FLET_CONFIG_NAMESPACES
+
+    configs: dict[str, Any] = {}
+    for ns in namespaces:
+        config_path = home / f".{ns}_config.json"
+        if config_path.exists():
+            try:
+                configs[ns] = json.loads(config_path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                configs[ns] = None
+        else:
+            configs[ns] = None
+
+    return {
+        "configs": configs,
+        "namespaces": namespaces,
+        "home": str(home),
+    }
+
+
+def handle_command(message: dict[str, Any]) -> None:
+    request_id = message.get("request_id")
+    payload = message.get("payload", {})
+    command = payload.get("command")
+    body = payload.get("body", {})
+
+    if command == "health_check":
+        emit(
+            "result",
+            {
+                "status": "ok",
+                "backend": "python-sidecar",
+                "protocol_version": PROTOCOL_VERSION,
+            },
+            request_id=request_id,
+        )
+        return
+
+    if command == "list_sheets":
+        path = Path(body["path"])
+        if load_workbook is None:
+            emit("error", {"message": "openpyxl is not available"}, request_id=request_id)
+            return
+
+        workbook = load_workbook(path, read_only=True, data_only=True)
+        try:
+            emit(
+                "result",
+                {
+                    "path": str(path),
+                    "sheets": list(workbook.sheetnames),
+                },
+                request_id=request_id,
+            )
+        finally:
+            workbook.close()
+        return
+
+    if command == "inspect_input":
+        path = Path(body["path"])
+        sheet = body.get("sheet")
+        try:
+            emit("result", inspect_input(path, sheet), request_id=request_id)
+        except Exception as exc:  # pragma: no cover - exercised in integration runtime
+            emit("error", {"message": str(exc)}, request_id=request_id)
+        return
+
+    if command == "analyze_template":
+        path = Path(body["path"])
+        sheet = body.get("sheet")
+        try:
+            emit("result", analyze_template(path, sheet), request_id=request_id)
+        except Exception as exc:  # pragma: no cover - exercised in integration runtime
+            emit("error", {"message": str(exc)}, request_id=request_id)
+        return
+
+    if command == "validate_run":
+        try:
+            emit("result", route_validate(body), request_id=request_id)
+        except Exception as exc:  # pragma: no cover - exercised in integration runtime
+            emit("error", {"message": str(exc)}, request_id=request_id)
+        return
+
+    if command == "execute_run":
+        if _active_run() is not None:
+            emit(
+                "error",
+                {"message": "Another backend run is already active. Wait for it to finish or cancel it first."},
+                request_id=request_id,
+            )
+            return
+
+        validation = route_validate(body)
+        if not validation["ok"]:
+            emit("error", {"message": validation["toast_text"]}, request_id=request_id)
+            return
+
+        run_id = f"run_{uuid.uuid4().hex[:12]}"
+        run = ActiveRun(run_id=run_id, request_id=request_id)
+        _set_active_run(run)
+        emit(
+            "ack",
+            {
+                "accepted": True,
+                "run_id": run_id,
+                "mode": "desktop-bridge",
+            },
+            request_id=request_id,
+            run_id=run_id,
+        )
+        thread = threading.Thread(target=_run_in_background, args=(run, body), daemon=True)
+        thread.start()
+        return
+
+    if command == "cancel_run":
+        run_id = str(body.get("run_id", "")).strip()
+        active_run = _active_run()
+        if not run_id:
+            emit("error", {"message": "cancel_run requires a run_id."}, request_id=request_id)
+            return
+        if active_run is None or active_run.run_id != run_id:
+            emit("error", {"message": f"No active run matches '{run_id}'."}, request_id=request_id)
+            return
+
+        active_run.request_cancel()
+        _emit_run_status(
+            run_id,
+            "cancelling",
+            "Cancellation requested",
+            "Cancellation requested. Waiting for the backend to stop safely.",
+        )
+        emit(
+            "result",
+            {
+                "accepted": True,
+                "run_id": run_id,
+                "status": "cancelling",
+                "mode": "desktop-bridge",
+            },
+            request_id=request_id,
+            run_id=run_id,
+        )
+        return
+
+    if command == "read_flet_config":
+        try:
+            emit("result", _read_flet_config(body), request_id=request_id)
+        except Exception as exc:
+            emit("error", {"message": str(exc)}, request_id=request_id)
+        return
+
+    emit(
+        "error",
+        {
+            "message": f"Command '{command}' is not implemented yet in the sidecar scaffold.",
+        },
+        request_id=request_id,
+    )
+
+
+HEARTBEAT_INTERVAL = float(os.environ.get("SIDECAR_HEARTBEAT_INTERVAL", "5.0"))
+
+
+def _heartbeat_loop(stop_event: threading.Event) -> None:
+    """Emit periodic heartbeat messages until stop_event is set."""
+    while not stop_event.wait(HEARTBEAT_INTERVAL):
+        emit(
+            "heartbeat",
+            {
+                "backend": "python-sidecar",
+                "protocol_version": PROTOCOL_VERSION,
+            },
+        )
+
+
+def iter_messages() -> None:
+    emit(
+        "ready",
+        {
+            "backend": "python-sidecar",
+            "protocol_version": PROTOCOL_VERSION,
+        },
+    )
+
+    heartbeat_stop = threading.Event()
+    heartbeat_thread = threading.Thread(
+        target=_heartbeat_loop, args=(heartbeat_stop,), daemon=True,
+    )
+    heartbeat_thread.start()
+
+    try:
+        for raw_line in sys.stdin:
+            raw_line = raw_line.strip()
+            if not raw_line:
+                continue
+            message = json.loads(raw_line)
+            if message.get("kind") == "command":
+                handle_command(message)
+    finally:
+        heartbeat_stop.set()
+
+
+def main() -> int:
+    if "--self-test" in sys.argv:
+        print("SELF-TEST OK: python-sidecar 0.1.0")
+        return 0
+
+    iter_messages()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

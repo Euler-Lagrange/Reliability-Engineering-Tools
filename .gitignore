@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+.venv/
+
+# Build artifacts
+dist/
+src-tauri/target/
+local_build/
+
+# Logs and temp
+logs/
+*.log
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Lock files (keep package-lock.json)

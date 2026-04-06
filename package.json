@@ -1,0 +1,51 @@
+{
+  "name": "reliability-tools-tauri",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --config frontend/vite.config.ts",
+    "build": "tsc -b frontend/tsconfig.json && vite build --config frontend/vite.config.ts",
+    "preview": "vite preview --config frontend/vite.config.ts",
+    "test": "vitest run --config frontend/vite.config.ts --coverage",
+    "test:watch": "vitest --config frontend/vite.config.ts",
+    "typecheck": "tsc -b frontend/tsconfig.json",
+    "release": "scripts\\release.bat",
+    "tauri:readiness": "node ./scripts/tauri-readiness.mjs",
+    "tauri:dev": "node ./scripts/tauri-runner.mjs dev",
+    "tauri:build": "node ./scripts/tauri-runner.mjs build",
+    "tauri:build:portable": "node ./scripts/tauri-runner.mjs build --no-bundle"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.10.1",
+    "@phosphor-icons/react": "^2.1.10",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-progress": "^1.1.7",
+    "@radix-ui/react-select": "^2.2.6",
+    "@radix-ui/react-toast": "^1.2.15",
+    "@tauri-apps/plugin-dialog": "^2.4.0",
+    "@tauri-apps/plugin-log": "^2.7.0",
+    "@tauri-apps/plugin-shell": "^2.3.1",
+    "@tauri-apps/plugin-store": "^2.4.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zod": "^3.25.76",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.10.1",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^24.5.2",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^5.0.4",
+    "jsdom": "^26.1.0",
+    "playwright": "^1.55.0",
+    "typescript": "^5.8.3",
+    "vite": "^7.1.9",
+    "vitest": "^3.2.4",
+    "@vitest/coverage-v8": "^3.2.4"
+  }
+}

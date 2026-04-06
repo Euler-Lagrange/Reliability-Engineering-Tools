@@ -1,0 +1,219 @@
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { z } from "zod";
+import {
+  analyzeTemplatePayloadSchema,
+  backendModeSchema,
+  backendSessionEventSchema,
+  cancelRunResultSchema,
+  executeRunAcceptedResultSchema,
+  inspectionResultSchema,
+  protocolVersion,
+  sidecarRunEventSchema,
+  templateAnalysisResultSchema,
+  validateRunResultSchema,
+} from "../../contracts/sidecar";
+import type {
+  BackendSessionEvent,
+  CancelRunResult,
+  ExecuteRunAcceptedResult,
+  SidecarRunEvent,
+} from "../../contracts/sidecar";
+import type { BackendMode } from "../../stores/shellStore";
+
+const BACKEND_RUN_EVENT = "backend://run-event";
+const BACKEND_SESSION_EVENT = "backend://session";
+
+const backendHealthResultSchema = z.object({
+  status: z.literal("ok"),
+  backend: z.string(),
+  protocol_version: z.string(),
+  mode: backendModeSchema,
+});
+
+const listSheetsResultSchema = z.object({
+  path: z.string(),
+  sheets: z.array(z.string()),
+  mode: backendModeSchema,
+});
+
+export type BackendHealthResult = z.infer<typeof backendHealthResultSchema>;
+export type ListSheetsResult = z.infer<typeof listSheetsResultSchema>;
+export type InspectInputResult = z.infer<typeof inspectionResultSchema>;
+export type AnalyzeTemplateResult = z.infer<typeof templateAnalysisResultSchema>;
+export type ValidateRunResult = z.infer<typeof validateRunResultSchema>;
+
+export interface RunRequestInput {
+  role: string;
+  label: string;
+  path: string;
+  selectedSheet: string;
+  source?: "mock" | "desktop-bridge";
+  isResolvingSheets?: boolean;
+  isAnalyzing?: boolean;
+  resolutionError?: string | null;
+  sheets?: Array<{ id: string; label: string }>;
+}
+
+export interface RunRequestMapping {
+  canonical: string;
+  mappedTo: string;
+  status: string;
+}
+
+export interface RunRequestBody {
+  workflowId: string;
+  outputStrategyId: string;
+  enrichments: {
+    functional: boolean;
+    piecePart: boolean;
+  };
+  inputs: RunRequestInput[];
+  mappings: RunRequestMapping[];
+  options?: Record<string, unknown>;
+}
+
+function isTauriRuntime() {
+  return typeof window !== "undefined" && ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
+}
+
+async function openExcelFileInDesktop() {
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const selection = await open({
+    title: "Select workbook",
+    filters: [{ name: "Excel Workbooks", extensions: ["xlsx", "xlsm", "xls"] }],
+    multiple: false,
+    directory: false,
+  });
+
+  if (!selection || Array.isArray(selection)) {
+    return null;
+  }
+
+  return selection;
+}
+
+async function openPdfFileInDesktop() {
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const selection = await open({
+    title: "Select PDF schematic",
+    filters: [{ name: "PDF Documents", extensions: ["pdf"] }],
+    multiple: false,
+    directory: false,
+  });
+  if (!selection || Array.isArray(selection)) {
+    return null;
+  }
+  return selection;
+}
+
+function browserHealthCheck(): Promise<BackendHealthResult> {
+  return Promise.resolve({
+    status: "ok",
+    backend: "browser-preview",
+    protocol_version: protocolVersion,
+    mode: "browser-mock",
+  });
+}
+
+function ensureDesktopRuntime(action: string): asserts action is string {
+  if (!isTauriRuntime()) {
+    throw new Error(`Desktop-only backend action unavailable in browser preview: ${action}.`);
+  }
+}
+
+export interface FletConfigResult {
+  configs: Record<string, Record<string, unknown> | null>;
+  namespaces: string[];
+  home: string;
+}
+
+export interface BackendClient {
+  runtimeMode: BackendMode;
+  healthCheck: () => Promise<BackendHealthResult>;
+  listSheets: (path: string) => Promise<ListSheetsResult>;
+  inspectInput: (path: string, sheet: string, role?: string) => Promise<InspectInputResult>;
+  analyzeTemplate: (path: string, sheet: string, role?: string) => Promise<AnalyzeTemplateResult>;
+  validateRun: (body: RunRequestBody) => Promise<ValidateRunResult>;
+  executeRun: (body: RunRequestBody) => Promise<ExecuteRunAcceptedResult>;
+  cancelRun: (runId: string) => Promise<CancelRunResult>;
+  readFletConfig: (namespace?: string) => Promise<FletConfigResult>;
+  subscribeToRunEvents: (handler: (event: SidecarRunEvent) => void) => Promise<() => void>;
+  subscribeToSessionEvents: (handler: (event: BackendSessionEvent) => void) => Promise<() => void>;
+  openExcelFile: () => Promise<string | null>;
+  openPdfFile: () => Promise<string | null>;
+}
+
+export const backendClient: BackendClient = {
+  runtimeMode: isTauriRuntime() ? "desktop-bridge" : "browser-mock",
+  async healthCheck() {
+    if (!isTauriRuntime()) {
+      return browserHealthCheck();
+    }
+
+    const result = await invoke("backend_health_check");
+    return backendHealthResultSchema.parse(result);
+  },
+  async listSheets(path) {
+    ensureDesktopRuntime("list_sheets");
+    const result = await invoke("backend_list_sheets", { path });
+    return listSheetsResultSchema.parse(result);
+  },
+  async inspectInput(path, sheet, role) {
+    ensureDesktopRuntime("inspect_input");
+    const result = await invoke("backend_inspect_input", { path, sheet, role });
+    return inspectionResultSchema.parse(result);
+  },
+  async analyzeTemplate(path, sheet, role) {
+    ensureDesktopRuntime("analyze_template");
+    analyzeTemplatePayloadSchema.parse({ path, sheet, role });
+    const result = await invoke("backend_analyze_template", { path, sheet, role });
+    return templateAnalysisResultSchema.parse(result);
+  },
+  async validateRun(body) {
+    ensureDesktopRuntime("validate_run");
+    const result = await invoke("backend_validate_run", { body });
+    return validateRunResultSchema.parse(result);
+  },
+  async executeRun(body) {
+    ensureDesktopRuntime("execute_run");
+    const result = await invoke("backend_execute_run", { body });
+    return executeRunAcceptedResultSchema.parse(result);
+  },
+  async cancelRun(runId) {
+    ensureDesktopRuntime("cancel_run");
+    const result = await invoke("backend_cancel_run", { runId });
+    return cancelRunResultSchema.parse(result);
+  },
+  async readFletConfig(namespace?) {
+    ensureDesktopRuntime("read_flet_config");
+    const result = await invoke("backend_read_flet_config", { namespace: namespace ?? null });
+    return result as FletConfigResult;
+  },
+  async subscribeToRunEvents(handler) {
+    ensureDesktopRuntime("subscribe_run_events");
+    return listen(BACKEND_RUN_EVENT, (event) => {
+      handler(sidecarRunEventSchema.parse(event.payload));
+    });
+  },
+  async subscribeToSessionEvents(handler) {
+    ensureDesktopRuntime("subscribe_session_events");
+    return listen(BACKEND_SESSION_EVENT, (event) => {
+      handler(backendSessionEventSchema.parse(event.payload));
+    });
+  },
+  async openExcelFile() {
+    if (!isTauriRuntime()) {
+      return null;
+    }
+
+    return openExcelFileInDesktop();
+  },
+  async openPdfFile() {
+    if (!isTauriRuntime()) {
+      return null;
+    }
+
+    return openPdfFileInDesktop();
+  },
+};

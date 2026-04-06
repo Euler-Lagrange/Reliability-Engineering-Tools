@@ -1,0 +1,19 @@
+[package]
+name = "reliability-tools-desktop"
+version = "0.1.0"
+description = "Suite-ready Tauri desktop shell for migrating the reliability tools off Flet."
+authors = ["OpenAI Codex"]
+edition = "2021"
+
+[lib]
+name = "reliability_tools_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.6", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2.5.6", features = [] }
+tauri-plugin-dialog = "2.6.0"

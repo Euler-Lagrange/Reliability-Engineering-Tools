@@ -1,0 +1,207 @@
+.shell {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.rail {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 16px;
+  padding: 20px 16px;
+  border-right: 1px solid var(--line);
+  background: var(--surface-muted);
+}
+
+.brand {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+}
+
+.brandGlyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--accent);
+}
+
+.brandLabel {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.toolList {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.toolButton {
+  display: grid;
+  gap: 6px;
+  justify-items: center;
+  padding: 10px 8px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-muted);
+  transition:
+    color 160ms var(--ease),
+    border-color 160ms var(--ease),
+    background 160ms var(--ease),
+    box-shadow 160ms var(--ease);
+}
+
+.toolButton[data-active="true"] {
+  color: var(--accent);
+  border-color: rgba(35, 94, 231, 0.22);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px rgba(35, 94, 231, 0.04), 0 6px 18px rgba(35, 94, 231, 0.08);
+}
+
+.toolLabel {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.footer {
+  display: grid;
+  gap: 10px;
+}
+
+.themeGroup {
+  display: grid;
+  gap: 8px;
+}
+
+.themeLabel {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.themeButtons {
+  display: grid;
+  gap: 6px;
+}
+
+.themeButton {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.themeButton[data-active="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.main {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-width: 0;
+}
+
+.topbar {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px 0;
+}
+
+.titleGroup {
+  display: grid;
+  gap: 6px;
+}
+
+.title {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+  max-width: 720px;
+}
+
+.statusRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.content {
+  min-width: 0;
+  padding: 16px 24px 24px;
+}
+
+.loading {
+  display: grid;
+  gap: 8px;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+@media (max-width: 1180px) {
+  .shell {
+    grid-template-columns: 84px minmax(0, 1fr);
+  }
+
+  .topbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 900px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .rail {
+    grid-template-columns: auto 1fr auto;
+    grid-template-rows: none;
+    align-items: center;
+  }
+
+  .toolList {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+  }
+
+  .toolButton {
+    min-width: 88px;
+  }
+}

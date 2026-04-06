@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Reliability Tools Desktop",
+  "version": "0.1.0",
+  "identifier": "com.reliabilitytools.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev -- --host 127.0.0.1 --port 5173",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://127.0.0.1:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Reliability Tools Desktop",
+        "width": 1480,
+        "height": 980,
+        "minWidth": 1200,
+        "minHeight": 820,
+        "resizable": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "nsis",
+    "icon": [
+      "icons/mascot.ico"
+    ]
+  }
+}
