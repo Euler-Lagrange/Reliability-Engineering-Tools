@@ -21,7 +21,7 @@ function renderApp() {
 
 async function waitForFmeaTool() {
   await screen.findByRole("heading", {
-    name: /suite shell wired to the migrated fmea workspace/i,
+    name: /fmea generator/i,
   });
 }
 
@@ -32,9 +32,9 @@ describe("tauri_build shell", () => {
 
     await waitForFmeaTool();
 
-    await user.click(screen.getByRole("button", { name: /bom compare/i }));
+    await user.click(screen.getByRole("button", { name: /compare/i }));
 
-    expect(screen.getByRole("button", { name: /bom compare/i })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("button", { name: /compare/i })).toHaveAttribute("aria-current", "page");
     expect(await screen.findByRole("heading", { name: /bom comparison tool/i })).toBeInTheDocument();
   });
 

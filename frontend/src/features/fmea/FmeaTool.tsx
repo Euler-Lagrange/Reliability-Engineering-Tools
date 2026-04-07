@@ -29,23 +29,23 @@ import { useNotificationStore } from "../../stores/notificationStore";
 import { useShellStore } from "../../stores/shellStore";
 
 const baseScenario = demoScenarios[0];
-const phase4RunEvents: RunEventTemplate[] = [
+const fmeaRunEvents: RunEventTemplate[] = [
   {
-    id: "phase4-1",
+    id: "fmea-validate",
     title: "Validate run state",
-    detail: "The desktop backend checks required files and confirms the first executable path is supported.",
+    detail: "Checking required files and confirming the selected workflow is ready.",
     progress: 18,
   },
   {
-    id: "phase4-2",
+    id: "fmea-generate",
     title: "Generate FMEA rows",
-    detail: "The copied FMEA processor builds the workbook rows through the migrated backend tree.",
+    detail: "Building FMEA workbook rows from input sources.",
     progress: 64,
   },
   {
-    id: "phase4-3",
+    id: "fmea-write",
     title: "Write workbook",
-    detail: "The migrated backend writes a new output workbook and returns the artifact path to the shell.",
+    detail: "Writing output workbook and returning the artifact path.",
     progress: 100,
   },
 ];
@@ -138,7 +138,7 @@ function toFailureResult(detail: string) {
     outputFile: "",
     primaryMetric: "No workbook written",
     secondaryMetric: "Review backend diagnostics",
-    notes: ["This Phase 4 slice returns the backend failure directly instead of attempting recovery."],
+    notes: ["The backend returned a failure. Review the execution log for details."],
   };
 }
 
@@ -697,7 +697,7 @@ export function FmeaTool() {
       if (!validation.ok) {
         setRunMode("idle");
         setRunIndex(-1);
-        setRunTemplates(phase4RunEvents);
+        setRunTemplates(fmeaRunEvents);
         setContextView("preview");
         resetDesktopRunSession();
         setBackendState({
@@ -714,11 +714,11 @@ export function FmeaTool() {
         return;
       }
 
-      setRunTemplates(phase4RunEvents);
+      setRunTemplates(fmeaRunEvents);
       setBackendState({
         backendStatus: "busy",
         backendMode: validation.mode,
-        backendMessage: "Generating workbook through the migrated backend...",
+        backendMessage: "Generating FMEA workbook...",
       });
 
       handledDesktopTerminalRef.current = null;
@@ -744,18 +744,16 @@ export function FmeaTool() {
     <div className="tool-workspace">
       <section className="tool-banner">
         <div>
-          <p className="eyebrow">Dark Star FMEA</p>
-          <h2 className="tool-banner__title">Suite shell wired to the migrated FMEA workspace</h2>
+          <p className="eyebrow">FMEA Generator</p>
+          <h2 className="tool-banner__title">FMEA Generator</h2>
           <p className="section-card__description">
-            The old scenario rail is removed from the shell path. This screen now behaves like a real tool tab that is ready
-            for sidecar wiring.
+            Generate piece-part FMEA workbooks from grouping, BOM, and failure mode sources.
           </p>
         </div>
         <div className="tool-banner__chips">
           <span className={`status-chip status-chip--${backendMode === "desktop-bridge" ? "success" : "pending"}`}>
-            {backendMode === "desktop-bridge" ? "Desktop bridge" : "Browser preview"}
+            {backendMode === "desktop-bridge" ? "Desktop" : "Browser preview"}
           </span>
-          <span className="status-chip status-chip--info">Phase 4 run slice</span>
         </div>
       </section>
 
@@ -844,7 +842,7 @@ export function FmeaTool() {
             description={
               inspectedColumns.length > 0
                 ? `Mapping options are currently informed by ${inspectedSourceLabel}.`
-                : "Legacy-parity/default profile behavior only in the first Tauri FMEA slice."
+                : "Default profile behavior. Select files above to enable column mapping."
             }
             actions={
               <button className="ghost-button" type="button" disabled>
@@ -970,7 +968,7 @@ export function FmeaTool() {
 
                     if (!cancelPending) {
                       setCancelPending(true);
-                      setCancelledNotice("Press cancel again to confirm. This matches the future sidecar cancellation flow.");
+                      setCancelledNotice("Press cancel again to confirm.");
                       return;
                     }
 

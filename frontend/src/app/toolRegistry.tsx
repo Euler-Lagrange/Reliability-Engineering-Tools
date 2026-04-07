@@ -46,16 +46,16 @@ export interface ToolDefinition {
 export const toolDefinitions: ToolDefinition[] = [
   {
     id: "dark_star_fmea",
-    label: "Dark Star FMEA",
+    label: "FMEA",
     eyebrow: "Active tool",
-    description: "The first migrated workspace. This tab proves the suite shell, theme system, and future sidecar shape.",
+    description: "Generate piece-part FMEA workbooks from grouping, BOM, and failure mode sources.",
     icon: ShieldChevron,
     status: "active",
     component: FmeaTool,
   },
   {
     id: "bom_compare",
-    label: "BOM Compare",
+    label: "Compare",
     eyebrow: "Active tool",
     description: "Compare grouping files or two BOMs to find missing, extra, and mismatched RefDes.",
     icon: ArrowsLeftRight,
@@ -64,7 +64,7 @@ export const toolDefinitions: ToolDefinition[] = [
   },
   {
     id: "failure_rate",
-    label: "Failure Rate",
+    label: "Rates",
     eyebrow: "Active tool",
     description: "Link prediction failure rates to FMEA failure modes with configurable unit conversion.",
     icon: Gauge,

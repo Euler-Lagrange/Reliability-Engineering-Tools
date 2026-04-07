@@ -77,22 +77,22 @@ export function SettingsTool() {
                         alignItems: "flex-start",
                         gap: "0.5rem",
                         padding: "1rem",
-                        border: isSelected ? "2px solid var(--color-accent)" : "1px solid var(--color-border)",
+                        border: isSelected ? "2px solid var(--accent)" : "1px solid var(--line)",
                         borderRadius: "0.5rem",
-                        background: isSelected ? "var(--color-surface-raised)" : "var(--color-surface)",
+                        background: isSelected ? "var(--surface-muted)" : "var(--surface)",
                         cursor: "pointer",
                         textAlign: "left",
                         transition: "border-color 0.15s, background 0.15s",
                       }}
                     >
-                      <Icon size={20} weight={isSelected ? "fill" : "regular"} style={{ color: isSelected ? "var(--color-accent)" : "var(--color-text-secondary)" }} />
-                      <span style={{ fontWeight: 600, fontSize: "0.875rem", color: "var(--color-text-primary)" }}>{option.label}</span>
-                      <span style={{ fontSize: "0.75rem", color: "var(--color-text-secondary)" }}>{option.description}</span>
+                      <Icon size={20} weight={isSelected ? "fill" : "regular"} style={{ color: isSelected ? "var(--accent)" : "var(--text-secondary)" }} />
+                      <span style={{ fontWeight: 600, fontSize: "0.875rem", color: "var(--text)" }}>{option.label}</span>
+                      <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>{option.description}</span>
                     </button>
                   );
                 })}
               </div>
-              <p style={{ marginTop: "0.75rem", fontSize: "0.75rem", color: "var(--color-text-tertiary)" }}>
+              <p style={{ marginTop: "0.75rem", fontSize: "0.75rem", color: "var(--text-muted)" }}>
                 Active theme: <strong>{resolvedTheme.replace(/_/g, " ")}</strong>
                 {themeMode === "system" ? " (following system)" : ""}
               </p>
@@ -102,21 +102,21 @@ export function SettingsTool() {
               <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
                   <div>
-                    <p style={{ fontSize: "0.7rem", color: "var(--color-text-tertiary)", marginBottom: "0.25rem" }}>Status</p>
-                    <p style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--color-text-primary)" }}>{backendStatus}</p>
+                    <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>Status</p>
+                    <p style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--text)" }}>{backendStatus}</p>
                   </div>
                   <div>
-                    <p style={{ fontSize: "0.7rem", color: "var(--color-text-tertiary)", marginBottom: "0.25rem" }}>Mode</p>
-                    <p style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--color-text-primary)" }}>{backendMode}</p>
+                    <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>Mode</p>
+                    <p style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--text)" }}>{backendMode}</p>
                   </div>
                   <div style={{ gridColumn: "1 / -1" }}>
-                    <p style={{ fontSize: "0.7rem", color: "var(--color-text-tertiary)", marginBottom: "0.25rem" }}>Message</p>
-                    <p style={{ fontSize: "0.8rem", color: "var(--color-text-secondary)" }}>{backendMessage ?? "No message"}</p>
+                    <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>Message</p>
+                    <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>{backendMessage ?? "No message"}</p>
                   </div>
                   {lastBackendCheckAt && (
                     <div style={{ gridColumn: "1 / -1" }}>
-                      <p style={{ fontSize: "0.7rem", color: "var(--color-text-tertiary)", marginBottom: "0.25rem" }}>Last check</p>
-                      <p style={{ fontSize: "0.8rem", color: "var(--color-text-secondary)" }}>{new Date(lastBackendCheckAt).toLocaleString()}</p>
+                      <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>Last check</p>
+                      <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>{new Date(lastBackendCheckAt).toLocaleString()}</p>
                     </div>
                   )}
                 </div>
@@ -129,10 +129,10 @@ export function SettingsTool() {
                     alignItems: "center",
                     gap: "0.5rem",
                     padding: "0.5rem 1rem",
-                    border: "1px solid var(--color-border)",
+                    border: "1px solid var(--line)",
                     borderRadius: "0.375rem",
-                    background: "var(--color-surface)",
-                    color: "var(--color-text-primary)",
+                    background: "var(--surface)",
+                    color: "var(--text)",
                     cursor: isCheckingHealth ? "wait" : "pointer",
                     fontSize: "0.8rem",
                     fontWeight: 500,
@@ -149,24 +149,24 @@ export function SettingsTool() {
               <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
                   <div>
-                    <p style={{ fontSize: "0.7rem", color: "var(--color-text-tertiary)", marginBottom: "0.25rem" }}>Application</p>
-                    <p style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--color-text-primary)" }}>Reliability Tools Desktop</p>
+                    <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>Application</p>
+                    <p style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--text)" }}>Reliability Tools Desktop</p>
                   </div>
                   <div>
-                    <p style={{ fontSize: "0.7rem", color: "var(--color-text-tertiary)", marginBottom: "0.25rem" }}>Platform</p>
-                    <p style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--color-text-primary)" }}>Tauri + React</p>
+                    <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>Platform</p>
+                    <p style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--text)" }}>Tauri + React</p>
                   </div>
                   <div>
-                    <p style={{ fontSize: "0.7rem", color: "var(--color-text-tertiary)", marginBottom: "0.25rem" }}>Shell version</p>
-                    <p style={{ fontSize: "0.875rem", color: "var(--color-text-primary)" }}>0.1.0</p>
+                    <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>Shell version</p>
+                    <p style={{ fontSize: "0.875rem", color: "var(--text)" }}>0.1.0</p>
                   </div>
                   <div>
-                    <p style={{ fontSize: "0.7rem", color: "var(--color-text-tertiary)", marginBottom: "0.25rem" }}>Protocol</p>
-                    <p style={{ fontSize: "0.875rem", color: "var(--color-text-primary)" }}>NDJSON v0.1.0</p>
+                    <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>Protocol</p>
+                    <p style={{ fontSize: "0.875rem", color: "var(--text)" }}>NDJSON v0.1.0</p>
                   </div>
                 </div>
-                <p style={{ fontSize: "0.75rem", color: "var(--color-text-tertiary)", display: "flex", alignItems: "center", gap: "0.25rem", marginTop: "0.5rem" }}>
-                  <Heart size={12} weight="fill" style={{ color: "var(--color-accent)" }} />
+                <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "0.25rem", marginTop: "0.5rem" }}>
+                  <Heart size={12} weight="fill" style={{ color: "var(--accent)" }} />
                   Built by Reliability Engineering
                 </p>
               </div>

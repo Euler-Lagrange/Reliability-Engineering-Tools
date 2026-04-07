@@ -22,6 +22,8 @@
   --radius-md: 8px;
   --radius-sm: 6px;
   --ease: cubic-bezier(0.25, 1, 0.5, 1);
+  --border-subtle: var(--line);
+  --font-mono: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
 }
 
 :root[data-theme="dark_precision"] {

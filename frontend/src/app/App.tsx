@@ -14,6 +14,7 @@ const themeButtons = [
   { id: "system", label: "Sys", icon: Desktop },
   { id: "light_precision", label: "Light", icon: Sun },
   { id: "dark_precision", label: "Dark", icon: MoonStars },
+  { id: "signal_slate", label: "Slate", icon: Sparkle },
 ] as const;
 
 const backendStatusTone = {
