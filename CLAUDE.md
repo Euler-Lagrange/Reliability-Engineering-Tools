@@ -70,8 +70,8 @@ npm run tauri:dev        # Dev mode with hot reload
 npm run tauri:build:portable  # Release build → src-tauri/target/.../release/
 
 # Python sidecar (use project venv)
-..\.venv\Scripts\python.exe -m pytest backend/tests -v    # 27 integration tests
-..\.venv\Scripts\python.exe backend/python/sidecar_main.py --self-test
+.venv\Scripts\python.exe -m pytest backend/tests -v    # 27 integration tests
+.venv\Scripts\python.exe backend/python/sidecar_main.py --self-test
 
 # Full release
 scripts/release.bat
@@ -142,3 +142,49 @@ Each tool component uses:
 - **Heartbeat**: Python emits every 5s, Rust times out at 15s, frontend auto-reconnects with backoff
 - **NaN guards**: Always `pd.notna(value)` before string operations on DataFrame cells
 - **Single active run**: Only one `execute_run` at a time; second request is rejected
+
+## Delegation Defaults — Use Skills and Agents Proactively
+
+**Default to delegation, not direct work.** Skills and agents exist to keep responses focused, protect the main context window, and leverage specialized expertise. Reach for them automatically — do not wait for the user to ask.
+
+### When to invoke Skills (via the Skill tool)
+
+| Skill | Trigger — use automatically when... |
+|-------|-------------------------------------|
+| `code-review` | Before any commit, or when the user asks to "review" / "check" code |
+| `quick-review` | For pre-commit lightweight checks on a small change |
+| `git-workflow` | Writing commit messages, preparing releases, tagging versions |
+| `release` | Running the full release pipeline or preparing a distribution |
+| `testing-workflow` | Writing new tests, running pytest, adding test fixtures |
+| `design-principles` | Building/modifying UI — especially theme, typography, component design |
+| `simplify` | After finishing a feature — review changed code for reuse/quality opportunities |
+| `debug-guide` | When troubleshooting runtime errors, test failures, or unexpected behavior |
+| `update-config` | When the user asks to configure settings.json, hooks, or harness behavior |
+
+### When to launch Agents (via the Agent tool)
+
+| Agent | Trigger — use automatically when... |
+|-------|-------------------------------------|
+| `Explore` | Searching for code, answering "where is X", or unfamiliar area exploration. **Always prefer this over running multiple Grep/Glob calls serially.** |
+| `Plan` | Designing implementation for any non-trivial task (>3 files or architectural decisions). **Never skip this for large features.** |
+| `architect` | Complex multi-component designs, cross-layer refactors, or ADR work |
+| `developer` | Delegating implementation of a well-specified feature with tests |
+| `debugger` | Systematic debugging when the root cause is unclear after initial investigation |
+| `quality-reviewer` | Reviewing code for security, data loss, performance issues |
+| `technical-writer` | Any documentation creation/update — use multiple in parallel for large doc sweeps |
+| `adr-writer` | Recording architecture decisions (see `docs/DECISIONS.md` for format) |
+
+### Parallel Agent Patterns
+
+- **Multiple independent explorations:** Launch 2-3 `Explore` agents in parallel in a single message with different focus areas
+- **Large doc sweeps:** Launch multiple `technical-writer` agents with non-overlapping file sets
+- **Research then implement:** `Plan` or `architect` first, then `developer` with the plan's output as its spec
+- **Verify before acting:** `Explore` to verify claims, then act on verified findings — never trust GPT reviews or external reports without verification
+
+### Anti-patterns to avoid
+
+- **Running 5+ serial Grep/Glob/Read calls** when an Explore agent would do it in one pass
+- **Writing implementation code directly for features >100 lines** when a `developer` agent could do it with tests
+- **Designing large features without a Plan agent** — plans catch architectural issues that direct coding misses
+- **Hand-writing commit messages** when `git-workflow` has the project conventions
+- **Skipping pre-commit review** when `code-review` or `quick-review` exists
