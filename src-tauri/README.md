@@ -1,40 +1,57 @@
-# Tauri Phase 2 Scaffold
+# src-tauri
 
-This directory now contains the desktop-wrapper bootstrap for the prototype.
+Rust desktop bridge between the React frontend and the Python sidecar. The
+Tauri shell owns the native window, manages the sidecar child process, and
+relays NDJSON messages between the two sides.
 
-## Current Purpose
+## Purpose
 
-- Keep the frontend aligned to a real desktop shell target
-- Provide the minimum Rust/Tauri bootstrap for running the current UI in a native window
-- Document what is required before `.exe` packaging succeeds on another machine
+- Spawn and supervise `reliability-tools-sidecar.exe` (Python, PyInstaller-bundled).
+- Forward frontend commands to the sidecar over stdin.
+- Stream sidecar events (`result`, `status`, `progress`, `log`, `ack`,
+  `cancelled`, `backend_error`) back to the frontend over Tauri event channels.
+- Enforce the 15-second heartbeat timeout and trigger reconnect on disconnect.
 
-## Files
+## Key File
 
-- `tauri.conf.json`: planned desktop window and frontend build wiring
-- `Cargo.toml`: Rust crate metadata and Tauri dependencies
-- `build.rs`: Tauri build integration
-- `src/`: desktop entrypoint and builder
-- `capabilities/default.json`: default app capability for the main window
+All bridge logic lives in `src/lib.rs`. Highlights:
 
-## Prerequisites Before Packaging
+- `ManagedSidecar` — wraps the child process and its stdin/stdout handles.
+- Stdout reader thread — parses NDJSON line-by-line, dispatches by `kind`.
+- Heartbeat supervisor — checks the last-seen heartbeat every 5s, kills the
+  session if more than 15s elapse without one.
+- Stdin write lock — every command is serialized through a single `Mutex` so
+  two concurrent Tauri commands cannot interleave bytes on the pipe.
 
-- Rust toolchain with `cargo` and `rustc`
-- Microsoft C++ build tools / MSVC-compatible environment
-- WebView2-compatible Windows runtime
-- Tauri CLI installation choice for the project
+`src/main.rs` is a thin entrypoint that defers to `lib.rs`.
 
-## Expected Future Commands
+## Build
+
+Always build from the repository root, not from `src-tauri/`:
 
 ```powershell
-npm run tauri:readiness
-npm run tauri:dev
-npm run tauri:build
+npm run tauri:build:portable
 ```
 
-## Planned Command Behavior
+This produces `src-tauri/target/x86_64-pc-windows-msvc/release/reliability-tools-desktop.exe`.
+The full release pipeline (`scripts/release.bat`) copies it to
+`local_build/ReliabilityToolsDesktop.exe` alongside the sidecar exe.
 
-- `tauri:readiness` checks local prerequisites and reports gaps
-- `tauri:dev` will eventually run the desktop wrapper in development mode
-- `tauri:build` will eventually build the Windows executable
+## Toolchain
 
-Current phase: first desktop shell prototype. A real Python sidecar and production packaging hardening are still future work.
+- Rust stable via `rustup` (confirmed working on 1.94.1)
+- MSVC build tools (Visual Studio Build Tools, C++ workload)
+- WebView2 runtime (preinstalled on Windows 10/11)
+
+## Runtime Shape
+
+- One managed sidecar session per app launch.
+- One active run at a time — a second `execute_run` while one is in flight is
+  rejected by the sidecar with an `error` envelope.
+- Reconnect on disconnect uses exponential backoff: 2s, 4s, 8s, 15s, 30s.
+
+## See Also
+
+- `../docs/ARCHITECTURE.md` — full three-layer picture (React / Rust / Python)
+- `../contracts/sidecar-protocol.md` — NDJSON protocol spec
+- `../backend/python/sidecar_main.py` — sidecar source of truth

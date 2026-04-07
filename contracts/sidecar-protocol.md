@@ -32,7 +32,9 @@ Every message is one JSON object on one line:
 - `backend_error`
 - `cancelled`
 
-## Initial Commands
+## Commands
+
+All eight commands currently implemented by the sidecar:
 
 - `health_check`
 - `list_sheets`
@@ -41,6 +43,7 @@ Every message is one JSON object on one line:
 - `validate_run`
 - `execute_run`
 - `cancel_run`
+- `read_flet_config`
 
 ## Transport Rules
 
@@ -79,7 +82,7 @@ Every message is one JSON object on one line:
     - `protected_sheet`
 - `validate_run`
   - request body:
-    - `workflowId`
+    - `workflowId` — routes to the tool runtime; see Workflow Routing below
     - `outputStrategyId`
     - `enrichments`
     - `inputs`
@@ -112,6 +115,50 @@ Every message is one JSON object on one line:
 - `cancel_run`
   - request body: `{ "run_id": "run_..." }`
   - result payload: `{ "accepted": true, "run_id": "...", "status": "cancelling" }`
+- `read_flet_config`
+  - request body: `{ "namespace": "bom_compare" }` — optional; when omitted, all known namespaces are read
+  - result payload:
+    - `configs` — dict keyed by namespace, value is parsed JSON or `null`
+    - `namespaces` — list of namespaces that were inspected
+    - `home` — user home directory path
+  - This command is read-only: the sidecar never writes or mutates the legacy Flet config files (`~/.{namespace}_config.json`). Recognized namespaces: `bom_compare`, `failure_rate`, `fmea_generator`, `refdes_extractor`, `refdes_extractor_darkstar`, `refdes_test`, `reliability_tools_global`.
+
+## Workflow Routing
+
+`validate_run` and `execute_run` route by `workflowId` to one of four tool
+runtimes. The sidecar never exposes `toolId` directly; the workflow alone
+determines which backend module handles the request.
+
+| Workflow ID | Tool runtime |
+|-------------|--------------|
+| `piece_part_generate` | `fmea.runtime` |
+| `bom_only` | `fmea.runtime` |
+| `fill_gaps` | `fmea.runtime` |
+| `bom_compare_group` | `bom_compare.runtime` |
+| `bom_compare_custom` | `bom_compare.runtime` |
+| `failure_rate_link` | `failure_rate.runtime` |
+| `refdes_extract` | `refdes_extractor.runtime` |
+
+Unknown workflow IDs fall through to the FMEA runtime, which will reject them
+via its own validation.
+
+## Error Envelope
+
+Any synchronous command that fails emits a single `error` envelope instead of a
+`result` envelope. The `request_id` echoes the original command so the frontend
+can resolve the pending promise.
+
+```json
+{
+  "kind": "error",
+  "request_id": "req_abc123",
+  "payload": { "message": "openpyxl is not available" }
+}
+```
+
+Run-scoped failures (raised inside the background thread after `ack`) are
+surfaced as `backend_error` terminal events, not as `error` envelopes. See the
+Streamed Run Events section below.
 
 ## Streamed Run Events
 
@@ -206,9 +253,9 @@ attempts automatic reconnection with exponential backoff (2s, 4s, 8s, 15s, 30s).
 ## Current Runtime Shape
 
 - The desktop shell keeps a managed Python sidecar session alive across bridge commands.
-- `health_check`, `list_sheets`, `inspect_input`, `analyze_template`, `validate_run`, `execute_run`, and `cancel_run` are implemented.
-- Supported workflows: `piece_part_generate`, `bom_only`, `fill_gaps`.
-- Supported output strategies: `new_workbook_standard`, `existing_workbook_preserve_formatting`.
+- Implemented commands: `health_check`, `list_sheets`, `inspect_input`, `analyze_template`, `validate_run`, `execute_run`, `cancel_run`, `read_flet_config`.
+- Supported workflows: `piece_part_generate`, `bom_only`, `fill_gaps`, `bom_compare_group`, `bom_compare_custom`, `failure_rate_link`, `refdes_extract`.
+- Supported FMEA output strategies: `new_workbook_standard`, `existing_workbook_preserve_formatting`.
 - `execute_run` uses a background thread with streamed events; all other commands are synchronous request/response.
 - Run-scoped events are correlated by `run_id` and routed to the frontend via Tauri event channels.
 - Only one active run is allowed at a time; a second `execute_run` is rejected with an error.

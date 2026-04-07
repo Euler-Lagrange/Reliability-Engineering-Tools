@@ -1,3 +1,15 @@
+# Migration Plan (Historical)
+
+> **STATUS: MIGRATION COMPLETE (2026-04-06).**
+> This document is preserved for historical context. It describes the
+> original foundation pass and what was explicitly deferred at that time.
+> All deferred items were subsequently delivered.
+>
+> See `MIGRATION_HISTORY.md` for the completed phase log and
+> `ARCHITECTURE.md` for current architecture.
+
+---
+
 # Migration Plan Status
 
 ## Implemented in this foundation pass
