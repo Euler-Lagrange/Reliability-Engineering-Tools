@@ -12,7 +12,7 @@ if /I "%~2"=="--no-pause" set "NO_PAUSE=1"
 
 set "SCRIPT_DIR=%~dp0"
 set "ROOT_DIR=%SCRIPT_DIR%.."
-set "REPO_ROOT=%ROOT_DIR%\.."
+set "REPO_ROOT=%ROOT_DIR%"
 set "OUTPUT_DIR=%ROOT_DIR%\local_build"
 set "LOGS_DIR=%ROOT_DIR%\logs"
 set "OUTPUT_EXE=%OUTPUT_DIR%\ReliabilityToolsDesktop.exe"
