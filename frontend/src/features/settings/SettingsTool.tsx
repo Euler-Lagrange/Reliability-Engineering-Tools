@@ -1,5 +1,16 @@
 import { useState } from "react";
-import { Desktop, MoonStars, Sun, Sparkle, ArrowClockwise, Heart } from "@phosphor-icons/react";
+import {
+  Desktop,
+  MoonStars,
+  Sun,
+  Sparkle,
+  ArrowClockwise,
+  Heart,
+  Airplane,
+  CircleHalf,
+  Lightning,
+  Broadcast,
+} from "@phosphor-icons/react";
 import { SectionCard } from "../../components/SectionCard";
 import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
 import { useThemeStore, type ThemeMode } from "../../stores/themeStore";
@@ -13,6 +24,10 @@ const themeOptions: Array<{ id: ThemeMode; label: string; description: string; i
   { id: "light_precision", label: "Light Precision", description: "Clean light theme for bright environments.", icon: Sun },
   { id: "dark_precision", label: "Dark Precision", description: "Professional dark theme.", icon: MoonStars },
   { id: "signal_slate", label: "Signal Slate", description: "High-contrast engineering theme.", icon: Sparkle },
+  { id: "midnight_blue", label: "Midnight Blue", description: "Deep navy + ice blue. Aerospace engineering aesthetic.", icon: Airplane },
+  { id: "high_contrast", label: "High Contrast", description: "Pure black and white with yellow accents. WCAG AAA.", icon: CircleHalf },
+  { id: "synthwave", label: "Synthwave", description: "Neon pink and purple. Retro-futurist vibes.", icon: Lightning },
+  { id: "mission_control", label: "Mission Control", description: "Monospaced instrument panel. Dimmed readouts, cyan accents.", icon: Broadcast },
 ];
 
 export function SettingsTool() {

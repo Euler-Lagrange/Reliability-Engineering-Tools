@@ -1,7 +1,14 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type ThemeId = "light_precision" | "dark_precision" | "signal_slate";
+export type ThemeId =
+  | "light_precision"
+  | "dark_precision"
+  | "signal_slate"
+  | "midnight_blue"
+  | "high_contrast"
+  | "synthwave"
+  | "mission_control";
 export type ThemeMode = "system" | ThemeId;
 
 interface ThemeState {

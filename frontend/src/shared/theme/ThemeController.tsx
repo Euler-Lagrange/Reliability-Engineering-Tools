@@ -36,8 +36,15 @@ export function ThemeController() {
   useEffect(() => {
     document.documentElement.dataset.theme = resolvedTheme;
     document.documentElement.dataset.themeMode = mode;
-    document.documentElement.style.colorScheme =
-      resolvedTheme === "dark_precision" ? "dark" : "light";
+    const darkThemes: ThemeId[] = [
+      "dark_precision",
+      "midnight_blue",
+      "high_contrast",
+      "synthwave",
+    ];
+    document.documentElement.style.colorScheme = darkThemes.includes(resolvedTheme)
+      ? "dark"
+      : "light";
   }, [mode, resolvedTheme]);
 
   return null;

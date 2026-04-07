@@ -1,5 +1,63 @@
+/* ============================================================
+   Font loading — self-hosted variable fonts for cross-platform
+   consistency. Inter for UI, JetBrains Mono for code/logs.
+   Both OFL-licensed; see /fonts/ directory.
+   ============================================================ */
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-Variable.woff2") format("woff2-variations"),
+       url("/fonts/Inter-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/JetBrainsMono-Variable.ttf") format("truetype-variations"),
+       url("/fonts/JetBrainsMono-Variable.ttf") format("truetype");
+  font-weight: 100 800;
+  font-display: swap;
+  font-style: normal;
+}
+
 :root {
-  font-family: "Aptos", "Segoe UI Variable Display", "Segoe UI", sans-serif;
+  /* Font families */
+  --font-sans: "Inter", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Inter", "Segoe UI Variable Display", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
+
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01", "ss03";
+
+  /* Type scale — semantic tokens */
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 13px;
+  --text-md: 16px;
+  --text-lg: 18px;
+  --text-xl: 20px;
+  --text-2xl: 24px;
+
+  /* Line heights */
+  --leading-tight: 1.2;
+  --leading-snug: 1.35;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+
+  /* Font weights */
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* Letter spacing */
+  --tracking-tight: -0.01em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.02em;
+  --tracking-uppercase: 0.06em;
+
+  /* Surface colors */
   --bg: #f6f8fb;
   --surface: #ffffff;
   --surface-muted: #f8fafc;
@@ -23,7 +81,6 @@
   --radius-sm: 6px;
   --ease: cubic-bezier(0.25, 1, 0.5, 1);
   --border-subtle: var(--line);
-  --font-mono: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
 }
 
 :root[data-theme="dark_precision"] {
@@ -66,6 +123,110 @@
   --warning-soft: rgba(154, 100, 6, 0.12);
   --danger: #b14634;
   --danger-soft: rgba(177, 70, 52, 0.12);
+}
+
+/* Midnight Blue — aerospace/defense engineering aesthetic. Deep navy
+   surfaces with ice-blue accents. Tuned for long analysis sessions. */
+:root[data-theme="midnight_blue"] {
+  --bg: #0a1628;
+  --surface: #0f1f33;
+  --surface-muted: #0c1a2c;
+  --surface-soft: #142940;
+  --line: #1f3552;
+  --line-strong: #2d4a6f;
+  --text: #e8f0fa;
+  --text-secondary: #b8cce0;
+  --text-muted: #8aa3bf;
+  --text-faint: #6680a0;
+  --accent: #48cae4;
+  --accent-soft: rgba(72, 202, 228, 0.16);
+  --success: #5fd4a3;
+  --success-soft: rgba(95, 212, 163, 0.16);
+  --warning: #ffb84d;
+  --warning-soft: rgba(255, 184, 77, 0.16);
+  --danger: #ff7a7a;
+  --danger-soft: rgba(255, 122, 122, 0.16);
+}
+
+/* High Contrast — accessibility-first. Pure black/white with a yellow
+   accent. Targets WCAG AAA. Useful on older monitors and projectors. */
+:root[data-theme="high_contrast"] {
+  --bg: #000000;
+  --surface: #0a0a0a;
+  --surface-muted: #050505;
+  --surface-soft: #111111;
+  --line: #ffffff;
+  --line-strong: #ffffff;
+  --text: #ffffff;
+  --text-secondary: #f0f0f0;
+  --text-muted: #d0d0d0;
+  --text-faint: #b0b0b0;
+  --accent: #ffd60a;
+  --accent-soft: rgba(255, 214, 10, 0.18);
+  --success: #00ff7f;
+  --success-soft: rgba(0, 255, 127, 0.16);
+  --warning: #ffd60a;
+  --warning-soft: rgba(255, 214, 10, 0.18);
+  --danger: #ff4444;
+  --danger-soft: rgba(255, 68, 68, 0.18);
+}
+
+/* Synthwave — neon dev-tool vibe. Hot pink/magenta accents on deep
+   purple surfaces. Inspired by 80s retro-futurism. */
+:root[data-theme="synthwave"] {
+  --bg: #1a0b2e;
+  --surface: #240a3d;
+  --surface-muted: #1e0833;
+  --surface-soft: #2d1248;
+  --line: #3d2060;
+  --line-strong: #563481;
+  --text: #f0e6ff;
+  --text-secondary: #d4b8ff;
+  --text-muted: #a888d4;
+  --text-faint: #806ba8;
+  --accent: #ff2ad5;
+  --accent-soft: rgba(255, 42, 213, 0.16);
+  --success: #00ffaa;
+  --success-soft: rgba(0, 255, 170, 0.16);
+  --warning: #ffcc00;
+  --warning-soft: rgba(255, 204, 0, 0.16);
+  --danger: #ff3366;
+  --danger-soft: rgba(255, 51, 102, 0.16);
+}
+
+/* Mission Control — NASA/JPL instrument panel aesthetic. Monospaced
+   typography throughout, subtle cyan accents, dimmed readout colors.
+   Tuned for technical precision, not retro flair. */
+:root[data-theme="mission_control"] {
+  /* Palette — near-black with blue undertone */
+  --bg: #050608;
+  --surface: #0b0e13;
+  --surface-muted: #080a0f;
+  --surface-soft: #11161e;
+  --line: #1c2530;
+  --line-strong: #2a3542;
+
+  /* Text — warm whites for long reading */
+  --text: #e4e9f0;
+  --text-secondary: #a8b4c2;
+  --text-muted: #6b7888;
+  --text-faint: #4a5663;
+
+  /* Accents — instrument panel glow */
+  --accent: #00d9ff;
+  --accent-soft: rgba(0, 217, 255, 0.12);
+  --success: #00ff88;
+  --success-soft: rgba(0, 255, 136, 0.12);
+  --warning: #ffaa00;
+  --warning-soft: rgba(255, 170, 0, 0.14);
+  --danger: #ff3355;
+  --danger-soft: rgba(255, 51, 85, 0.14);
+
+  /* Typography override — mono everywhere */
+  --font-sans: var(--font-mono);
+  --font-display: var(--font-mono);
+  font-family: var(--font-mono);
+  font-feature-settings: "tnum" 1, "zero" 1, "cv11" 1;
 }
 
 * {
@@ -504,8 +665,8 @@ button:disabled {
 .run-result__header p {
   margin: 0;
   color: var(--text-secondary);
-  font-family: "Cascadia Code", "Consolas", monospace;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
   word-break: break-all;
 }
@@ -912,4 +1073,42 @@ tbody tr:hover {
   .timeline__item .status-chip {
     justify-self: start;
   }
+}
+
+/* ============================================================
+   Mission Control theme — style overrides
+   Applied only when [data-theme="mission_control"] is active.
+   Keep restrained — information density, not visual flair.
+   ============================================================ */
+
+:root[data-theme="mission_control"] .eyebrow,
+:root[data-theme="mission_control"] .section-card__eyebrow,
+:root[data-theme="mission_control"] .tool-banner__eyebrow,
+:root[data-theme="mission_control"] .status-chip {
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-uppercase);
+  font-weight: var(--weight-medium);
+}
+
+:root[data-theme="mission_control"] .tool-banner__title {
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-wide);
+}
+
+/* Subtle cyan glow on "ready" status chips */
+:root[data-theme="mission_control"] .status-chip--success {
+  box-shadow: 0 0 0 1px rgba(0, 217, 255, 0.3), 0 0 12px rgba(0, 217, 255, 0.08);
+}
+
+/* Numeric data — force tabular and slashed zero */
+:root[data-theme="mission_control"] .data-table,
+:root[data-theme="mission_control"] .mapping-table__cell,
+:root[data-theme="mission_control"] .run-result__metric-value {
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+/* Input cards get a thin accent glow on hover */
+:root[data-theme="mission_control"] .input-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(0, 217, 255, 0.15);
 }
