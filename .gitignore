@@ -4,8 +4,10 @@ node_modules/
 
 # Build artifacts
 dist/
+build/
 src-tauri/target/
 local_build/
+*.spec
 
 # Logs and temp
 logs/

@@ -50,19 +50,23 @@ echo [INFO] node and npm detected >> "%LOGFILE%"
 
 if not exist "%BACKEND_PYTHON%" goto :missing_backend_python
 
-echo [2/7] Running backend tests...
+echo [2/8] Running backend tests...
 "%BACKEND_PYTHON%" -m pytest backend\tests -q >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :backend_tests_failed
 
-echo [3/7] Running frontend tests...
+echo [3/8] Running frontend tests...
 call npm test >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :tests_failed
 
-echo [4/7] Building portable desktop exe...
+echo [4/8] Building Python sidecar exe...
+"%BACKEND_PYTHON%" scripts\build_sidecar.py >> "%LOGFILE%" 2>&1
+if errorlevel 1 goto :sidecar_build_failed
+
+echo [5/8] Building portable desktop exe...
 call npm run tauri:build:portable >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :build_failed
 
-echo [5/7] Locating packaged executable...
+echo [6/8] Locating packaged executable...
 if exist "%ROOT_DIR%\src-tauri\target\x86_64-pc-windows-msvc\release\%PACKAGED_EXE_NAME%" (
     set "PACKAGED_EXE=%ROOT_DIR%\src-tauri\target\x86_64-pc-windows-msvc\release\%PACKAGED_EXE_NAME%"
 )
@@ -80,11 +84,11 @@ copy /y "%PACKAGED_EXE%" "%OUTPUT_EXE%" >nul
 if errorlevel 1 goto :copy_failed
 echo [INFO] Copied packaged exe to %OUTPUT_EXE% >> "%LOGFILE%"
 
-echo [6/7] Running packaged self-test...
+echo [7/8] Running packaged self-test...
 "%OUTPUT_EXE%" --self-test >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :selftest_failed
 
-echo [7/7] Running packaged backend self-test...
+echo [8/8] Running packaged backend self-test...
 "%OUTPUT_EXE%" --self-test-backend >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :backend_selftest_failed
 
@@ -132,6 +136,12 @@ goto :fail
 echo [ERROR] npm test failed. >> "%LOGFILE%"
 echo.
 echo [FAILED] Frontend tests failed. See log for details.
+goto :fail
+
+:sidecar_build_failed
+echo [ERROR] Python sidecar build failed. >> "%LOGFILE%"
+echo.
+echo [FAILED] Sidecar PyInstaller build failed. See log for details.
 goto :fail
 
 :build_failed

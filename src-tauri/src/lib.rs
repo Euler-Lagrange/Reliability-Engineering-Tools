@@ -582,23 +582,39 @@ fn resolve_sidecar_script() -> Result<PathBuf, String> {
         .ok_or_else(|| "Could not locate backend/python/sidecar_main.py for the desktop bridge.".to_string())
 }
 
-fn spawn_managed_sidecar(shared: Arc<SessionShared>) -> Result<ManagedSidecar, String> {
-    let python = resolve_python_interpreter();
-    let script = resolve_sidecar_script()?;
+fn resolve_bundled_sidecar() -> Option<PathBuf> {
+    find_existing_relative("reliability-tools-sidecar.exe")
+}
 
-    let mut child = Command::new(&python)
-        .arg(&script)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| {
-            format!(
-                "Failed to start python sidecar using '{}' and '{}': {error}",
-                python.display(),
-                script.display()
-            )
-        })?;
+fn spawn_managed_sidecar(shared: Arc<SessionShared>) -> Result<ManagedSidecar, String> {
+    let mut child = if let Some(bundled) = resolve_bundled_sidecar() {
+        // Production: bundled PyInstaller sidecar exe
+        Command::new(&bundled)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| {
+                format!("Failed to start bundled sidecar '{}': {error}", bundled.display())
+            })?
+    } else {
+        // Development: python interpreter + script
+        let python = resolve_python_interpreter();
+        let script = resolve_sidecar_script()?;
+        Command::new(&python)
+            .arg(&script)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| {
+                format!(
+                    "Failed to start python sidecar using '{}' and '{}': {error}",
+                    python.display(),
+                    script.display()
+                )
+            })?
+    };
 
     let stdin = child
         .stdin
