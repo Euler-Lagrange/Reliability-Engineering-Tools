@@ -18,6 +18,7 @@ import { useResolvedTheme } from "../../shared/theme/ThemeController";
 import { useShellStore } from "../../stores/shellStore";
 import { backendClient } from "../../shared/backend/client";
 import { useNotificationStore } from "../../stores/notificationStore";
+import styles from "./SettingsTool.module.css";
 
 const themeOptions: Array<{ id: ThemeMode; label: string; description: string; icon: typeof Sun }> = [
   { id: "system", label: "System", description: "Follow your OS preference.", icon: Desktop },
@@ -77,82 +78,59 @@ export function SettingsTool() {
         <section className="workspace-grid workspace-grid--single">
           <div className="workspace-grid__main">
             <SectionCard title="Theme" eyebrow="Appearance">
-              <div className="setup-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "0.75rem" }}>
+              <div className={styles.themeGrid}>
                 {themeOptions.map((option) => {
                   const isSelected = themeMode === option.id;
                   const Icon = option.icon;
+                  const classes = isSelected
+                    ? `${styles.themeOption} ${styles.themeOptionSelected}`
+                    : styles.themeOption;
                   return (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => setThemeMode(option.id)}
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "flex-start",
-                        gap: "0.5rem",
-                        padding: "1rem",
-                        border: isSelected ? "2px solid var(--accent)" : "1px solid var(--line)",
-                        borderRadius: "0.5rem",
-                        background: isSelected ? "var(--surface-muted)" : "var(--surface)",
-                        cursor: "pointer",
-                        textAlign: "left",
-                        transition: "border-color 0.15s, background 0.15s",
-                      }}
-                    >
-                      <Icon size={20} weight={isSelected ? "fill" : "regular"} style={{ color: isSelected ? "var(--accent)" : "var(--text-secondary)" }} />
-                      <span style={{ fontWeight: 600, fontSize: "0.875rem", color: "var(--text)" }}>{option.label}</span>
-                      <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>{option.description}</span>
+                    <button key={option.id} type="button" className={classes} onClick={() => setThemeMode(option.id)}>
+                      <Icon
+                        size={20}
+                        weight={isSelected ? "fill" : "regular"}
+                        style={{ color: isSelected ? "var(--accent)" : "var(--text-secondary)" }}
+                      />
+                      <span className={styles.themeOptionLabel}>{option.label}</span>
+                      <span className={styles.themeOptionDesc}>{option.description}</span>
                     </button>
                   );
                 })}
               </div>
-              <p style={{ marginTop: "0.75rem", fontSize: "0.75rem", color: "var(--text-muted)" }}>
+              <p className={styles.activeNote}>
                 Active theme: <strong>{resolvedTheme.replace(/_/g, " ")}</strong>
                 {themeMode === "system" ? " (following system)" : ""}
               </p>
             </SectionCard>
 
             <SectionCard title="Backend Diagnostics" eyebrow="Connection">
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
-                  <div>
-                    <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>Status</p>
-                    <p style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--text)" }}>{backendStatus}</p>
+              <div className={styles.diagnosticStack}>
+                <div className={styles.diagnosticGrid}>
+                  <div className={styles.diagnosticField}>
+                    <p className={styles.diagnosticLabel}>Status</p>
+                    <p className={styles.diagnosticValue}>{backendStatus}</p>
                   </div>
-                  <div>
-                    <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>Mode</p>
-                    <p style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--text)" }}>{backendMode}</p>
+                  <div className={styles.diagnosticField}>
+                    <p className={styles.diagnosticLabel}>Mode</p>
+                    <p className={styles.diagnosticValue}>{backendMode}</p>
                   </div>
-                  <div style={{ gridColumn: "1 / -1" }}>
-                    <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>Message</p>
-                    <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>{backendMessage ?? "No message"}</p>
+                  <div className={styles.diagnosticFieldWide}>
+                    <p className={styles.diagnosticLabel}>Message</p>
+                    <p className={styles.diagnosticMessage}>{backendMessage ?? "No message"}</p>
                   </div>
                   {lastBackendCheckAt && (
-                    <div style={{ gridColumn: "1 / -1" }}>
-                      <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>Last check</p>
-                      <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>{new Date(lastBackendCheckAt).toLocaleString()}</p>
+                    <div className={styles.diagnosticFieldWide}>
+                      <p className={styles.diagnosticLabel}>Last check</p>
+                      <p className={styles.diagnosticMessage}>{new Date(lastBackendCheckAt).toLocaleString()}</p>
                     </div>
                   )}
                 </div>
                 <button
                   type="button"
+                  className={styles.healthButton}
                   onClick={handleHealthCheck}
                   disabled={isCheckingHealth}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "0.5rem",
-                    padding: "0.5rem 1rem",
-                    border: "1px solid var(--line)",
-                    borderRadius: "0.375rem",
-                    background: "var(--surface)",
-                    color: "var(--text)",
-                    cursor: isCheckingHealth ? "wait" : "pointer",
-                    fontSize: "0.8rem",
-                    fontWeight: 500,
-                    alignSelf: "flex-start",
-                  }}
                 >
                   <ArrowClockwise size={16} className={isCheckingHealth ? "spin" : ""} />
                   {isCheckingHealth ? "Checking..." : "Run health check"}
@@ -161,26 +139,26 @@ export function SettingsTool() {
             </SectionCard>
 
             <SectionCard title="About" eyebrow="Application">
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
-                  <div>
-                    <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>Application</p>
-                    <p style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--text)" }}>Reliability Tools Desktop</p>
+              <div className={styles.aboutStack}>
+                <div className={styles.aboutGrid}>
+                  <div className={styles.diagnosticField}>
+                    <p className={styles.diagnosticLabel}>Application</p>
+                    <p className={styles.diagnosticValue}>Reliability Tools Desktop</p>
                   </div>
-                  <div>
-                    <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>Platform</p>
-                    <p style={{ fontSize: "0.875rem", fontWeight: 600, color: "var(--text)" }}>Tauri + React</p>
+                  <div className={styles.diagnosticField}>
+                    <p className={styles.diagnosticLabel}>Platform</p>
+                    <p className={styles.diagnosticValue}>Tauri + React</p>
                   </div>
-                  <div>
-                    <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>Shell version</p>
-                    <p style={{ fontSize: "0.875rem", color: "var(--text)" }}>0.1.0</p>
+                  <div className={styles.diagnosticField}>
+                    <p className={styles.diagnosticLabel}>Shell version</p>
+                    <p className={styles.diagnosticValue}>0.1.0</p>
                   </div>
-                  <div>
-                    <p style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginBottom: "0.25rem" }}>Protocol</p>
-                    <p style={{ fontSize: "0.875rem", color: "var(--text)" }}>NDJSON v0.1.0</p>
+                  <div className={styles.diagnosticField}>
+                    <p className={styles.diagnosticLabel}>Protocol</p>
+                    <p className={styles.diagnosticValue}>NDJSON v0.1.0</p>
                   </div>
                 </div>
-                <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: "0.25rem", marginTop: "0.5rem" }}>
+                <p className={styles.aboutFooter}>
                   <Heart size={12} weight="fill" style={{ color: "var(--accent)" }} />
                   Built by Reliability Engineering
                 </p>

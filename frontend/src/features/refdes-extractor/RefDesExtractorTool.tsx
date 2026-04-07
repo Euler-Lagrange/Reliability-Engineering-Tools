@@ -535,14 +535,15 @@ export function RefDesExtractorTool() {
                         data-active={options.extraction_mode === mode}
                         onClick={() => setOptions((prev) => ({ ...prev, extraction_mode: mode }))}
                         style={{
-                          padding: "0.25rem 0.75rem",
-                          borderRadius: "1rem",
-                          border: options.extraction_mode === mode ? "1px solid var(--accent)" : "1px solid var(--border)",
+                          padding: "4px 12px",
+                          borderRadius: "999px",
+                          border: options.extraction_mode === mode ? "1px solid var(--accent)" : "1px solid var(--line)",
                           background: options.extraction_mode === mode ? "var(--accent)" : "transparent",
-                          color: options.extraction_mode === mode ? "var(--on-accent, #fff)" : "var(--text-primary)",
+                          color: options.extraction_mode === mode ? "#ffffff" : "var(--text)",
                           cursor: "pointer",
-                          fontSize: "0.8125rem",
-                          fontWeight: 500,
+                          fontSize: "var(--text-base)",
+                          fontWeight: "var(--weight-medium)",
+                          fontFamily: "inherit",
                         }}
                       >
                         {mode === "functional" ? "Functional" : "Piece-Part"}
