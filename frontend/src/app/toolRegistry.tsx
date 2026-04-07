@@ -1,11 +1,11 @@
 import { lazy, type LazyExoticComponent, type ComponentType } from "react";
 import type { Icon } from "@phosphor-icons/react";
 import {
-  ArrowsLeftRight,
-  Gauge,
-  GearSix,
-  MagnifyingGlass,
-  ShieldChevron,
+  Cpu,
+  Faders,
+  GitDiff,
+  Pulse,
+  TreeStructure,
 } from "@phosphor-icons/react";
 import type { ToolId } from "../stores/shellStore";
 
@@ -49,7 +49,7 @@ export const toolDefinitions: ToolDefinition[] = [
     label: "FMEA",
     eyebrow: "Active tool",
     description: "Generate piece-part FMEA workbooks from grouping, BOM, and failure mode sources.",
-    icon: ShieldChevron,
+    icon: TreeStructure,
     status: "active",
     component: FmeaTool,
   },
@@ -58,7 +58,7 @@ export const toolDefinitions: ToolDefinition[] = [
     label: "Compare",
     eyebrow: "Active tool",
     description: "Compare grouping files or two BOMs to find missing, extra, and mismatched RefDes.",
-    icon: ArrowsLeftRight,
+    icon: GitDiff,
     status: "active",
     component: BomCompareTool,
   },
@@ -67,7 +67,7 @@ export const toolDefinitions: ToolDefinition[] = [
     label: "Rates",
     eyebrow: "Active tool",
     description: "Link prediction failure rates to FMEA failure modes with configurable unit conversion.",
-    icon: Gauge,
+    icon: Pulse,
     status: "active",
     component: FailureRateTool,
   },
@@ -76,7 +76,7 @@ export const toolDefinitions: ToolDefinition[] = [
     label: "RefDes",
     eyebrow: "Active tool",
     description: "Extract and verify RefDes from annotated schematic PDFs with adaptive geometry analysis.",
-    icon: MagnifyingGlass,
+    icon: Cpu,
     status: "active",
     component: RefDesTool,
   },
@@ -85,7 +85,7 @@ export const toolDefinitions: ToolDefinition[] = [
     label: "Settings",
     eyebrow: "Platform",
     description: "Theme selection, backend diagnostics, and application info.",
-    icon: GearSix,
+    icon: Faders,
     status: "active",
     component: SettingsTool,
   },
