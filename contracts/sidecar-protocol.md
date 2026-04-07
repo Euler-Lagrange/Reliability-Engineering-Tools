@@ -215,8 +215,24 @@ command (execute_run)
 
 **`backend_error`** — terminal event on unhandled backend failure.
 ```json
-{ "message": "Error description" }
+{
+  "message": "Error description",
+  "code": "ValueError",
+  "traceback": "Traceback (most recent call last):\n  File \"...\", line N, in ...\n    ...\nValueError: ..."
+}
 ```
+
+The `code` and `traceback` fields are optional and were added in 0.2.2.
+`code` is a stable identifier (typically the Python exception type name)
+that the frontend can use to map to user-facing copy. `traceback` is the
+full Python stack trace formatted via `traceback.format_exc()` so
+operators can copy/paste it into a bug report. Older sidecars may omit
+both fields; consumers must treat them as optional.
+
+When a run fails, the sidecar also streams every traceback line as a
+`log` envelope (with `level: "error"`) before emitting `backend_error`,
+so the run-log panel shows the trace inline even if the user does not
+expand the error block.
 
 ### Cancellation flow
 

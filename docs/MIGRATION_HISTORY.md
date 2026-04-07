@@ -109,6 +109,8 @@ from the Tauri app.
 - Template-preserved write path wired via `analyze_template()` +
   `write_template_preserved()`
 - Desktop build verified with Rust 1.94.1 (portable artifact: 9.2 MB)
+  *(Phase 4 snapshot — the final 0.2.0 release ships ~9 MB shell **plus**
+  ~53 MB PyInstaller sidecar; see `CHANGELOG.md` 0.2.0.)*
 - Protocol documentation updated to cover the streamed run contract
 
 ## Phase 5: Hardening and Heartbeat Supervision

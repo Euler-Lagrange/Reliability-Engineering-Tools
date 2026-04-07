@@ -51,8 +51,8 @@ npm run tauri:dev              # Desktop with hot reload
 
 ```powershell
 npm run typecheck              # TypeScript type checking
-npm test                       # Frontend tests (5 tests)
-.venv\Scripts\python.exe -m pytest backend\tests -v   # Backend tests (27 tests)
+npm test                       # Frontend tests (28 tests across shell, lifecycle, theme registry, role sequence)
+.venv\Scripts\python.exe -m pytest backend\tests -v   # Backend tests (~70 tests across sidecar, audit, cancel bridge, exception envelopes)
 ```
 
 ### Build
@@ -83,4 +83,4 @@ NDJSON over stdio between Rust and Python. Commands: `health_check`, `list_sheet
 
 ## Project Status
 
-All 5 tools are active with backend runtime adapters, React frontends, and integration tests. See `PHASED_MIGRATION_STATUS.md` for detailed phase history.
+All 5 tools are active with backend runtime adapters, React frontends, and integration tests. See `docs/MIGRATION_HISTORY.md` for the completed phase log and `docs/CHANGELOG.md` for release notes.

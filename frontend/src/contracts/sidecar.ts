@@ -137,6 +137,10 @@ export const runLogPayloadSchema = z.object({
 
 export const runBackendErrorPayloadSchema = z.object({
   message: z.string(),
+  // Optional fields added in 0.2.2: a stable error code (typically the
+  // exception type name) and the full Python traceback for debugging.
+  code: z.string().optional(),
+  traceback: z.string().optional(),
 });
 
 export const runCancelledPayloadSchema = z.object({
@@ -200,6 +204,14 @@ export const backendSessionEventSchema = z.object({
   backend: z.string(),
   message: z.string(),
 });
+
+export const backendSessionStatusResultSchema = z.object({
+  connected: z.boolean(),
+  backend: z.string(),
+  mode: backendModeSchema,
+});
+
+export type BackendSessionStatusResult = z.infer<typeof backendSessionStatusResultSchema>;
 
 export const executeRunResultSchema = z.object({
   status: z.enum(["success", "failure"]),

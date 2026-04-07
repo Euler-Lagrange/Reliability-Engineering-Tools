@@ -897,6 +897,15 @@ def test_sidecar_execute_emits_backend_error_on_missing_columns(tmp_path: Path) 
 
         assert terminal["kind"] == "backend_error"
         assert terminal["payload"]["message"]  # non-empty error message
+        # Phase 5: backend_error must carry an error code and a traceback so
+        # the UI can show the user something actionable.
+        assert "code" in terminal["payload"], "backend_error missing 'code' field"
+        assert isinstance(terminal["payload"]["code"], str)
+        assert terminal["payload"]["code"]  # non-empty
+        assert "traceback" in terminal["payload"], "backend_error missing 'traceback' field"
+        assert isinstance(terminal["payload"]["traceback"], str)
+        # The traceback should contain at least the conventional header.
+        assert "Traceback" in terminal["payload"]["traceback"]
     finally:
         process.kill()
 
@@ -1386,5 +1395,359 @@ def test_sidecar_rejects_refdes_missing_pdf(tmp_path: Path) -> None:
         result = _send_command(process, "req_val_rd_nopdf", "validate_run", body)
         assert result["payload"]["ok"] is False
         assert result["payload"]["reason_code"] == "missing_files"
+    finally:
+        process.kill()
+
+
+# =========================================================================
+# BOM Compare and RefDes cancellation tests
+#
+# These regression tests guard against the _CancelBridge wiring bug where
+# the bridge's CancellationToken and stop_event were independent
+# threading.Events: cancelling the token would NOT set the stop_event the
+# inner helpers checked. The bridges now share a single underlying Event
+# (see ``backend/python/bom_compare/runtime.py::_CancelBridge`` and the
+# RefDes equivalent), so cancel propagates end-to-end. The unit test in
+# ``backend/tests/test_cancel_bridge.py`` covers the wiring directly; the
+# tests below cover the full sidecar→ActiveRun→bridge→inner-loop path.
+# =========================================================================
+
+
+def _build_large_bom_compare_group_body(tmp_path: Path, *, group_rows: int = 4000) -> dict:
+    """Build a BOM compare body large enough to take >1s so we can cancel it."""
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    grouping_path = tmp_path / "grouping.xlsx"
+    bom_path = tmp_path / "bom.xlsx"
+
+    # group_rows grouping rows, each with refdes range R{n}-R{n}, so the
+    # exploder has work to do. The BOM mirrors the same refdes set so the
+    # comparison has to scan and match every entry.
+    grouping_df = pd.DataFrame([
+        {
+            "Component Group": f"GRP-{i:05d}",
+            "Reference Designator": f"R{i:05d}",
+            "Function Description": "Synthetic group for cancel test",
+        }
+        for i in range(group_rows)
+    ])
+    grouping_df.to_excel(grouping_path, index=False)
+
+    bom_df = pd.DataFrame([
+        {
+            "Reference Designator": f"R{i:05d}",
+            "Part Number": f"PN-{i:05d}",
+            "Description": f"Synthetic resistor {i}",
+        }
+        for i in range(group_rows)
+    ])
+    bom_df.to_excel(bom_path, index=False)
+
+    def input_state(role, label, path):
+        return {
+            "role": role, "label": label, "path": str(path), "selectedSheet": "Sheet1",
+            "source": "desktop-bridge", "isResolvingSheets": False, "isAnalyzing": False,
+            "resolutionError": None, "sheets": [{"id": "s1", "label": "Sheet1"}],
+        }
+
+    return {
+        "workflowId": "bom_compare_group",
+        "outputStrategyId": "new_workbook_standard",
+        "enrichments": {"functional": False, "piecePart": False},
+        "inputs": [
+            input_state("grouping", "Grouping workbook", grouping_path),
+            input_state("bom", "BOM workbook", bom_path),
+        ],
+        "mappings": [
+            {"canonical": "grouping_group_col", "mappedTo": "Component Group", "status": "mapped"},
+            {"canonical": "grouping_refdes_col", "mappedTo": "Reference Designator", "status": "mapped"},
+            {"canonical": "bom_refdes_col", "mappedTo": "Reference Designator", "status": "mapped"},
+            {"canonical": "bom_desc_col", "mappedTo": "Description", "status": "mapped"},
+        ],
+        "options": {},
+    }
+
+
+def test_sidecar_cancels_active_bom_compare_run(tmp_path: Path) -> None:
+    """Cancellation must reach the BOM Compare ``stop_event``.
+
+    Regression for the _CancelBridge wiring bug. Before the fix, the
+    sidecar would emit a ``cancelling`` status but the BOM compare engine
+    would continue to a ``success`` terminal because its ``stop_event``
+    was a separate threading.Event from the CancellationToken's event.
+    """
+    body = _build_large_bom_compare_group_body(tmp_path / "bom_cancel", group_rows=4000)
+
+    process = subprocess.Popen(
+        [sys.executable, str(SIDECAR)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        env=SIDECAR_ENV,
+    )
+    try:
+        _read_ready_line(process)
+        ack = _send_command(process, "req_exec_bcg_cancel", "execute_run", body)
+        assert ack["kind"] == "ack"
+        run_id = ack["payload"]["run_id"]
+
+        # Send cancel as soon as we have the ack. With 4000 rows the run
+        # should still be in progress.
+        cancel = _send_command(process, "req_cancel_bcg", "cancel_run", {"run_id": run_id})
+        assert cancel["kind"] == "result"
+        assert cancel["payload"]["status"] == "cancelling"
+
+        # Drain run events until we hit a terminal envelope.
+        terminal = _read_until(process, run_id=run_id, timeout=30.0)
+        while terminal["kind"] not in {"cancelled", "result", "backend_error"}:
+            terminal = _read_until(process, run_id=run_id, timeout=30.0)
+
+        assert terminal["kind"] == "cancelled", (
+            f"BOM Compare run reached terminal '{terminal['kind']}' instead of "
+            f"'cancelled' after a cancel_run was accepted. This is the exact "
+            f"failure mode of the _CancelBridge wiring bug."
+        )
+        assert "cancel" in terminal["payload"]["message"].lower()
+    finally:
+        process.kill()
+
+
+def _build_multi_annot_refdes_body(tmp_path: Path, *, annot_count: int = 200) -> dict:
+    """Build a refdes_extract body with many annotations to give time to cancel."""
+    fitz = __import__("pytest").importorskip("fitz")
+
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    pdf_path = tmp_path / "schematic.pdf"
+    bom_path = tmp_path / "bom.xlsx"
+
+    # Multi-page PDF with many FreeText annotations across pages so the
+    # extraction loop has to traverse a lot of geometry before finishing.
+    doc = fitz.open()
+    pages_needed = max(1, annot_count // 20)
+    for page_idx in range(pages_needed):
+        page = doc.new_page(width=612, height=792)
+        per_page = annot_count // pages_needed
+        for i in range(per_page):
+            row = i % 10
+            col = i // 10
+            x0 = 50 + col * 60
+            y0 = 50 + row * 30
+            page.add_freetext_annot(
+                fitz.Rect(x0, y0, x0 + 55, y0 + 25),
+                f"R{page_idx * 100 + i:04d}",
+                fontsize=10,
+            )
+    doc.save(str(pdf_path))
+    doc.close()
+
+    bom_df = pd.DataFrame({"Reference Designator": [f"R{i:04d}" for i in range(annot_count)]})
+    bom_df.to_excel(bom_path, index=False)
+
+    return {
+        "workflowId": "refdes_extract",
+        "outputStrategyId": "new_workbook_standard",
+        "enrichments": {"functional": False, "piecePart": False},
+        "inputs": [
+            {
+                "role": "pdf",
+                "label": "Schematic PDF",
+                "path": str(pdf_path),
+                "selectedSheet": "",
+                "source": "desktop-bridge",
+                "isResolvingSheets": False,
+                "isAnalyzing": False,
+                "resolutionError": None,
+                "sheets": [],
+            },
+            {
+                "role": "bom",
+                "label": "BOM workbook",
+                "path": str(bom_path),
+                "selectedSheet": "Sheet1",
+                "source": "desktop-bridge",
+                "isResolvingSheets": False,
+                "isAnalyzing": False,
+                "resolutionError": None,
+                "sheets": [{"id": "s1", "label": "Sheet1"}],
+            },
+        ],
+        "mappings": [],
+        "options": {"extraction_mode": "functional", "backend_mode": "auto"},
+    }
+
+
+def test_sidecar_cancels_active_refdes_run(tmp_path: Path) -> None:
+    """Cancellation must reach the RefDes extraction ``stop_event``.
+
+    Regression for the _CancelBridge wiring bug. The RefDes runtime uses
+    the same dual-event bridge pattern as BOM Compare and was previously
+    only partially honoring cancellation (the explicit ``bridge.cancel.check()``
+    after annotation extraction would fire, but the ``stop_event``-driven
+    inner helpers would not).
+    """
+    body = _build_multi_annot_refdes_body(tmp_path / "refdes_cancel", annot_count=400)
+
+    process = subprocess.Popen(
+        [sys.executable, str(SIDECAR)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        env=SIDECAR_ENV,
+    )
+    try:
+        _read_ready_line(process)
+        ack = _send_command(process, "req_exec_rd_cancel", "execute_run", body)
+        assert ack["kind"] == "ack"
+        run_id = ack["payload"]["run_id"]
+
+        cancel = _send_command(process, "req_cancel_rd", "cancel_run", {"run_id": run_id})
+        assert cancel["kind"] == "result"
+        assert cancel["payload"]["status"] == "cancelling"
+
+        terminal = _read_until(process, run_id=run_id, timeout=60.0)
+        while terminal["kind"] not in {"cancelled", "result", "backend_error"}:
+            terminal = _read_until(process, run_id=run_id, timeout=60.0)
+
+        assert terminal["kind"] == "cancelled", (
+            f"RefDes run reached terminal '{terminal['kind']}' instead of "
+            f"'cancelled' after a cancel_run was accepted. This is the exact "
+            f"failure mode of the _CancelBridge wiring bug."
+        )
+        assert "cancel" in terminal["payload"]["message"].lower()
+    finally:
+        process.kill()
+
+
+# =========================================================================
+# Sidecar exception envelope tests
+#
+# These regression tests cover the failure modes where ordinary user
+# errors (moved/corrupt files, malformed payloads) used to crash the
+# entire sidecar process. Every command branch must now return an
+# ``error`` envelope on exception and remain alive for follow-up traffic.
+# =========================================================================
+
+
+def test_sidecar_list_sheets_returns_error_for_missing_file(tmp_path: Path) -> None:
+    process = subprocess.Popen(
+        [sys.executable, str(SIDECAR)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        env=SIDECAR_ENV,
+    )
+    try:
+        _read_ready_line(process)
+        missing_path = str(tmp_path / "does_not_exist.xlsx")
+        result = _send_command(process, "req_ls_missing", "list_sheets", {"path": missing_path})
+        assert result["kind"] == "error"
+        assert result["payload"]["message"]
+
+        # Sidecar must still be alive and responsive after the error.
+        health = _send_command(process, "req_health_after_ls", "health_check", {})
+        assert health["kind"] == "result"
+        assert health["payload"]["status"] == "ok"
+    finally:
+        process.kill()
+
+
+def test_sidecar_list_sheets_returns_error_for_corrupt_file(tmp_path: Path) -> None:
+    corrupt_path = tmp_path / "garbage.xlsx"
+    corrupt_path.write_bytes(b"this is not a real xlsx file at all")
+
+    process = subprocess.Popen(
+        [sys.executable, str(SIDECAR)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        env=SIDECAR_ENV,
+    )
+    try:
+        _read_ready_line(process)
+        result = _send_command(process, "req_ls_corrupt", "list_sheets", {"path": str(corrupt_path)})
+        assert result["kind"] == "error"
+        assert result["payload"]["message"]
+
+        # Sidecar must still be alive after the error.
+        health = _send_command(process, "req_health_after_corrupt", "health_check", {})
+        assert health["kind"] == "result"
+    finally:
+        process.kill()
+
+
+def test_sidecar_execute_run_returns_error_when_validate_raises() -> None:
+    """If route_validate raises (e.g. malformed body), execute_run must
+    emit an ``error`` envelope before any ack and the sidecar must stay alive."""
+    process = subprocess.Popen(
+        [sys.executable, str(SIDECAR)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        env=SIDECAR_ENV,
+    )
+    try:
+        _read_ready_line(process)
+        # A body with no inputs/mappings/options will likely raise inside
+        # one of the runtime validators rather than return a clean ok=False.
+        body = {"workflowId": "piece_part_generate"}
+        result = _send_command(process, "req_exec_bad_body", "execute_run", body)
+        # The result is either a normal validation rejection (kind=error,
+        # validation rejection path) or an exception envelope (kind=error,
+        # exception path). Either way it must be an error and the sidecar
+        # must remain alive.
+        assert result["kind"] == "error"
+        assert result["payload"]["message"]
+
+        health = _send_command(process, "req_health_after_exec", "health_check", {})
+        assert health["kind"] == "result"
+        assert health["payload"]["status"] == "ok"
+    finally:
+        process.kill()
+
+
+def test_sidecar_survives_malformed_envelope() -> None:
+    """A malformed JSON line on stdin must not kill the sidecar."""
+    process = subprocess.Popen(
+        [sys.executable, str(SIDECAR)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        env=SIDECAR_ENV,
+    )
+    try:
+        _read_ready_line(process)
+        # Send a malformed line directly (not via _send_command which
+        # builds a proper envelope).
+        process.stdin.write("this is not json at all\n")
+        process.stdin.flush()
+        # Drain the error envelope from the malformed line.
+        # Use the shared reader and look for any error envelope.
+        reader = _get_reader(process)
+        # Wait briefly for the error envelope.
+        import time as _time
+        deadline = _time.monotonic() + 5.0
+        saw_error = False
+        while _time.monotonic() < deadline and not saw_error:
+            try:
+                line = reader._queue.get(timeout=0.5).strip()
+            except Exception:
+                continue
+            if not line:
+                continue
+            msg = json.loads(line)
+            if msg.get("kind") == "error" and "Malformed" in msg["payload"].get("message", ""):
+                saw_error = True
+                break
+        assert saw_error, "Expected an 'error' envelope for the malformed line"
+
+        # Sidecar must still respond to a normal command afterward.
+        health = _send_command(process, "req_health_after_malformed", "health_check", {})
+        assert health["kind"] == "result"
+        assert health["payload"]["status"] == "ok"
     finally:
         process.kill()

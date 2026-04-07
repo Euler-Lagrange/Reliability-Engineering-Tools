@@ -70,7 +70,7 @@ npm run tauri:dev        # Dev mode with hot reload
 npm run tauri:build:portable  # Release build → src-tauri/target/.../release/
 
 # Python sidecar (use project venv)
-.venv\Scripts\python.exe -m pytest backend/tests -v    # 27 integration tests
+.venv\Scripts\python.exe -m pytest backend/tests -v    # 44 backend tests (27 sidecar + 17 audit)
 .venv\Scripts\python.exe backend/python/sidecar_main.py --self-test
 
 # Full release
@@ -110,21 +110,48 @@ Each tool component uses:
 
 ## Python Import Policy
 
-- All backend Python imports resolve from `backend/python/` (the sidecar CWD)
+- All backend Python imports resolve from `backend/python/`. Python adds the
+  script's parent directory to `sys.path` automatically when the sidecar is
+  invoked as `python backend/python/sidecar_main.py`. The Rust bridge does
+  **not** call `current_dir()` on the spawn — the import root comes from
+  the script path, not the working directory.
 - `common/` is a self-contained package — no external dependencies
 - Tool packages import from `common` and from each other (e.g., `refdes_test` → `refdes_extractor`)
-- **No `sys.path` manipulation** — all imports are direct
+- **No manual `sys.path` manipulation in production code** — all imports are direct
 
 ## Security
 
-- Offline/air-gapped — no network imports in Python backend
-- `common/security_audit.py` blocks network/database/unauthorized subprocess imports
-- Subprocess allowlist: `attrib`, `powershell`, `start`, `python`, `pythonw`
+The sidecar is offline / air-gapped and the policy is enforced statically by
+`backend/python/common/security_audit.py`, which AST-walks every `.py` file
+under `backend/python/` and reports:
+
+1. Imports of network modules (`socket`, `urllib.request`, `http.client`,
+   `requests`, `httpx`, ...). Pure-string helpers like `urllib.parse` are
+   intentionally permitted.
+2. Imports of database modules (`sqlite3`, `psycopg`, `pymongo`,
+   `sqlalchemy`, ...).
+3. `subprocess.*` calls whose statically-resolvable command head is not in
+   the allowlist below.
+
+**Subprocess allowlist:** `attrib`, `powershell`, `start`, `python`, `pythonw`.
+The only command actually invoked today is `attrib` (in `common/utils.py`,
+for OneDrive cloud-file detection and hydration); the rest are reserved for
+vetted helpers.
+
+The audit runs:
+
+- As a regression test: `pytest backend/tests/test_security_audit.py`
+- During the sidecar self-test: `python backend/python/sidecar_main.py --self-test`
+- On demand from the CLI: `python -m common.security_audit --root backend/python --strict`
+  (must be run with `backend/python` as the working directory so that
+  `common` resolves as a top-level package)
 
 ## Testing
 
-### Backend Tests (27 integration tests)
-- Subprocess-based: spawn sidecar, send NDJSON commands, verify responses
+### Backend Tests (44 total)
+- 27 sidecar integration tests in `test_sidecar_main.py`
+- 17 security-audit tests in `test_security_audit.py` (synthetic positives + live tree scan)
+- Sidecar tests are subprocess-based: spawn sidecar, send NDJSON commands, verify responses
 - `stderr=subprocess.DEVNULL` to avoid Windows pipe buffer deadlock
 - `SIDECAR_HEARTBEAT_INTERVAL=9999` suppresses heartbeats during tests
 - `SIDECAR_LOG_LEVEL=CRITICAL` suppresses file logging

@@ -10,9 +10,15 @@ interface RunStatePanelProps {
   cancelledNotice: string | null;
   cancelPending: boolean;
   logLines?: string[];
+  /** Number of log lines that were dropped from the start of the buffer. */
+  truncatedLogCount?: number;
   startLabel?: string;
   runId?: string | null;
   statusMessage?: string | null;
+  /** Stable error code from the backend (typically the exception type). */
+  errorCode?: string | null;
+  /** Full Python traceback for the error, if available. */
+  errorTraceback?: string | null;
 }
 
 export function RunStatePanel({
@@ -25,9 +31,12 @@ export function RunStatePanel({
   cancelledNotice,
   cancelPending,
   logLines = [],
+  truncatedLogCount = 0,
   startLabel = "Start demo run",
   runId = null,
   statusMessage = null,
+  errorCode = null,
+  errorTraceback = null,
 }: RunStatePanelProps) {
   const isBusy = runMode === "starting" || runMode === "running" || runMode === "cancelling";
   const canCancel = runMode === "starting" || runMode === "running";
@@ -86,6 +95,15 @@ export function RunStatePanel({
             <strong>Execution log</strong>
             <span>{logLines.length} entries</span>
           </div>
+          {truncatedLogCount > 0 ? (
+            <p
+              className="execution-log__truncation"
+              aria-live="polite"
+              title="Earlier lines were dropped from the in-memory buffer; the full log is in ~/.reliability_tools/logs/"
+            >
+              … {truncatedLogCount} earlier line{truncatedLogCount === 1 ? "" : "s"} hidden — full log in ~/.reliability_tools/logs/
+            </p>
+          ) : null}
           <div className="execution-log__body">
             {logLines.map((line, index) => (
               <div key={`${index}-${line}`} className="execution-log__line">
@@ -93,6 +111,30 @@ export function RunStatePanel({
               </div>
             ))}
           </div>
+        </section>
+      ) : null}
+
+      {(errorCode || errorTraceback) && runMode === "failure" ? (
+        <section className="run-error" aria-label="Run failure details">
+          <div className="run-error__header">
+            <strong>Backend error</strong>
+            {errorCode ? <code className="run-error__code">{errorCode}</code> : null}
+          </div>
+          {errorTraceback ? (
+            <details className="run-error__details">
+              <summary>Show traceback</summary>
+              <pre className="run-error__traceback">{errorTraceback}</pre>
+              <button
+                type="button"
+                className="ghost-button run-error__copy"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(errorTraceback);
+                }}
+              >
+                Copy traceback
+              </button>
+            </details>
+          ) : null}
         </section>
       ) : null}
 

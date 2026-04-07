@@ -123,9 +123,13 @@ surface as runtime errors rather than compile-time errors.
 link would fail silently on customer machines and fall back to system
 fonts, producing inconsistent rendering across Windows versions.
 
-**Decision.** Self-host Inter and JetBrains Mono variable fonts as woff2
-and ttf under `frontend/public/fonts/`. Load them via `@font-face` in the
-app's base stylesheet.
+**Decision.** Self-host the Inter variable font as `Inter-Variable.woff2`
+and the JetBrains Mono variable font as `JetBrainsMono-Variable.ttf` under
+`frontend/public/fonts/`. Each font ships in a single format because both
+are loaded directly via `@font-face` in `frontend/src/theme/styles.css` —
+there is no fallback chain, so the smaller file size of the woff2 build is
+preferred where the upstream project distributes one (Inter), and the
+upstream ttf is used where it does not (JetBrains Mono).
 
 **Consequences.** Consistent typography on every machine regardless of
 network state. Bundle size increased by roughly 655 KB, which is

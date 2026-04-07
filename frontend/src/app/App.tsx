@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { Command, Desktop, MoonStars, Sparkle, Sun, WarningCircle } from "@phosphor-icons/react";
+import { Command, Sparkle, WarningCircle } from "@phosphor-icons/react";
 import styles from "./AppShell.module.css";
 import { toolDefinitions } from "./toolRegistry";
 import { ErrorBoundary } from "../shared/errors/ErrorBoundary";
@@ -7,15 +7,9 @@ import { useBackendBootstrap } from "../shared/backend/useBackendBootstrap";
 import { useAppShortcuts } from "../shared/hooks/useAppShortcuts";
 import { NotificationCenter } from "../shared/notifications/NotificationCenter";
 import { ThemeController, useResolvedTheme } from "../shared/theme/ThemeController";
+import { RAIL_THEMES, labelForTheme } from "../shared/theme/themeRegistry";
 import { useShellStore } from "../stores/shellStore";
 import { useThemeStore } from "../stores/themeStore";
-
-const themeButtons = [
-  { id: "system", label: "Sys", icon: Desktop },
-  { id: "light_precision", label: "Light", icon: Sun },
-  { id: "dark_precision", label: "Dark", icon: MoonStars },
-  { id: "signal_slate", label: "Slate", icon: Sparkle },
-] as const;
 
 const backendStatusTone = {
   connecting: "pending",
@@ -98,7 +92,7 @@ export function App() {
               <div className={styles.themeGroup}>
                 <p className={styles.themeLabel}>Theme</p>
                 <div className={styles.themeButtons}>
-                  {themeButtons.map((theme) => {
+                  {RAIL_THEMES.map((theme) => {
                     const Icon = theme.icon;
                     return (
                       <button
@@ -107,10 +101,11 @@ export function App() {
                         className={styles.themeButton}
                         data-active={themeMode === theme.id}
                         onClick={() => setThemeMode(theme.id)}
-                        aria-label={`Switch to ${theme.label.toLowerCase()} theme`}
+                        aria-label={`Switch to ${theme.shortLabel.toLowerCase()} theme`}
+                        title={theme.label}
                       >
                         <Icon size={14} weight="bold" />
-                        {theme.label}
+                        {theme.shortLabel}
                       </button>
                     );
                   })}
@@ -135,11 +130,7 @@ export function App() {
                   {backendModeLabel[backendMode]}
                 </span>
                 <span className="status-chip status-chip--info">
-                  {resolvedTheme === "dark_precision"
-                    ? "Dark Precision"
-                    : resolvedTheme === "signal_slate"
-                      ? "Signal Slate"
-                      : "Light Precision"}
+                  {labelForTheme(resolvedTheme)}
                 </span>
                 <span className="status-chip status-chip--pending">
                   <Command size={12} weight="bold" />

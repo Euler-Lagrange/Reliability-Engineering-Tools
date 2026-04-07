@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { backendClient } from "./client";
 import { useNotificationStore } from "../../stores/notificationStore";
+import { useRunStore } from "../../stores/runStore";
 import { useShellStore } from "../../stores/shellStore";
 
 const RECONNECT_DELAYS = [2_000, 4_000, 8_000, 15_000, 30_000];
@@ -8,6 +9,9 @@ const RECONNECT_DELAYS = [2_000, 4_000, 8_000, 15_000, 30_000];
 export function useBackendBootstrap() {
   const setBackendState = useShellStore((state) => state.setBackendState);
   const pushNotification = useNotificationStore((state) => state.push);
+  const markRunDisconnected = useRunStore((state) => state.markDisconnected);
+  const markRunReconnected = useRunStore((state) => state.markReconnected);
+  const clearActiveRun = useRunStore((state) => state.clear);
 
   useEffect(() => {
     let active = true;
@@ -39,6 +43,22 @@ export function useBackendBootstrap() {
               backendMessage: `Desktop backend reconnected (${result.backend})`,
               lastBackendCheckAt: new Date().toISOString(),
             });
+            // Reconcile any active run with the sidecar's actual session.
+            // The sidecar enforces single-active-run, so if it reports
+            // "no live session" the local active run is stale and must
+            // be cleared.
+            markRunReconnected();
+            void backendClient
+              .sessionStatus()
+              .then((status) => {
+                if (!active) return;
+                if (!status.connected) {
+                  clearActiveRun();
+                }
+              })
+              .catch(() => {
+                // Best-effort reconciliation; nothing to do on failure.
+              });
             pushNotification({
               tone: "success",
               title: "Backend reconnected",
@@ -122,6 +142,11 @@ export function useBackendBootstrap() {
           backendMessage: event.message,
           lastBackendCheckAt: new Date().toISOString(),
         });
+        // Mirror the disconnect into the run store so any active run
+        // is marked disconnected (the per-tool hook does the same when
+        // it observes the event, but doing it here keeps the store
+        // consistent even if no tool is currently mounted).
+        markRunDisconnected(event.message);
         pushNotification({
           tone: "warning",
           title: "Backend disconnected",
@@ -143,5 +168,11 @@ export function useBackendBootstrap() {
       unlistenSession?.();
       if (reconnectTimer) clearTimeout(reconnectTimer);
     };
-  }, [pushNotification, setBackendState]);
+  }, [
+    pushNotification,
+    setBackendState,
+    markRunDisconnected,
+    markRunReconnected,
+    clearActiveRun,
+  ]);
 }

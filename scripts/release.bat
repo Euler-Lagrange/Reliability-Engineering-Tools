@@ -103,7 +103,6 @@ echo.
 echo   Log:
 echo   %LOGFILE%
 echo.
-echo [FINAL] SUCCESS >> "%LOGFILE%"
 popd
 call :pause_if_needed
 exit /b 0
@@ -183,7 +182,6 @@ echo.
 echo   Log:
 echo   %LOGFILE%
 echo.
-echo [FINAL] FAILED >> "%LOGFILE%"
 popd
 call :pause_if_needed
 exit /b 1

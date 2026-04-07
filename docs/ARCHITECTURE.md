@@ -161,6 +161,19 @@ when `connected` flips false.
 | `backend_cancel_run`         | `cancel_run`          | `CancelRunResponse` |
 | `backend_read_flet_config`   | `read_flet_config`    | raw JSON |
 
+### Response enrichment
+
+Every typed Tauri command in the table above constructs its response struct
+with `mode: "desktop-bridge".to_string()` set explicitly (see
+`src-tauri/src/lib.rs` — the `mode` field is hard-wired in each
+`backend_*` handler, e.g. lines 690 and 733). The Python sidecar itself
+only sets `mode` on the `execute_run` ack and the `cancel_run` result;
+every other command relies on the Rust layer to add it before the response
+crosses the bridge. The Zod schemas in `frontend/src/contracts/` therefore
+validate the **enriched** Rust output, not the raw Python payload — keep
+this in mind when adding new commands so the schema and the Rust handler
+stay in sync.
+
 ## Python Sidecar Layer
 
 `backend/python/sidecar_main.py` is a single-file dispatcher with no framework.

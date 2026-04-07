@@ -25,6 +25,7 @@ import type {
 import { backendClient, type RunRequestBody } from "../../shared/backend/client";
 import { buildRunTimeline, isBusyRunPhase, useBackendRunLifecycle } from "../../shared/backend/runLifecycle";
 import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
+import { useRoleRequestSequence } from "../../shared/hooks/useRoleRequestSequence";
 import { useNotificationStore } from "../../stores/notificationStore";
 import { useShellStore } from "../../stores/shellStore";
 
@@ -114,7 +115,9 @@ export function BomCompareTool() {
     session: desktopRunSession,
     beginAcceptedRun,
     resetSession: resetDesktopRunSession,
-  } = useBackendRunLifecycle(backendClient.runtimeMode, parseBomCompareRunResult);
+  } = useBackendRunLifecycle("bom_compare", backendClient.runtimeMode, parseBomCompareRunResult);
+  // Per-role token used to discard stale async listSheets/inspect results.
+  const fileRequestSeq = useRoleRequestSequence<FileRole>();
 
   // Reset state when workflow changes
   useEffect(() => {
@@ -217,6 +220,12 @@ export function BomCompareTool() {
       : cancelledNotice;
   const panelCancelPending =
     backendClient.runtimeMode === "desktop-bridge" ? panelRunMode === "cancelling" : cancelPending;
+  const panelTruncatedLogCount =
+    backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.truncatedLogCount : 0;
+  const panelErrorCode =
+    backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.errorCode : null;
+  const panelErrorTraceback =
+    backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.errorTraceback : null;
 
   // Desktop run terminal state handler
   useEffect(() => {
@@ -321,6 +330,9 @@ export function BomCompareTool() {
       return;
     }
 
+    // Stale-safe: bump the per-role token before kicking off async work.
+    const token = fileRequestSeq.begin(role);
+
     setInputStates((current) =>
       current.map((input) =>
         input.role === role
@@ -342,6 +354,7 @@ export function BomCompareTool() {
 
     try {
       const result = await backendClient.listSheets(pickedPath);
+      if (!fileRequestSeq.isCurrent(role, token)) return;
       setInputStates((current) =>
         current.map((input) =>
           input.role === role
@@ -372,6 +385,7 @@ export function BomCompareTool() {
         await inspectRole(role, result.path, result.sheets[0]);
       }
     } catch (error) {
+      if (!fileRequestSeq.isCurrent(role, token)) return;
       const detail = error instanceof Error ? error.message : "Unknown sheet inspection failure";
       setInputStates((current) =>
         current.map((input) =>
@@ -405,6 +419,11 @@ export function BomCompareTool() {
       return;
     }
 
+    // Stale-safe: bump the per-role token. Note that handleBrowse already
+    // bumps before calling here, but bumping again is safe and covers the
+    // case where inspectRole is called directly from handleSheetChange.
+    const token = fileRequestSeq.begin(role);
+
     setInputStates((current) =>
       current.map((input) =>
         input.role === role
@@ -420,6 +439,7 @@ export function BomCompareTool() {
 
     try {
       const inspection = await backendClient.inspectInput(path, sheet, role);
+      if (!fileRequestSeq.isCurrent(role, token)) return;
       setBackendState({
         backendStatus: "ready",
         backendMode: inspection.mode,
@@ -439,6 +459,7 @@ export function BomCompareTool() {
         ),
       );
     } catch (error) {
+      if (!fileRequestSeq.isCurrent(role, token)) return;
       const detail = error instanceof Error ? error.message : "Unknown workbook analysis failure";
       setInputStates((current) =>
         current.map((input) =>
@@ -704,6 +725,9 @@ export function BomCompareTool() {
                   cancelledNotice={panelCancelledNotice}
                   cancelPending={panelCancelPending}
                   logLines={panelLogLines}
+                  truncatedLogCount={panelTruncatedLogCount}
+                  errorCode={panelErrorCode}
+                  errorTraceback={panelErrorTraceback}
                   startLabel="Compare"
                 />
               )}

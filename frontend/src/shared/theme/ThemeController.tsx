@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useThemeStore, type ThemeId } from "../../stores/themeStore";
+import { DARK_THEME_IDS } from "./themeRegistry";
 
 function getSystemTheme(): ThemeId {
   if (typeof window === "undefined") {
@@ -36,13 +37,7 @@ export function ThemeController() {
   useEffect(() => {
     document.documentElement.dataset.theme = resolvedTheme;
     document.documentElement.dataset.themeMode = mode;
-    const darkThemes: ThemeId[] = [
-      "dark_precision",
-      "midnight_blue",
-      "high_contrast",
-      "synthwave",
-    ];
-    document.documentElement.style.colorScheme = darkThemes.includes(resolvedTheme)
+    document.documentElement.style.colorScheme = DARK_THEME_IDS.has(resolvedTheme)
       ? "dark"
       : "light";
   }, [mode, resolvedTheme]);

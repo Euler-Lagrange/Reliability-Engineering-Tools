@@ -1,35 +1,19 @@
 import { useState } from "react";
-import {
-  Desktop,
-  MoonStars,
-  Sun,
-  Sparkle,
-  ArrowClockwise,
-  Heart,
-  Airplane,
-  CircleHalf,
-  Lightning,
-  Broadcast,
-} from "@phosphor-icons/react";
+import { ArrowClockwise, Heart } from "@phosphor-icons/react";
 import { SectionCard } from "../../components/SectionCard";
 import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
-import { useThemeStore, type ThemeMode } from "../../stores/themeStore";
+import { useThemeStore } from "../../stores/themeStore";
 import { useResolvedTheme } from "../../shared/theme/ThemeController";
+import { THEME_REGISTRY, labelForTheme } from "../../shared/theme/themeRegistry";
 import { useShellStore } from "../../stores/shellStore";
 import { backendClient } from "../../shared/backend/client";
 import { useNotificationStore } from "../../stores/notificationStore";
 import styles from "./SettingsTool.module.css";
 
-const themeOptions: Array<{ id: ThemeMode; label: string; description: string; icon: typeof Sun }> = [
-  { id: "system", label: "System", description: "Follow your OS preference.", icon: Desktop },
-  { id: "light_precision", label: "Light Precision", description: "Clean light theme for bright environments.", icon: Sun },
-  { id: "dark_precision", label: "Dark Precision", description: "Professional dark theme.", icon: MoonStars },
-  { id: "signal_slate", label: "Signal Slate", description: "High-contrast engineering theme.", icon: Sparkle },
-  { id: "midnight_blue", label: "Midnight Blue", description: "Deep navy + ice blue. Aerospace engineering aesthetic.", icon: Airplane },
-  { id: "high_contrast", label: "High Contrast", description: "Pure black and white with yellow accents. WCAG AAA.", icon: CircleHalf },
-  { id: "synthwave", label: "Synthwave", description: "Neon pink and purple. Retro-futurist vibes.", icon: Lightning },
-  { id: "mission_control", label: "Mission Control", description: "Monospaced instrument panel. Dimmed readouts, cyan accents.", icon: Broadcast },
-];
+// Settings exposes every theme in the registry, including the four that the
+// shell rail does not. The registry is the single source of truth — do not
+// duplicate this list.
+const themeOptions = THEME_REGISTRY;
 
 export function SettingsTool() {
   const themeMode = useThemeStore((state) => state.mode);
@@ -151,7 +135,7 @@ export function SettingsTool() {
                   </div>
                   <div className={styles.diagnosticField}>
                     <p className={styles.diagnosticLabel}>Shell version</p>
-                    <p className={styles.diagnosticValue}>0.1.0</p>
+                    <p className={styles.diagnosticValue}>0.2.2</p>
                   </div>
                   <div className={styles.diagnosticField}>
                     <p className={styles.diagnosticLabel}>Protocol</p>

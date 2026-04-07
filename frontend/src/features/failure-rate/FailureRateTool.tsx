@@ -22,6 +22,7 @@ import type {
 import { backendClient, type RunRequestBody } from "../../shared/backend/client";
 import { buildRunTimeline, isBusyRunPhase, useBackendRunLifecycle } from "../../shared/backend/runLifecycle";
 import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
+import { useRoleRequestSequence } from "../../shared/hooks/useRoleRequestSequence";
 import { useNotificationStore } from "../../stores/notificationStore";
 import { useShellStore } from "../../stores/shellStore";
 
@@ -94,7 +95,9 @@ export function FailureRateTool() {
     session: desktopRunSession,
     beginAcceptedRun,
     resetSession: resetDesktopRunSession,
-  } = useBackendRunLifecycle(backendClient.runtimeMode, parseFailureRateRunResult);
+  } = useBackendRunLifecycle("failure_rate", backendClient.runtimeMode, parseFailureRateRunResult);
+  // Per-role token used to discard stale async listSheets/inspect results.
+  const fileRequestSeq = useRoleRequestSequence<FileRole>();
 
   // Focus context heading when view switches
   useEffect(() => {
@@ -165,6 +168,12 @@ export function FailureRateTool() {
       : cancelledNotice;
   const panelCancelPending =
     backendClient.runtimeMode === "desktop-bridge" ? panelRunMode === "cancelling" : cancelPending;
+  const panelTruncatedLogCount =
+    backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.truncatedLogCount : 0;
+  const panelErrorCode =
+    backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.errorCode : null;
+  const panelErrorTraceback =
+    backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.errorTraceback : null;
 
   // Desktop run terminal state handler
   useEffect(() => {
@@ -267,6 +276,9 @@ export function FailureRateTool() {
       return;
     }
 
+    // Stale-safe: bump the per-role token before any async work begins.
+    const browseToken = fileRequestSeq.begin(role);
+
     setInputStates((current) =>
       current.map((input) =>
         input.role === role
@@ -288,6 +300,7 @@ export function FailureRateTool() {
 
     try {
       const result = await backendClient.listSheets(pickedPath);
+      if (!fileRequestSeq.isCurrent(role, browseToken)) return;
       setInputStates((current) =>
         current.map((input) =>
           input.role === role
@@ -318,6 +331,7 @@ export function FailureRateTool() {
         await inspectRole(role, result.path, result.sheets[0]);
       }
     } catch (error) {
+      if (!fileRequestSeq.isCurrent(role, browseToken)) return;
       const detail = error instanceof Error ? error.message : "Unknown sheet inspection failure";
       setInputStates((current) =>
         current.map((input) =>
@@ -351,6 +365,11 @@ export function FailureRateTool() {
       return;
     }
 
+    // Stale-safe: bump per-role token. Bumping is also done by handleBrowse
+    // before it calls here; bumping again is safe and covers direct calls
+    // from handleSheetChange.
+    const inspectToken = fileRequestSeq.begin(role);
+
     setInputStates((current) =>
       current.map((input) =>
         input.role === role
@@ -366,6 +385,7 @@ export function FailureRateTool() {
 
     try {
       const inspection = await backendClient.inspectInput(path, sheet, role);
+      if (!fileRequestSeq.isCurrent(role, inspectToken)) return;
       setBackendState({
         backendStatus: "ready",
         backendMode: inspection.mode,
@@ -385,6 +405,7 @@ export function FailureRateTool() {
         ),
       );
     } catch (error) {
+      if (!fileRequestSeq.isCurrent(role, inspectToken)) return;
       const detail = error instanceof Error ? error.message : "Unknown workbook analysis failure";
       setInputStates((current) =>
         current.map((input) =>
@@ -651,6 +672,9 @@ export function FailureRateTool() {
                   cancelledNotice={panelCancelledNotice}
                   cancelPending={panelCancelPending}
                   logLines={panelLogLines}
+                  truncatedLogCount={panelTruncatedLogCount}
+                  errorCode={panelErrorCode}
+                  errorTraceback={panelErrorTraceback}
                   startLabel="Link Rates"
                 />
               )}

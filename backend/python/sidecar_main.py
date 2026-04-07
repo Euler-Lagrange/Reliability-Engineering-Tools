@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 import threading
+import traceback
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -287,9 +289,30 @@ def _run_in_background(run: ActiveRun, body: dict[str, Any]) -> None:
         _emit_run_status(run.run_id, "cancelled", "Cancelled", message)
         emit("cancelled", {"message": message}, run_id=run.run_id)
     except Exception as exc:  # pragma: no cover - exercised in integration runtime
+        # Capture the full traceback so the UI and the file log both have
+        # actionable diagnostics. The shared file logger writes to
+        # ``~/.reliability_tools/logs/`` for post-mortem; the streamed
+        # ``backend_error`` envelope carries the same info to the frontend
+        # so the user can copy/paste it without leaving the app.
+        tb = traceback.format_exc()
         message = str(exc) or "Unknown backend execution failure."
+        error_code = type(exc).__name__
+        # Stream the traceback into the run log so it's visible in the UI
+        # panel even when the user doesn't open the error block.
+        for line in tb.splitlines():
+            _emit_run_log(run.run_id, line)
+        try:
+            logging.getLogger("reliability_tools.sidecar").exception(
+                "Run %s failed with %s", run.run_id, error_code
+            )
+        except Exception:  # pragma: no cover - logging must never crash the run
+            pass
         _emit_run_status(run.run_id, "failure", "Run failed", message)
-        emit("backend_error", {"message": message}, run_id=run.run_id)
+        emit(
+            "backend_error",
+            {"message": message, "code": error_code, "traceback": tb},
+            run_id=run.run_id,
+        )
     finally:
         _clear_active_run(run.run_id)
 
@@ -352,23 +375,26 @@ def handle_command(message: dict[str, Any]) -> None:
         return
 
     if command == "list_sheets":
-        path = Path(body["path"])
         if load_workbook is None:
             emit("error", {"message": "openpyxl is not available"}, request_id=request_id)
             return
 
-        workbook = load_workbook(path, read_only=True, data_only=True)
         try:
-            emit(
-                "result",
-                {
-                    "path": str(path),
-                    "sheets": list(workbook.sheetnames),
-                },
-                request_id=request_id,
-            )
-        finally:
-            workbook.close()
+            path = Path(body["path"])
+            workbook = load_workbook(path, read_only=True, data_only=True)
+            try:
+                emit(
+                    "result",
+                    {
+                        "path": str(path),
+                        "sheets": list(workbook.sheetnames),
+                    },
+                    request_id=request_id,
+                )
+            finally:
+                workbook.close()
+        except Exception as exc:  # pragma: no cover - exercised in integration runtime
+            emit("error", {"message": str(exc)}, request_id=request_id)
         return
 
     if command == "inspect_input":
@@ -405,7 +431,11 @@ def handle_command(message: dict[str, Any]) -> None:
             )
             return
 
-        validation = route_validate(body)
+        try:
+            validation = route_validate(body)
+        except Exception as exc:  # pragma: no cover - exercised in integration runtime
+            emit("error", {"message": str(exc)}, request_id=request_id)
+            return
         if not validation["ok"]:
             emit("error", {"message": validation["toast_text"]}, request_id=request_id)
             return
@@ -508,16 +538,49 @@ def iter_messages() -> None:
             raw_line = raw_line.strip()
             if not raw_line:
                 continue
-            message = json.loads(raw_line)
-            if message.get("kind") == "command":
+            try:
+                message = json.loads(raw_line)
+            except json.JSONDecodeError as exc:
+                # Malformed envelope — surface as a generic error so the
+                # bridge can log it; do not kill the sidecar.
+                emit("error", {"message": f"Malformed sidecar envelope: {exc}"})
+                continue
+            if message.get("kind") != "command":
+                continue
+            try:
                 handle_command(message)
+            except Exception as exc:  # pragma: no cover - defense in depth
+                # Last-resort guard: any exception that escapes a command
+                # branch becomes a generic error envelope tied to the
+                # request_id (if available) so the sidecar keeps serving
+                # subsequent commands instead of dying.
+                request_id = message.get("request_id") if isinstance(message, dict) else None
+                emit(
+                    "error",
+                    {
+                        "message": (
+                            f"Unhandled sidecar exception while running command: {exc}"
+                        ),
+                        "exception_type": type(exc).__name__,
+                    },
+                    request_id=request_id,
+                )
     finally:
         heartbeat_stop.set()
 
 
 def main() -> int:
     if "--self-test" in sys.argv:
-        print("SELF-TEST OK: python-sidecar 0.1.0")
+        from common.security_audit import audit_tree
+
+        audit_root = Path(__file__).resolve().parent
+        violations = audit_tree(audit_root)
+        if violations:
+            print(f"SELF-TEST FAIL: {len(violations)} security violation(s):")
+            for violation in violations:
+                print(f"  {violation.format(root=audit_root)}")
+            return 1
+        print("SELF-TEST OK: python-sidecar 0.1.0 (security_audit: clean)")
         return 0
 
     iter_messages()

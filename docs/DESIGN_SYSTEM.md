@@ -122,12 +122,17 @@ Both fonts are OFL-licensed; the license text travels in
 ## The 7 Themes
 
 Themes are toggled by setting `data-theme` on the `<html>` element from
-`ThemeController.tsx`. The default has no `data-theme` attribute and is
-called Light Precision.
+`ThemeController.tsx`. The attribute is **always** set: Light Precision
+corresponds to `data-theme="light_precision"`, not the absence of the
+attribute. The single source of truth for the theme list — id, label,
+icon, native colorScheme, and rail visibility — is
+`frontend/src/shared/theme/themeRegistry.ts`. The shell rail, the
+Settings tool, the topbar chip, and the ThemeController all read from
+that one registry.
 
 | Theme id | data-theme | Use case | Personality |
 |----------|------------|----------|-------------|
-| Light Precision | (none, default) | Daily use on bright displays | Calm blues on near-white surfaces; the workhorse |
+| Light Precision | `light_precision` | Daily use on bright displays | Calm blues on near-white surfaces; the workhorse |
 | Dark Precision | `dark_precision` | Long sessions, dim rooms | Slate surfaces with the same blue accent |
 | Signal Slate | `signal_slate` | Reduced-saturation light alternative | Cooler greys with a teal accent |
 | Midnight Blue | `midnight_blue` | Aerospace / defense engineering reviews | Deep navy surfaces with ice-blue accents, tuned for fatigue resistance |

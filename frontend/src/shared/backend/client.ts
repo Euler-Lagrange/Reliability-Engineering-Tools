@@ -5,6 +5,7 @@ import {
   analyzeTemplatePayloadSchema,
   backendModeSchema,
   backendSessionEventSchema,
+  backendSessionStatusResultSchema,
   cancelRunResultSchema,
   executeRunAcceptedResultSchema,
   inspectionResultSchema,
@@ -15,6 +16,7 @@ import {
 } from "../../contracts/sidecar";
 import type {
   BackendSessionEvent,
+  BackendSessionStatusResult,
   CancelRunResult,
   ExecuteRunAcceptedResult,
   SidecarRunEvent,
@@ -131,6 +133,7 @@ export interface FletConfigResult {
 export interface BackendClient {
   runtimeMode: BackendMode;
   healthCheck: () => Promise<BackendHealthResult>;
+  sessionStatus: () => Promise<BackendSessionStatusResult>;
   listSheets: (path: string) => Promise<ListSheetsResult>;
   inspectInput: (path: string, sheet: string, role?: string) => Promise<InspectInputResult>;
   analyzeTemplate: (path: string, sheet: string, role?: string) => Promise<AnalyzeTemplateResult>;
@@ -153,6 +156,17 @@ export const backendClient: BackendClient = {
 
     const result = await invoke("backend_health_check");
     return backendHealthResultSchema.parse(result);
+  },
+  async sessionStatus() {
+    if (!isTauriRuntime()) {
+      return {
+        connected: true,
+        backend: "browser-preview",
+        mode: "browser-mock" as const,
+      };
+    }
+    const result = await invoke("backend_session_status");
+    return backendSessionStatusResultSchema.parse(result);
   },
   async listSheets(path) {
     ensureDesktopRuntime("list_sheets");

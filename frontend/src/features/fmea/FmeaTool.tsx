@@ -25,6 +25,7 @@ import type {
 import { backendClient, type RunRequestBody } from "../../shared/backend/client";
 import { buildRunTimeline, isBusyRunPhase, useBackendRunLifecycle } from "../../shared/backend/runLifecycle";
 import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
+import { useRoleRequestSequence } from "../../shared/hooks/useRoleRequestSequence";
 import { useNotificationStore } from "../../stores/notificationStore";
 import { useShellStore } from "../../stores/shellStore";
 
@@ -254,7 +255,10 @@ export function FmeaTool() {
     session: desktopRunSession,
     beginAcceptedRun,
     resetSession: resetDesktopRunSession,
-  } = useBackendRunLifecycle(backendClient.runtimeMode, parseFmeaRunResult);
+  } = useBackendRunLifecycle("dark_star_fmea", backendClient.runtimeMode, parseFmeaRunResult);
+  // Per-role token used to discard stale async sheet/inspect/analyze results
+  // when the user changes the input under a still-resolving operation.
+  const fileRequestSeq = useRoleRequestSequence<FileRole>();
 
   useEffect(() => {
     startTransition(() => {
@@ -369,6 +373,12 @@ export function FmeaTool() {
   const panelRunId = backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.runId : null;
   const panelStatusMessage =
     backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.statusMessage : null;
+  const panelTruncatedLogCount =
+    backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.truncatedLogCount : 0;
+  const panelErrorCode =
+    backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.errorCode : null;
+  const panelErrorTraceback =
+    backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.errorTraceback : null;
 
   const mappingCoverage = Math.round(
     (effectiveMappings.filter((row) => row.status === "mapped").length / effectiveMappings.length) * 100,
@@ -442,8 +452,9 @@ export function FmeaTool() {
       return;
     }
 
-    const requestedPath = path;
-    const requestedSheet = sheet;
+    // Stale-safe: bump the per-role sequence and capture the token. After
+    // every await, abort if a newer request has started for this role.
+    const token = fileRequestSeq.begin(role);
 
     setInputStates((current) =>
       current.map((input) =>
@@ -461,13 +472,12 @@ export function FmeaTool() {
     try {
       if (role === "targetWorkbook" && outputStrategyId !== "new_workbook_standard") {
         const template = await backendClient.analyzeTemplate(path, sheet, role);
-        setInputStates((current) => {
-          const cur = current.find((i) => i.role === role);
-          if (cur?.path !== requestedPath || cur?.selectedSheet !== requestedSheet) return current;
-          return current.map((input) =>
+        if (!fileRequestSeq.isCurrent(role, token)) return;
+        setInputStates((current) =>
+          current.map((input) =>
             input.role === role ? { ...input, isAnalyzing: false, tag: "Analyzed" } : input,
-          );
-        });
+          ),
+        );
         setTemplateAnalyses((current) => ({
           ...current,
           [role]: {
@@ -490,13 +500,12 @@ export function FmeaTool() {
         });
       } else {
         const inspection = await backendClient.inspectInput(path, sheet, role);
-        setInputStates((current) => {
-          const cur = current.find((i) => i.role === role);
-          if (cur?.path !== requestedPath || cur?.selectedSheet !== requestedSheet) return current;
-          return current.map((input) =>
+        if (!fileRequestSeq.isCurrent(role, token)) return;
+        setInputStates((current) =>
+          current.map((input) =>
             input.role === role ? { ...input, isAnalyzing: false, tag: "Analyzed" } : input,
-          );
-        });
+          ),
+        );
         setInputInspections((current) => ({
           ...current,
           [role]: {
@@ -518,6 +527,7 @@ export function FmeaTool() {
         });
       }
     } catch (error) {
+      if (!fileRequestSeq.isCurrent(role, token)) return;
       const detail = error instanceof Error ? error.message : "Unknown workbook analysis failure";
       setInputStates((current) =>
         current.map((input) =>
@@ -558,6 +568,10 @@ export function FmeaTool() {
       return;
     }
 
+    // Stale-safe: a fresh browse for this role obsoletes any in-flight
+    // listSheets/inspect/analyze for the same role.
+    const token = fileRequestSeq.begin(role);
+
     setInputStates((current) =>
       current.map((input) =>
         input.role === role
@@ -579,6 +593,7 @@ export function FmeaTool() {
 
     try {
       const result = await backendClient.listSheets(pickedPath);
+      if (!fileRequestSeq.isCurrent(role, token)) return;
       setInputStates((current) =>
         current.map((input) =>
           input.role === role
@@ -609,6 +624,7 @@ export function FmeaTool() {
         await inspectRole(role, result.path, result.sheets[0]);
       }
     } catch (error) {
+      if (!fileRequestSeq.isCurrent(role, token)) return;
       const detail = error instanceof Error ? error.message : "Unknown sheet inspection failure";
       setInputStates((current) =>
         current.map((input) =>
@@ -933,6 +949,9 @@ export function FmeaTool() {
                   cancelledNotice={panelCancelledNotice}
                   cancelPending={panelCancelPending}
                   logLines={panelLogLines}
+                  truncatedLogCount={panelTruncatedLogCount}
+                  errorCode={panelErrorCode}
+                  errorTraceback={panelErrorTraceback}
                   startLabel={backendClient.runtimeMode === "desktop-bridge" ? "Start real run" : "Start demo run"}
                   runId={panelRunId}
                   statusMessage={panelStatusMessage}

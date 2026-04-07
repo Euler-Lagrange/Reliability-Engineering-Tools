@@ -5,9 +5,10 @@
 | Suite | Path | Count | Framework |
 |-------|------|-------|-----------|
 | Backend integration | `backend/tests/test_sidecar_main.py` | 27 | pytest |
+| Backend security audit | `backend/tests/test_security_audit.py` | 17 | pytest |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 4 | Vitest + RTL |
 | Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 1 | Vitest + RTL |
-| **Total** | | **32** | |
+| **Total** | | **49** | |
 
 ## Backend Tests
 
@@ -107,8 +108,13 @@ neither of which exists under jsdom, so the client returns mock data from
 | `frontend/src/app/App.test.tsx` | 4 — shell render, tool switching, theme application, notification dismissal |
 | `frontend/src/components/CustomSelect.test.tsx` | 1 — keyboard navigation |
 
-`vitest.setup.ts` is configured in `vite.config.ts`. It loads the design
-system stylesheet and registers `@testing-library/jest-dom` matchers.
+`vitest.setup.ts` is configured in `vite.config.ts`. It registers
+`@testing-library/jest-dom` matchers and shims `matchMedia`, pointer
+capture, and `scrollIntoView` so Radix components render under jsdom.
+Component tests run **without** the global `frontend/src/theme/styles.css`
+(that file is only imported by `main.tsx`, which Vitest never executes);
+tests that depend on theme tokens should mount the relevant CSS-module
+file directly.
 
 ## Run Commands
 

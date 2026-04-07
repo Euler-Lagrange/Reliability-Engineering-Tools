@@ -182,19 +182,26 @@ def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
 
 
 class _CancelBridge:
-    """Bridges CancellationToken to threading.Event for BOM Compare functions."""
+    """Bridges CancellationToken to threading.Event for BOM Compare functions.
+
+    The token and the threading.Event share the same underlying ``threading.Event``
+    so that ``self.cancel.cancel()`` (called by the sidecar's
+    ``ActiveRun.request_cancel``) sets the same event that BOM Compare's inner
+    helpers check via ``stop_event.is_set()``.
+    """
 
     def __init__(self) -> None:
-        self.cancel = CancellationToken()
         self._event = threading.Event()
+        self.cancel = CancellationToken(event=self._event)
 
     @property
     def stop_event(self) -> threading.Event:
         return self._event
 
     def request_cancel(self) -> None:
+        # Kept for backward compatibility; ``self.cancel.cancel()`` alone is
+        # now sufficient because the underlying Event is shared.
         self.cancel.cancel()
-        self._event.set()
 
 
 def execute_run_request(

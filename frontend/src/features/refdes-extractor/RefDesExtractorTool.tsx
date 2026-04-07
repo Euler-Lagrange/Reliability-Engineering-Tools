@@ -19,6 +19,7 @@ import type {
 import { backendClient, type RunRequestBody } from "../../shared/backend/client";
 import { buildRunTimeline, isBusyRunPhase, useBackendRunLifecycle } from "../../shared/backend/runLifecycle";
 import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
+import { useRoleRequestSequence } from "../../shared/hooks/useRoleRequestSequence";
 import { useNotificationStore } from "../../stores/notificationStore";
 import { useShellStore } from "../../stores/shellStore";
 
@@ -85,7 +86,9 @@ export function RefDesExtractorTool() {
     session: desktopRunSession,
     beginAcceptedRun,
     resetSession: resetDesktopRunSession,
-  } = useBackendRunLifecycle(backendClient.runtimeMode, parseRefDesRunResult);
+  } = useBackendRunLifecycle("refdes_extractor", backendClient.runtimeMode, parseRefDesRunResult);
+  // Per-role token used to discard stale async listSheets results.
+  const fileRequestSeq = useRoleRequestSequence<FileRole>();
 
   const inputRoles = useMemo(() => {
     const roles: FileRole[] = ["pdf", "bom"];
@@ -169,6 +172,12 @@ export function RefDesExtractorTool() {
       : cancelledNotice;
   const panelCancelPending =
     backendClient.runtimeMode === "desktop-bridge" ? panelRunMode === "cancelling" : cancelPending;
+  const panelTruncatedLogCount =
+    backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.truncatedLogCount : 0;
+  const panelErrorCode =
+    backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.errorCode : null;
+  const panelErrorTraceback =
+    backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.errorTraceback : null;
 
   // Desktop run terminal state handler
   useEffect(() => {
@@ -290,6 +299,10 @@ export function RefDesExtractorTool() {
     }
 
     // Excel: standard sheet resolution flow
+    // Stale-safe: bump the per-role token so any older listSheets in flight
+    // for this role is ignored when it eventually resolves.
+    const token = fileRequestSeq.begin(role);
+
     setInputStates((current) =>
       current.map((input) =>
         input.role === role
@@ -311,6 +324,7 @@ export function RefDesExtractorTool() {
 
     try {
       const sheetsResult = await backendClient.listSheets(pickedPath);
+      if (!fileRequestSeq.isCurrent(role, token)) return;
       setInputStates((current) =>
         current.map((input) =>
           input.role === role
@@ -341,6 +355,7 @@ export function RefDesExtractorTool() {
         lastBackendCheckAt: new Date().toISOString(),
       });
     } catch (error) {
+      if (!fileRequestSeq.isCurrent(role, token)) return;
       const detail = error instanceof Error ? error.message : "Unknown sheet inspection failure";
       setInputStates((current) =>
         current.map((input) =>
@@ -642,6 +657,9 @@ export function RefDesExtractorTool() {
                   cancelledNotice={panelCancelledNotice}
                   cancelPending={panelCancelPending}
                   logLines={panelLogLines}
+                  truncatedLogCount={panelTruncatedLogCount}
+                  errorCode={panelErrorCode}
+                  errorTraceback={panelErrorTraceback}
                   startLabel="Extract"
                 />
               )}

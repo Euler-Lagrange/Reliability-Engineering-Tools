@@ -1,14 +1,21 @@
-import { useEffect, useEffectEvent, useState } from "react";
+import { useEffect, useEffectEvent, useMemo } from "react";
 import type { RunEvent, RunEventTemplate, RunMode } from "../../app/types";
 import type {
   BackendSessionEvent,
   ExecuteRunAcceptedResult,
   SidecarRunEvent,
 } from "../../contracts/sidecar";
-import type { BackendMode } from "../../stores/shellStore";
+import {
+  type ActiveRunState,
+  MAX_LOG_LINES,
+  buildActiveRunFromAccepted,
+  useRunStore,
+} from "../../stores/runStore";
+import type { BackendMode, ToolId } from "../../stores/shellStore";
 import { backendClient } from "./client";
 
-const MAX_LOG_LINES = 240;
+// Re-export so existing import paths keep working.
+export { MAX_LOG_LINES };
 
 export interface ManagedRunSession<ResultT> {
   runId: string | null;
@@ -18,8 +25,12 @@ export interface ManagedRunSession<ResultT> {
   statusMessage: string | null;
   steps: RunEventTemplate[];
   logs: string[];
+  truncatedLogCount: number;
   result: ResultT | null;
   errorMessage: string | null;
+  errorCode: string | null;
+  errorTraceback: string | null;
+  isDisconnected: boolean;
 }
 
 function stepId(value: string) {
@@ -52,114 +63,127 @@ export function createManagedRunSession<ResultT>(): ManagedRunSession<ResultT> {
     statusMessage: null,
     steps: [],
     logs: [],
+    truncatedLogCount: 0,
     result: null,
     errorMessage: null,
+    errorCode: null,
+    errorTraceback: null,
+    isDisconnected: false,
   };
 }
 
-export function acceptRun<ResultT>(accepted: ExecuteRunAcceptedResult): ManagedRunSession<ResultT> {
+/**
+ * Project an ``ActiveRunState`` (the global store shape) into a
+ * ``ManagedRunSession<ResultT>`` (the per-tool view shape).
+ */
+function projectSession<ResultT>(activeRun: ActiveRunState | null): ManagedRunSession<ResultT> {
+  if (!activeRun) {
+    return createManagedRunSession<ResultT>();
+  }
   return {
-    runId: accepted.run_id,
-    phase: "starting",
-    progress: 1,
-    stage: "Run accepted",
-    statusMessage: "Run accepted by the desktop backend.",
-    steps: [
-      {
-        id: "run-accepted",
-        title: "Run accepted",
-        detail: "Run accepted by the desktop backend.",
-        progress: 1,
-      },
-    ],
-    logs: [],
-    result: null,
-    errorMessage: null,
+    runId: activeRun.runId,
+    phase: activeRun.phase,
+    progress: activeRun.progress,
+    stage: activeRun.stage,
+    statusMessage: activeRun.statusMessage,
+    steps: activeRun.steps,
+    logs: activeRun.logs,
+    truncatedLogCount: activeRun.truncatedLogCount,
+    result: activeRun.result as ResultT | null,
+    errorMessage: activeRun.errorMessage,
+    errorCode: activeRun.errorCode,
+    errorTraceback: activeRun.errorTraceback,
+    isDisconnected: activeRun.isDisconnected,
   };
 }
 
-export function applyRunEvent<ResultT>(
-  session: ManagedRunSession<ResultT>,
+/**
+ * Apply a streamed sidecar run event to the global active-run state.
+ *
+ * Mirrors the previous ``applyRunEvent`` but operates on a flat patch
+ * computed from the current ``ActiveRunState`` rather than a tool-local
+ * ``useState``.
+ */
+function patchFromRunEvent(
+  current: ActiveRunState,
   event: SidecarRunEvent,
-  mapResult: (payload: unknown) => ResultT,
-): ManagedRunSession<ResultT> {
+  mapResult: (payload: unknown) => unknown,
+): Partial<ActiveRunState> | null {
   switch (event.kind) {
     case "ack":
-      return acceptRun<ResultT>(event.payload);
+      // Ack arrives via beginAcceptedRun() in normal flow; ignore here so we
+      // don't reset state if a duplicate ack comes through.
+      return null;
     case "status":
       return {
-        ...session,
         runId: event.run_id,
         phase: event.payload.status,
         stage: event.payload.stage,
         statusMessage: event.payload.message,
         errorMessage: event.payload.status === "failure" ? event.payload.message : null,
-        steps: upsertStep(session.steps, event.payload.stage, event.payload.message, session.progress),
+        steps: upsertStep(current.steps, event.payload.stage, event.payload.message, current.progress),
+        finishedAt:
+          event.payload.status === "success" ||
+          event.payload.status === "failure" ||
+          event.payload.status === "cancelled"
+            ? new Date().toISOString()
+            : current.finishedAt,
       };
     case "progress":
       return {
-        ...session,
         runId: event.run_id,
-        phase: session.phase === "starting" ? "running" : session.phase,
+        phase: current.phase === "starting" ? "running" : current.phase,
         progress: event.payload.percent,
         stage: event.payload.stage,
         statusMessage: event.payload.message,
-        steps: upsertStep(session.steps, event.payload.stage, event.payload.message, event.payload.percent),
+        steps: upsertStep(current.steps, event.payload.stage, event.payload.message, event.payload.percent),
       };
     case "log":
-      return {
-        ...session,
-        runId: event.run_id,
-        logs: [...session.logs, event.payload.line].slice(-MAX_LOG_LINES),
-      };
+      // Log handled separately via appendLog() in the store so the
+      // truncation counter stays accurate.
+      return null;
     case "result":
       return {
-        ...session,
         runId: event.run_id,
-        phase: "success",
+        phase: "success" as RunMode,
         progress: 100,
         stage: "Complete",
         statusMessage: "Run completed successfully.",
         result: mapResult(event.payload),
         errorMessage: null,
-        steps: upsertStep(session.steps, "Complete", "Run completed successfully.", 100),
+        errorCode: null,
+        errorTraceback: null,
+        steps: upsertStep(current.steps, "Complete", "Run completed successfully.", 100),
+        finishedAt: new Date().toISOString(),
       };
-    case "backend_error":
+    case "backend_error": {
+      // Phase 5: optional code/traceback fields. Use record indexing so
+      // older backends without the fields still parse cleanly.
+      const payload = event.payload as Record<string, unknown>;
+      const code = typeof payload["code"] === "string" ? (payload["code"] as string) : null;
+      const traceback =
+        typeof payload["traceback"] === "string" ? (payload["traceback"] as string) : null;
       return {
-        ...session,
         runId: event.run_id,
-        phase: "failure",
+        phase: "failure" as RunMode,
         statusMessage: event.payload.message,
         errorMessage: event.payload.message,
-        steps: upsertStep(session.steps, "Run failed", event.payload.message, session.progress),
+        errorCode: code,
+        errorTraceback: traceback,
+        steps: upsertStep(current.steps, "Run failed", event.payload.message, current.progress),
+        finishedAt: new Date().toISOString(),
       };
+    }
     case "cancelled":
       return {
-        ...session,
         runId: event.run_id,
-        phase: "cancelled",
+        phase: "cancelled" as RunMode,
         statusMessage: event.payload.message,
         errorMessage: null,
-        steps: upsertStep(session.steps, "Cancelled", event.payload.message, session.progress),
+        steps: upsertStep(current.steps, "Cancelled", event.payload.message, current.progress),
+        finishedAt: new Date().toISOString(),
       };
   }
-}
-
-export function markRunDisconnected<ResultT>(
-  session: ManagedRunSession<ResultT>,
-  message: string,
-): ManagedRunSession<ResultT> {
-  if (!session.runId && session.phase === "idle") {
-    return session;
-  }
-
-  return {
-    ...session,
-    phase: "disconnected",
-    statusMessage: message,
-    errorMessage: message,
-    steps: upsertStep(session.steps, "Backend disconnected", message, session.progress),
-  };
 }
 
 export function buildRunTimeline<ResultT>(session: ManagedRunSession<ResultT>): RunEvent[] {
@@ -181,25 +205,86 @@ export function isBusyRunPhase(phase: RunMode) {
   return phase === "starting" || phase === "running" || phase === "cancelling";
 }
 
+/**
+ * Hook that exposes the active run for a specific tool, persisted in the
+ * global ``runStore`` so it survives tool unmount/remount.
+ *
+ * The hook subscribes to backend run events while the tool component is
+ * mounted, but the underlying state lives in the store and is keyed by the
+ * tool that started the run. If the user switches tools and returns, the
+ * hook re-attaches to the existing active run as long as the run's
+ * ``toolId`` matches.
+ *
+ * On a backend disconnect, the run is marked disconnected (state preserved
+ * so the user can still see what happened). On reconnect, the hook calls
+ * ``backendClient.sessionStatus()`` to reconcile: if the sidecar reports no
+ * active session, the local active run is cleared.
+ */
 export function useBackendRunLifecycle<ResultT>(
+  toolId: ToolId,
   runtimeMode: BackendMode,
   mapResult: (payload: unknown) => ResultT,
 ) {
-  const [session, setSession] = useState<ManagedRunSession<ResultT>>(() => createManagedRunSession());
+  const activeRun = useRunStore((state) => state.activeRun);
+  const setActiveRun = useRunStore((state) => state.setActiveRun);
+  const patchActiveRun = useRunStore((state) => state.patchActiveRun);
+  const appendLog = useRunStore((state) => state.appendLog);
+  const markDisconnected = useRunStore((state) => state.markDisconnected);
+  const markReconnected = useRunStore((state) => state.markReconnected);
+  const clearActiveRun = useRunStore((state) => state.clear);
+
+  // Only project the active run if it belongs to this tool. Other tools'
+  // runs are not visible from here, but they ARE preserved in the store.
+  const session = useMemo<ManagedRunSession<ResultT>>(
+    () => projectSession<ResultT>(activeRun && activeRun.toolId === toolId ? activeRun : null),
+    [activeRun, toolId],
+  );
 
   const handleRunEvent = useEffectEvent((event: SidecarRunEvent) => {
-    setSession((current) => applyRunEvent(current, event, mapResult));
+    // Only react to events that belong to MY tool's active run.
+    const current = useRunStore.getState().activeRun;
+    if (!current || current.toolId !== toolId) {
+      return;
+    }
+    if (event.run_id !== current.runId) {
+      return;
+    }
+    if (event.kind === "log") {
+      appendLog(event.payload.line);
+      return;
+    }
+    const patch = patchFromRunEvent(current, event, mapResult);
+    if (patch) {
+      patchActiveRun(patch);
+    }
   });
 
   const handleSessionEvent = useEffectEvent((event: BackendSessionEvent) => {
     if (event.kind === "disconnected") {
-      setSession((current) => markRunDisconnected(current, event.message));
+      markDisconnected(event.message);
+      return;
+    }
+    if (event.kind === "connected") {
+      // Reconcile against the sidecar's actual session state. If the
+      // sidecar lost the run during the disconnect (e.g., crash), clear
+      // the local active run; otherwise just clear the disconnect flag
+      // and let subsequent run events resume the stream.
+      markReconnected();
+      void backendClient
+        .sessionStatus()
+        .then((status) => {
+          if (!status.connected) {
+            // Sidecar reports no live session — drop the local active run
+            // so the tool can offer a fresh start.
+            clearActiveRun();
+          }
+        })
+        .catch(() => {
+          // Reconciliation is best-effort; surface failures via the next
+          // backend event rather than throwing here.
+        });
     }
   });
-
-  useEffect(() => {
-    setSession(createManagedRunSession());
-  }, [runtimeMode]);
 
   useEffect(() => {
     if (runtimeMode !== "desktop-bridge") {
@@ -234,10 +319,15 @@ export function useBackendRunLifecycle<ResultT>(
   return {
     session,
     beginAcceptedRun(accepted: ExecuteRunAcceptedResult) {
-      setSession(acceptRun<ResultT>(accepted));
+      setActiveRun(buildActiveRunFromAccepted({ runId: accepted.run_id, toolId }));
     },
     resetSession() {
-      setSession(createManagedRunSession());
+      // Only clear the global state if the active run belongs to this tool.
+      // Otherwise leave it alone so the other tool can keep observing it.
+      const current = useRunStore.getState().activeRun;
+      if (current && current.toolId === toolId) {
+        clearActiveRun();
+      }
     },
   };
 }
