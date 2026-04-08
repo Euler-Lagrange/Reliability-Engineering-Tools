@@ -295,7 +295,6 @@ export function BomCompareTool() {
     return {
       workflowId,
       outputStrategyId: "new_workbook_standard",
-      enrichments: { functional: false, piecePart: false },
       inputs: currentVisibleInputs.map((input) => ({
         role: input.role,
         label: input.label,

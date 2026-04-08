@@ -10,20 +10,35 @@ from common.exceptions import ValidationError
 from shared.pre_run_validation import LabeledState, LabeledValue, validate_pre_run_state
 from fmea.fmea_generator_logic import FMEAProcessor, write_excel_report
 
-SUPPORTED_EXECUTION_WORKFLOWS = {"piece_part_generate", "bom_only", "fill_gaps"}
-SUPPORTED_OUTPUT_STRATEGIES = {"new_workbook_standard", "existing_workbook_preserve_formatting"}
+SUPPORTED_EXECUTION_WORKFLOWS = {
+    "piece_part_generate",
+    "bom_only",
+    "fill_gaps",
+    "functional_to_piecepart",
+}
+SUPPORTED_OUTPUT_STRATEGIES = {
+    "new_workbook_standard",
+    "existing_workbook_preserve_formatting",
+}
+SUPPORTED_FAILURE_MODES_STANDARDS = {"FMD-91", "FMD-2016"}
 LOG_LIMIT = 120
 PROGRESS_STAGE_WEIGHTS = {
     "Reading input files...": (5, 10, "Reading input files"),
     "Building indexes...": (15, 10, "Building indexes"),
     "Generating FMEA rows...": (25, 60, "Generating FMEA rows"),
-    "Applying Piece-Part effect merge...": (85, 10, "Applying Piece-Part effect merge"),
     "Writing workbook...": (95, 5, "Writing workbook"),
 }
 FILL_GAPS_STAGE_WEIGHTS = {
     "Loading input files...": (5, 10, "Loading input files"),
     "Classifying FMEA rows...": (15, 15, "Classifying FMEA rows"),
     "Generating FMEA rows for missing RefDes...": (30, 55, "Generating gap-fill rows"),
+    "Writing workbook...": (95, 5, "Writing workbook"),
+}
+FUNCTIONAL_TO_PP_STAGE_WEIGHTS = {
+    "Reading input files...": (5, 10, "Reading input files"),
+    "Building indexes...": (15, 10, "Building indexes"),
+    "Parsing functional FMEA blocks...": (25, 15, "Parsing functional blocks"),
+    "Generating piece-part rows under blocks...": (40, 50, "Generating piece-part rows"),
     "Writing workbook...": (95, 5, "Writing workbook"),
 }
 
@@ -46,23 +61,27 @@ def _role_label(role: str) -> str:
 def _required_roles(
     workflow_id: str,
     output_strategy_id: str,
-    enrichments: dict[str, bool],
 ) -> list[str]:
+    """Required input roles for a workflow.
+
+    Phase C/D: enrichment toggles were removed from the UI; functional FMEA
+    is now its own primary workflow (`functional_to_piecepart`) instead of
+    a bolt-on enrichment. The legacy `piecePartFmea` enrichment is dropped
+    entirely.
+    """
     roles: list[str]
     if workflow_id == "piece_part_generate":
         roles = ["grouping", "bom", "failureModes"]
     elif workflow_id == "bom_only":
         roles = ["bom", "failureModes"]
+    elif workflow_id == "functional_to_piecepart":
+        roles = ["functionalFmea", "bom", "failureModes"]
     elif workflow_id == "fill_gaps":
         roles = ["existingFmea", "bom", "failureModes"]
     else:
         roles = []
 
-    if workflow_id != "fill_gaps" and enrichments.get("functional"):
-        roles.append("functionalFmea")
-    if workflow_id != "fill_gaps" and enrichments.get("piecePart"):
-        roles.append("piecePartFmea")
-    if output_strategy_id not in ("new_workbook_standard",):
+    if output_strategy_id == "existing_workbook_preserve_formatting":
         roles.append("targetWorkbook")
     return roles
 
@@ -93,6 +112,7 @@ def _build_validation_messages(
     workflow_id: str,
     output_strategy_id: str,
     inputs_by_role: dict[str, dict[str, Any]],
+    failure_modes_standard: str | None,
 ) -> list[dict[str, str]]:
     messages: list[dict[str, str]] = []
 
@@ -113,8 +133,19 @@ def _build_validation_messages(
                 "id": "unsupported-output-strategy",
                 "severity": "error",
                 "area": "Output Strategy",
-                "title": "Only new workbook output is executable in this slice",
-                "detail": "Existing workbook and preserve-formatting paths stay in analysis-only mode until the template-preserve migration lands.",
+                "title": "Output strategy is not supported",
+                "detail": "Choose 'New Workbook' or 'Existing Workbook (Preserve Formatting)'.",
+            }
+        )
+
+    if failure_modes_standard not in SUPPORTED_FAILURE_MODES_STANDARDS:
+        messages.append(
+            {
+                "id": "missing-failure-modes-standard",
+                "severity": "error",
+                "area": "Failure Modes",
+                "title": "Failure Modes standard is required",
+                "detail": "Select either FMD-91 or FMD-2016 to drive failure-mode column headers.",
             }
         )
 
@@ -160,10 +191,13 @@ def _build_validation_messages(
 def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
     workflow_id = str(body.get("workflowId", "")).strip()
     output_strategy_id = str(body.get("outputStrategyId", "")).strip()
-    enrichments = body.get("enrichments") or {}
+    options = body.get("options") or {}
+    failure_modes_standard = (
+        str(options.get("failureModesStandard", "")).strip() or None
+    )
     inputs_by_role = _collect_inputs(body)
 
-    required_roles = _required_roles(workflow_id, output_strategy_id, enrichments)
+    required_roles = _required_roles(workflow_id, output_strategy_id)
     required_files = [
         LabeledValue(_role_label(role), (inputs_by_role.get(role) or {}).get("path"))
         for role in required_roles
@@ -192,12 +226,21 @@ def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
             toast_text="This execution path is not yet available in the migrated backend.",
             affected_labels=result.affected_labels,
         )
+    elif failure_modes_standard not in SUPPORTED_FAILURE_MODES_STANDARDS:
+        result = type(result)(
+            ok=False,
+            reason_code="missing_failure_modes_standard",
+            toast_text="Select FMD-91 or FMD-2016 before running.",
+            affected_labels=result.affected_labels,
+        )
 
     return {
         "ok": result.ok,
         "reason_code": result.reason_code,
         "toast_text": result.toast_text,
-        "validations": _build_validation_messages(result, workflow_id, output_strategy_id, inputs_by_role),
+        "validations": _build_validation_messages(
+            result, workflow_id, output_strategy_id, inputs_by_role, failure_modes_standard
+        ),
         "mode": "desktop-bridge",
     }
 
@@ -216,7 +259,11 @@ def _resolve_output_directory(inputs_by_role: dict[str, dict[str, Any]]) -> Path
 
 
 def _build_output_name(workflow_id: str) -> str:
-    suffixes = {"bom_only": "BomOnly", "fill_gaps": "FillGaps"}
+    suffixes = {
+        "bom_only": "BomOnly",
+        "fill_gaps": "FillGaps",
+        "functional_to_piecepart": "FromFunctional",
+    }
     suffix = suffixes.get(workflow_id, "Standard")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     return f"DarkStarFMEA_{suffix}_{timestamp}.xlsx"
@@ -273,8 +320,28 @@ def execute_run_request(
     if not validation["ok"]:
         raise ValidationError(validation["toast_text"] or "Run validation failed.")
 
+    # Phase D: hard-fail on legacy enrichment payloads. The Enrichments UI
+    # was removed in Phase C; functional FMEA is now its own primary
+    # workflow (`functional_to_piecepart`) and piece-part enrichment was
+    # deprecated entirely. A stale client that still sends
+    # enrichments.functional=true would otherwise be silently misrun in
+    # the new primary workflow mode, producing output without the merge
+    # the user requested. Fail loudly so the client knows to migrate.
+    legacy_enrichments = body.get("enrichments") or {}
+    if legacy_enrichments.get("functional") or legacy_enrichments.get("piecePart"):
+        raise ValidationError(
+            "Functional / Piece-Part enrichment toggles have been removed. "
+            "Use workflowId='functional_to_piecepart' for the new functional path."
+        )
+
     workflow_id = str(body.get("workflowId", "")).strip()
-    enrichments = body.get("enrichments") or {}
+    options = body.get("options") or {}
+    failure_modes_standard = str(options.get("failureModesStandard", "FMD-2016")).strip() or "FMD-2016"
+    column_selection_raw = options.get("columnSelection") or {}
+    column_selection = {
+        "mode": str(column_selection_raw.get("mode", "all")).strip() or "all",
+        "columns": [str(c) for c in (column_selection_raw.get("columns") or [])],
+    }
     inputs_by_role = _collect_inputs(body)
     output_directory = _resolve_output_directory(inputs_by_role)
     output_path = output_directory / _build_output_name(workflow_id)
@@ -342,6 +409,7 @@ def execute_run_request(
             "group": str((inputs_by_role.get("grouping") or {}).get("path", "")).strip() or None,
             "verbose": False,
             "column_overrides": {},
+            "failure_modes_standard": failure_modes_standard,
             "fmea_sheet": _selected_sheet(inputs_by_role, "existingFmea"),
             "bom_sheet": _selected_sheet(inputs_by_role, "bom"),
             "fm_sheet": _selected_sheet(inputs_by_role, "failureModes"),
@@ -367,28 +435,65 @@ def execute_run_request(
             run_inputs,
             progress_callback=fill_gaps_progress_adapter,
         )
+    elif workflow_id == "functional_to_piecepart":
+        run_inputs = {
+            "func": str((inputs_by_role.get("functionalFmea") or {}).get("path", "")).strip() or None,
+            "bom": str((inputs_by_role.get("bom") or {}).get("path", "")).strip() or None,
+            "hda": str((inputs_by_role.get("hda") or {}).get("path", "")).strip() or None,
+            "fm": str((inputs_by_role.get("failureModes") or {}).get("path", "")).strip() or None,
+            "out_folder": str(output_directory),
+            "out_name": output_path.stem,
+            "verbose": False,
+            "column_overrides": {},
+            "failure_modes_standard": failure_modes_standard,
+            "func_sheet": _selected_sheet(inputs_by_role, "functionalFmea"),
+            "bom_sheet": _selected_sheet(inputs_by_role, "bom"),
+            "hda_sheet": _selected_sheet(inputs_by_role, "hda"),
+            "fm_sheet": _selected_sheet(inputs_by_role, "failureModes"),
+        }
+
+        def functional_progress_adapter(current: int, total: int) -> None:
+            stage_label, percent = _progress_percent(
+                "Generating piece-part rows under blocks...", current, total,
+                weights=FUNCTIONAL_TO_PP_STAGE_WEIGHTS,
+            )
+            _emit_progress(
+                progress_callback,
+                stage=stage_label,
+                message=f"Generating piece-part rows ({current}/{total})...",
+                percent=percent,
+                current=current,
+                total=total,
+            )
+
+        dataframe = processor.process_functional_to_piecepart(
+            run_inputs,
+            progress_callback=functional_progress_adapter,
+            status_callback=runtime_status_callback,
+        )
     else:
         run_inputs = {
             "group": str((inputs_by_role.get("grouping") or {}).get("path", "")).strip() or None,
             "bom": str((inputs_by_role.get("bom") or {}).get("path", "")).strip() or None,
             "hda": str((inputs_by_role.get("hda") or {}).get("path", "")).strip() or None,
             "fm": str((inputs_by_role.get("failureModes") or {}).get("path", "")).strip() or None,
-            "func": str((inputs_by_role.get("functionalFmea") or {}).get("path", "")).strip() or None,
-            "piecepart_fmea": str((inputs_by_role.get("piecePartFmea") or {}).get("path", "")).strip() or None,
+            "func": None,
+            "piecepart_fmea": None,
             "out_folder": str(output_directory),
             "out_name": output_path.stem,
             "bom_only_mode": workflow_id == "bom_only",
-            "use_func": bool(enrichments.get("functional")),
-            "use_piecepart_merge": bool(enrichments.get("piecePart")),
+            "use_func": False,
+            "use_piecepart_merge": False,
             "verbose": False,
             "column_overrides": {},
             "template_preserve": False,
+            "failure_modes_standard": failure_modes_standard,
             "group_sheet": _selected_sheet(inputs_by_role, "grouping"),
             "bom_sheet": _selected_sheet(inputs_by_role, "bom"),
             "hda_sheet": _selected_sheet(inputs_by_role, "hda"),
             "fm_sheet": _selected_sheet(inputs_by_role, "failureModes"),
-            "func_sheet": _selected_sheet(inputs_by_role, "functionalFmea"),
-            "piecepart_fmea_sheet": _selected_sheet(inputs_by_role, "piecePartFmea"),
+            "func_sheet": None,
+            "piecepart_fmea_sheet": None,
         }
 
         dataframe = processor.process(
@@ -413,6 +518,28 @@ def execute_run_request(
         percent=95,
     )
 
+    # Apply column subset filtering if requested. ROW_TYPE_COL is always
+    # retained because the writer uses it to drive insert/update decisions.
+    # Phase D safety: if NONE of the user-requested columns actually exist
+    # in the generated DataFrame (e.g., stale UI state after a column
+    # inspection), fall back to keeping all columns rather than silently
+    # shipping an empty workbook. The user gets a WARNING log so they
+    # notice.
+    if column_selection["mode"] == "subset" and column_selection["columns"]:
+        from fmea.fmea_generator_logic import ROW_TYPE_COL
+        keep = set(column_selection["columns"])
+        keep.add(ROW_TYPE_COL)
+        filtered_cols = [c for c in dataframe.columns if c in keep]
+        user_matches = [c for c in filtered_cols if c != ROW_TYPE_COL]
+        if user_matches:
+            dataframe = dataframe[filtered_cols]
+        else:
+            stream_log_callback(
+                f"WARNING: column subset filter matched none of the requested columns "
+                f"{column_selection['columns']!r}. Keeping all columns as a safe fallback. "
+                f"Available columns: {list(dataframe.columns)[:10]}{'...' if len(dataframe.columns) > 10 else ''}"
+            )
+
     if use_template_preserve:
         from fmea.fmea_template_analyzer import analyze_template as _analyze_template
         from fmea.fmea_template_writer import (
@@ -424,11 +551,17 @@ def execute_run_request(
         target_sheet = _selected_sheet(inputs_by_role, "targetWorkbook")
         output_path = Path(build_template_output_path(target_path, mode="DarkStar"))
 
+        # Phase D: thread the selected FMD standard through to the template
+        # analyzer + writer so the column map, synonym lookups, and appended
+        # headers all use the user's selected standard. Without this, picking
+        # FMD-91 with preserve-formatting silently dropped the FMD commodity
+        # columns because the writer was looking up FMD-2016 header names.
         template_map, wb = _analyze_template(
             target_path,
             sheet_name=target_sheet,
             cancel_token=processor.cancel,
             log_func=stream_log_callback,
+            failure_modes_standard=failure_modes_standard,
         )
         try:
             write_template_preserved(
@@ -436,6 +569,7 @@ def execute_run_request(
                 str(output_path),
                 cancel_token=processor.cancel,
                 log_func=stream_log_callback,
+                failure_modes_standard=failure_modes_standard,
             )
         finally:
             wb.close()

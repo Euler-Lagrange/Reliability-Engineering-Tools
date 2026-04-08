@@ -215,6 +215,7 @@ def _build_phase4_run_body(tmp_path: Path, group_rows: int = 1) -> dict:
         "workflowId": "piece_part_generate",
         "outputStrategyId": "new_workbook_standard",
         "enrichments": {"functional": False, "piecePart": False},
+        "options": {"failureModesStandard": "FMD-2016"},
         "inputs": [
             input_state("grouping", "Grouping workbook", grouping_path),
             input_state("bom", "BOM workbook", bom_path),
@@ -304,6 +305,7 @@ def _build_fill_gaps_run_body(tmp_path: Path) -> dict:
         "workflowId": "fill_gaps",
         "outputStrategyId": "new_workbook_standard",
         "enrichments": {"functional": False, "piecePart": False},
+        "options": {"failureModesStandard": "FMD-2016"},
         "inputs": [
             input_state("existingFmea", "Existing FMEA workbook", fmea_path),
             input_state("bom", "BOM workbook", bom_path),
@@ -768,6 +770,7 @@ def _build_template_preserve_run_body(tmp_path: Path) -> dict:
         "workflowId": "piece_part_generate",
         "outputStrategyId": "existing_workbook_preserve_formatting",
         "enrichments": {"functional": False, "piecePart": False},
+        "options": {"failureModesStandard": "FMD-2016"},
         "inputs": [
             input_state("grouping", "Grouping workbook", grouping_path),
             input_state("bom", "BOM workbook", bom_path),
@@ -872,6 +875,7 @@ def test_sidecar_execute_emits_backend_error_on_missing_columns(tmp_path: Path) 
         "workflowId": "piece_part_generate",
         "outputStrategyId": "new_workbook_standard",
         "enrichments": {"functional": False, "piecePart": False},
+        "options": {"failureModesStandard": "FMD-2016"},
         "inputs": [
             input_state("grouping", "Grouping", grouping_path),
             input_state("bom", "BOM", bom_path),
@@ -919,6 +923,7 @@ def test_sidecar_remains_responsive_after_failed_run(tmp_path: Path) -> None:
         "workflowId": "piece_part_generate",
         "outputStrategyId": "new_workbook_standard",
         "enrichments": {"functional": False, "piecePart": False},
+        "options": {"failureModesStandard": "FMD-2016"},
         "inputs": [
             {"role": "grouping", "label": "G", "path": str(bad_path),
              "selectedSheet": "Sheet1", "source": "desktop-bridge",
@@ -967,6 +972,7 @@ def test_sidecar_validate_rejects_missing_required_files(tmp_path: Path) -> None
         "workflowId": "piece_part_generate",
         "outputStrategyId": "new_workbook_standard",
         "enrichments": {"functional": False, "piecePart": False},
+        "options": {"failureModesStandard": "FMD-2016"},
         "inputs": [
             {"role": "grouping", "label": "Grouping", "path": "",
              "selectedSheet": "", "source": "desktop-bridge",

@@ -12,13 +12,23 @@ export function InputGrid({ inputs, onBrowse, onSheetChange }: InputGridProps) {
     <div className="input-grid">
       {inputs.map((input) => (
         <article key={input.role} className="input-card">
-          <div className="input-card__header">
-            <div>
-              <p className="input-card__label">{input.label}</p>
-              <p className="input-card__path">{input.path}</p>
-            </div>
-            <span className={`status-chip status-chip--${input.status}`}>{input.tag}</span>
-          </div>
+          {(() => {
+            const showExampleStyling =
+              !!input.isExample && input.source !== "desktop-bridge" && !!input.path;
+            return (
+              <div className="input-card__header">
+                <div>
+                  <p className="input-card__label">{input.label}</p>
+                  <p
+                    className={`input-card__path${showExampleStyling ? " input-card__path--example" : ""}`}
+                  >
+                    {showExampleStyling ? `Example: ${input.path}` : input.path}
+                  </p>
+                </div>
+                <span className={`status-chip status-chip--${input.status}`}>{input.tag}</span>
+              </div>
+            );
+          })()}
           <p className="input-card__helper">{input.helper}</p>
           <div className="input-card__footer">
             <div className="sheet-picker">

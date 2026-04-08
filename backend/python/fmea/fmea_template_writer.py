@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # ============================================================================
-# COPIED from frozen src/apps/fmea_generator/fmea_template_writer.py
-# for the Tauri sidecar backend.  Import paths adjusted; logic unchanged.
+# Originally copied from src/apps/fmea_generator/fmea_template_writer.py.
+# Freeze lifted 2026-04-08; this is now the maintained copy for the Tauri suite.
 # ============================================================================
 """
 FMEA Template Writer — Merge generated data into an existing FMEA workbook.
@@ -34,6 +34,7 @@ from fmea.fmea_generator_logic import (
     OUTPUT_HEADERS,
     ROW_TYPE_COL,
     normalize_func_base_id,
+    output_headers_for,
 )
 from fmea.fmea_template_analyzer import (
     CellStyle,
@@ -188,12 +189,19 @@ def _append_extra_columns(
     ws: Worksheet,
     column_map: ColumnMap,
     header_row: int,
+    failure_modes_standard: str = "FMD-2016",
 ) -> Dict[str, int]:
     """Append generator-specific columns that do not exist in the template.
 
-    Walks ``OUTPUT_HEADERS`` and writes any unmapped header at the first
-    available column after the current max.  Applies a minimal bold style
-    so the header is visually distinguishable.
+    Walks `output_headers_for(failure_modes_standard)` and writes any
+    unmapped header at the first available column after the current max.
+    Applies a minimal bold style so the header is visually distinguishable.
+
+    Phase D: must be parametrized by FMD standard so that picking FMD-91
+    appends `FMD-91 Commodity Type 1/2` rather than the module-default
+    FMD-2016 headers. Without this, preserve-formatting runs with
+    FMD-91 would silently drop the FMD commodity columns because the
+    column-index resolver would look for headers that were never written.
 
     Returns:
         ``{col_name: 1_based_index}`` for every appended column.
@@ -205,7 +213,9 @@ def _append_extra_columns(
     next_col = ws.max_column + 1
     appended: Dict[str, int] = {}
 
-    for col_name in OUTPUT_HEADERS:
+    target_headers = output_headers_for(failure_modes_standard)
+
+    for col_name in target_headers:
         if col_name == ROW_TYPE_COL:
             continue
         # Already present in the template
@@ -382,6 +392,7 @@ def write_template_preserved(
     cancel_token: Optional[CancellationToken] = None,
     log_func: Optional[Callable[[str], None]] = None,
     progress_callback: Optional[Callable[[float], None]] = None,
+    failure_modes_standard: str = "FMD-2016",
 ) -> TemplateWriteResult:
     """Merge generated FMEA data into a template workbook and save.
 
@@ -438,15 +449,16 @@ def write_template_preserved(
         f"({template_map.total_data_rows} template data rows)")
 
     # ------------------------------------------------------------------
-    # 2. Append generator-specific columns
+    # 2. Append generator-specific columns (Phase D: FMD-standard-aware)
     # ------------------------------------------------------------------
     extra_col_indices = _append_extra_columns(
-        ws, template_map.column_map, template_map.column_map.header_row
+        ws, template_map.column_map, template_map.column_map.header_row,
+        failure_modes_standard=failure_modes_standard,
     )
     result.extra_cols_appended = list(extra_col_indices.keys())
     if extra_col_indices:
-        log(f"Appended {len(extra_col_indices)} extra column(s): "
-            f"{', '.join(extra_col_indices.keys())}")
+        log(f"Appended {len(extra_col_indices)} extra column(s) "
+            f"({failure_modes_standard}): {', '.join(extra_col_indices.keys())}")
 
     # ------------------------------------------------------------------
     # 3. Build generated data index

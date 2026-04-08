@@ -2,8 +2,10 @@ import { Suspense } from "react";
 import { Command, Sparkle, WarningCircle } from "@phosphor-icons/react";
 import styles from "./AppShell.module.css";
 import { toolDefinitions } from "./toolRegistry";
+import { GlobalLogPanel } from "../components/GlobalLogPanel";
 import { ErrorBoundary } from "../shared/errors/ErrorBoundary";
 import { useBackendBootstrap } from "../shared/backend/useBackendBootstrap";
+import { useGlobalLogSubscription } from "../shared/backend/useGlobalLogSubscription";
 import { useAppShortcuts } from "../shared/hooks/useAppShortcuts";
 import { NotificationCenter } from "../shared/notifications/NotificationCenter";
 import { ThemeController, useResolvedTheme } from "../shared/theme/ThemeController";
@@ -36,6 +38,7 @@ const backendModeLabel = {
 export function App() {
   useAppShortcuts();
   useBackendBootstrap();
+  useGlobalLogSubscription();
 
   const activeToolId = useShellStore((state) => state.activeToolId);
   const setActiveToolId = useShellStore((state) => state.setActiveToolId);
@@ -166,6 +169,7 @@ export function App() {
                 </Suspense>
               </ErrorBoundary>
             </main>
+            <GlobalLogPanel />
           </div>
         </div>
       </ErrorBoundary>

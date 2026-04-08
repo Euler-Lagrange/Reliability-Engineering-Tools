@@ -30,8 +30,15 @@ hardcode values in component CSS or inline styles.
 | `--warning-soft` | Warning fill | `#fff6df` |
 | `--danger` | Error text and icons | `#b14433` |
 | `--danger-soft` | Error fill | `#fff0ed` |
+| `--text-on-accent` | Foreground for elements filled with `--accent` | `#ffffff` |
 
 Every theme overrides the same set of tokens. No theme adds new color names.
+
+`--text-on-accent` defaults to `#ffffff` and is overridden per-theme only
+where the accent color demands it — the High Contrast theme sets
+`--text-on-accent: #000000` because its accent is yellow. Components like
+`.primary-button` now reference `var(--text-on-accent)` instead of hardcoding
+`color: #ffffff`.
 
 ## Typography Tokens
 
@@ -108,16 +115,206 @@ Both fonts are OFL-licensed; the license text travels in
 | `--tracking-tight` | -0.01em |
 | `--tracking-normal` | 0 |
 | `--tracking-wide` | 0.02em |
-| `--tracking-uppercase` | 0.06em |
+| `--tracking-uppercase` | 0.08em |
 
-## Shape Tokens
+`--tracking-uppercase` was standardized at `0.08em` in Phase G. Every
+uppercase metadata label — eyebrows, status chips, scenario pill meta,
+header metrics, Mission Control typography overrides — references this
+token so spacing stays consistent across the shell.
+
+## Spacing Tokens
+
+All spacing follows a 4 px grid. Phase G introduced an 8-step scale; every
+component CSS file references these tokens for `padding`, `margin`, `gap`,
+and `min-height`.
+
+| Token | Value | Intended use |
+|-------|-------|--------------|
+| `--space-1` | 4 px | Micro: icon gaps, fine adjustments |
+| `--space-2` | 8 px | Tight: within components |
+| `--space-3` | 12 px | Standard: between related elements |
+| `--space-4` | 16 px | Comfortable: section padding |
+| `--space-5` | 20 px | Relaxed: rail padding, chrome |
+| `--space-6` | 24 px | Generous: between sections |
+| `--space-7` | 32 px | Major: section separation |
+| `--space-8` | 48 px | Hero: major page sections |
+
+**Rule.** Never use raw pixel values for padding, margin, gap, or
+min-height in component CSS — always reach for one of the tokens above.
+Off-grid values are allowed only with an inline comment explaining the
+deviation (e.g., negative-margin hit-area expansion on an icon button).
+
+## Border Radius Tokens
+
+Expanded from 3 radii to 6 in Phase G.
+
+| Token | Value | Intended use |
+|-------|-------|--------------|
+| `--radius-xs` | 4 px | Tiny: dropdown items, chips |
+| `--radius-sm` | 6 px | Small: buttons, inputs |
+| `--radius-md` | 8 px | Default: cards, sections |
+| `--radius-lg` | 10 px | Large: prominent containers (analysis cards) |
+| `--radius-xl` | 12 px | Extra: rail tool buttons, brand glyph |
+| `--radius-pill` | 999 px | Pill: badges, progress bars |
+
+## Shadow Tokens
+
+**Depth strategy is borders-only by default.** Shadows are reserved for
+floating, focused, or instrument-style elements and exist as named tokens
+so per-theme overrides can tune their intensity.
+
+| Token | Default value | Intended use |
+|-------|---------------|--------------|
+| `--shadow-popover` | `0 10px 28px rgba(15, 23, 42, 0.12)` | Dropdowns, menus, custom-select popovers |
+| `--shadow-focus-ring` | `0 0 0 3px rgba(35, 94, 231, 0.08)` | `:focus-visible` state on all interactive elements |
+| `--shadow-rail-active` | `0 0 0 1px rgba(35, 94, 231, 0.04), 0 6px 18px rgba(35, 94, 231, 0.08)` | Selected tool button in the rail |
+| `--shadow-toast` | `0 8px 24px rgba(15, 23, 42, 0.08)` | Notification toasts |
+
+Per-theme overrides exist for `dark_precision`, `midnight_blue`,
+`high_contrast`, `synthwave`, and `mission_control` — dark themes need
+stronger rgba values because light-theme shadows are invisible against
+dark surfaces.
+
+**Don't add decorative box-shadows to the global stylesheet.** If a theme
+needs a glow or halo effect, scope it inside that theme's override block
+(see **Mission Control Theme Exception** below).
+
+## Motion
 
 | Token | Value |
 |-------|-------|
-| `--radius-sm` | 6 px |
-| `--radius-md` | 8 px |
-| `--radius-lg` | 10 px |
 | `--ease` | `cubic-bezier(0.25, 1, 0.5, 1)` |
+
+## Icon Size Conventions
+
+Phosphor icons are used throughout the shell. The size is set on the
+component, not via CSS, so each call site picks the right scale. Use
+`weight="bold"` for accent/active states.
+
+| Size | Context |
+|------|---------|
+| 12 px | Inline meta (timestamps, counts next to text) |
+| 14 px | Button glyphs (primary/ghost button icons) |
+| 16 px | Chip glyphs (status chips, toggle chips) |
+| 20 px | Rail navigation (tool buttons, theme chip) |
+| 24 px | Hero / empty state illustrations |
+
+## Asymmetric Padding (AppShell)
+
+Not every shell surface uses symmetric padding. `AppShell.module.css`
+intentionally uses asymmetric values, each with an inline comment
+explaining the deviation:
+
+| Surface | Padding (top / right / bottom / left) | Reason |
+|---------|---------------------------------------|--------|
+| `.rail` | `20 / 16` | Extra vertical breathing room above/below tool icons; narrower sides to keep the rail compact |
+| `.topbar` | `20 / 24 / 0` | Bottom padding is `0` so the accent gradient (see below) sits flush with the content boundary |
+| `.content` | `16 / 24 / 24` | Asymmetric top padding compensates for the topbar's zero-bottom so total gap stays 20 px |
+
+When adjusting these, preserve the inline comment and the reasoning — the
+asymmetry is load-bearing for the accent-gradient alignment.
+
+## Signature Topbar Accent Gradient
+
+Phase G13 introduced a 1 px accent gradient at the top edge of the App
+shell topbar:
+
+```css
+.topbar::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent 28%,
+    var(--accent) 50%,
+    transparent 72%
+  );
+  opacity: 0.35;
+}
+```
+
+This mirrors the existing `.run-log-panel::before` gradient at the top
+edge of the global log panel, creating a visual rhyme where the active
+tool area is framed between two "instrument chrome" lines.
+
+**Invariant.** The gradient stop positions (`28%` / `72%`) must stay in
+sync between `.topbar::before` and `.run-log-panel::before`. If you adjust
+one, adjust the other in the same change.
+
+## Global Run Log Panel Styling
+
+The `GlobalLogPanel` (Phase B) is docked at the bottom of the app shell.
+Its styling choices:
+
+- **Font.** Log lines use `var(--font-mono)` (JetBrains Mono). Timestamps
+  additionally apply `font-variant-numeric: tabular-nums` so columns stay
+  aligned when the seconds digits change.
+- **Level colors.** Each log level maps to a token:
+  - `info` → `var(--accent)`
+  - `warning` → `var(--warning)`
+  - `error` → `var(--danger)`
+  - `debug` → `var(--text-faint)`
+- **Layout.** Log rows use a 4-column CSS grid: `64px 56px 160px 1fr`
+  (time / level / tool / message).
+- **Body height.** `max-height: 280px` when expanded; scrolls internally.
+- **Collapse.** A chevron button in the header toggles the body.
+- **Top edge.** The 1 px accent gradient described in **Signature Topbar
+  Accent Gradient** — same stop positions, same opacity.
+
+## Mission Control Theme Exception
+
+Mission Control is **the only theme allowed to use decorative
+box-shadows**. Every other theme uses borders-only depth. The two
+exceptions Mission Control carries are the cyan glow on
+`.status-chip--success` and the cyan-tinted halo on `.input-card:hover`
+(documented in the next section).
+
+**Rule.** Do not add new `box-shadow` declarations to the global
+stylesheet for decorative purposes. If you need a glow effect for a
+specific theme, scope it inside that theme's
+`:root[data-theme="..."]` block.
+
+## Hover/Focus State Audit
+
+Every interactive element in the shell now has a consistent
+`:focus-visible` style using `var(--shadow-focus-ring)`. The audit covers:
+`.toggle-chip`, `.panel-toggle__button`, `.primary-button`, `.ghost-button`,
+`.scenario-pill`, `.choice-card`, `.run-log-panel__action`,
+`.run-log-panel__filter-option`, `.toolButton`, `.themeButton`,
+`.themeOption`, and `.healthButton`.
+
+When adding a new interactive element, mirror the existing pattern:
+
+```css
+.my-control:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
+}
+```
+
+## Column Mapping Dropdown Spacing
+
+The mapping table's `CustomSelect` no longer passes the `compact` prop.
+The menu is sized by two rules in the global stylesheet:
+
+```css
+.custom-select__menu {
+  min-width: max(220px, 100%);
+  max-width: 480px;
+}
+
+.mapping-table__select-cell {
+  min-width: 240px;
+}
+```
+
+This is the "boxes super close together horizontally" fix — without these
+constraints the select cells collapsed to fit their current text and the
+dropdown menus clipped long column names.
 
 ## The 7 Themes
 

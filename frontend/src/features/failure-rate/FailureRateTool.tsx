@@ -241,7 +241,6 @@ export function FailureRateTool() {
     return {
       workflowId: "failure_rate_link",
       outputStrategyId: "new_workbook_standard",
-      enrichments: { functional: false, piecePart: false },
       inputs: inputStates.map((input) => ({
         role: input.role,
         label: input.label,

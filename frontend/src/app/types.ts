@@ -1,11 +1,18 @@
-export type WorkflowId = "piece_part_generate" | "bom_only" | "fill_gaps" | "bom_compare_group" | "bom_compare_custom" | "failure_rate_link" | "refdes_extract";
+export type WorkflowId =
+  | "piece_part_generate"
+  | "bom_only"
+  | "functional_to_piecepart"
+  | "fill_gaps"
+  | "bom_compare_group"
+  | "bom_compare_custom"
+  | "failure_rate_link"
+  | "refdes_extract";
 export type FileRole =
   | "grouping"
   | "bom"
   | "hda"
   | "failureModes"
   | "functionalFmea"
-  | "piecePartFmea"
   | "existingFmea"
   | "targetWorkbook"
   | "bomA"
@@ -30,7 +37,27 @@ export interface WorkflowOption {
   summary: string;
   eyebrow: string;
   badge: string;
-  supportsEnrichment: boolean;
+  /**
+   * Input roles that MUST be supplied before this workflow will validate.
+   * Must match the backend's `_required_roles()` in `fmea/runtime.py`
+   * exactly — if the two drift, the UI will either block the user
+   * unnecessarily or let them submit broken runs.
+   */
+  requiredRoles?: FileRole[];
+  /**
+   * Input roles that are shown in the UI and passed to the backend if
+   * loaded, but NOT required for validation. Examples: HDA for every
+   * FMEA workflow, grouping for fill_gaps.
+   */
+  optionalRoles?: FileRole[];
+  /**
+   * When true, the workflow is shown in the UI but cannot be selected.
+   * Used to preview "Coming soon" workflows whose backend hasn't
+   * shipped yet — e.g. functional_to_piecepart before Phase D.
+   */
+  disabled?: boolean;
+  /** Optional tooltip shown when the workflow is disabled. */
+  disabledReason?: string;
 }
 
 export interface SheetOption {
@@ -51,6 +78,8 @@ export interface InputFileState {
   isResolvingSheets?: boolean;
   isAnalyzing?: boolean;
   resolutionError?: string | null;
+  /** Mock/demo placeholder path that should be visually marked as an example. */
+  isExample?: boolean;
 }
 
 export interface OutputStrategy {
@@ -142,10 +171,6 @@ export interface DemoScenario {
   description: string;
   workflowId: WorkflowId;
   outputStrategyId: OutputStrategyId;
-  enrichments: {
-    functional: boolean;
-    piecePart: boolean;
-  };
   inputs: InputFileState[];
   mappings: ColumnMappingRow[];
   validations: ValidationMessage[];

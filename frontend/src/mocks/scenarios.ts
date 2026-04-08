@@ -22,6 +22,7 @@ const baseInputs: Record<string, InputFileState> = {
     sheets: sheets(["Grouping", "Partitions"]),
     selectedSheet: "Grouping",
     tag: "Loaded",
+    isExample: true,
   },
   bom: {
     role: "bom",
@@ -32,6 +33,7 @@ const baseInputs: Record<string, InputFileState> = {
     sheets: sheets(["Main BOM", "Exports"]),
     selectedSheet: "Main BOM",
     tag: "Auto-detected",
+    isExample: true,
   },
   hda: {
     role: "hda",
@@ -42,6 +44,7 @@ const baseInputs: Record<string, InputFileState> = {
     sheets: sheets(["HDA Map", "Commodity"]),
     selectedSheet: "HDA Map",
     tag: "Optional",
+    isExample: true,
   },
   failureModes: {
     role: "failureModes",
@@ -52,6 +55,7 @@ const baseInputs: Record<string, InputFileState> = {
     sheets: sheets(["Failure Modes", "Taxonomy"]),
     selectedSheet: "Failure Modes",
     tag: "Validated",
+    isExample: true,
   },
   functionalFmea: {
     role: "functionalFmea",
@@ -62,16 +66,7 @@ const baseInputs: Record<string, InputFileState> = {
     sheets: sheets(["Functional FMEA"]),
     selectedSheet: "Functional FMEA",
     tag: "Enrichment",
-  },
-  piecePartFmea: {
-    role: "piecePartFmea",
-    label: "Piece-part source FMEA",
-    path: "DRIVE\\inputs\\Legacy_PiecePart_FMEA.xlsx",
-    helper: "Optional existing FMEA for effect lift and ordinal fallback.",
-    status: "attention",
-    sheets: sheets(["Piece-Part FMEA", "Archive"]),
-    selectedSheet: "Piece-Part FMEA",
-    tag: "Review needed",
+    isExample: true,
   },
   existingFmea: {
     role: "existingFmea",
@@ -82,6 +77,7 @@ const baseInputs: Record<string, InputFileState> = {
     sheets: sheets(["Piece-Part FMEA", "Functional FMEA"]),
     selectedSheet: "Piece-Part FMEA",
     tag: "Gap source",
+    isExample: true,
   },
   targetWorkbook: {
     role: "targetWorkbook",
@@ -92,6 +88,7 @@ const baseInputs: Record<string, InputFileState> = {
     sheets: sheets(["Template", "FMEA Sheet"]),
     selectedSheet: "FMEA Sheet",
     tag: "Planner-ready",
+    isExample: true,
   },
 };
 
@@ -101,7 +98,6 @@ const allPrototypeInputs = [
   baseInputs.hda,
   baseInputs.failureModes,
   baseInputs.functionalFmea,
-  baseInputs.piecePartFmea,
   baseInputs.existingFmea,
   baseInputs.targetWorkbook,
 ];
@@ -191,28 +187,44 @@ const warningHeavyMessages: ValidationMessage[] = [
 
 export const workflowOptions: WorkflowOption[] = [
   {
-    id: "piece_part_generate",
-    title: "Generate Piece-Part",
-    summary: "Primary flow for building a fresh piece-part FMEA from grouping, BOM, HDA, and failure mode sources.",
-    eyebrow: "Recommended",
-    badge: "Balanced",
-    supportsEnrichment: true,
-  },
-  {
     id: "bom_only",
-    title: "BOM-Only Generate",
-    summary: "Faster draft path for early hardware drops when grouping is incomplete but a BOM exists.",
+    title: "Generate Piece-Part from BOM Only",
+    summary:
+      "Expands every reference designator in a BOM into piece-part FMEA rows. Use this when the design is too early for a grouping file.",
     eyebrow: "Fast start",
     badge: "Lean",
-    supportsEnrichment: true,
+    requiredRoles: ["bom", "failureModes"],
+    optionalRoles: ["hda"],
+  },
+  {
+    id: "piece_part_generate",
+    title: "Generate Piece-Part from Grouping File",
+    summary:
+      "Creates a piece-part FMEA from circuit-block groups defined in a grouping workbook plus BOM and HDA data.",
+    eyebrow: "Recommended",
+    badge: "Balanced",
+    requiredRoles: ["grouping", "bom", "failureModes"],
+    optionalRoles: ["hda"],
+  },
+  {
+    id: "functional_to_piecepart",
+    title: "Generate Piece-Part from Functional FMEA",
+    summary:
+      "Detects circuit-block rows in an existing functional FMEA, expands the comma-separated RefDes column into piece-part rows, and inserts them under each block.",
+    eyebrow: "New workflow",
+    badge: "Functional",
+    requiredRoles: ["functionalFmea", "bom", "failureModes"],
+    optionalRoles: ["hda"],
   },
   {
     id: "fill_gaps",
-    title: "Fill Gaps",
-    summary: "Inspects an existing FMEA and generates only missing piece-part rows with diagnostic context.",
+    title: "Fill Gaps (Advanced)",
+    summary:
+      "Takes an existing functional or piece-part FMEA and adds piece-part rows for any BOM components missing from it. New columns are appended at the very end of the sheet. All existing rows, data, formatting, fonts, and column widths are preserved.",
     eyebrow: "Delta mode",
-    badge: "Targeted",
-    supportsEnrichment: false,
+    badge: "Advanced",
+    requiredRoles: ["existingFmea", "bom", "failureModes"],
+    optionalRoles: ["hda", "grouping"],
   },
 ];
 
@@ -220,19 +232,20 @@ export const outputStrategies: OutputStrategy[] = [
   {
     id: "new_workbook_standard",
     title: "New Workbook",
-    summary: "Generate a new output workbook with the selected profile and preview-first validation.",
+    summary: "Generate a fresh output workbook with all generator columns and summary sheets.",
     badge: "Clean export",
   },
   {
     id: "existing_workbook_best_effort",
     title: "Existing Workbook",
-    summary: "Apply updates into a workbook copy using current openpyxl-compatible behaviors.",
+    summary: "Apply updates into a workbook copy using best-effort openpyxl behaviors. Layout may shift.",
     badge: "Best effort",
   },
   {
     id: "existing_workbook_preserve_formatting",
-    title: "Preserve Formatting",
-    summary: "Plan workbook-safe updates against a template copy while protecting layout and non-data regions.",
+    title: "Existing Workbook (Preserve Formatting)",
+    summary:
+      "Writes the new piece-part rows directly into the selected functional or piece-part FMEA workbook. Any new columns are appended at the very end of the sheet. All existing rows, data, formatting, fonts, and column widths are preserved.",
     badge: "High trust",
   },
 ];
@@ -322,7 +335,6 @@ export const demoScenarios: DemoScenario[] = [
     description: "Default modern flow with functional enrichment enabled and a clean new-workbook export.",
     workflowId: "piece_part_generate",
     outputStrategyId: "new_workbook_standard",
-    enrichments: { functional: true, piecePart: false },
     inputs: allPrototypeInputs,
     mappings: baseMappings,
     validations: [
@@ -354,7 +366,6 @@ export const demoScenarios: DemoScenario[] = [
     description: "Delta-oriented scenario that reads an existing FMEA and targets only missing piece-part rows.",
     workflowId: "fill_gaps",
     outputStrategyId: "existing_workbook_best_effort",
-    enrichments: { functional: false, piecePart: false },
     inputs: allPrototypeInputs,
     mappings: baseMappings,
     validations: [
@@ -386,7 +397,6 @@ export const demoScenarios: DemoScenario[] = [
     description: "Formatting-preserved strategy with both enrichment sources enabled and template planning emphasized.",
     workflowId: "piece_part_generate",
     outputStrategyId: "existing_workbook_preserve_formatting",
-    enrichments: { functional: true, piecePart: true },
     inputs: allPrototypeInputs,
     mappings: baseMappings,
     validations: [
@@ -418,7 +428,6 @@ export const demoScenarios: DemoScenario[] = [
     description: "Stress case for validation density, manual review, and high-visibility diagnostic messaging.",
     workflowId: "piece_part_generate",
     outputStrategyId: "existing_workbook_preserve_formatting",
-    enrichments: { functional: true, piecePart: true },
     inputs: allPrototypeInputs,
     mappings: baseMappings.map((row) =>
       row.canonical === "Detection Method" ? { ...row, mappedTo: "Detection", status: "attention" } : row,
@@ -444,7 +453,6 @@ export const demoScenarios: DemoScenario[] = [
     description: "Focused run-state demo that ends in a successful workbook plan summary.",
     workflowId: "piece_part_generate",
     outputStrategyId: "existing_workbook_preserve_formatting",
-    enrichments: { functional: true, piecePart: true },
     inputs: allPrototypeInputs,
     mappings: baseMappings,
     validations: [
@@ -476,7 +484,6 @@ export const demoScenarios: DemoScenario[] = [
     description: "Focused run-state demo that ends in a planner failure and operator-facing recovery guidance.",
     workflowId: "fill_gaps",
     outputStrategyId: "existing_workbook_preserve_formatting",
-    enrichments: { functional: false, piecePart: false },
     inputs: allPrototypeInputs,
     mappings: baseMappings,
     validations: warningHeavyMessages,
@@ -506,6 +513,7 @@ export const bomCompareInputs: Record<string, InputFileState> = {
     sheets: sheets(["Grouping"]),
     selectedSheet: "Grouping",
     tag: "Loaded",
+    isExample: true,
   },
   bom: {
     role: "bom",
@@ -516,6 +524,7 @@ export const bomCompareInputs: Record<string, InputFileState> = {
     sheets: sheets(["Main BOM"]),
     selectedSheet: "Main BOM",
     tag: "Auto-detected",
+    isExample: true,
   },
   bomA: {
     role: "bomA",
@@ -526,6 +535,7 @@ export const bomCompareInputs: Record<string, InputFileState> = {
     sheets: sheets(["Sheet1"]),
     selectedSheet: "Sheet1",
     tag: "Loaded",
+    isExample: true,
   },
   bomB: {
     role: "bomB",
@@ -536,6 +546,7 @@ export const bomCompareInputs: Record<string, InputFileState> = {
     sheets: sheets(["Sheet1"]),
     selectedSheet: "Sheet1",
     tag: "Loaded",
+    isExample: true,
   },
 };
 
@@ -546,7 +557,6 @@ export const bomCompareWorkflowOptions: WorkflowOption[] = [
     summary: "Compare grouping file against BOM to find missing and extra RefDes.",
     eyebrow: "Standard",
     badge: "Coverage",
-    supportsEnrichment: false,
   },
   {
     id: "bom_compare_custom",
@@ -554,7 +564,6 @@ export const bomCompareWorkflowOptions: WorkflowOption[] = [
     summary: "Compare two arbitrary BOMs to find differences by RefDes key.",
     eyebrow: "Flexible",
     badge: "Delta",
-    supportsEnrichment: false,
   },
 ];
 
@@ -613,7 +622,6 @@ export const bomCompareDemoScenarios: DemoScenario[] = [
     description: "Standard group coverage check.",
     workflowId: "bom_compare_group",
     outputStrategyId: "new_workbook_standard",
-    enrichments: { functional: false, piecePart: false },
     inputs: [bomCompareInputs.grouping, bomCompareInputs.bom],
     mappings: bomCompareGroupMappings,
     validations: [
@@ -655,6 +663,7 @@ export const failureRateInputs: Record<string, InputFileState> = {
     sheets: sheets(["Predictions"]),
     selectedSheet: "Predictions",
     tag: "Loaded",
+    isExample: true,
   },
   fmea: {
     role: "fmea",
@@ -665,6 +674,7 @@ export const failureRateInputs: Record<string, InputFileState> = {
     sheets: sheets(["FMEA"]),
     selectedSheet: "FMEA",
     tag: "Loaded",
+    isExample: true,
   },
 };
 
@@ -720,7 +730,6 @@ export const failureRateDemoScenarios: DemoScenario[] = [
     description: "Link prediction failure rates to FMEA failure modes.",
     workflowId: "failure_rate_link",
     outputStrategyId: "new_workbook_standard",
-    enrichments: { functional: false, piecePart: false },
     inputs: [failureRateInputs.prediction, failureRateInputs.fmea],
     mappings: failureRateMappings,
     validations: [
@@ -762,6 +771,7 @@ export const refdesInputs: Record<string, InputFileState> = {
     sheets: [],
     selectedSheet: "",
     tag: "Loaded",
+    isExample: true,
   },
   bom: {
     role: "bom",
@@ -772,6 +782,7 @@ export const refdesInputs: Record<string, InputFileState> = {
     sheets: sheets(["Main BOM"]),
     selectedSheet: "Main BOM",
     tag: "Optional",
+    isExample: true,
   },
   pinlist: {
     role: "pinlist" as FileRole,
@@ -792,7 +803,6 @@ export const refdesDemoScenarios: DemoScenario[] = [
     description: "Extract RefDes from annotated schematic PDF.",
     workflowId: "refdes_extract" as WorkflowId,
     outputStrategyId: "new_workbook_standard",
-    enrichments: { functional: false, piecePart: false },
     inputs: [refdesInputs.pdf, refdesInputs.bom],
     mappings: [],
     validations: [{ id: "ready", severity: "info", area: "Run State", title: "Ready to run", detail: "PDF loaded and ready for extraction." }],

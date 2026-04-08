@@ -22,7 +22,10 @@
 }
 
 :root {
-  /* Font families */
+  /* ============================================================
+     Font families — self-hosted Inter (UI) + JetBrains Mono (data).
+     `--font-display` is a synonym for sans by default; Mission Control
+     overrides both to mono. Don't add Google Fonts links — fully offline. */
   --font-sans: "Inter", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
   --font-display: "Inter", "Segoe UI Variable Display", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
@@ -30,7 +33,12 @@
   font-family: var(--font-sans);
   font-feature-settings: "cv11", "ss01", "ss03";
 
-  /* Type scale — semantic tokens */
+  /* ============================================================
+     Type scale — semantic tokens.
+     RATIONALE: We deliberately use 11px (text-xs) and 13px (text-base)
+     — both off the 4px grid — because dense developer UIs benefit from
+     compact sizing that 12px (too small) and 14px (too loose) can't hit.
+     The scale is non-modular by design. Don't "fix" it. */
   --text-2xs: 10px;
   --text-xs: 11px;
   --text-sm: 12px;
@@ -52,11 +60,29 @@
   --weight-semibold: 600;
   --weight-bold: 700;
 
-  /* Letter spacing */
+  /* Letter spacing.
+     `--tracking-uppercase` is the canonical value for ALL uppercase
+     metadata labels (eyebrow, .header-metric span, status chip, etc.).
+     If you find yourself writing `letter-spacing: 0.0Xem` on uppercase
+     text, use this token instead. */
   --tracking-tight: -0.01em;
-  --tracking-normal: 0;
   --tracking-wide: 0.02em;
-  --tracking-uppercase: 0.06em;
+  --tracking-uppercase: 0.08em;
+
+  /* ============================================================
+     Spacing scale — 4px grid, 8 named steps.
+     RULE: never use raw pixel values for padding / margin / gap /
+     min-height in component CSS. Always reach for one of these.
+     Off-grid values (e.g. negative-margin hit-area expansion) are
+     allowed only with an inline comment explaining the deviation. */
+  --space-1: 4px;     /* micro: icon gaps, fine adjustments */
+  --space-2: 8px;     /* tight: within components */
+  --space-3: 12px;    /* standard: between related elements */
+  --space-4: 16px;    /* comfortable: section padding */
+  --space-5: 20px;    /* relaxed: rail padding, chrome */
+  --space-6: 24px;    /* generous: between sections */
+  --space-7: 32px;    /* major: section separation */
+  --space-8: 48px;    /* hero: major page sections */
 
   /* Surface colors */
   --bg: #f6f8fb;
@@ -69,6 +95,7 @@
   --text-secondary: #415268;
   --text-muted: #617289;
   --text-faint: #8794a8;
+  --text-on-accent: #ffffff;          /* For text rendered on top of --accent (primary buttons) */
   --accent: #235ee7;
   --accent-soft: #edf3ff;
   --success: #1b8758;
@@ -77,9 +104,31 @@
   --warning-soft: #fff6df;
   --danger: #b14433;
   --danger-soft: #fff0ed;
-  --radius-lg: 10px;
-  --radius-md: 8px;
+
+  /* ============================================================
+     Border-radius scale.
+     Use --radius-pill for fully rounded badges/chips. Use --radius-xl
+     only for the rail tool buttons and brand glyph (the only 12px
+     surfaces). Everything else uses --radius-sm (controls), --radius-md
+     (cards), or --radius-lg (prominent containers). */
+  --radius-xs: 4px;
   --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-pill: 999px;
+
+  /* ============================================================
+     Shadow scale — depth strategy is borders-only by default.
+     These shadows are reserved for floating / focused / instrument
+     elements. If you find yourself adding a new box-shadow rule,
+     ask whether it should be one of these instead. */
+  --shadow-popover: 0 10px 28px rgba(15, 23, 42, 0.12);
+  --shadow-focus-ring: 0 0 0 3px rgba(35, 94, 231, 0.08);
+  --shadow-rail-active: 0 0 0 1px rgba(35, 94, 231, 0.04), 0 6px 18px rgba(35, 94, 231, 0.08);
+  --shadow-toast: 0 8px 24px rgba(15, 23, 42, 0.08);
+
+  /* Motion */
   --ease: cubic-bezier(0.25, 1, 0.5, 1);
   --border-subtle: var(--line);
 }
@@ -103,6 +152,12 @@
   --warning-soft: rgba(240, 186, 87, 0.16);
   --danger: #ef8f82;
   --danger-soft: rgba(239, 143, 130, 0.14);
+
+  /* Dark themes need stronger shadows — light-theme rgba is invisible. */
+  --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.5);
+  --shadow-focus-ring: 0 0 0 3px rgba(106, 156, 255, 0.18);
+  --shadow-rail-active: 0 0 0 1px rgba(106, 156, 255, 0.18), 0 6px 18px rgba(106, 156, 255, 0.16);
+  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
 
 :root[data-theme="signal_slate"] {
@@ -147,6 +202,10 @@
   --warning-soft: rgba(255, 184, 77, 0.16);
   --danger: #ff7a7a;
   --danger-soft: rgba(255, 122, 122, 0.16);
+  --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.55);
+  --shadow-focus-ring: 0 0 0 3px rgba(72, 202, 228, 0.20);
+  --shadow-rail-active: 0 0 0 1px rgba(72, 202, 228, 0.20), 0 6px 18px rgba(72, 202, 228, 0.18);
+  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
 /* High Contrast — accessibility-first. Pure black/white with a yellow
@@ -162,6 +221,7 @@
   --text-secondary: #f0f0f0;
   --text-muted: #d0d0d0;
   --text-faint: #b0b0b0;
+  --text-on-accent: #000000;          /* Yellow accent → black text for contrast */
   --accent: #ffd60a;
   --accent-soft: rgba(255, 214, 10, 0.18);
   --success: #00ff7f;
@@ -170,6 +230,10 @@
   --warning-soft: rgba(255, 214, 10, 0.18);
   --danger: #ff4444;
   --danger-soft: rgba(255, 68, 68, 0.18);
+  --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.7);
+  --shadow-focus-ring: 0 0 0 3px rgba(255, 214, 10, 0.4);
+  --shadow-rail-active: 0 0 0 1px rgba(255, 214, 10, 0.4), 0 6px 18px rgba(255, 214, 10, 0.2);
+  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.7);
 }
 
 /* Synthwave — neon dev-tool vibe. Hot pink/magenta accents on deep
@@ -193,6 +257,10 @@
   --warning-soft: rgba(255, 204, 0, 0.16);
   --danger: #ff3366;
   --danger-soft: rgba(255, 51, 102, 0.16);
+  --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.55);
+  --shadow-focus-ring: 0 0 0 3px rgba(255, 42, 213, 0.22);
+  --shadow-rail-active: 0 0 0 1px rgba(255, 42, 213, 0.22), 0 6px 18px rgba(255, 42, 213, 0.18);
+  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
 /* Mission Control — NASA/JPL instrument panel aesthetic. Monospaced
@@ -228,6 +296,15 @@
   --font-display: var(--font-mono);
   font-family: var(--font-mono);
   font-feature-settings: "tnum" 1, "zero" 1, "cv11" 1;
+
+  /* Mission Control is the ONLY theme allowed to use decorative
+     box-shadows for instrument-glow effects. Other themes stay
+     borders-only — see the rule overrides at the bottom of this
+     file (search for "Mission Control theme — style overrides"). */
+  --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.65);
+  --shadow-focus-ring: 0 0 0 3px rgba(0, 217, 255, 0.22);
+  --shadow-rail-active: 0 0 0 1px rgba(0, 217, 255, 0.25), 0 6px 18px rgba(0, 217, 255, 0.16);
+  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.6);
 }
 
 * {
@@ -267,22 +344,22 @@ button:disabled {
 
 .tool-workspace {
   display: grid;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .tool-banner {
   display: flex;
   justify-content: space-between;
   align-items: start;
-  gap: 16px;
-  padding: 16px;
+  gap: var(--space-4);
+  padding: var(--space-4);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface);
 }
 
 .tool-banner__title {
-  margin: 0 0 6px;
+  margin: 0 0 6px; /* off-grid: tight inter-line gap inside the banner */
   font-size: var(--text-xl);
   line-height: 1.1;
   letter-spacing: -0.02em;
@@ -290,16 +367,16 @@ button:disabled {
 
 .tool-banner__chips {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   flex-wrap: wrap;
 }
 
 .app-main {
   display: grid;
-  gap: 16px;
+  gap: var(--space-4);
   max-width: 1480px;
   margin: 0 auto;
-  padding: 20px 24px 32px;
+  padding: var(--space-5) var(--space-6) var(--space-7);
   animation: fade-rise 220ms var(--ease);
 }
 
@@ -307,12 +384,12 @@ button:disabled {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .topbar__title {
   display: grid;
-  gap: 6px;
+  gap: 6px; /* off-grid: tight inter-line gap inside the title block */
 }
 
 .topbar h1,
@@ -336,7 +413,7 @@ button:disabled {
   color: var(--text-faint);
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
-  letter-spacing: 0.1em;
+  letter-spacing: var(--tracking-uppercase);
   text-transform: uppercase;
 }
 
@@ -357,14 +434,14 @@ button:disabled {
 
 .topbar__status {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   flex-wrap: wrap;
 }
 
 .scenario-rail {
   display: grid;
-  gap: 8px;
-  padding: 12px;
+  gap: var(--space-2);
+  padding: var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface);
@@ -374,7 +451,7 @@ button:disabled {
   display: flex;
   justify-content: space-between;
   align-items: end;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .scenario-rail__header p {
@@ -383,17 +460,17 @@ button:disabled {
 
 .scenario-rail__list {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   overflow-x: auto;
-  padding-bottom: 2px;
+  padding-bottom: 2px; /* off-grid: scrollbar gutter compensation */
 }
 
 .scenario-pill {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  min-height: 32px;
-  padding: 0 10px;
+  gap: var(--space-2);
+  min-height: 32px; /* off-grid 32px control height — sits between space-7 (32) and space-6 (24); intentional */
+  padding: 0 10px; /* off-grid 10px horizontal: tighter than space-3 (12) for pill compactness */
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--surface);
@@ -403,6 +480,12 @@ button:disabled {
     border-color 160ms var(--ease),
     background 160ms var(--ease),
     color 160ms var(--ease);
+}
+
+.scenario-pill:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
+  border-color: var(--accent);
 }
 
 .scenario-pill[data-active="true"] {
@@ -420,13 +503,13 @@ button:disabled {
   color: var(--text-faint);
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-uppercase);
   text-transform: uppercase;
 }
 
 .workspace-grid {
   display: grid;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .workspace-grid--single {
@@ -437,12 +520,12 @@ button:disabled {
 .workspace-grid__main,
 .workspace-grid__side {
   display: grid;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .workspace-grid__side--sticky {
   position: sticky;
-  top: 20px;
+  top: var(--space-5);
 }
 
 .section-card,
@@ -457,15 +540,15 @@ button:disabled {
 }
 
 .section-card {
-  padding: 16px;
+  padding: var(--space-4);
 }
 
 .section-card__header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
 }
 
 .section-card h2 {
@@ -479,12 +562,12 @@ button:disabled {
 
 .header-metrics {
   display: flex;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .header-metric {
   display: grid;
-  gap: 2px;
+  gap: 2px; /* off-grid: extreme-tight gap inside metric stacks */
 }
 
 .header-metric span,
@@ -498,7 +581,7 @@ button:disabled {
   color: var(--text-faint);
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-uppercase);
   text-transform: uppercase;
 }
 
@@ -509,13 +592,13 @@ button:disabled {
 
 .setup-grid {
   display: grid;
-  gap: 12px;
+  gap: var(--space-3);
   grid-template-columns: 1fr 1fr;
 }
 
 .setup-block {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .setup-block--full {
@@ -524,14 +607,14 @@ button:disabled {
 
 .card-grid {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
   grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
 }
 
 .choice-card {
   display: grid;
-  gap: 8px;
-  padding: 12px;
+  gap: var(--space-2);
+  padding: var(--space-3);
   color: inherit;
   text-align: left;
   transition:
@@ -539,9 +622,25 @@ button:disabled {
     background 160ms var(--ease);
 }
 
+.choice-card:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
+  border-color: var(--accent);
+}
+
 .choice-card[data-active="true"] {
   border-color: var(--accent);
   background: var(--accent-soft);
+}
+
+.choice-card[data-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.choice-card[data-disabled="true"]:hover {
+  border-color: var(--line);
+  background: var(--surface);
 }
 
 .choice-card__header,
@@ -551,7 +650,7 @@ button:disabled {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .choice-card__badge,
@@ -559,13 +658,13 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 22px;
-  padding: 0 8px;
+  min-height: 22px; /* off-grid: chip height tighter than control 32px */
+  padding: 0 var(--space-2);
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
-  letter-spacing: 0.03em;
+  letter-spacing: 0.03em; /* off-grid: tighter than --tracking-uppercase for chip density */
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -606,8 +705,44 @@ button:disabled {
 
 .toggle-row {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   flex-wrap: wrap;
+}
+
+/* Column picker — checkbox list for Fill Gaps "Select Columns to Merge". */
+.column-picker {
+  display: grid;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-soft);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.column-picker__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px 6px; /* off-grid: tight checkbox row padding */
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: var(--radius-xs);
+}
+
+.column-picker__row:hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.column-picker__row input[type="checkbox"] {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
 }
 
 .toggle-chip,
@@ -618,9 +753,9 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  min-height: 36px;
-  padding: 0 12px;
+  gap: var(--space-2);
+  min-height: 36px; /* off-grid: control height tuned for dense forms; sits between 32 and 40 */
+  padding: 0 var(--space-3);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   background: var(--surface);
@@ -633,6 +768,15 @@ button:disabled {
     box-shadow 160ms var(--ease);
 }
 
+.toggle-chip:focus-visible,
+.panel-toggle__button:focus-visible,
+.primary-button:focus-visible,
+.ghost-button:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
+  border-color: var(--accent);
+}
+
 .toggle-chip[data-active="true"],
 .panel-toggle__button[data-active="true"] {
   color: var(--accent);
@@ -642,22 +786,22 @@ button:disabled {
 
 .panel-toggle {
   display: inline-flex;
-  gap: 6px;
+  gap: 6px; /* off-grid: tight gap between paired toggle buttons */
 }
 
 .input-grid {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .input-card {
   display: grid;
-  gap: 8px;
-  padding: 12px;
+  gap: var(--space-2);
+  padding: var(--space-3);
 }
 
 .input-card__label {
-  margin: 0 0 4px;
+  margin: 0 0 var(--space-1);
   font-size: var(--text-base);
   font-weight: var(--weight-semibold);
 }
@@ -672,6 +816,11 @@ button:disabled {
   word-break: break-all;
 }
 
+.input-card__path--example {
+  font-style: italic;
+  color: var(--text-faint);
+}
+
 .input-card__note {
   margin: 0;
   color: var(--text-secondary);
@@ -681,10 +830,10 @@ button:disabled {
 .analysis-summary,
 .analysis-card {
   display: grid;
-  gap: 8px;
-  padding: 12px;
+  gap: var(--space-2);
+  padding: var(--space-3);
   border: 1px solid var(--border-subtle);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--surface-soft);
 }
 
@@ -704,7 +853,7 @@ button:disabled {
 .analysis-summary__chips,
 .analysis-card__metrics {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   flex-wrap: wrap;
 }
 
@@ -712,12 +861,12 @@ button:disabled {
   display: flex;
   justify-content: space-between;
   align-items: end;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .sheet-picker {
   display: grid;
-  gap: 6px;
+  gap: 6px; /* off-grid: tight label-to-control gap */
   flex: 1;
 }
 
@@ -733,11 +882,11 @@ button:disabled {
 
 .custom-select__trigger[data-state="open"] {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(35, 94, 231, 0.08);
+  box-shadow: var(--shadow-focus-ring);
 }
 
 .custom-select__trigger--compact {
-  min-height: 32px;
+  min-height: 32px; /* off-grid: compact control height */
 }
 
 .custom-select__trigger:disabled {
@@ -758,26 +907,33 @@ button:disabled {
 .custom-select__menu {
   z-index: 20;
   display: grid;
-  gap: 2px;
-  min-width: 100%;
-  padding: 4px;
+  gap: 2px; /* off-grid: extreme-tight gap between dropdown items */
+  /* min-width grows with the trigger but never shrinks below 220px,
+     so long source-column names (e.g. "Component Part Description (BOM)")
+     don't squeeze when the trigger is in a narrow table cell. */
+  min-width: max(220px, 100%);
+  max-width: 480px;
+  padding: var(--space-1);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   background: var(--surface);
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
+  box-shadow: var(--shadow-popover);
 }
 
 .custom-select__option {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 30px;
-  padding: 0 8px;
+  min-height: var(--space-2); /* enforced by padding below */
+  padding: 6px var(--space-3); /* 6px vertical off-grid for option row breathing room */
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: transparent;
   color: var(--text-secondary);
   text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .custom-select__option[data-highlighted],
@@ -788,7 +944,7 @@ button:disabled {
 }
 
 .custom-select__indicator {
-  margin-left: 8px;
+  margin-left: var(--space-2);
   color: var(--accent);
 }
 
@@ -805,7 +961,7 @@ table {
 
 th,
 td {
-  padding: 10px 12px;
+  padding: 10px var(--space-3); /* 10px off-grid: cell vertical density tighter than space-3 */
   border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: top;
@@ -820,27 +976,35 @@ tbody tr:hover {
   font-weight: var(--weight-semibold);
 }
 
+/* Mapping table "Mapped to" cell — give the dropdown trigger enough
+   horizontal room so long source-column names are visible without
+   truncation, and so the menu (min-width: max(220px, 100%)) opens
+   wide enough to read every option clearly. */
+.mapping-table__select-cell {
+  min-width: 240px;
+}
+
 .validation-layout,
 .run-state,
 .timeline {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .validation-list {
   display: grid;
-  gap: 6px;
+  gap: 6px; /* off-grid: tight stack between validation cards */
 }
 
 .validation-card {
   display: grid;
-  gap: 6px;
-  padding: 10px 12px;
+  gap: 6px; /* off-grid */
+  padding: 10px var(--space-3); /* 10px off-grid: matches table cell density */
 }
 
 .validation-card__body {
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .validation-card__body strong {
@@ -850,21 +1014,21 @@ tbody tr:hover {
 
 .run-state__controls {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   flex-wrap: wrap;
 }
 
 .primary-button {
-  color: #ffffff;
+  color: var(--text-on-accent);
   border-color: var(--accent);
   background: var(--accent);
 }
 
 .progress-shell {
   overflow: hidden;
-  height: 8px;
+  height: var(--space-2);
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-soft);
 }
 
@@ -877,10 +1041,10 @@ tbody tr:hover {
 
 .timeline__item {
   display: grid;
-  grid-template-columns: 8px minmax(0, 1fr) auto;
-  gap: 10px;
+  grid-template-columns: var(--space-2) minmax(0, 1fr) auto;
+  gap: 10px; /* off-grid: timeline column gap */
   align-items: start;
-  padding: 10px 12px;
+  padding: 10px var(--space-3); /* 10px off-grid: matches table density */
 }
 
 .timeline__item[data-status="active"] {
@@ -889,10 +1053,10 @@ tbody tr:hover {
 }
 
 .timeline__dot {
-  width: 8px;
-  height: 8px;
-  margin-top: 5px;
-  border-radius: 999px;
+  width: var(--space-2);
+  height: var(--space-2);
+  margin-top: 5px; /* off-grid: optical centering against title baseline */
+  border-radius: var(--radius-pill);
   background: var(--line-strong);
 }
 
@@ -905,7 +1069,7 @@ tbody tr:hover {
 }
 
 .timeline__title {
-  margin: 0 0 2px;
+  margin: 0 0 2px; /* off-grid: extreme-tight gap below timeline title */
   font-size: var(--text-base);
   font-weight: var(--weight-semibold);
 }
@@ -916,10 +1080,287 @@ tbody tr:hover {
   font-size: var(--text-sm);
 }
 
+/* === Run Log Panel ============================================ */
+/* Cross-tool log console docked at the bottom of the app shell.   */
+/* Aesthetic: control-room precision. Restraint over ornament.    */
+/* Color-coded levels scan instantly; tabular numerals lock the    */
+/* timestamp column; a single 1px accent gradient at the top edge  */
+/* signals "system surface" without shouting.                      */
+
+.run-log-panel {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto;
+  border-top: 1px solid var(--line-strong);
+  background: var(--surface-muted);
+}
+
+/* Subtle 1px gradient that fades from transparent to accent and back.
+   The single design flourish — gives the panel a faint "control bar" feel
+   without ornament. Pointer-events disabled so it never blocks the toggle. */
+.run-log-panel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--accent) 28%,
+    var(--accent) 72%,
+    transparent 100%
+  );
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.run-log-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: 6px var(--space-6); /* 6px vertical off-grid: tight panel chrome */
+  min-height: 40px; /* off-grid: 40px panel chrome height */
+  user-select: none;
+}
+
+.run-log-panel__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px; /* off-grid: tight icon-text gap inside the toggle */
+  padding: 6px var(--space-3); /* 6px vertical off-grid */
+  margin: -6px calc(var(--space-3) * -1); /* off-grid negative margin: hit-area expansion without affecting layout */
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition:
+    background 160ms var(--ease),
+    color 160ms var(--ease);
+}
+
+.run-log-panel__toggle:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.run-log-panel__toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.run-log-panel__title {
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-uppercase);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+}
+
+.run-log-panel__count {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-normal);
+  letter-spacing: 0.04em; /* off-grid: tighter than uppercase tracking for compact metric display */
+}
+
+.run-log-panel__truncated {
+  margin-left: var(--space-1);
+  padding: 1px var(--space-2); /* 1px vertical off-grid: chip-height tight */
+  border-radius: var(--radius-pill);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 10px; /* off-grid: smaller than --text-2xs for chip density */
+  letter-spacing: 0.03em;
+}
+
+.run-log-panel__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.run-log-panel__filter {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.run-log-panel__filter-option {
+  padding: var(--space-1) 10px; /* 10px horizontal off-grid: tighter than space-3 for segment-control feel */
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-uppercase);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    background 140ms var(--ease),
+    color 140ms var(--ease);
+}
+
+.run-log-panel__filter-option + .run-log-panel__filter-option {
+  border-left: 1px solid var(--line-strong);
+}
+
+.run-log-panel__filter-option:focus-visible {
+  outline: none;
+  box-shadow: inset var(--shadow-focus-ring);
+}
+
+.run-log-panel__filter-option[data-active="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.run-log-panel__filter-option:not([data-active="true"]):hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.run-log-panel__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px; /* off-grid: tight icon-text gap */
+  padding: var(--space-1) 10px; /* matches filter-option */
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-uppercase);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    border-color 140ms var(--ease),
+    color 140ms var(--ease),
+    background 140ms var(--ease);
+}
+
+.run-log-panel__action:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.run-log-panel__action:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
+  border-color: var(--accent);
+}
+
+.run-log-panel__action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.run-log-panel__body {
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  padding: var(--space-2) var(--space-6) 14px; /* 14px bottom off-grid: leaves room for last line baseline */
+  max-height: 280px; /* off-grid: panel max height */
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.run-log-panel__empty {
+  margin: var(--space-7) 0;
+  text-align: center;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.02em;
+}
+
+.run-log-panel__line {
+  display: grid;
+  grid-template-columns: 64px 56px 160px 1fr; /* off-grid track widths: tuned for HH:MM:SS, level token, tool tag */
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: 2px 0; /* off-grid: extreme-tight log-line vertical padding */
+  font-variant-numeric: tabular-nums;
+  border-radius: 3px; /* off-grid: micro radius for hover feedback only */
+  transition: background 100ms var(--ease);
+}
+
+.run-log-panel__line:hover {
+  background: var(--surface-muted);
+}
+
+.run-log-panel__time {
+  color: var(--text-faint);
+  letter-spacing: 0.02em;
+}
+
+.run-log-panel__level {
+  font-size: 10px; /* off-grid: smaller than --text-2xs for level token compactness */
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-uppercase);
+  text-transform: uppercase;
+}
+
+.run-log-panel__level--debug {
+  color: var(--text-faint);
+}
+
+.run-log-panel__level--info {
+  color: var(--accent);
+}
+
+.run-log-panel__level--warning {
+  color: var(--warning);
+}
+
+.run-log-panel__level--error {
+  color: var(--danger, #b14433);
+}
+
+.run-log-panel__line--warning .run-log-panel__text {
+  color: var(--warning);
+}
+
+.run-log-panel__line--error .run-log-panel__text {
+  color: var(--danger, #b14433);
+}
+
+.run-log-panel__tool {
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10px; /* off-grid */
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-uppercase);
+  text-transform: uppercase;
+}
+
+.run-log-panel__text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .execution-log {
   display: grid;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: var(--space-2);
+  padding: 10px var(--space-3); /* 10px off-grid: matches table cell density */
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface-muted);
@@ -929,15 +1370,15 @@ tbody tr:hover {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
   color: var(--text-secondary);
   font-size: var(--text-sm);
 }
 
 .execution-log__body {
   display: grid;
-  gap: 4px;
-  max-height: 168px;
+  gap: var(--space-1);
+  max-height: 168px; /* off-grid: in-context log viewer max height */
   overflow: auto;
 }
 
@@ -954,15 +1395,15 @@ tbody tr:hover {
   display: flex;
   align-items: start;
   justify-content: space-between;
-  gap: 16px;
-  padding: 16px;
+  gap: var(--space-4);
+  padding: var(--space-4);
   border: 1px solid rgba(177, 68, 51, 0.24);
   border-radius: var(--radius-md);
   background: var(--danger-soft);
 }
 
 .error-panel h2 {
-  margin: 0 0 6px;
+  margin: 0 0 6px; /* off-grid: tight inter-line gap */
   font-size: var(--text-lg);
   line-height: 1.1;
   letter-spacing: -0.02em;
@@ -970,7 +1411,7 @@ tbody tr:hover {
 
 .error-panel__body {
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .sr-only-focusable {
@@ -987,25 +1428,25 @@ tbody tr:hover {
 
 .run-result {
   display: grid;
-  gap: 10px;
-  padding: 12px;
+  gap: 10px; /* off-grid: tighter than space-3 for result body density */
+  padding: var(--space-3);
 }
 
 .run-result__body {
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .run-result__metrics {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
   grid-template-columns: 1fr 1fr;
 }
 
 .run-result__metric {
   display: grid;
-  gap: 2px;
-  padding: 8px 10px;
+  gap: 2px; /* off-grid: extreme-tight metric stack */
+  padding: var(--space-2) 10px; /* 10px horizontal off-grid */
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--surface-muted);
@@ -1018,7 +1459,7 @@ tbody tr:hover {
 
 .run-result__notes {
   margin: 0;
-  padding-left: 18px;
+  padding-left: 18px; /* off-grid: list-style-position: outside indent */
   color: var(--text-muted);
   font-size: var(--text-sm);
   line-height: 1.45;
@@ -1052,7 +1493,7 @@ tbody tr:hover {
 
 @media (max-width: 720px) {
   .app-main {
-    padding: 16px;
+    padding: var(--space-4);
   }
 
   .tool-banner,
@@ -1068,7 +1509,7 @@ tbody tr:hover {
   }
 
   .timeline__item {
-    grid-template-columns: 8px minmax(0, 1fr);
+    grid-template-columns: var(--space-2) minmax(0, 1fr);
   }
 
   .timeline__item .status-chip {
@@ -1080,6 +1521,21 @@ tbody tr:hover {
    Mission Control theme — style overrides
    Applied only when [data-theme="mission_control"] is active.
    Keep restrained — information density, not visual flair.
+
+   IMPORTANT: This is the ONLY theme allowed to use decorative
+   box-shadows for instrument-glow effects (status chip + input
+   card hover). Every other theme stays borders-only. If you add
+   new shadow effects, add them HERE, not to the global stylesheet.
+
+   Phosphor icon size conventions used across the suite:
+     - 12px: inline meta (eyebrow chevrons, badge icons)
+     - 14px: button glyphs (within ghost-button, primary-button,
+              run-log-panel actions)
+     - 16px: toolbar / chip glyphs
+     - 20px: rail navigation
+     - 24px: hero / empty state
+   Use weight="bold" for accent/active states, weight="regular"
+   for inline body text.
    ============================================================ */
 
 :root[data-theme="mission_control"] .eyebrow,
@@ -1096,7 +1552,9 @@ tbody tr:hover {
   letter-spacing: var(--tracking-wide);
 }
 
-/* Subtle cyan glow on "ready" status chips */
+/* Subtle cyan glow on "ready" status chips. Uses theme-specific
+   raw rgba because the glow is part of the Mission Control identity
+   and shouldn't be tokenized into the global shadow scale. */
 :root[data-theme="mission_control"] .status-chip--success {
   box-shadow: 0 0 0 1px rgba(0, 217, 255, 0.3), 0 0 12px rgba(0, 217, 255, 0.08);
 }

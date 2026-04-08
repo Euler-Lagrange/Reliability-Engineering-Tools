@@ -1,14 +1,14 @@
 .shell {
   display: grid;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .card {
   display: grid;
-  gap: 12px;
-  padding: 24px;
+  gap: var(--space-3);
+  padding: var(--space-6);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
 }
 
@@ -28,5 +28,5 @@
 .chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }

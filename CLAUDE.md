@@ -41,7 +41,7 @@ contracts/              # Protocol documentation (sidecar-protocol.md)
 
 | Tool | Workflow IDs | Frontend | Runtime |
 |------|-------------|----------|---------|
-| FMEA Generator | `piece_part_generate`, `bom_only`, `fill_gaps` | `features/fmea/FmeaTool.tsx` | `fmea/runtime.py` |
+| FMEA Generator | `piece_part_generate`, `bom_only`, `functional_to_piecepart`, `fill_gaps` | `features/fmea/FmeaTool.tsx` | `fmea/runtime.py` |
 | BOM Compare | `bom_compare_group`, `bom_compare_custom` | `features/bom-compare/BomCompareTool.tsx` | `bom_compare/runtime.py` |
 | Failure Rate | `failure_rate_link` | `features/failure-rate/FailureRateTool.tsx` | `failure_rate/runtime.py` |
 | RefDes Extractor | `refdes_extract` | `features/refdes-extractor/RefDesExtractorTool.tsx` | `refdes_extractor/runtime.py` |
@@ -63,14 +63,14 @@ NDJSON over stdio. Commands: `health_check`, `list_sheets`, `inspect_input`, `an
 npm run dev              # Vite dev server (browser preview mode)
 npm run build            # Production build
 npm run typecheck        # TypeScript type checking
-npm test                 # Vitest (5 tests)
+npm test                 # Vitest (34 tests)
 
 # Desktop (requires Rust toolchain)
 npm run tauri:dev        # Dev mode with hot reload
 npm run tauri:build:portable  # Release build → src-tauri/target/.../release/
 
 # Python sidecar (use project venv)
-.venv\Scripts\python.exe -m pytest backend/tests -v    # 44 backend tests (27 sidecar + 17 audit)
+.venv\Scripts\python.exe -m pytest backend/tests -v    # 70 backend tests (33 sidecar + 17 audit + 8 cancel bridge + 12 FMEA phase D)
 .venv\Scripts\python.exe backend/python/sidecar_main.py --self-test
 
 # Full release
@@ -102,6 +102,7 @@ Each tool component uses:
 - `RunStatePanel` for execution progress and results
 - `SectionCard` for layout sections
 - Mock scenarios for browser-preview mode
+- `<GlobalLogPanel>` is mounted at the App shell level (not per-tool), so every tool automatically gets the cross-tool run log. Tools don't need to render it.
 
 ### File Picker
 - `backendClient.openExcelFile()` for `.xlsx/.xls/.xlsm`
@@ -148,19 +149,28 @@ The audit runs:
 
 ## Testing
 
-### Backend Tests (44 total)
-- 27 sidecar integration tests in `test_sidecar_main.py`
+### Backend Tests (70 total)
+- 33 sidecar integration tests in `test_sidecar_main.py`
 - 17 security-audit tests in `test_security_audit.py` (synthetic positives + live tree scan)
+- 8 cancel-bridge tests in `test_cancel_bridge.py`
+- 12 FMEA Phase D tests in `test_fmea_phase_d.py`
 - Sidecar tests are subprocess-based: spawn sidecar, send NDJSON commands, verify responses
 - `stderr=subprocess.DEVNULL` to avoid Windows pipe buffer deadlock
 - `SIDECAR_HEARTBEAT_INTERVAL=9999` suppresses heartbeats during tests
 - `SIDECAR_LOG_LEVEL=CRITICAL` suppresses file logging
 - `RELIABILITY_TOOLS_LOG_DIR` isolates log files per test session
 - `pytest.importorskip("fitz")` for RefDes tests requiring PyMuPDF
+- `backend/tests/conftest.py` installs a `sys.path` shim for in-process unit tests
 
-### Frontend Tests (5 component tests)
+### Frontend Tests (34 total)
 - Vitest + React Testing Library
 - Browser-mock mode (no Tauri runtime needed)
+- `src/app/App.test.tsx` — 4 tests
+- `src/components/CustomSelect.test.tsx` — 1 test
+- `src/shared/backend/runLifecycle.test.ts` — 8 tests
+- `src/shared/theme/themeRegistry.test.ts` — 10 tests
+- `src/shared/hooks/useRoleRequestSequence.test.ts` — 5 tests
+- `src/stores/globalLogStore.test.ts` — 6 tests
 
 ## Critical Gotchas
 

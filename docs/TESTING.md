@@ -4,17 +4,27 @@
 
 | Suite | Path | Count | Framework |
 |-------|------|-------|-----------|
-| Backend integration | `backend/tests/test_sidecar_main.py` | 27 | pytest |
+| Backend integration | `backend/tests/test_sidecar_main.py` | 33 | pytest |
 | Backend security audit | `backend/tests/test_security_audit.py` | 17 | pytest |
+| Backend cancel bridge | `backend/tests/test_cancel_bridge.py` | 8 | pytest |
+| Backend FMEA Phase D | `backend/tests/test_fmea_phase_d.py` | 12 | pytest |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 4 | Vitest + RTL |
 | Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 1 | Vitest + RTL |
-| **Total** | | **49** | |
+| Frontend run lifecycle | `frontend/src/shared/backend/runLifecycle.test.ts` | 8 | Vitest |
+| Frontend theme registry | `frontend/src/shared/theme/themeRegistry.test.ts` | 10 | Vitest |
+| Frontend role-request sequence | `frontend/src/shared/hooks/useRoleRequestSequence.test.ts` | 5 | Vitest |
+| Frontend global log store | `frontend/src/stores/globalLogStore.test.ts` | 6 | Vitest |
+| **Total** | | **104** | |
 
 ## Backend Tests
 
 `backend/tests/test_sidecar_main.py` exercises the sidecar end-to-end as a
-real subprocess. There are no in-process imports of `sidecar_main` — every
-test starts a fresh `python sidecar_main.py` and talks to it over stdin/stdout.
+real subprocess. Every test in that file starts a fresh
+`python sidecar_main.py` and talks to it over stdin/stdout.
+
+In-process unit tests (`test_cancel_bridge.py`, `test_fmea_phase_d.py`)
+import backend modules directly; see **In-process tests** below for the
+`conftest.py` shim that makes those imports resolve.
 
 ### Subprocess pattern
 
@@ -79,6 +89,54 @@ draining thread will deadlock the sidecar once the OS pipe buffer fills.
 RefDes Extractor tests start with `pytest.importorskip("fitz")` so the suite
 remains usable on machines without PyMuPDF installed.
 
+### In-process tests (`conftest.py` sys.path shim)
+
+`backend/tests/conftest.py` prepends `backend/python/` to `sys.path` so
+in-process unit tests can `import fmea.fmea_generator_logic`,
+`import common.cancel`, etc. directly:
+
+```python
+# backend/tests/conftest.py
+import sys
+from pathlib import Path
+
+BACKEND_PYTHON = Path(__file__).resolve().parents[1] / "python"
+if str(BACKEND_PYTHON) not in sys.path:
+    sys.path.insert(0, str(BACKEND_PYTHON))
+```
+
+This is safe for `test_sidecar_main.py` because those tests spawn fresh
+Python interpreters with their own path resolution — the parent pytest
+process's `sys.path` is inherited through env vars, not through the
+subprocess's own module cache.
+
+Use the in-process pattern for:
+
+- Pure-logic tests that don't need protocol framing (`test_fmea_phase_d.py`
+  mostly builds fixtures on disk, calls
+  `fmea.fmea_generator_logic.generate_fmea(...)`, and asserts on the
+  resulting workbook).
+- Unit tests for shared utilities (`test_cancel_bridge.py` exercises the
+  `_CancelBridge` class used by every runtime adapter).
+
+Use the subprocess pattern (`test_sidecar_main.py`) whenever you need to
+test the NDJSON protocol, command routing, heartbeats, run lifecycle,
+cancellation signals, or any multi-command interaction.
+
+### `options` in request bodies
+
+`validate_run` and `execute_run` no longer accept an `enrichments` field —
+the backend hard-fails on any truthy value. FMEA workflows now require an
+`options` object:
+
+- `options.failureModesStandard`: `"FMD-91"` or `"FMD-2016"` (required for
+  all FMEA workflows)
+- `options.columnSelection`: `{ mode, columns }` (optional)
+
+The FMEA-related test fixtures in `test_sidecar_main.py` send
+`"options": {"failureModesStandard": "FMD-2016"}` in every request body;
+new FMEA tests must do the same or validation will reject the request.
+
 ## Backend Test Categories
 
 | Category | Representative tests |
@@ -94,6 +152,7 @@ remains usable on machines without PyMuPDF installed.
 | Single-active-run guard | `test_sidecar_rejects_second_execute_while_run_is_active` |
 | Error recovery | `test_sidecar_execute_emits_backend_error_on_missing_columns`, `test_sidecar_remains_responsive_after_failed_run` |
 | Missing-file validation | `test_sidecar_validate_rejects_missing_required_files` |
+| FMEA Phase D (in-process) | `test_inheritance_creates_bom_addition`, `test_inheritance_writes_bom_additions_sheet`, `test_variant_in_bom_does_not_trigger_inheritance`, `test_variant_base_also_missing_falls_through`, `test_failure_modes_standard_drives_headers`, `test_validate_run_accepts_fill_gaps_with_preserve_formatting`, `test_failure_modes_standard_required_in_validation`, `test_usage_fraction_uses_source_variant_count_not_addition_count`, `test_inherited_variant_does_not_get_false_usage_warning`, `test_legacy_enrichment_payload_is_rejected`, `test_failure_modes_standard_filters_mixed_standard_file`, `test_functional_to_piecepart_preserves_functional_rows` |
 
 ## Frontend Tests
 
@@ -107,6 +166,10 @@ neither of which exists under jsdom, so the client returns mock data from
 |------|-------|
 | `frontend/src/app/App.test.tsx` | 4 — shell render, tool switching, theme application, notification dismissal |
 | `frontend/src/components/CustomSelect.test.tsx` | 1 — keyboard navigation |
+| `frontend/src/shared/backend/runLifecycle.test.ts` | 8 — run lifecycle state transitions (ack, progress, result, cancel, error, reset) |
+| `frontend/src/shared/theme/themeRegistry.test.ts` | 10 — theme registry consistency (ids, labels, icons, colorScheme, rail visibility) |
+| `frontend/src/shared/hooks/useRoleRequestSequence.test.ts` | 5 — per-role async request sequencing (stale response suppression) |
+| `frontend/src/stores/globalLogStore.test.ts` | 6 — global log ring buffer: append, clear, toggle, filter, export format, capacity |
 
 `vitest.setup.ts` is configured in `vite.config.ts`. It registers
 `@testing-library/jest-dom` matchers and shims `matchMedia`, pointer

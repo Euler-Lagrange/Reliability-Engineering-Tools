@@ -66,10 +66,6 @@ export interface RunRequestMapping {
 export interface RunRequestBody {
   workflowId: string;
   outputStrategyId: string;
-  enrichments: {
-    functional: boolean;
-    piecePart: boolean;
-  };
   inputs: RunRequestInput[];
   mappings: RunRequestMapping[];
   options?: Record<string, unknown>;

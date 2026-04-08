@@ -1,15 +1,15 @@
 .themeGrid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .themeOption {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 8px;
-  padding: 16px;
+  gap: var(--space-2);
+  padding: var(--space-4);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface);
@@ -22,6 +22,11 @@
 
 .themeOption:hover {
   border-color: var(--line-strong);
+}
+
+.themeOption:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
 }
 
 .themeOptionSelected {
@@ -42,7 +47,7 @@
 }
 
 .activeNote {
-  margin-top: 12px;
+  margin-top: var(--space-3);
   font-size: var(--text-sm);
   color: var(--text-muted);
 }
@@ -50,25 +55,25 @@
 .diagnosticStack {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .diagnosticGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .diagnosticField {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .diagnosticFieldWide {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
   grid-column: 1 / -1;
 }
 
@@ -97,8 +102,8 @@
 .healthButton {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--surface);
@@ -116,6 +121,11 @@
   background: var(--surface-muted);
 }
 
+.healthButton:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
+}
+
 .healthButton:disabled {
   cursor: wait;
   opacity: 0.7;
@@ -124,20 +134,20 @@
 .aboutStack {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .aboutGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .aboutFooter {
-  margin: 8px 0 0;
+  margin: var(--space-2) 0 0;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   font-size: var(--text-sm);
   color: var(--text-muted);
 }

@@ -20,12 +20,13 @@ Designator).
 
 ### What it does
 
-Builds a piece-part FMEA workbook by combining three inputs: a grouping file
-that defines the functional groups on the board, a BOM that lists every part
-instance, and a failure-modes library that gives the failure modes and their
-ratios for each part type. The tool expands grouping rows to the piece-part
-level, attaches the correct failure modes to every part, and writes an Excel
-workbook you can hand to a reviewer.
+Builds a piece-part FMEA workbook by combining a source that describes the
+functional structure of the board (a grouping file, a BOM, or an existing
+functional FMEA), a BOM that lists every part instance, and a failure-modes
+library that gives the failure modes and their ratios for each part type.
+The tool expands source rows to the piece-part level, attaches the correct
+failure modes to every part, and writes an Excel workbook you can hand to a
+reviewer.
 
 ### When to use it
 
@@ -33,17 +34,25 @@ workbook you can hand to a reviewer.
   piece-part FMEA for review.
 - You need a fast first draft straight from the BOM before the grouping is
   finalized.
+- You already have a functional FMEA and need to turn each circuit block
+  into a set of piece-part rows.
 - You already have an existing FMEA but parts have been added or removed and
   you need to bring it into sync with the latest BOM.
 
 ### Required inputs
 
-- **Grouping workbook** — an Excel file that defines functional groups and
-  the RefDes ranges that belong to each group.
 - **BOM workbook** — an Excel file with one row per RefDes, listing the part
   number, description, and any other fields you want carried into the FMEA.
 - **Failure Modes workbook** — a library of failure modes keyed by part type
-  or part number, with the Failure Mode Ratio for each mode.
+  or part number, with the Failure Mode Ratio for each mode. Required for
+  every FMEA workflow.
+- **Grouping workbook** — required for the Grouping File workflow. An Excel
+  file that defines functional groups and the RefDes ranges that belong to
+  each group.
+- **Functional FMEA workbook** — required for the Functional FMEA workflow.
+  An existing functional FMEA with circuit-block rows whose RefDes column
+  (e.g. `Failure Mode Causes (RefDes)`) lists the comma-separated RefDes
+  for each block.
 
 ### Optional inputs
 
@@ -57,35 +66,69 @@ workbook you can hand to a reviewer.
 
 Choose one before running.
 
-- **Generate Piece-Part** — the standard end-to-end workflow. Expands every
-  grouping row down to the piece-part level, attaches failure modes from the
-  library, and writes a complete workbook. Use this for the first full pass.
-- **BOM-Only Generate** — a fast draft that skips the grouping file and
-  builds an FMEA straight from the BOM and the failure-modes library. Useful
-  early in the project before grouping is stable.
-- **Fill Gaps** — takes an existing FMEA workbook and only adds rows for
-  parts that are new since the last pass. Existing rows are left untouched.
-  Use this to keep an FMEA in sync with BOM churn without re-reviewing
-  previously signed-off content.
+- **Generate Piece-Part from BOM Only** (`bom_only`) — a fast draft that
+  skips the grouping file and builds an FMEA straight from the BOM and the
+  failure-modes library. Best when the design is too early for a grouping
+  file.
+- **Generate Piece-Part from Grouping File** (`piece_part_generate`) — the
+  standard end-to-end workflow. Creates a piece-part FMEA from the
+  circuit-block groups in a grouping workbook, combined with BOM and HDA
+  data. Use this for the first full pass once grouping is stable.
+- **Generate Piece-Part from Functional FMEA** (`functional_to_piecepart`) —
+  detects circuit-block rows in an existing functional FMEA, parses the
+  comma-separated RefDes column on each circuit-block row, and expands them
+  into piece-part rows beneath each block. The original functional rows are
+  preserved as-is.
+- **Fill Gaps (Advanced)** (`fill_gaps`) — takes an existing functional or
+  piece-part FMEA and adds piece-part rows for any BOM components that are
+  missing from it. Any new columns are appended at the very end of the
+  sheet. All existing rows, data, formatting, fonts, and column widths are
+  preserved when the preserve-formatting output strategy is used.
+
+### Failure Modes Standard
+
+Every FMEA workflow exposes a **FMD-91 vs FMD-2016** radio. The default is
+FMD-2016. The selected standard drives the output column headers
+(`FMD-91 Commodity Type 1/2` vs `FMD-2016 Commodity Type 1/2`), and if the
+failure modes file has a `Standard` column, the tool uses it to filter the
+library down to the matching standard.
 
 ### Output strategies
 
-- **New Workbook (Standard)** — writes a clean, freshly formatted Excel file.
-  Good for first-time generation and for anyone who does not need to match an
-  existing template.
-- **Preserve Original Template** — when you point at an existing FMEA
-  workbook, the tool merges the generated rows into the template while
-  keeping your column widths, merged headers, freeze panes, cell formatting,
-  and any conditional formatting you set up. Use this when your team has a
-  locked-down FMEA template.
+- **New Workbook** (`new_workbook_standard`) — writes a fresh workbook with
+  all generator columns and summary sheets. Good for first-time generation.
+- **Existing Workbook (Preserve Formatting)**
+  (`existing_workbook_preserve_formatting`) — writes new piece-part rows
+  directly into the selected functional or piece-part FMEA workbook. Any
+  new columns are appended at the very end of the sheet. All existing rows,
+  data, formatting, fonts, and column widths are preserved. This is the
+  default strategy for the Fill Gaps workflow.
 
-### Enrichment toggles
+### Merge Column Scope (Fill Gaps only)
 
-- **Functional FMEA** — adds functional-level failure-mode rows on top of
-  the piece-part rows.
-- **Piece-Part FMEA** — controls whether piece-part rows are expanded.
+When the Fill Gaps workflow is selected, a **Merge Column Scope** picker
+appears with two modes:
 
-Both can be enabled together for a combined Functional and Piece-Part FMEA.
+- **Merge All Columns** (default) — every generated column is written into
+  the target workbook.
+- **Select Columns to Merge** — shows a checkbox list of the template
+  columns detected by the analyzer. Only checked columns are written.
+
+The scope only applies to Fill Gaps runs; switching to any other workflow
+clears the column selection.
+
+### BOM Inheritance
+
+When a grouping or functional source references a pin/variant RefDes such as
+`U200-X` that does not exist in the BOM, the generator looks up the base
+RefDes (`U200`) in the BOM and inherits its Part Number, Part Description,
+HDA Commodity 1-2, and FMD Commodity 1-2 fields. Every inherited row is
+recorded in a new **BOM_Additions** sheet in the output workbook, listing
+RefDes, Base RefDes, Usage fraction (e.g. `1/3`), Part Number, Part
+Description, HDA Commodity 1-2, FMD Commodity 1-2, and Source Workflow. The
+sheet has an explanatory banner at the top instructing reviewers to copy
+the inherited rows into the BOM. Inherited variants do not trigger
+false-positive Part Usage validation warnings.
 
 ### Output
 
@@ -99,12 +142,15 @@ mode, and how many parts had no match.
 - Fill Gaps does not rewrite or re-score existing rows; it only adds new ones.
 - Parts that are in the BOM but have no entry in the failure-modes library
   are reported as no-match and listed in the run summary.
-- Preserve Original Template requires that the template sheet already has
-  the column headers you plan to use.
+- Existing Workbook (Preserve Formatting) requires that the template sheet
+  already has the column headers you plan to use.
 
 ---
 
 ## BOM Compare
+
+> Labeled **Cross Compare** in the app rail. Backend workflow IDs are still
+> `bom_compare_group` and `bom_compare_custom`.
 
 ### What it does
 
@@ -179,6 +225,9 @@ row content supports it, the comparison switches on a few extra checks:
 ---
 
 ## Failure Rate
+
+> Labeled **Failure Rate Integration** in the app rail. Backend workflow ID
+> is still `failure_rate_link`.
 
 ### What it does
 
@@ -361,3 +410,29 @@ does not produce files or run any analysis.
 - After a fresh install, to pick a theme.
 - When something feels off and you want to confirm the backend is still up.
 - When asked for a version by whoever is triaging an issue.
+
+---
+
+## Cross-Tool Run Log
+
+### What it does
+
+A cross-tool run log panel is docked at the bottom of the app shell and is
+visible from every tool tab. It aggregates `log`, `status`, `progress`, and
+terminal events from every run in the current session, so you can start a
+run in FMEA Generator, switch to Cross Compare, and still watch the FMEA
+run finish in the log.
+
+### Features
+
+- **Persistent across tool switches** — the log is owned by the app shell,
+  not the individual tool tab, so switching tools does not reset it.
+- **Filter** — toggle between "All tools" and "Current tool only" to narrow
+  the log to the active tab.
+- **Export** — click Export to download a `.log` snapshot of the current
+  buffer.
+- **Collapsible** — the header chevron collapses the panel when you need
+  screen space.
+- **Ring buffer** — the in-memory buffer holds the most recent 5000
+  entries. Older lines are dropped from memory but the canonical full log
+  is always written to disk under `~/.reliability_tools/logs/`.

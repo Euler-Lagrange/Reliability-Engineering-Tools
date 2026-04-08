@@ -22,6 +22,7 @@ function renderApp() {
 async function waitForFmeaTool() {
   await screen.findByRole("heading", {
     name: /fmea generator/i,
+    level: 2,
   });
 }
 

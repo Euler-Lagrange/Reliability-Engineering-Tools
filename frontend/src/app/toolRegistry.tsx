@@ -46,7 +46,7 @@ export interface ToolDefinition {
 export const toolDefinitions: ToolDefinition[] = [
   {
     id: "dark_star_fmea",
-    label: "FMEA",
+    label: "FMEA Generator",
     eyebrow: "Active tool",
     description: "Generate piece-part FMEA workbooks from grouping, BOM, and failure mode sources.",
     icon: TreeStructure,
@@ -55,7 +55,7 @@ export const toolDefinitions: ToolDefinition[] = [
   },
   {
     id: "bom_compare",
-    label: "Compare",
+    label: "Cross Compare",
     eyebrow: "Active tool",
     description: "Compare grouping files or two BOMs to find missing, extra, and mismatched RefDes.",
     icon: GitDiff,
@@ -64,7 +64,7 @@ export const toolDefinitions: ToolDefinition[] = [
   },
   {
     id: "failure_rate",
-    label: "Rates",
+    label: "Failure Rate Integration",
     eyebrow: "Active tool",
     description: "Link prediction failure rates to FMEA failure modes with configurable unit conversion.",
     icon: Pulse,
@@ -73,7 +73,7 @@ export const toolDefinitions: ToolDefinition[] = [
   },
   {
     id: "refdes_extractor",
-    label: "RefDes",
+    label: "RefDes Extractor",
     eyebrow: "Active tool",
     description: "Extract and verify RefDes from annotated schematic PDFs with adaptive geometry analysis.",
     icon: Cpu,

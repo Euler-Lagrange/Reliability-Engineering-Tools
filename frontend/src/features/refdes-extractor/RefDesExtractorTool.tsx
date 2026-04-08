@@ -245,7 +245,6 @@ export function RefDesExtractorTool() {
     return {
       workflowId: "refdes_extract",
       outputStrategyId: "new_workbook_standard",
-      enrichments: { functional: false, piecePart: false },
       inputs: visibleInputs
         .filter((i) => Boolean(i.path))
         .map((input) => ({

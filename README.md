@@ -6,7 +6,7 @@ A Windows desktop application for hardware reliability engineering analysis. Bui
 
 | Tool | Description |
 |------|-------------|
-| **FMEA Generator** | Generate piece-part FMEA workbooks from grouping, BOM, and failure mode sources. Supports standard, BOM-only, and fill-gaps workflows with optional template preservation. |
+| **FMEA Generator** | Generate piece-part FMEA workbooks from grouping, BOM, and failure mode sources. Supports four workflows: standard (`piece_part_generate`), BOM-only (`bom_only`), functional-to-piece-part (`functional_to_piecepart`), and fill-gaps (`fill_gaps`), with optional template preservation. |
 | **BOM Compare** | Compare grouping files against BOMs (coverage check) or two arbitrary BOMs (delta analysis). Detects missing, extra, and mismatched RefDes with FMEA-aware scope warnings. |
 | **Failure Rate** | Link prediction failure rates to FMEA failure modes. Calculates mode failure rates with configurable unit conversion and FMR validation. |
 | **RefDes Extractor** | Extract reference designators and pins from annotated schematic PDFs. Adaptive 4-phase geometry analysis with NextGen and Legacy backend routing. |
@@ -51,8 +51,8 @@ npm run tauri:dev              # Desktop with hot reload
 
 ```powershell
 npm run typecheck              # TypeScript type checking
-npm test                       # Frontend tests (28 tests across shell, lifecycle, theme registry, role sequence)
-.venv\Scripts\python.exe -m pytest backend\tests -v   # Backend tests (~70 tests across sidecar, audit, cancel bridge, exception envelopes)
+npm test                       # Frontend tests (34 tests across shell, lifecycle, theme registry, role sequence, global log store)
+.venv\Scripts\python.exe -m pytest backend\tests -v   # Backend tests (70 tests across sidecar, audit, cancel bridge, FMEA phase D)
 ```
 
 ### Build

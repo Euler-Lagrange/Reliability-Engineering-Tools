@@ -34,13 +34,12 @@ export function MappingTable({
                     <span className="mapping-field__name">{row.canonical}</span>
                   </div>
                 </td>
-                <td>
+                <td className="mapping-table__select-cell">
                   <CustomSelect
                     label={`${row.canonical} mapping`}
                     value={mappedValue}
                     options={row.options.map((option) => ({ value: option, label: option }))}
                     onChange={(value) => onOverride(row.canonical, value)}
-                    compact
                   />
                 </td>
                 <td>

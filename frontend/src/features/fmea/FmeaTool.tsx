@@ -51,28 +51,20 @@ const fmeaRunEvents: RunEventTemplate[] = [
   },
 ];
 
-const workflowInputRoles: Partial<Record<WorkflowId, FileRole[]>> = {
-  piece_part_generate: ["grouping", "bom", "hda", "failureModes"],
-  bom_only: ["bom", "hda", "failureModes"],
-  fill_gaps: ["existingFmea", "bom", "hda", "grouping", "failureModes"],
-};
+function getVisibleRoles(workflowId: WorkflowId): FileRole[] {
+  const workflow = workflowOptions.find((option) => option.id === workflowId);
+  return [
+    ...(workflow?.requiredRoles ?? []),
+    ...(workflow?.optionalRoles ?? []),
+  ];
+}
 
 function buildVisibleInputs(
   inputs: InputFileState[],
   workflowId: WorkflowId,
   outputStrategyId: OutputStrategyId,
-  enrichments: { functional: boolean; piecePart: boolean },
 ) {
-  const orderedRoles = [...(workflowInputRoles[workflowId] ?? [])];
-  const supportsEnrichment = workflowId !== "fill_gaps";
-
-  if (supportsEnrichment && enrichments.functional) {
-    orderedRoles.push("functionalFmea");
-  }
-
-  if (supportsEnrichment && enrichments.piecePart) {
-    orderedRoles.push("piecePartFmea");
-  }
+  const orderedRoles: FileRole[] = [...getVisibleRoles(workflowId)];
 
   if (outputStrategyId !== "new_workbook_standard") {
     orderedRoles.push("targetWorkbook");
@@ -103,15 +95,15 @@ function buildTimeline(runMode: RunMode, runIndex: number, templates: RunEventTe
 function buildRunRequest(
   workflowId: WorkflowId,
   outputStrategyId: OutputStrategyId,
-  enrichments: { functional: boolean; piecePart: boolean },
   visibleInputs: InputFileState[],
   mappingRows: ColumnMappingRow[],
   mappingOverrides: Record<string, string>,
+  failureModesStandard: "FMD-91" | "FMD-2016",
+  columnSelection: { mode: "all" | "subset"; columns: string[] },
 ): RunRequestBody {
   return {
     workflowId,
     outputStrategyId,
-    enrichments,
     inputs: visibleInputs.map((input) => ({
       role: input.role,
       label: input.label,
@@ -128,6 +120,10 @@ function buildRunRequest(
       mappedTo: mappingOverrides[row.canonical] ?? row.mappedTo,
       status: mappingOverrides[row.canonical] ? "manual" : row.status,
     })),
+    options: {
+      failureModesStandard,
+      columnSelection,
+    },
   };
 }
 
@@ -232,7 +228,9 @@ function buildAnalysisCards(
 export function FmeaTool() {
   const [workflowId, setWorkflowId] = useState<WorkflowId>(baseScenario.workflowId);
   const [outputStrategyId, setOutputStrategyId] = useState<OutputStrategyId>(baseScenario.outputStrategyId);
-  const [enrichments, setEnrichments] = useState(baseScenario.enrichments);
+  const [failureModesStandard, setFailureModesStandard] = useState<"FMD-91" | "FMD-2016">("FMD-2016");
+  const [columnSelectionMode, setColumnSelectionMode] = useState<"all" | "subset">("all");
+  const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
   const [inputStates, setInputStates] = useState<InputFileState[]>(() => cloneInputs(baseScenario.inputs));
   const [validations, setValidations] = useState<ValidationMessage[]>(baseScenario.validations);
   const [inputInspections, setInputInspections] = useState<Partial<Record<FileRole, InputInspection>>>({});
@@ -279,6 +277,27 @@ export function FmeaTool() {
     });
   }, [workflowId, outputStrategyId]);
 
+  // Fill Gaps defaults to preserve-formatting since the whole point of
+  // "advanced fill gaps" is writing new piece-part rows into the source
+  // workbook in place. We ONLY flip on the transition INTO fill_gaps
+  // (not on every render), so a user who later manually picks
+  // new_workbook_standard stays on that choice.
+  // Also reset column selection state when leaving fill_gaps — the
+  // "Merge Column Scope" UI is fill_gaps-only, and stale subset state
+  // would otherwise silently truncate output from other workflows.
+  const prevWorkflowIdRef = useRef(workflowId);
+  useEffect(() => {
+    const prev = prevWorkflowIdRef.current;
+    if (prev !== "fill_gaps" && workflowId === "fill_gaps") {
+      setOutputStrategyId("existing_workbook_preserve_formatting");
+    }
+    if (prev === "fill_gaps" && workflowId !== "fill_gaps") {
+      setColumnSelectionMode("all");
+      setSelectedColumns([]);
+    }
+    prevWorkflowIdRef.current = workflowId;
+  }, [workflowId]);
+
   useEffect(() => {
     contextHeadingRef.current?.focus();
   }, [contextView]);
@@ -311,8 +330,8 @@ export function FmeaTool() {
   }, [runIndex, runMode, runTemplates]);
 
   const visibleInputs = useMemo(
-    () => buildVisibleInputs(inputStates, workflowId, outputStrategyId, enrichments),
-    [enrichments, inputStates, outputStrategyId, workflowId],
+    () => buildVisibleInputs(inputStates, workflowId, outputStrategyId),
+    [inputStates, outputStrategyId, workflowId],
   );
   const preferredAnalysisRole = visibleInputs.find((input) => input.source === "desktop-bridge")?.role ?? null;
   const activeInspection = preferredAnalysisRole ? inputInspections[preferredAnalysisRole] ?? null : null;
@@ -380,9 +399,13 @@ export function FmeaTool() {
   const panelErrorTraceback =
     backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.errorTraceback : null;
 
-  const mappingCoverage = Math.round(
-    (effectiveMappings.filter((row) => row.status === "mapped").length / effectiveMappings.length) * 100,
-  );
+  const mappingCoverage =
+    inspectedColumns.length > 0 && effectiveMappings.length > 0
+      ? Math.round(
+          (effectiveMappings.filter((row) => row.status === "mapped").length / effectiveMappings.length) * 100,
+        )
+      : null;
+  const mappingCoverageLabel = mappingCoverage === null ? "TBD" : `${mappingCoverage}%`;
 
   const activeWorkflow = workflowOptions.find((workflow) => workflow.id === workflowId) ?? workflowOptions[0];
 
@@ -687,13 +710,22 @@ export function FmeaTool() {
       return;
     }
 
+    // Only send columnSelection for fill_gaps — the UI is fill_gaps-only,
+    // and a stale subset selection must not silently truncate output
+    // from other workflows. Defense-in-depth complement to the useEffect
+    // that resets columnSelectionMode on workflow change.
+    const effectiveColumnSelection =
+      workflowId === "fill_gaps"
+        ? { mode: columnSelectionMode, columns: selectedColumns }
+        : { mode: "all" as const, columns: [] as string[] };
     const runRequest = buildRunRequest(
       workflowId,
       outputStrategyId,
-      enrichments,
       visibleInputs,
       effectiveMappings,
       mappingOverrides,
+      failureModesStandard,
+      effectiveColumnSelection,
     );
 
     setContextView("run");
@@ -779,7 +811,7 @@ export function FmeaTool() {
             className="section-card--compact"
             title="Run Setup"
             eyebrow="Configuration"
-            description="Choose the workflow, output path, and optional enrichments before reviewing inputs and mappings."
+            description="Pick a primary workflow, choose how the output should be written, and select the failure modes standard before reviewing inputs and mappings."
             actions={
               <div className="header-metrics">
                 <span className="header-metric">
@@ -788,13 +820,13 @@ export function FmeaTool() {
                 </span>
                 <span className="header-metric">
                   <span>Auto-mapped</span>
-                  <strong>{mappingCoverage}%</strong>
+                  <strong>{mappingCoverageLabel}</strong>
                 </span>
               </div>
             }
           >
             <div className="setup-grid">
-              <div className="setup-block">
+              <div className="setup-block setup-block--full">
                 <p className="setup-block__label">Workflow</p>
                 <WorkflowSelector workflows={workflowOptions} selectedWorkflowId={workflowId} onSelect={setWorkflowId} />
               </div>
@@ -808,37 +840,88 @@ export function FmeaTool() {
                 />
               </div>
 
-              <div className="setup-block setup-block--full">
-                <p className="setup-block__label">Enrichments</p>
-                {activeWorkflow.supportsEnrichment ? (
-                  <div className="toggle-row">
+              <div className="setup-block">
+                <p className="setup-block__label">Failure Modes Standard</p>
+                <div className="toggle-row" role="radiogroup" aria-label="Failure modes standard">
+                  <button
+                    type="button"
+                    className="toggle-chip"
+                    data-active={failureModesStandard === "FMD-91"}
+                    role="radio"
+                    aria-checked={failureModesStandard === "FMD-91"}
+                    onClick={() => setFailureModesStandard("FMD-91")}
+                  >
+                    FMD-91
+                  </button>
+                  <button
+                    type="button"
+                    className="toggle-chip"
+                    data-active={failureModesStandard === "FMD-2016"}
+                    role="radio"
+                    aria-checked={failureModesStandard === "FMD-2016"}
+                    onClick={() => setFailureModesStandard("FMD-2016")}
+                  >
+                    FMD-2016
+                  </button>
+                </div>
+              </div>
+
+              {workflowId === "fill_gaps" ? (
+                <div className="setup-block setup-block--full">
+                  <p className="setup-block__label">Merge Column Scope</p>
+                  <div className="toggle-row" role="radiogroup" aria-label="Merge column scope">
                     <button
                       type="button"
                       className="toggle-chip"
-                      data-active={enrichments.functional}
-                      onClick={() =>
-                        setEnrichments((current) => ({ ...current, functional: !current.functional }))
-                      }
+                      data-active={columnSelectionMode === "all"}
+                      role="radio"
+                      aria-checked={columnSelectionMode === "all"}
+                      onClick={() => setColumnSelectionMode("all")}
                     >
-                      Functional FMEA
+                      Merge All Columns
                     </button>
                     <button
                       type="button"
                       className="toggle-chip"
-                      data-active={enrichments.piecePart}
-                      onClick={() =>
-                        setEnrichments((current) => ({ ...current, piecePart: !current.piecePart }))
-                      }
+                      data-active={columnSelectionMode === "subset"}
+                      role="radio"
+                      aria-checked={columnSelectionMode === "subset"}
+                      onClick={() => setColumnSelectionMode("subset")}
                     >
-                      Piece-Part FMEA
+                      Select Columns to Merge
                     </button>
                   </div>
-                ) : (
-                  <p className="section-card__microcopy">
-                    Fill-gaps keeps enrichment disabled so the UI stays focused on delta review.
-                  </p>
-                )}
-              </div>
+                  {columnSelectionMode === "subset" ? (
+                    inspectedColumns.length > 0 ? (
+                      <div className="column-picker">
+                        {inspectedColumns.map((column) => {
+                          const checked = selectedColumns.includes(column);
+                          return (
+                            <label key={column} className="column-picker__row">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedColumns((current) => [...current, column]);
+                                  } else {
+                                    setSelectedColumns((current) => current.filter((c) => c !== column));
+                                  }
+                                }}
+                              />
+                              <span>{column}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="section-card__microcopy">
+                        Browse the existing FMEA workbook above to load its columns, then choose which columns to merge here.
+                      </p>
+                    )
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </SectionCard>
 

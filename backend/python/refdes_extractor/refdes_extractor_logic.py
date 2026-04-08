@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # ============================================================================
-# FROZEN -- Do not modify this file.
-# This module is part of a legacy tool whose development is on hold.
-# All changes, bug fixes, and refactors are suspended until the freeze is lifted.
-# See CLAUDE.md "Frozen Tools" section for details.
+# Freeze lifted 2026-04-08: this file is now actively maintained as part of
+# the Tauri desktop suite. The original "FROZEN -- Do not modify" directive
+# has been removed by user request. See plan: mighty-wishing-meadow.md
 # ============================================================================
 """
 RefDes Extractor - Core Logic (Enhanced with Geometry Analysis)

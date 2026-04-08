@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # ============================================================================
-# FROZEN -- Do not modify this file.
-# This module is part of a legacy tool whose development is on hold.
-# All changes, bug fixes, and refactors are suspended until the freeze is lifted.
-# See CLAUDE.md "Frozen Tools" section for details.
+# Freeze lifted 2026-04-08: this file is now actively maintained as part of
+# the Tauri desktop suite. The original "FROZEN -- Do not modify" directive
+# has been removed by user request. See plan: mighty-wishing-meadow.md
 # ============================================================================
 """
 FMEA Generator - Core Logic
@@ -16,7 +15,6 @@ import threading
 from pathlib import Path
 from collections import defaultdict, Counter
 from datetime import datetime
-from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
@@ -42,6 +40,7 @@ from common import (
     to_reason_code_label,
     to_user_facing_text,
 )
+from common.exceptions import ProcessingError
 from common.refdes_utils import (
     split_refdes_list,
     is_pin_notation,
@@ -94,23 +93,6 @@ HEADER_CONFIG = {
         'next_higher_effect': get_synonyms('next_higher_effect'),
         'end_effect': get_synonyms('end_effect'),
     },
-    'FUNCTIONAL_MERGE_SOURCE': {
-        'function_id': get_synonyms('function_id'),
-        'failure_mode': get_synonyms('failure_mode'),
-        'local_effect': get_synonyms('local_effect'),
-        'next_higher_effect': get_synonyms('next_higher_effect'),
-        'end_effect': get_synonyms('end_effect'),
-    },
-    'PIECEPART_MERGE_SOURCE': {
-        'ref_des': get_synonyms('ref_des'),
-        'fmea_id': get_synonyms('fmea_id'),
-        'part_number': get_synonyms('part_number'),
-        'part_usage': get_synonyms('part_usage'),
-        'failure_mode': get_synonyms('failure_mode'),
-        'local_effect': get_synonyms('local_effect'),
-        'next_higher_effect': get_synonyms('next_higher_effect'),
-        'end_effect': get_synonyms('end_effect'),
-    },
 }
 
 REQUIRED_COLS = {
@@ -119,103 +101,55 @@ REQUIRED_COLS = {
     'HDA': ['part_number'],
     'FAILURE_MODES': ['commodity_level1', 'failure_mode', 'ratio'],
     'FUNCTIONAL': ['function_id', 'failure_mode'],
-    'FUNCTIONAL_MERGE_SOURCE': ['function_id', 'failure_mode'],
-    'PIECEPART_MERGE_SOURCE': ['ref_des', 'failure_mode'],
 }
 
-OUTPUT_HEADERS = [
+OUTPUT_HEADERS_TEMPLATE = [
     'Schematic Page', 'FMEA-ID', 'Function Description', 'FMEA Level',
     'Failure Mode Causes', 'Component Part Number', 'Component Part Description',
-    'BAE HDA Commodity I', 'BAE HDA Commodity II', 'FMD-2016 Commodity Type 1',
-    'FMD-2016 Commodity Type 2', 'Failure Mode', 'Failure Mode Ratio',
+    'BAE HDA Commodity I', 'BAE HDA Commodity II',
+    '{FMD_STD} Commodity Type 1', '{FMD_STD} Commodity Type 2',
+    'Failure Mode', 'Failure Mode Ratio',
     'Part Usage', 'Diagnostic',
     'Local Effect', 'Next Higher Effect', 'End Effect',
     'FuncFM Source Row', 'FuncFM Key', 'FuncFM Hash'
 ]
 
+
+def output_headers_for(standard: str) -> List[str]:
+    """Materialize OUTPUT_HEADERS with the chosen FMD standard label.
+
+    Phase D: replaces the old hardcoded FMD-2016 column headers so the
+    output workbook column names match the user-selected failure modes
+    standard (FMD-91 or FMD-2016).
+    """
+    return [h.format(FMD_STD=standard) for h in OUTPUT_HEADERS_TEMPLATE]
+
+
+# Default backwards-compatible header list (FMD-2016). Existing analyzer/
+# writer modules import OUTPUT_HEADERS at module load; keeping the default
+# preserves their behavior when no standard is set.
+OUTPUT_HEADERS = output_headers_for("FMD-2016")
+
 ROW_TYPE_COL = '_row_type'
 ALPHABET_LENGTH = 26  # Length of uppercase alphabet for suffix generation
 INDEX_CANCEL_CHECK_INTERVAL = 50  # Rows between cancellation checks during index build
-MERGE_CANCEL_CHECK_INTERVAL = 25  # RefDes/rows between cancellation checks during merge work
-MAX_MERGE_DETAIL_LOGS = 25  # Cap live log spam; full detail still goes to workbook sheets
-MERGE_FUNCTIONAL = 'functional'
-MERGE_PIECEPART = 'piecepart'
-MERGE_EFFECT_FIELDS = ('local_effect', 'next_higher_effect', 'end_effect')
-MERGE_EFFECT_OUTPUT_MAP = {
-    'local_effect': 'Local Effect',
-    'next_higher_effect': 'Next Higher Effect',
-    'end_effect': 'End Effect',
-}
+
+# Phase D/H5: safety caps for process_functional_to_piecepart to prevent
+# accidental OOM on pathological functional-FMEA inputs. A single functional
+# row can reference many refdes, so output grows quickly. The warning
+# threshold is informational; the hard cap raises ProcessingError to give
+# the user an actionable error rather than crashing the sidecar.
+MAX_FUNCTIONAL_INPUT_ROWS = 100_000   # Warn above this many functional rows
+MAX_FUNCTIONAL_OUTPUT_ROWS = 1_000_000  # Hard-fail above this many generated rows
+
 ROW_STYLE_PRIORITY = {
     'default': 0,
     'neutral': 1,
     'warning': 2,
     'validation_warning': 2,
-    'merge_warning': 2,
     'error': 3,
     'piece_part_no_match': 3,
-    'merge_error': 3,
 }
-
-
-@dataclass(frozen=True)
-class MergeSourceSpec:
-    merge_type: str
-    file_key: str
-    enable_key: str
-    config_key: str
-    source_name: str
-    required_fields: Tuple[str, ...]
-    optional_fields: Tuple[str, ...]
-    target_row_type: str
-
-
-@dataclass
-class MergeIssue:
-    merge_type: str
-    severity: str
-    kind: str
-    entity_key: str
-    field: str = ''
-    new_value: str = ''
-    old_value: str = ''
-    message: str = ''
-    action: str = ''
-    source_row: str = ''
-    target_row: str = ''
-
-
-@dataclass
-class MergeResult:
-    merge_type: str
-    copied_count: int = 0
-    skipped_count: int = 0
-    warning_count: int = 0
-    error_count: int = 0
-    issue_rows: List[MergeIssue] = field(default_factory=list)
-
-
-FUNCTIONAL_MERGE_SPEC = MergeSourceSpec(
-    merge_type=MERGE_FUNCTIONAL,
-    file_key='func',
-    enable_key='use_func',
-    config_key='FUNCTIONAL_MERGE_SOURCE',
-    source_name='Functional FMEA merge source',
-    required_fields=('function_id', 'failure_mode'),
-    optional_fields=('local_effect', 'next_higher_effect', 'end_effect'),
-    target_row_type='circuit_block',
-)
-
-PIECEPART_MERGE_SPEC = MergeSourceSpec(
-    merge_type=MERGE_PIECEPART,
-    file_key='piecepart_fmea',
-    enable_key='use_piecepart_merge',
-    config_key='PIECEPART_MERGE_SOURCE',
-    source_name='Piece-Part FMEA merge source',
-    required_fields=('ref_des', 'failure_mode'),
-    optional_fields=('fmea_id', 'part_number', 'part_usage', 'local_effect', 'next_higher_effect', 'end_effect'),
-    target_row_type='piece_part',
-)
 
 # ==================== UTILITY FUNCTIONS (FMEA-specific) ====================
 # Shared utilities (try_read_table, make_run_id, clean_string, canonical_pn, etc.)
@@ -301,9 +235,6 @@ class FMEAProcessor:
         self.bom_missing_ref_rows: List[Tuple[int, str]] = []
         self.bom_duplicate_refdes: List[Tuple[str, int]] = []
         self.fm_index: Dict[Tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
-        self.functional_rows_by_base: Dict[str, List[Dict[str, Any]]] = {}
-        self.functional_total_rows: int = 0
-        self.merge_results: Dict[str, MergeResult] = {}
         # Internal indexes (populated by _build_indexes)
         self.bom_index: Dict[str, Dict[str, Any]] = {}
         self.hda_index: Dict[str, Dict[str, Any]] = {}
@@ -314,6 +245,18 @@ class FMEAProcessor:
         # Validation warnings tracking (for FMR sum and Part Usage validation)
         self.fmr_warnings: List[Dict[str, Any]] = []
         self.usage_warnings: List[Dict[str, Any]] = []
+        # Phase D: BOM Additions tracking. Each entry is a pin/variant
+        # RefDes that wasn't in the BOM but inherited its data from a
+        # base component (e.g. U200-X inheriting from U200). Drives the
+        # new BOM_Additions sheet in the output workbook.
+        self.bom_additions: List[Dict[str, Any]] = []
+        # Phase D: failure modes standard selected by the user (FMD-91 or
+        # FMD-2016). Drives output column headers and FM file row filtering.
+        self.failure_modes_standard: str = "FMD-2016"
+        # Phase D: variant counts per base RefDes from the SOURCE document
+        # (grouping/functional/BOM). Drives the usage_fraction display in
+        # BOM_Additions entries (1/N where N is the variant count).
+        self.variant_counts_by_base: Dict[str, int] = defaultdict(int)
 
     def _reset_state(self) -> None:
         """Reset all mutable state for a new processing run.
@@ -332,9 +275,6 @@ class FMEAProcessor:
         self.bom_missing_ref_rows = []
         self.bom_duplicate_refdes = []
         self.fm_index = defaultdict(list)
-        self.functional_rows_by_base = {}
-        self.functional_total_rows = 0
-        self.merge_results = {}
         self.bom_index = {}
         self.hda_index = {}
         self.fm_c1_set = set()
@@ -342,6 +282,9 @@ class FMEAProcessor:
         self.usage_base_counts = {}
         self.fmr_warnings = []
         self.usage_warnings = []
+        self.bom_additions = []
+        self.failure_modes_standard = "FMD-2016"
+        self.variant_counts_by_base = defaultdict(int)
 
     def log(self, message: str, level: str = 'INFO') -> None:
         """Log a message with timestamp and level."""
@@ -397,282 +340,13 @@ class FMEAProcessor:
             raise ColumnMappingError(missing[0], source_name, tried_synonyms=missing)
         return mapped
 
-    def _get_merge_result(self, merge_type: str) -> MergeResult:
-        result = self.merge_results.get(merge_type)
-        if result is None:
-            result = MergeResult(merge_type=merge_type)
-            self.merge_results[merge_type] = result
-        return result
-
-    def _normalize_merge_text(self, value: Any) -> str:
-        return re.sub(r'\s+', ' ', clean_string(value)).strip().lower()
-
-    def _parse_usage_value_for_merge(self, value: Any) -> Optional[float]:
-        if value is None:
-            return None
-        if isinstance(value, (int, float)) and not pd.isna(value):
-            return float(value)
-        raw = clean_string(value)
-        if not raw:
-            return None
-        if raw.startswith('='):
-            raw = raw[1:].strip()
-        parsed, _ = parse_usage(raw)
-        if parsed is not None:
-            return float(parsed)
-        try:
-            return float(raw)
-        except (TypeError, ValueError):
-            return None
-
-    def _apply_row_style(self, row: Dict[str, Any], style: str) -> None:
-        current = row.get(ROW_TYPE_COL, 'default')
-        current_rank = ROW_STYLE_PRIORITY.get(current, 0)
-        next_rank = ROW_STYLE_PRIORITY.get(style, 0)
-        if next_rank >= current_rank:
-            row[ROW_TYPE_COL] = style
-
-    def _append_merge_diagnostic(self, target_row: Dict[str, Any], message: str) -> None:
-        message = clean_string(message)
-        if not message:
-            return
-        existing = clean_string(target_row.get('Diagnostic'))
-        if not existing:
-            target_row['Diagnostic'] = message
-        elif message not in existing:
-            target_row['Diagnostic'] = f"{existing}; {message}"
-
-    def _copy_effect_fields(self, target_row: Dict[str, Any], source_row: Dict[str, Any]) -> List[str]:
-        copied_fields = []
-        for source_key, output_key in MERGE_EFFECT_OUTPUT_MAP.items():
-            effect_value = clean_string(source_row.get(source_key))
-            if effect_value:
-                target_row[output_key] = effect_value
-                copied_fields.append(output_key)
-        return copied_fields
-
-    def _record_merge_issue(self, kind: str, severity: str, merge_type: str, details: Dict[str, Any]) -> None:
-        result = self._get_merge_result(merge_type)
-        issue = MergeIssue(
-            merge_type=merge_type,
-            severity=severity,
-            kind=kind,
-            entity_key=clean_string(details.get('entity_key')) or clean_string(details.get('ref_des')) or clean_string(details.get('group')),
-            field=clean_string(details.get('field')),
-            new_value=clean_string(details.get('new_value')),
-            old_value=clean_string(details.get('old_value')),
-            message=clean_string(details.get('message')),
-            action=clean_string(details.get('action')),
-            source_row=clean_string(details.get('source_row')),
-            target_row=clean_string(details.get('target_row')),
-        )
-        result.issue_rows.append(issue)
-        if severity == 'warning':
-            result.warning_count += 1
-        elif severity == 'error':
-            result.error_count += 1
-
-        target_row_ref = details.get('target_row_ref')
-        if isinstance(target_row_ref, dict):
-            if severity == 'error':
-                self._apply_row_style(target_row_ref, 'merge_error')
-            elif severity == 'warning':
-                self._apply_row_style(target_row_ref, 'merge_warning')
-            if issue.message:
-                self._append_merge_diagnostic(target_row_ref, issue.message)
-
-    def _load_merge_source_df(
-        self,
-        spec: MergeSourceSpec,
-        inputs: Dict[str, Any],
-        col_overrides: Optional[Dict[str, str]],
-    ) -> Optional[pd.DataFrame]:
-        if not inputs.get(spec.enable_key):
-            return None
-        source_path = inputs.get(spec.file_key)
-        if not source_path:
-            return None
-        if spec.merge_type == MERGE_FUNCTIONAL and self.bom_only_mode:
-            return None
-
-        # Resolve sheet name from inputs (e.g. 'func_sheet', 'piecepart_sheet')
-        sheet_key = spec.file_key + '_sheet'
-        sheet_name = inputs.get(sheet_key)
-
-        self.log(f"Loading {spec.source_name}...")
-        raw_df = self.read_excel_safe(source_path, sheet_name=sheet_name)
-        return self._map_merge_source_columns(raw_df, spec, col_overrides)
-
-    def _map_merge_source_columns(
-        self,
-        df: pd.DataFrame,
-        spec: MergeSourceSpec,
-        overrides: Optional[Dict[str, str]],
-    ) -> pd.DataFrame:
-        mapped = self.map_columns(
-            df,
-            HEADER_CONFIG[spec.config_key],
-            list(spec.required_fields),
-            source_name=spec.source_name,
-            overrides=overrides,
-        )
-        renamed = df.rename(columns={v: k for k, v in mapped.items()})
-        ensure_columns_exist(renamed, list(spec.required_fields), spec.source_name)
-
-        mapped_effects = [field_name for field_name in MERGE_EFFECT_FIELDS if field_name in mapped]
-        if not mapped_effects:
-            raise ValidationError(
-                f"{spec.source_name} is missing all effect columns. Map at least one of: "
-                "Local Effect, Next Higher Effect, End Effect."
-            )
-
-        for field_name in spec.optional_fields:
-            if field_name not in renamed.columns:
-                renamed[field_name] = ''
-        return renamed
-
-    def _normalize_merge_source_rows(
-        self,
-        df: pd.DataFrame,
-        spec: MergeSourceSpec,
-    ) -> Dict[str, List[Dict[str, Any]]]:
-        if spec.merge_type == MERGE_FUNCTIONAL:
-            return self._normalize_functional_merge_rows(df)
-        if spec.merge_type == MERGE_PIECEPART:
-            return self._normalize_piecepart_merge_rows(df)
-        return {}
-
-    def _normalize_functional_merge_rows(self, df: pd.DataFrame) -> Dict[str, List[Dict[str, Any]]]:
-        rows_by_base: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-        for idx, row in enumerate(df.itertuples()):
-            if idx % INDEX_CANCEL_CHECK_INTERVAL == 0:
-                self.cancel.check()
-
-            fid = clean_string(getattr(row, 'function_id', ''))
-            fm = clean_string(getattr(row, 'failure_mode', ''))
-            if not fid or not fm:
-                continue
-
-            base = normalize_func_base_id(fid)
-            source_row_num = idx + 2
-            item = {
-                'src_idx': source_row_num,
-                'function_id': fid,
-                'failure_mode': fm,
-                'failure_mode_norm': self._normalize_merge_text(fm),
-                'local_effect': clean_string(getattr(row, 'local_effect', '')),
-                'next_higher_effect': clean_string(getattr(row, 'next_higher_effect', '')),
-                'end_effect': clean_string(getattr(row, 'end_effect', '')),
-                'source_key': f"{fid}|{fm}",
-            }
-            rows_by_base[base].append(item)
-            self.functional_total_rows += 1
-
-        return rows_by_base
-
-    def _normalize_piecepart_merge_rows(self, df: pd.DataFrame) -> Dict[str, List[Dict[str, Any]]]:
-        from common.fmea_utils import classify_fmea_rows
-
-        rows_by_refdes: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-        raw_values_by_refdes: Dict[str, set] = defaultdict(set)
-
-        classifications, _, _ = classify_fmea_rows(df, self.log, self.cancel)
-        for pos, (df_idx, row) in enumerate(df.iterrows()):
-            if pos >= len(classifications) or classifications[pos].row_type != 'piece_part':
-                continue
-
-            source_row_num = pos + 2
-            refs = split_ref_designators(row.get('ref_des', ''))
-            if len(refs) != 1:
-                if len(refs) > 1:
-                    self._record_merge_issue(
-                        'multi_refdes_source_row',
-                        'error',
-                        MERGE_PIECEPART,
-                        {
-                            'entity_key': ', '.join(refs),
-                            'field': 'Reference Designator',
-                            'message': (
-                                f"Piece-Part merge source row {source_row_num} contains multiple reference designators "
-                                f"({', '.join(refs)}), so it cannot be matched safely."
-                            ),
-                            'action': 'Skipped copying effects from this source row.',
-                            'source_row': str(source_row_num),
-                        },
-                    )
-                continue
-
-            ref_raw = clean_string(refs[0])
-            ref_canon = canonicalize_refdes(ref_raw)
-            raw_values_by_refdes[ref_canon].add(ref_raw)
-            failure_mode = clean_string(row.get('failure_mode', ''))
-            if not failure_mode:
-                self._get_merge_result(MERGE_PIECEPART).skipped_count += 1
-                self._record_merge_issue(
-                    'missing_failure_mode',
-                    'error',
-                    MERGE_PIECEPART,
-                    {
-                        'entity_key': ref_raw,
-                        'field': 'Failure Mode',
-                        'message': (
-                            f"Piece-Part merge source row {source_row_num} for '{ref_raw}' is missing a failure mode, "
-                            "so it cannot be matched safely."
-                        ),
-                        'action': 'Skipped this source row because Failure Mode is required for piece-part merge.',
-                        'source_row': str(source_row_num),
-                    },
-                )
-                continue
-            item = {
-                'ref_des': ref_raw,
-                'ref_des_canon': ref_canon,
-                'failure_mode': failure_mode,
-                'failure_mode_norm': self._normalize_merge_text(failure_mode),
-                'fmea_id': clean_string(row.get('fmea_id', '')),
-                'part_number': clean_string(row.get('part_number', '')),
-                'part_number_canon': canonical_pn(row.get('part_number', '')),
-                'part_usage': row.get('part_usage', ''),
-                'part_usage_value': self._parse_usage_value_for_merge(row.get('part_usage', '')),
-                'local_effect': clean_string(row.get('local_effect', '')),
-                'next_higher_effect': clean_string(row.get('next_higher_effect', '')),
-                'end_effect': clean_string(row.get('end_effect', '')),
-                'source_order': len(rows_by_refdes[ref_canon]),
-                'source_row': source_row_num,
-            }
-            rows_by_refdes[ref_canon].append(item)
-
-        for ref_canon, raw_values in raw_values_by_refdes.items():
-            if len(raw_values) > 1:
-                self._record_merge_issue(
-                    'ambiguous_source_match',
-                    'warning',
-                    MERGE_PIECEPART,
-                    {
-                        'entity_key': ref_canon,
-                        'field': 'Reference Designator',
-                        'message': (
-                            f"Piece-Part merge source contains multiple raw reference designators ({', '.join(sorted(raw_values))}) "
-                            f"that normalize to '{ref_canon}'."
-                        ),
-                        'action': 'Merge continues using normalized matching.',
-                    },
-                )
-
-        return rows_by_refdes
-
     def _build_indexes(
         self,
         bom_df: pd.DataFrame,
         hda_df: pd.DataFrame,
         fm_df: pd.DataFrame,
-        func_df: Optional[pd.DataFrame] = None,
     ) -> None:
         self._build_base_indexes(bom_df, hda_df, fm_df)
-        self.functional_rows_by_base = {}
-        self.functional_total_rows = 0
-        if func_df is not None:
-            self.functional_rows_by_base = self._normalize_functional_merge_rows(func_df)
 
     def _build_base_indexes(
         self,
@@ -800,509 +474,72 @@ class FMEAProcessor:
         self.log("Inline HDA data detected.", "INFO")
         return renamed[required_cols].copy()
 
-    def _describe_fmea_id_mismatch(self, new_id: str, old_id: str) -> str:
-        new_id = clean_string(new_id)
-        old_id = clean_string(old_id)
-        if not new_id or not old_id or new_id == old_id:
-            return ''
-        new_parts = new_id.split('-')
-        old_parts = old_id.split('-')
-        if len(new_parts) >= 3 and len(old_parts) >= 3:
-            if new_parts[-2:] == old_parts[-2:] and '-'.join(new_parts[:-2]) != '-'.join(old_parts[:-2]):
-                return (
-                    f"Piece-Part merge found matching RefDes row but the FMEA ID lineage differs: "
-                    f"new '{new_id}' vs old '{old_id}'."
-                )
-        return f"Piece-Part merge found different FMEA IDs for the matched row: new '{new_id}' vs old '{old_id}'."
+    def _filter_failure_modes_by_standard(
+        self, fm_df: pd.DataFrame, standard: str,
+    ) -> pd.DataFrame:
+        """Phase D: filter the failure modes DataFrame by the chosen FMD standard.
 
-    def _log_merge_summary(self, merge_type: str) -> None:
-        result = self.merge_results.get(merge_type)
-        if result is None:
-            return
-        label = "Functional merge" if merge_type == MERGE_FUNCTIONAL else "Piece-Part merge"
-        self.log(
-            f"{label} summary: copied {result.copied_count} row(s), skipped {result.skipped_count} row(s), "
-            f"{result.warning_count} warning(s), {result.error_count} error(s)."
-        )
-        for issue in result.issue_rows[:MAX_MERGE_DETAIL_LOGS]:
-            level = 'INFO'
-            if issue.severity == 'warning':
-                level = 'WARNING'
-            elif issue.severity == 'error':
-                level = 'ERROR'
-            self.log(f"{label}: {issue.message} Action: {issue.action}", level)
-        remaining = len(result.issue_rows) - MAX_MERGE_DETAIL_LOGS
-        if remaining > 0:
+        Looks for a "standard" / "fmd standard" / "fmd version" column and
+        filters rows whose normalized value matches the chosen standard
+        (FMD-91 or FMD-2016). If no such column exists OR the filter would
+        return an empty DataFrame, returns the original frame unchanged
+        with a warning log — single-standard FM files don't get blocked.
+        """
+        candidates = ['standard', 'fmd standard', 'fmd version', 'source standard',
+                      'fmd_source', 'source']
+        cols_lower = {c.lower().strip(): c for c in fm_df.columns}
+        found = next((cols_lower[k] for k in candidates if k in cols_lower), None)
+        if not found:
             self.log(
-                f"{label}: omitted {remaining} additional issue log(s) from the live log. "
-                "Review the merge report sheet in the output workbook for full details.",
+                f"Failure Modes file has no standard-selector column; "
+                f"all rows will be used regardless of selected standard '{standard}'.",
+                "INFO",
+            )
+            return fm_df
+
+        target = standard.upper().replace('-', '').replace(' ', '')
+
+        def _match(v):
+            if v is None:
+                return False
+            try:
+                if pd.isna(v):
+                    return False
+            except (TypeError, ValueError):
+                pass
+            # Exact equality after normalization — tighter than substring
+            # match so "FMD91legacy" or "FMD91/2016 combined" do NOT
+            # accidentally match "FMD91".
+            s = str(v).upper().replace('-', '').replace(' ', '')
+            return s == target
+
+        try:
+            filtered = fm_df[fm_df[found].apply(_match)]
+        except (TypeError, ValueError, KeyError) as exc:
+            # Narrow catch: we must NOT swallow CancellationError (which
+            # inherits from Exception per common.cancellation) or any
+            # backend_error-worthy exception. Only filter-shape issues
+            # (bad column types, weird pandas coercion) are forgiven.
+            self.log(
+                f"Failure Modes standard filter failed ({exc}); using all rows.",
                 "WARNING",
             )
+            return fm_df
 
-    def _apply_functional_merge(
-        self,
-        group_rows: List[Dict[str, Any]],
-        group_row: Dict[str, Any],
-    ) -> List[Dict[str, Any]]:
-        if not group_rows:
-            return group_rows
-
-        grp_id = clean_string(group_row.get('component_group'))
-        refs = clean_string(group_row.get('ref_des'))
-        base_key = normalize_func_base_id(grp_id)
-        source_rows = self.functional_rows_by_base.get(base_key, [])
-        result = self._get_merge_result(MERGE_FUNCTIONAL)
-
-        if not source_rows:
-            result.skipped_count += 1
-            self._record_merge_issue(
-                'missing_source_match',
-                'info',
-                MERGE_FUNCTIONAL,
-                {
-                    'entity_key': grp_id,
-                    'field': 'Function ID',
-                    'message': f"No functional merge source rows matched circuit block '{grp_id}'.",
-                    'action': 'Kept the generated circuit-block row without merged effects.',
-                    'target_row': clean_string(group_rows[0].get('FMEA-ID')),
-                },
+        if filtered.empty:
+            self.log(
+                f"Failure Modes standard filter '{standard}' matched no rows; "
+                f"falling back to all {len(fm_df)} rows.",
+                "WARNING",
             )
-            return group_rows
+            return fm_df
 
-        unique_ids = {item['function_id'] for item in source_rows}
-        needs_auto_suffix = len(unique_ids) == 1 and len(source_rows) > 1
-        merged_rows: List[Dict[str, Any]] = []
-        for idx, source_row in enumerate(source_rows):
-            self.cancel.check("Functional merge cancelled by user.")
-            row = group_rows[0].copy()
-            if needs_auto_suffix:
-                suffix = _index_to_suffix(idx)
-                row['FMEA-ID'] = f"{source_row['function_id']}-{suffix}"
-            else:
-                row['FMEA-ID'] = source_row['function_id']
-            row['Failure Mode'] = source_row['failure_mode']
-            row['Failure Mode Causes'] = refs
-            copied_fields = self._copy_effect_fields(row, source_row)
-            row['FuncFM Source Row'] = source_row['src_idx']
-            row['FuncFM Key'] = source_row['source_key']
-            row['FuncFM Hash'] = source_row['source_key']
-            merged_rows.append(row)
-            if copied_fields:
-                result.copied_count += 1
-            else:
-                result.skipped_count += 1
-        return merged_rows
-
-    def _build_piecepart_target_rows(self, output_rows: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
-        rows_by_refdes: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
-        raw_values_by_refdes: Dict[str, set] = defaultdict(set)
-
-        for idx, row in enumerate(output_rows):
-            if idx % MERGE_CANCEL_CHECK_INTERVAL == 0:
-                self.cancel.check("Piece-Part merge cancelled by user.")
-                time.sleep(0)  # Yield GIL so UI thread can repaint
-            if self._normalize_merge_text(row.get('FMEA Level')) != 'piece-part':
-                continue
-            refs = split_ref_designators(row.get('Failure Mode Causes', ''))
-            if len(refs) != 1:
-                continue
-            ref_raw = clean_string(refs[0])
-            ref_canon = canonicalize_refdes(ref_raw)
-            raw_values_by_refdes[ref_canon].add(ref_raw)
-            rows_by_refdes[ref_canon].append({
-                'row': row,
-                'target_index': idx,
-                'target_row': idx + 2,
-                'target_order': len(rows_by_refdes[ref_canon]),
-                'ref_des': ref_raw,
-                'ref_des_canon': ref_canon,
-                'failure_mode': clean_string(row.get('Failure Mode')),
-                'failure_mode_norm': self._normalize_merge_text(row.get('Failure Mode')),
-                'fmea_id': clean_string(row.get('FMEA-ID')),
-                'part_number': clean_string(row.get('Component Part Number')),
-                'part_number_canon': canonical_pn(row.get('Component Part Number')),
-                'part_usage': row.get('Part Usage', ''),
-                'part_usage_value': self._parse_usage_value_for_merge(row.get('Part Usage', '')),
-            })
-
-        for ref_canon, raw_values in raw_values_by_refdes.items():
-            if len(raw_values) > 1:
-                self._record_merge_issue(
-                    'ambiguous_source_match',
-                    'warning',
-                    MERGE_PIECEPART,
-                    {
-                        'entity_key': ref_canon,
-                        'field': 'Reference Designator',
-                        'message': (
-                            f"Generated FMEA rows use multiple raw reference designators ({', '.join(sorted(raw_values))}) "
-                            f"that normalize to '{ref_canon}'."
-                        ),
-                        'action': 'Merge continues using normalized matching.',
-                    },
-                )
-
-        return rows_by_refdes
-
-    def _apply_piecepart_merge(
-        self,
-        output_rows: List[Dict[str, Any]],
-        source_rows_by_refdes: Dict[str, List[Dict[str, Any]]],
-        progress_callback: Optional[Callable[[int, int], None]] = None,
-    ) -> None:
-        result = self._get_merge_result(MERGE_PIECEPART)
-        target_rows_by_refdes = self._build_piecepart_target_rows(output_rows)
-
-        for idx, (refdes, target_rows) in enumerate(target_rows_by_refdes.items()):
-            if idx % MERGE_CANCEL_CHECK_INTERVAL == 0:
-                self.cancel.check("Piece-Part merge cancelled by user.")
-                time.sleep(0)  # Yield GIL so UI thread can repaint
-            mode_counts = Counter(item['failure_mode_norm'] for item in target_rows if item['failure_mode_norm'])
-            for failure_mode_norm, count in mode_counts.items():
-                if count > 1:
-                    self._record_merge_issue(
-                        'duplicate_target_rows',
-                        'error',
-                        MERGE_PIECEPART,
-                        {
-                            'entity_key': refdes,
-                            'field': 'Failure Mode',
-                            'new_value': failure_mode_norm,
-                            'message': (
-                                f"Generated FMEA contains {count} piece-part rows for '{refdes}' with the same failure mode '{failure_mode_norm}'."
-                            ),
-                            'action': 'Skipped effect copy for the duplicated failure mode; unambiguous matches for other failure modes may still proceed.',
-                        },
-                    )
-
-        total_source_refdes = len(source_rows_by_refdes)
-        for idx, (refdes, source_rows) in enumerate(source_rows_by_refdes.items()):
-            if idx % MERGE_CANCEL_CHECK_INTERVAL == 0:
-                self.cancel.check("Piece-Part merge cancelled by user.")
-                time.sleep(0)  # Yield GIL so UI thread can repaint
-                if progress_callback:
-                    progress_callback(idx + 1, total_source_refdes)
-            target_rows = target_rows_by_refdes.get(refdes, [])
-            if not target_rows:
-                for source_row in source_rows:
-                    result.skipped_count += 1
-                    self._record_merge_issue(
-                        'unmatched_legacy_source_row',
-                        'warning',
-                        MERGE_PIECEPART,
-                        {
-                            'entity_key': refdes,
-                            'field': 'Reference Designator',
-                            'old_value': source_row['ref_des'],
-                            'message': (
-                                f"Piece-Part merge source row {source_row['source_row']} for '{source_row['ref_des']}' "
-                                "does not exist in the newly generated FMEA."
-                            ),
-                            'action': 'No effects were copied from this old piece-part row.',
-                            'source_row': str(source_row['source_row']),
-                        },
-                    )
-                continue
-
-            source_mode_counts = Counter(item['failure_mode_norm'] for item in source_rows if item['failure_mode_norm'])
-            for failure_mode_norm, count in source_mode_counts.items():
-                if count > 1:
-                    self._record_merge_issue(
-                        'duplicate_source_rows',
-                        'error',
-                        MERGE_PIECEPART,
-                        {
-                            'entity_key': refdes,
-                            'field': 'Failure Mode',
-                            'old_value': failure_mode_norm,
-                            'message': (
-                                f"Piece-Part merge source contains {count} rows for '{refdes}' with the same failure mode '{failure_mode_norm}'."
-                            ),
-                            'action': 'Skipped effect copy for the duplicated failure mode; unambiguous matches for other failure modes may still proceed.',
-                        },
-                    )
-
-            if len(source_rows) != len(target_rows):
-                self._record_merge_issue(
-                    'failure_mode_count_mismatch',
-                    'warning',
-                    MERGE_PIECEPART,
-                    {
-                        'entity_key': refdes,
-                        'field': 'Failure Mode count',
-                        'new_value': str(len(target_rows)),
-                        'old_value': str(len(source_rows)),
-                        'message': (
-                            f"Piece-Part merge found a different number of failure mode rows for '{refdes}': "
-                            f"new FMEA has {len(target_rows)}, old FMEA has {len(source_rows)}."
-                        ),
-                        'action': 'Used exact failure-mode name matches only. Row-order matching was not used because row counts differ.',
-                    },
-                )
-
-            source_modes = {item['failure_mode_norm'] for item in source_rows if item['failure_mode_norm']}
-            target_modes = {item['failure_mode_norm'] for item in target_rows if item['failure_mode_norm']}
-            if source_modes != target_modes:
-                self._record_merge_issue(
-                    'failure_mode_set_mismatch',
-                    'warning',
-                    MERGE_PIECEPART,
-                    {
-                        'entity_key': refdes,
-                        'field': 'Failure Mode',
-                        'new_value': ', '.join(sorted(target_modes)) or '(blank)',
-                        'old_value': ', '.join(sorted(source_modes)) or '(blank)',
-                        'message': (
-                            f"Piece-Part merge found different failure mode names for '{refdes}' between the new and old FMEAs."
-                        ),
-                        'action': 'Used exact failure-mode name matches where possible. For unmatched rows, copied effects by row order (safe: row counts match and no duplicates exist).',
-                    },
-                )
-
-            matched_source_indices = set()
-            matched_target_indices = set()
-            target_by_mode: Dict[str, List[int]] = defaultdict(list)
-            source_by_mode: Dict[str, List[int]] = defaultdict(list)
-            for idx, target_row in enumerate(target_rows):
-                target_by_mode[target_row['failure_mode_norm']].append(idx)
-            for idx, source_row in enumerate(source_rows):
-                source_by_mode[source_row['failure_mode_norm']].append(idx)
-
-            mapping_pairs: List[Tuple[int, int, str]] = []
-            ambiguous = False
-
-            for failure_mode_norm, source_indexes in source_by_mode.items():
-                if not failure_mode_norm:
-                    continue
-                target_indexes = target_by_mode.get(failure_mode_norm, [])
-                if len(source_indexes) == 1 and len(target_indexes) == 1:
-                    mapping_pairs.append((source_indexes[0], target_indexes[0], 'exact_failure_mode'))
-                    matched_source_indices.add(source_indexes[0])
-                    matched_target_indices.add(target_indexes[0])
-                elif source_indexes and target_indexes:
-                    ambiguous = True
-                    for source_idx in source_indexes:
-                        source_row = source_rows[source_idx]
-                        self._record_merge_issue(
-                            'ambiguous_source_match',
-                            'error',
-                            MERGE_PIECEPART,
-                            {
-                                'entity_key': refdes,
-                                'field': 'Failure Mode',
-                                'old_value': source_row['failure_mode'],
-                                'message': (
-                                    f"Piece-Part merge found more than one possible target row for '{refdes}' "
-                                    f"with failure mode '{source_row['failure_mode']}'."
-                                ),
-                                'action': 'Skipped copying effects for the ambiguous row.',
-                                'source_row': str(source_row['source_row']),
-                            },
-                        )
-
-            remaining_source = [idx for idx in range(len(source_rows)) if idx not in matched_source_indices]
-            remaining_target = [idx for idx in range(len(target_rows)) if idx not in matched_target_indices]
-            can_fallback = (
-                not ambiguous
-                and len(source_rows) == len(target_rows)
-                and len(remaining_source) == len(remaining_target)
-                and not any(count > 1 for count in source_mode_counts.values())
-                and not any(count > 1 for count in (Counter(item['failure_mode_norm'] for item in target_rows if item['failure_mode_norm']).values()))
-            )
-
-            if can_fallback and remaining_source:
-                source_sorted = sorted(remaining_source, key=lambda idx: source_rows[idx]['source_order'])
-                target_sorted = sorted(remaining_target, key=lambda idx: target_rows[idx]['target_order'])
-                for source_idx, target_idx in zip(source_sorted, target_sorted):
-                    mapping_pairs.append((source_idx, target_idx, 'ordinal_fallback'))
-                    matched_source_indices.add(source_idx)
-                    matched_target_indices.add(target_idx)
-
-            for source_idx, target_idx, match_method in mapping_pairs:
-                source_row = source_rows[source_idx]
-                target_row = target_rows[target_idx]
-                target_ref = target_row['row']
-                copied_fields = self._copy_effect_fields(target_ref, source_row)
-                if copied_fields:
-                    result.copied_count += 1
-                else:
-                    result.skipped_count += 1
-
-                new_fmea_id = target_row['fmea_id']
-                old_fmea_id = source_row['fmea_id']
-                if new_fmea_id and old_fmea_id and new_fmea_id != old_fmea_id:
-                    self._record_merge_issue(
-                        'fmea_id_mismatch',
-                        'warning',
-                        MERGE_PIECEPART,
-                        {
-                            'entity_key': refdes,
-                            'field': 'FMEA ID',
-                            'new_value': new_fmea_id,
-                            'old_value': old_fmea_id,
-                            'message': self._describe_fmea_id_mismatch(new_fmea_id, old_fmea_id),
-                            'action': 'Copied the effect fields because the row match was otherwise safe.',
-                            'source_row': str(source_row['source_row']),
-                            'target_row': str(target_row['target_row']),
-                            'target_row_ref': target_ref,
-                        },
-                    )
-
-                if source_row['part_number_canon'] and target_row['part_number_canon'] and source_row['part_number_canon'] != target_row['part_number_canon']:
-                    self._record_merge_issue(
-                        'part_number_mismatch',
-                        'warning',
-                        MERGE_PIECEPART,
-                        {
-                            'entity_key': refdes,
-                            'field': 'Part Number',
-                            'new_value': target_row['part_number'],
-                            'old_value': source_row['part_number'],
-                            'message': (
-                                f"Piece-Part merge found a part number mismatch for '{refdes}': "
-                                f"new '{target_row['part_number']}' vs old '{source_row['part_number']}'."
-                            ),
-                            'action': 'Copied the effect fields because the row match was otherwise safe.',
-                            'source_row': str(source_row['source_row']),
-                            'target_row': str(target_row['target_row']),
-                            'target_row_ref': target_ref,
-                        },
-                    )
-
-                old_usage = source_row['part_usage_value']
-                new_usage = target_row['part_usage_value']
-                if old_usage is not None and new_usage is not None and abs(old_usage - new_usage) > USAGE_TOLERANCE:
-                    self._record_merge_issue(
-                        'part_usage_mismatch',
-                        'warning',
-                        MERGE_PIECEPART,
-                        {
-                            'entity_key': refdes,
-                            'field': 'Part Usage',
-                            'new_value': str(target_row['part_usage']),
-                            'old_value': str(source_row['part_usage']),
-                            'message': (
-                                f"Piece-Part merge found a part usage mismatch for '{refdes}': "
-                                f"new '{target_row['part_usage']}' vs old '{source_row['part_usage']}'."
-                            ),
-                            'action': 'Copied the effect fields because the row match was otherwise safe.',
-                            'source_row': str(source_row['source_row']),
-                            'target_row': str(target_row['target_row']),
-                            'target_row_ref': target_ref,
-                        },
-                    )
-
-                if match_method == 'ordinal_fallback':
-                    self._record_merge_issue(
-                        'ordinal_fallback_applied',
-                        'warning',
-                        MERGE_PIECEPART,
-                        {
-                            'entity_key': refdes,
-                            'field': 'Failure Mode',
-                            'new_value': target_row['failure_mode'],
-                            'old_value': source_row['failure_mode'],
-                            'message': (
-                                f"Piece-Part merge used safe row-order fallback for '{refdes}' because exact failure mode names "
-                                f"did not align: new '{target_row['failure_mode']}' vs old '{source_row['failure_mode']}'."
-                            ),
-                            'action': 'Copied effect fields by matching row order (failure mode names differ but position is unambiguous).',
-                            'source_row': str(source_row['source_row']),
-                            'target_row': str(target_row['target_row']),
-                            'target_row_ref': target_ref,
-                        },
-                    )
-
-                if not copied_fields:
-                    self._record_merge_issue(
-                        'blank_effects_in_source',
-                        'warning',
-                        MERGE_PIECEPART,
-                        {
-                            'entity_key': refdes,
-                            'field': 'effects',
-                            'message': (
-                                f"Piece-Part merge matched '{refdes}' but source row {source_row['source_row']} had no effect text to copy."
-                            ),
-                            'action': 'Left the generated effect cells unchanged.',
-                            'source_row': str(source_row['source_row']),
-                            'target_row': str(target_row['target_row']),
-                            'target_row_ref': target_ref,
-                        },
-                    )
-
-            unmatched_source = [idx for idx in range(len(source_rows)) if idx not in matched_source_indices]
-            unmatched_target = [idx for idx in range(len(target_rows)) if idx not in matched_target_indices]
-            for source_idx in unmatched_source:
-                source_row = source_rows[source_idx]
-                result.skipped_count += 1
-                self._record_merge_issue(
-                    'missing_source_match',
-                    'warning',
-                    MERGE_PIECEPART,
-                    {
-                        'entity_key': refdes,
-                        'field': 'Failure Mode',
-                        'old_value': source_row['failure_mode'],
-                        'message': (
-                            f"Piece-Part merge could not find a safe target row for old row {source_row['source_row']} "
-                            f"('{refdes}' / '{source_row['failure_mode']}')."
-                        ),
-                        'action': 'Skipped copying effects for this unmatched old row.',
-                        'source_row': str(source_row['source_row']),
-                    },
-                )
-            for target_idx in unmatched_target:
-                target_row = target_rows[target_idx]
-                result.skipped_count += 1
-                self._record_merge_issue(
-                    'missing_source_match',
-                    'warning',
-                    MERGE_PIECEPART,
-                    {
-                        'entity_key': refdes,
-                        'field': 'Failure Mode',
-                        'new_value': target_row['failure_mode'],
-                        'message': (
-                            f"Piece-Part merge found no matching old row for generated row {target_row['target_row']} "
-                            f"('{refdes}' / '{target_row['failure_mode']}')."
-                        ),
-                        'action': 'Left the generated effect cells unchanged.',
-                        'target_row': str(target_row['target_row']),
-                        'target_row_ref': target_row['row'],
-                    },
-                )
-
-    def _build_merge_summary_sheets(self) -> Dict[str, pd.DataFrame]:
-        summaries: Dict[str, pd.DataFrame] = {}
-        summary_rows = []
-        for merge_type, result in self.merge_results.items():
-            summary_rows.append({
-                'Merge Type': 'Functional Merge' if merge_type == MERGE_FUNCTIONAL else 'Piece-Part Merge',
-                'Copied Rows': result.copied_count,
-                'Skipped Rows': result.skipped_count,
-                'Warnings': result.warning_count,
-                'Errors': result.error_count,
-                'Issue Rows': len(result.issue_rows),
-            })
-            if result.issue_rows:
-                report_rows = [{
-                    'Severity': issue.severity.title(),
-                    'Issue Type': issue.kind,
-                    'Entity Key': issue.entity_key,
-                    'Field': issue.field,
-                    'New Value': issue.new_value,
-                    'Old Value': issue.old_value,
-                    'What Is Wrong': issue.message,
-                    'Merge Action': issue.action,
-                    'Source Row': issue.source_row,
-                    'Target Row': issue.target_row,
-                } for issue in result.issue_rows]
-                sheet_name = 'Functional_Merge_Report' if merge_type == MERGE_FUNCTIONAL else 'PiecePart_Merge_Report'
-                summaries[sheet_name] = pd.DataFrame(report_rows)
-        if summary_rows:
-            summaries['Merge_Summary'] = pd.DataFrame(summary_rows)
-        return summaries
+        self.log(
+            f"Filtered failure modes by standard '{standard}': "
+            f"{len(filtered)} of {len(fm_df)} rows kept.",
+            "INFO",
+        )
+        return filtered
 
     def process(
         self,
@@ -1317,6 +554,8 @@ class FMEAProcessor:
             self._reset_state()
             self.verbose = bool(inputs.get('verbose'))
             self.bom_only_mode = bool(inputs.get('bom_only_mode'))
+            # Phase D: capture FMD standard for use during row generation.
+            self.failure_modes_standard = str(inputs.get('failure_modes_standard') or 'FMD-2016')
 
         # Extract column overrides (format: {'FILE_TYPE': {'internal_key': 'actual_col_name'}})
         col_overrides = inputs.get('column_overrides') or {}
@@ -1330,19 +569,9 @@ class FMEAProcessor:
         fm_df = self.read_excel_safe(inputs['fm'], sheet_name=inputs.get('fm_sheet'))
         hda_df = self._resolve_hda_dataframe(inputs.get('hda'), bom_raw, col_overrides.get('HDA'), inputs.get('hda_sheet'))
 
-        functional_df = self._load_merge_source_df(
-            FUNCTIONAL_MERGE_SPEC,
-            inputs,
-            col_overrides.get(FUNCTIONAL_MERGE_SPEC.config_key) or col_overrides.get('FUNCTIONAL'),
-        )
-        piecepart_df = self._load_merge_source_df(
-            PIECEPART_MERGE_SPEC,
-            inputs,
-            col_overrides.get(PIECEPART_MERGE_SPEC.config_key),
-        )
-        piecepart_source_rows = {}
-        if piecepart_df is not None:
-            piecepart_source_rows = self._normalize_merge_source_rows(piecepart_df, PIECEPART_MERGE_SPEC)
+        # Phase D: enrichment merges removed from primary path. functional FMEA
+        # is now its own primary workflow (process_functional_to_piecepart).
+        # piece-part enrichment was deprecated entirely.
 
         if group_df is not None:
             g_map = self.map_columns(group_df, HEADER_CONFIG['COMPONENT_GROUPING'], REQUIRED_COLS['COMPONENT_GROUPING'],
@@ -1360,10 +589,47 @@ class FMEAProcessor:
         fm_df = fm_df.rename(columns={v:k for k,v in f_map.items()})
         ensure_columns_exist(fm_df, REQUIRED_COLS['FAILURE_MODES'], "Failure Modes file")
 
+        # Phase D: filter failure modes by selected standard.
+        fm_df = self._filter_failure_modes_by_standard(fm_df, self.failure_modes_standard)
+
         if status_callback:
             status_callback("Building indexes...")
         self.log("Building indexes...")
-        self._build_indexes(bom_df, hda_df, fm_df, functional_df)
+        self._build_indexes(bom_df, hda_df, fm_df)
+
+        # Phase D: variant_counts_by_base counts every occurrence of a
+        # base RefDes across the workflow's SOURCE-OF-TRUTH document:
+        #   - process() with grouping file → counts come from grouping
+        #   - process() in bom_only mode  → counts come from the BOM
+        #   - process_functional_to_piecepart() → counts come from the
+        #     functional FMEA (see that method for its own clear())
+        #   - process_gaps() intentionally does NOT populate this map
+        #     because fill_gaps never triggers the inheritance path
+        #     (missing_refdes ⊆ bom_refdes)
+        #
+        # The resulting `usage_fraction` ("1/N") on each BOM_Additions
+        # row therefore reflects "1 of N total instances of this base in
+        # the workflow's source document" — which is what the user wants
+        # for paste-back guidance. The count is NOT comparable across
+        # workflows because each workflow has a different source-of-truth,
+        # and that's intentional: the advice for a user running Fill Gaps
+        # should differ from the advice for a user running Generate-from-
+        # Grouping.
+        self.variant_counts_by_base.clear()
+        if group_df is not None:
+            for _, grow in group_df.iterrows():
+                for ref in split_ref_designators(grow.get("ref_des", "")):
+                    base = canonicalize_refdes(get_usage_base_refdes(ref))
+                    if base:
+                        self.variant_counts_by_base[base] += 1
+        else:
+            for _, brow in bom_df.iterrows():
+                for ref in split_ref_designators(brow.get("ref_des", "")):
+                    base = canonicalize_refdes(get_usage_base_refdes(ref))
+                    if base:
+                        self.variant_counts_by_base[base] += 1
+
+        source_workflow_tag = "bom_only" if self.bom_only_mode else "piece_part_generate"
 
         output_rows = []
         if status_callback:
@@ -1389,24 +655,17 @@ class FMEAProcessor:
                 if not grp_id:
                     continue
                 group_rows = self._generate_group_rows(row_dict)
-                if inputs.get('use_func'):
-                    group_rows = self._apply_functional_merge(group_rows, row_dict)
                 output_rows.extend(group_rows)
                 for ref in split_ref_designators(row_dict.get('ref_des')):
-                    output_rows.extend(self._generate_component_rows(ref, row_dict, fm_df))
-
-        if piecepart_source_rows:
-            if status_callback:
-                status_callback("Applying Piece-Part effect merge...")
-            self.log("Applying Piece-Part effect merge...")
-            self._apply_piecepart_merge(output_rows, piecepart_source_rows, progress_callback=progress_callback)
-
-        if functional_df is not None:
-            self._log_merge_summary(MERGE_FUNCTIONAL)
-        if piecepart_df is not None:
-            self._log_merge_summary(MERGE_PIECEPART)
+                    output_rows.extend(
+                        self._generate_component_rows(
+                            ref, row_dict, fm_df, source_workflow=source_workflow_tag,
+                        )
+                    )
 
         self.log(f"Results: {len(self.successful_matches)} components matched | {len(self.no_matches)} with no failure modes (see No_Matches sheet)", "INFO")
+        if self.bom_additions:
+            self.log(f"BOM Additions: {len(self.bom_additions)} variant RefDes inherited from base components (see BOM_Additions sheet)", "INFO")
         return pd.DataFrame(output_rows)
 
     def process_gaps(
@@ -1442,6 +701,7 @@ class FMEAProcessor:
             # cancel signals applied via bind_processor() before process_gaps() begins.
             self._reset_state()
             self.verbose = bool(inputs.get('verbose', False))
+            self.failure_modes_standard = str(inputs.get('failure_modes_standard') or 'FMD-2016')
 
         # Extract column overrides (format: {'FILE_TYPE': {'internal_key': 'actual_col_name'}})
         col_overrides = inputs.get('column_overrides') or {}
@@ -1483,9 +743,17 @@ class FMEAProcessor:
         bom_df = bom_raw.rename(columns={v: k for k, v in b_map.items()})
 
         bom_refdes = set()
+        # Phase D note: fill_gaps never triggers the inheritance code path.
+        # missing_refdes = bom_refdes - existing_refdes, so by construction
+        # the RefDes we generate piece-part rows for are ALREADY in the BOM.
+        # The base-variant fallback in _generate_component_rows therefore
+        # never fires for fill_gaps. We intentionally DO NOT populate
+        # variant_counts_by_base here — it would be built from the BOM,
+        # which is the wrong source for inheritance accounting anyway.
         for val in bom_df['ref_des'].dropna():
             for ref in split_refdes_list(str(val)):
-                bom_refdes.add(canonicalize_refdes(ref))
+                canon = canonicalize_refdes(ref)
+                bom_refdes.add(canon)
 
         self.log(f"Found {len(bom_refdes)} unique RefDes in BOM")
 
@@ -1533,12 +801,13 @@ class FMEAProcessor:
 
             self.log(f"Loaded {len(refdes_to_group)} RefDes→Group mappings")
 
-        # 7. Map FM columns and build indexes
+        # 7. Map FM columns, filter by FMD standard, and build indexes
         f_map = self.map_columns(fm_df, HEADER_CONFIG['FAILURE_MODES'], REQUIRED_COLS['FAILURE_MODES'],
                                  source_name="Failure Modes file", overrides=col_overrides.get('FAILURE_MODES'))
         fm_df = fm_df.rename(columns={v: k for k, v in f_map.items()})
+        fm_df = self._filter_failure_modes_by_standard(fm_df, self.failure_modes_standard)
 
-        self._build_indexes(bom_df, hda_df, fm_df, None)
+        self._build_indexes(bom_df, hda_df, fm_df)
 
         # 8. Generate rows for missing RefDes
         self.log("Generating FMEA rows for missing RefDes...")
@@ -1556,7 +825,7 @@ class FMEAProcessor:
                 'schematic_page': ''
             })
 
-            rows = self._generate_component_rows(ref_des, group_row, fm_df, mode='standard')
+            rows = self._generate_component_rows(ref_des, group_row, fm_df, mode='standard', source_workflow='fill_gaps')
 
             # Add diagnostic note indicating gap-fill origin
             for row in rows:
@@ -1567,6 +836,216 @@ class FMEAProcessor:
             output_rows.extend(rows)
 
         self.log(f"Generated {len(output_rows)} FMEA rows for {len(missing_refdes)} missing RefDes")
+        if self.bom_additions:
+            self.log(f"BOM Additions: {len(self.bom_additions)} variant RefDes inherited from base components (see BOM_Additions sheet)", "INFO")
+        return pd.DataFrame(output_rows)
+
+    def process_functional_to_piecepart(
+        self,
+        inputs: Dict[str, Any],
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        status_callback: Optional[Callable[[str], None]] = None,
+    ) -> pd.DataFrame:
+        """Phase D: generate piece-part rows beneath each functional FMEA block.
+
+        Reads a functional FMEA, identifies circuit-block rows, parses the
+        comma-separated RefDes column ("Failure Mode Causes (RefDes)" or
+        equivalent), and for each RefDes generates piece-part rows via the
+        same _generate_component_rows() machinery used by piece_part_generate.
+        Original functional rows are preserved AS-IS so the user can review
+        their own structure unchanged.
+
+        Required inputs:
+            - 'func': Path to functional FMEA file
+            - 'bom': Path to BOM file
+            - 'fm':  Path to Failure Modes file
+            - 'failure_modes_standard': "FMD-91" or "FMD-2016"
+
+        Optional inputs:
+            - 'hda': Path to HDA file
+        """
+        from common.fmea_utils import detect_refdes_column_for_fmea, classify_fmea_rows
+
+        with self._lock:
+            self._reset_state()
+            self.verbose = bool(inputs.get('verbose'))
+            self.failure_modes_standard = str(inputs.get('failure_modes_standard') or 'FMD-2016')
+
+        col_overrides = inputs.get('column_overrides') or {}
+
+        if status_callback:
+            status_callback("Reading input files...")
+        self.log("Reading input files...")
+        func_raw = self.read_excel_safe(inputs['func'], sheet_name=inputs.get('func_sheet'))
+        bom_raw = self.read_excel_safe(inputs['bom'], sheet_name=inputs.get('bom_sheet'))
+        fm_df = self.read_excel_safe(inputs['fm'], sheet_name=inputs.get('fm_sheet'))
+        hda_df = self._resolve_hda_dataframe(
+            inputs.get('hda'), bom_raw, col_overrides.get('HDA'), inputs.get('hda_sheet'),
+        )
+
+        # Map BOM and FM columns to canonical names
+        b_map = self.map_columns(
+            bom_raw, HEADER_CONFIG['BOM'], REQUIRED_COLS['BOM'],
+            source_name="BOM file", overrides=col_overrides.get('BOM'),
+        )
+        bom_df = bom_raw.rename(columns={v: k for k, v in b_map.items()})
+        ensure_columns_exist(bom_df, REQUIRED_COLS['BOM'], "BOM file")
+
+        f_map = self.map_columns(
+            fm_df, HEADER_CONFIG['FAILURE_MODES'], REQUIRED_COLS['FAILURE_MODES'],
+            source_name="Failure Modes file", overrides=col_overrides.get('FAILURE_MODES'),
+        )
+        fm_df = fm_df.rename(columns={v: k for k, v in f_map.items()})
+        ensure_columns_exist(fm_df, REQUIRED_COLS['FAILURE_MODES'], "Failure Modes file")
+        fm_df = self._filter_failure_modes_by_standard(fm_df, self.failure_modes_standard)
+
+        if status_callback:
+            status_callback("Building indexes...")
+        self.log("Building indexes...")
+        self._build_indexes(bom_df, hda_df, fm_df)
+
+        if status_callback:
+            status_callback("Parsing functional FMEA blocks...")
+        # Detect the RefDes column on the functional sheet
+        refdes_col = detect_refdes_column_for_fmea(func_raw, self.log)
+        if not refdes_col:
+            raise ColumnMappingError(
+                "RefDes",
+                "Functional FMEA",
+                tried_synonyms=["Failure Mode Causes", "Reference Designator", "RefDes"],
+            )
+        self.log(f"Using functional FMEA RefDes column: '{refdes_col}'")
+
+        # Phase D: resolve the other functional-FMEA columns via synonyms
+        # so we don't hardcode header names like "FMEA-ID" that real
+        # workbooks rarely use literally. Each of these can be None if
+        # not present — the row loop handles fallbacks.
+        fmea_id_col = resolve_column(
+            func_raw, ['FMEA-ID', 'FMEA ID', 'Function ID', 'Component Group', 'ID']
+        )
+        func_desc_col = resolve_column(
+            func_raw, ['Function Description', 'Description', 'Functional Description']
+        )
+        sch_page_col = resolve_column(
+            func_raw, ['Schematic Page', 'Page', 'Sheet', 'Schematic']
+        )
+        self.log(
+            f"Functional FMEA column resolution: id='{fmea_id_col}', "
+            f"desc='{func_desc_col}', page='{sch_page_col}'",
+            "DEBUG",
+        )
+
+        # Phase H5: warn on pathologically large functional FMEAs. We
+        # only warn here; the hard cap is checked after row generation
+        # since output row count is what actually blows up memory.
+        input_row_count = len(func_raw)
+        if input_row_count > MAX_FUNCTIONAL_INPUT_ROWS:
+            self.log(
+                f"WARNING: functional FMEA has {input_row_count:,} rows — exceeding "
+                f"{MAX_FUNCTIONAL_INPUT_ROWS:,} may produce very large output. "
+                "Consider narrowing the sheet selection or splitting the input.",
+                "WARNING",
+            )
+
+        # Classify rows so we know which are circuit blocks
+        classifications, _, _ = classify_fmea_rows(func_raw, self.log, self.cancel)
+
+        # First pass: build variant counts from every RefDes seen on the
+        # functional FMEA. This is the source-of-truth for this workflow
+        # (see the detailed comment in process() for how each workflow
+        # picks its own source and why that's intentional — not a bug to
+        # reconcile across workflows).
+        self.variant_counts_by_base.clear()
+        for pos, (_, row_series) in enumerate(func_raw.iterrows()):
+            # Cooperative cancellation during the scan pass
+            if pos % INDEX_CANCEL_CHECK_INTERVAL == 0:
+                self.cancel.check("Processing cancelled by user.")
+            val = row_series.get(refdes_col)
+            if val is None:
+                continue
+            try:
+                if pd.isna(val):
+                    continue
+            except (TypeError, ValueError):
+                pass
+            for ref in split_refdes_list(str(val)):
+                base = canonicalize_refdes(get_usage_base_refdes(ref))
+                if base:
+                    self.variant_counts_by_base[base] += 1
+
+        if status_callback:
+            status_callback("Generating piece-part rows under blocks...")
+        output_rows: List[Dict[str, Any]] = []
+        total_blocks = sum(1 for c in classifications if c.row_type == 'circuit_block')
+        block_idx = 0
+
+        for pos, (_, row_series) in enumerate(func_raw.iterrows()):
+            self.cancel.check("Processing cancelled by user.")
+
+            # Emit the functional row as-is. Tag _row_type so the writer
+            # knows. Use whatever columns the functional file has.
+            # Preserve the actual classification tag where we recognize
+            # it; otherwise collapse to 'other' so the styler has a safe
+            # default.
+            passthrough = {k: row_series.get(k) for k in func_raw.columns}
+            rtype = classifications[pos].row_type if pos < len(classifications) else 'other'
+            passthrough[ROW_TYPE_COL] = rtype or 'other'
+            output_rows.append(passthrough)
+
+            if rtype != 'circuit_block':
+                continue
+
+            block_idx += 1
+            if progress_callback:
+                progress_callback(block_idx, total_blocks or 1)
+
+            refdes_value = row_series.get(refdes_col)
+            try:
+                if pd.isna(refdes_value):
+                    continue
+            except (TypeError, ValueError):
+                pass
+            if refdes_value is None:
+                continue
+
+            # NOTE: bool(float('nan')) is True, so naive `X or 'BLOCK'`
+            # does NOT fall through to the default when X is NaN.
+            # clean_string() converts NaN → '' first, so then `'' or ...`
+            # correctly picks up the fallback.
+            _raw_id = row_series.get(fmea_id_col) if fmea_id_col else None
+            _raw_desc = row_series.get(func_desc_col) if func_desc_col else None
+            _raw_page = row_series.get(sch_page_col) if sch_page_col else None
+            group_stub = {
+                'component_group': clean_string(_raw_id) or 'BLOCK',
+                'description': clean_string(_raw_desc) or '',
+                'schematic_page': clean_string(_raw_page) or '',
+            }
+            for ref in split_refdes_list(str(refdes_value)):
+                output_rows.extend(
+                    self._generate_component_rows(
+                        ref, group_stub, fm_df,
+                        mode='standard',
+                        source_workflow='functional_to_piecepart',
+                    )
+                )
+
+            # Phase H5: fail early if output grows beyond the safety cap,
+            # rather than waiting for the final DataFrame construction
+            # (which might OOM). Check at block boundaries — cheap.
+            if len(output_rows) > MAX_FUNCTIONAL_OUTPUT_ROWS:
+                raise ProcessingError(
+                    f"Functional-to-piecepart would emit more than "
+                    f"{MAX_FUNCTIONAL_OUTPUT_ROWS:,} rows "
+                    f"(at least {len(output_rows):,} generated so far). "
+                    "Narrow the input sheet or split the functional FMEA "
+                    "into smaller files, then re-run.",
+                    context="functional_to_piecepart",
+                )
+
+        self.log(
+            f"Emitted {len(output_rows)} rows ({total_blocks} circuit blocks processed; "
+            f"{len(self.bom_additions)} BOM additions inferred)"
+        )
         return pd.DataFrame(output_rows)
 
     def _generate_group_rows(
@@ -1579,7 +1058,9 @@ class FMEAProcessor:
         page = clean_string(group_row.get('schematic_page'))
         refs = clean_string(group_row.get('ref_des'))
         base_row = {'Schematic Page': page, 'FMEA-ID': grp_id, 'Function Description': desc, 'FMEA Level': 'Circuit Block', 'Failure Mode Causes': refs, '_row_type': 'circuit_block'}
-        for k in OUTPUT_HEADERS: 
+        # Phase D: parametrize column headers by selected FMD standard so
+        # circuit-block rows match the piece-part rows below them.
+        for k in output_headers_for(self.failure_modes_standard or "FMD-2016"):
             if k not in base_row: base_row[k] = ''
         base_row['Failure Mode Causes'] = refs
         rows.append(base_row)
@@ -1608,7 +1089,10 @@ class FMEAProcessor:
         desc = clean_string(bom_row.get('description')) or clean_string(bom_row.get('part_number'))
         group_stub = {'component_group': 'BOM', 'description': desc, 'schematic_page': ''}
         rows = []
-        for ref in refs: rows.extend(self._generate_component_rows(ref, group_stub, fm_df, mode='bom_only'))
+        for ref in refs:
+            rows.extend(self._generate_component_rows(
+                ref, group_stub, fm_df, mode='bom_only', source_workflow='bom_only',
+            ))
         return rows
 
     def _check_single_usage(self, ref_des: str, usage_value: float) -> Optional[str]:
@@ -1644,13 +1128,32 @@ class FMEAProcessor:
         group_row: Dict[str, Any],
         fm_df: pd.DataFrame,
         mode: str = "standard",
+        source_workflow: str = "",
     ) -> List[Dict[str, Any]]:
         rows = []
         group_label = clean_string(group_row.get('component_group')) or 'GROUP'
         # Normalize RefDes for lookup (matches normalization used in index building)
         ref_des_canon = canonicalize_refdes(ref_des)
         bom_row = self.bom_index.get(ref_des_canon)
+        # Phase D: BOM inheritance for pin/variant RefDes. If the exact
+        # RefDes is missing from the BOM, fall back to its base component
+        # (e.g. U200-X inherits from U200). Inherited entries are recorded
+        # in self.bom_additions for the BOM_Additions sheet.
+        inherited_from_base: Optional[str] = None
         if bom_row is None:
+            base_canon = canonicalize_refdes(get_usage_base_refdes(ref_des))
+            if base_canon and base_canon != ref_des_canon:
+                bom_row = self.bom_index.get(base_canon)
+                if bom_row is not None:
+                    inherited_from_base = base_canon
+        if bom_row is None:
+            # Logged ONCE for the variant, with helpful base-also-missing diagnostic
+            base_canon = canonicalize_refdes(get_usage_base_refdes(ref_des))
+            if base_canon and base_canon != ref_des_canon:
+                self.log(
+                    f"RefDes '{ref_des}' and its base '{base_canon}' are both missing from the BOM.",
+                    "WARNING",
+                )
             self.group_missing_in_bom.append((group_row.get('component_group'), ref_des))
             return []
         pn = clean_string(bom_row.get('part_number'))
@@ -1676,13 +1179,36 @@ class FMEAProcessor:
         desc = desc_bom
         diag_msgs = []
 
-        # Check part usage against expected (1/instance_count)
-        usage_warning = self._check_single_usage(ref_des, _usage_value)
+        # Check part usage against expected (1/instance_count). Phase D:
+        # inherited variants need their expected usage computed against the
+        # SOURCE-derived variant count (variant_counts_by_base), NOT the
+        # BOM-derived usage_base_counts — because by definition the base
+        # has count=1 in the BOM but N in the source document. Running the
+        # standard check on an inherited variant produces a false-positive
+        # "Usage mismatch" on every inherited row, which makes the main
+        # FMEA sheet look broken in the BOM Additions case.
+        if inherited_from_base is not None:
+            variant_count = self.variant_counts_by_base.get(inherited_from_base, 0) or 1
+            expected = 1.0 / variant_count
+            if abs(_usage_value - expected) > USAGE_TOLERANCE:
+                usage_warning = (
+                    f"Usage mismatch for inherited variant: expected "
+                    f"{expected:.4g} (1/{variant_count}), listed {_usage_value:.4g}"
+                )
+            else:
+                usage_warning = None
+        else:
+            usage_warning = self._check_single_usage(ref_des, _usage_value)
         if usage_warning:
             diag_msgs.append(usage_warning)
             # Capture structured usage warning for Validation_Warnings sheet
             base = get_usage_base_refdes(ref_des)
-            count = self.usage_base_counts.get(base, 0)
+            if inherited_from_base is not None:
+                count = self.variant_counts_by_base.get(inherited_from_base, 0)
+                reason_code = 'PU_INHERITED_MISMATCH'
+            else:
+                count = self.usage_base_counts.get(base, 0)
+                reason_code = 'PU_EXPECTED_MISMATCH_BASIC'
             expected = 1.0 / count if count > 0 else None
             self.usage_warnings.append({
                 'RefDes': ref_des,
@@ -1690,7 +1216,7 @@ class FMEAProcessor:
                 'Usage': round(_usage_value, 4),
                 'Expected': round(expected, 4) if expected else 'N/A',
                 'Count': count,
-                'ReasonCode': 'PU_EXPECTED_MISMATCH_BASIC',
+                'ReasonCode': reason_code,
                 'Reason': usage_warning,
             })
 
@@ -1703,7 +1229,34 @@ class FMEAProcessor:
         else:
             self.unmatched_hda.append((ref_des, pn))
             diag_msgs.append(f"Part Number '{pn}' not found in HDA file. Verify the PN exists in your HDA data or provide a separate HDA file.")
-        
+
+        # Phase D: record BOM inheritance for the BOM_Additions sheet.
+        # Done AFTER HDA/FMD lookup so the entry has the full enrichment.
+        if inherited_from_base is not None:
+            count = self.variant_counts_by_base.get(inherited_from_base, 0) or 1
+            usage_fraction = f"1/{count}"
+            self.bom_additions.append({
+                "ref_des": ref_des,
+                "base_refdes": inherited_from_base,
+                "usage_fraction": usage_fraction,
+                "part_number": pn,
+                "description": desc or desc_bom,
+                "hda1": hda_c1,
+                "hda2": hda_c2,
+                "fmd1": fmd_c1,
+                "fmd2": fmd_c2,
+                "source_workflow": source_workflow,
+                "notes": "",
+            })
+            self.log(
+                f"BOM addition inferred: '{ref_des}' inherited from '{inherited_from_base}' "
+                f"(usage {usage_fraction}, PN={pn})",
+                "INFO",
+            )
+            diag_msgs.append(
+                f"Inherited BOM data from base '{inherited_from_base}'; review and add '{ref_des}' to BOM."
+            )
+
         matches = self.fm_index.get((fmd_c1.lower(), fmd_c2.lower()), [])
         if not matches and fmd_c1 and not fmd_c2:
             for (k1, k2), v in self.fm_index.items():
@@ -1742,8 +1295,23 @@ class FMEAProcessor:
         # Determine if this RefDes has any validation issues (for row highlighting)
         has_validation_issue = has_fmr_issue or (usage_warning is not None)
 
-        base_row = {'Schematic Page': group_row.get('schematic_page'), 'Function Description': group_row.get('description'), 'FMEA Level': 'Piece-Part', 'Failure Mode Causes': ref_des, 'Component Part Number': pn, 'Component Part Description': desc, 'BAE HDA Commodity I': hda_c1, 'BAE HDA Commodity II': hda_c2, 'FMD-2016 Commodity Type 1': fmd_c1, 'FMD-2016 Commodity Type 2': fmd_c2, 'Part Usage': usage_excel, '_row_type': 'piece_part'}
-        for k in OUTPUT_HEADERS:
+        # Phase D: FMD column headers parametrized by selected standard.
+        fmd_std = self.failure_modes_standard or "FMD-2016"
+        base_row = {
+            'Schematic Page': group_row.get('schematic_page'),
+            'Function Description': group_row.get('description'),
+            'FMEA Level': 'Piece-Part',
+            'Failure Mode Causes': ref_des,
+            'Component Part Number': pn,
+            'Component Part Description': desc,
+            'BAE HDA Commodity I': hda_c1,
+            'BAE HDA Commodity II': hda_c2,
+            f'{fmd_std} Commodity Type 1': fmd_c1,
+            f'{fmd_std} Commodity Type 2': fmd_c2,
+            'Part Usage': usage_excel,
+            '_row_type': 'piece_part',
+        }
+        for k in output_headers_for(fmd_std):
             if k not in base_row: base_row[k] = ''
         
         if not matches:
@@ -1816,7 +1384,27 @@ def write_excel_report(
         })
     if validation_warnings:
         summaries['Validation_Warnings'] = pd.DataFrame(validation_warnings)
-    summaries.update(proc._build_merge_summary_sheets())
+
+    # Phase D: BOM Additions sheet — pin/variant RefDes that inherited
+    # data from a base component during piece-part generation. Gives the
+    # user a paste-back list to add to their BOM.
+    if proc.bom_additions:
+        summaries['BOM_Additions'] = pd.DataFrame([
+            {
+                'RefDes': e['ref_des'],
+                'Base RefDes': e['base_refdes'],
+                'Usage': e['usage_fraction'],
+                'Part Number': e['part_number'],
+                'Part Description': e['description'],
+                'HDA Commodity 1': e['hda1'],
+                'HDA Commodity 2': e['hda2'],
+                'FMD Commodity 1': e['fmd1'],
+                'FMD Commodity 2': e['fmd2'],
+                'Source Workflow': e['source_workflow'],
+                'Notes': e['notes'],
+            }
+            for e in proc.bom_additions
+        ])
 
     # Create workbook
     wb = Workbook()
@@ -1838,10 +1426,6 @@ def write_excel_report(
                     return 'error'
                 elif rtype == 'validation_warning':
                     return 'warning'  # Yellow highlighting for FMR/usage issues
-                elif rtype == 'merge_warning':
-                    return 'warning'
-                elif rtype == 'merge_error':
-                    return 'error'
         except (IndexError, KeyError) as e:
             _logger.debug(f"Row style lookup failed for idx {idx}: {e}")
         return 'default'
@@ -1866,13 +1450,11 @@ def write_excel_report(
     summary_styles = {
         'No_Matches': 'error',
         'Missing_HDA': 'warning',
-        'Functional_Merge_Report': 'default',
-        'PiecePart_Merge_Report': 'warning',
-        'Merge_Summary': 'default',
         'Group_Missing_BOM': 'warning',
         'BOM_Missing_Refs': 'info',
         'BOM_Duplicate_Refs': 'highlight',
         'Validation_Warnings': 'warning',  # Yellow for FMR/usage validation issues
+        'BOM_Additions': 'highlight',      # Phase D: variant rows inherited from base components
     }
 
     for name, frame in summaries.items():
@@ -1884,6 +1466,27 @@ def write_excel_report(
                 style_worksheet(ws, frame, max_width=40)
             else:
                 style_worksheet(ws, frame, row_style_func=lambda r, i, s=style_name: s, max_width=40)
+
+            # Phase D: prepend an explanation banner row on the BOM_Additions
+            # sheet so the paste-back intent is obvious at a glance.
+            if name == 'BOM_Additions':
+                col_count = len(frame.columns)
+                if col_count > 0:
+                    ws.insert_rows(1)
+                    banner = (
+                        "These rows are RefDes variants found in the source that were "
+                        "not in the BOM. Their data was inherited from a matching base "
+                        "component. Review and copy these into your BOM."
+                    )
+                    ws.cell(row=1, column=1, value=banner)
+                    try:
+                        ws.merge_cells(
+                            start_row=1, start_column=1,
+                            end_row=1, end_column=col_count,
+                        )
+                    except ValueError:
+                        # Single-column frames can't be merged; ignore.
+                        pass
 
     try:
         wb.save(filename)

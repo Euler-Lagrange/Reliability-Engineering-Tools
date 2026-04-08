@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # ============================================================================
-# COPIED from frozen src/apps/fmea_generator/fmea_template_analyzer.py
-# for the Tauri sidecar backend.  Import paths adjusted; logic unchanged.
+# Originally copied from src/apps/fmea_generator/fmea_template_analyzer.py.
+# Freeze lifted 2026-04-08; this is now the maintained copy for the Tauri suite.
 # ============================================================================
 """
 FMEA Template Analyzer — Structural analysis of existing FMEA workbooks.
@@ -32,6 +32,7 @@ from common.fmea_utils import classify_fmea_rows, RowClassification
 from fmea.fmea_generator_logic import (
     normalize_func_base_id,
     OUTPUT_HEADERS,
+    output_headers_for,
 )
 
 _logger = get_tool_logger("fmea_template_analyzer")
@@ -45,10 +46,12 @@ _FMEA_SCAN_SYNONYM_KEYS = [
     'fmr_strict', 'local_effect', 'part_number',
 ]
 
-# Mapping from OUTPUT_HEADERS names to synonym keys for column detection.
-# Each entry is (output_header_name, synonym_key).
-# The synonym_key is used with get_synonyms() to find matching columns.
-_OUTPUT_HEADER_SYNONYM_MAP: Dict[str, str] = {
+# Mapping from stable (FMD-standard-independent) OUTPUT_HEADERS names
+# to synonym keys for column detection. Each entry is
+# (output_header_name, synonym_key). The FMD commodity entries are
+# keyed by stable names; the actual header text (FMD-91 vs FMD-2016)
+# is built dynamically by `_build_output_header_synonym_map()` below.
+_BASE_HEADER_SYNONYM_MAP: Dict[str, str] = {
     'FMEA-ID': 'fmea_id',
     'Function Description': 'function_description',
     'FMEA Level': 'circuit_block',
@@ -64,9 +67,28 @@ _OUTPUT_HEADER_SYNONYM_MAP: Dict[str, str] = {
     'Schematic Page': 'schematic_page',
     'BAE HDA Commodity I': 'commodity_level1',
     'BAE HDA Commodity II': 'commodity_level2',
-    'FMD-2016 Commodity Type 1': 'fmd_type1',
-    'FMD-2016 Commodity Type 2': 'fmd_type2',
 }
+
+
+def _build_output_header_synonym_map(standard: str) -> Dict[str, str]:
+    """Build the full OUTPUT_HEADER → synonym-key map for a chosen FMD standard.
+
+    Phase D: the FMD commodity columns are parametrized by failure modes
+    standard (FMD-91 vs FMD-2016), so the synonym map must be built per-run
+    rather than frozen at module load. The stable (non-FMD) entries come
+    from _BASE_HEADER_SYNONYM_MAP; the FMD entries are synthesized from
+    the standard string.
+    """
+    result: Dict[str, str] = dict(_BASE_HEADER_SYNONYM_MAP)
+    result[f'{standard} Commodity Type 1'] = 'fmd_type1'
+    result[f'{standard} Commodity Type 2'] = 'fmd_type2'
+    return result
+
+
+# Module-level default (FMD-2016) — kept for backwards compatibility with
+# any legacy importer that expects the static map. New code should use
+# `_build_output_header_synonym_map(standard)` instead.
+_OUTPUT_HEADER_SYNONYM_MAP: Dict[str, str] = _build_output_header_synonym_map("FMD-2016")
 
 
 # =============================================================================
@@ -268,11 +290,12 @@ def _build_column_map(
     ws,
     header_row: int,
     log_func: Optional[Any] = None,
+    failure_modes_standard: str = "FMD-2016",
 ) -> ColumnMap:
     """Build a mapping between original workbook columns and OUTPUT_HEADERS.
 
-    For each entry in OUTPUT_HEADERS, attempts to find a matching column in
-    the original workbook headers:
+    For each entry in `output_headers_for(failure_modes_standard)`, attempts
+    to find a matching column in the original workbook headers:
     1. Exact match (case-insensitive)
     2. detect_column with appropriate synonyms
 
@@ -280,10 +303,16 @@ def _build_column_map(
         ws: An openpyxl Worksheet.
         header_row: 1-based row number containing headers.
         log_func: Optional logging callback.
+        failure_modes_standard: "FMD-91" or "FMD-2016" — drives the FMD
+            commodity column header names produced by the generator.
 
     Returns:
-        A ColumnMap linking OUTPUT_HEADERS to original column names.
+        A ColumnMap linking the selected-standard OUTPUT_HEADERS to
+        original column names.
     """
+    target_headers = output_headers_for(failure_modes_standard)
+    synonym_map = _build_output_header_synonym_map(failure_modes_standard)
+
     # Read original headers from the worksheet
     original_headers = []
     col_to_index: Dict[str, int] = {}
@@ -299,7 +328,7 @@ def _build_column_map(
     canonical_map: Dict[str, str] = {}
     extra_cols: List[str] = []
 
-    for output_header in OUTPUT_HEADERS:
+    for output_header in target_headers:
         # Step 1: Exact case-insensitive match
         matched = headers_lower.get(output_header.lower())
         if matched:
@@ -307,7 +336,7 @@ def _build_column_map(
             continue
 
         # Step 2: detect_column with synonyms
-        synonym_key = _OUTPUT_HEADER_SYNONYM_MAP.get(output_header)
+        synonym_key = synonym_map.get(output_header)
         if synonym_key:
             try:
                 synonyms = get_synonyms(synonym_key)
@@ -323,10 +352,10 @@ def _build_column_map(
 
     if log_func:
         mapped_count = len(canonical_map)
-        total_count = len(OUTPUT_HEADERS)
+        total_count = len(target_headers)
         log_func(
-            f"Column mapping: {mapped_count}/{total_count} OUTPUT_HEADERS "
-            f"matched, {len(extra_cols)} unmapped"
+            f"Column mapping ({failure_modes_standard}): {mapped_count}/{total_count} "
+            f"output headers matched, {len(extra_cols)} unmapped"
         )
         if extra_cols:
             log_func(f"  Unmapped columns: {extra_cols}")
@@ -479,6 +508,7 @@ def analyze_template(
     sheet_name: Optional[str] = None,
     cancel_token=None,
     log_func: Optional[Any] = None,
+    failure_modes_standard: str = "FMD-2016",
 ) -> Tuple[TemplateMap, Workbook]:
     """Analyze an existing FMEA workbook and return its structural map.
 
@@ -543,8 +573,12 @@ def analyze_template(
     header_row = _detect_header_row(ws)
     _log(f"Header row detected: row {header_row}")
 
-    # Step 4: Build column map
-    column_map = _build_column_map(ws, header_row, log_func=_log)
+    # Step 4: Build column map (Phase D: parametrized by FMD standard)
+    column_map = _build_column_map(
+        ws, header_row,
+        log_func=_log,
+        failure_modes_standard=failure_modes_standard,
+    )
 
     if cancel_token:
         cancel_token.check()

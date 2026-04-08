@@ -1,21 +1,21 @@
 .viewport {
   position: fixed;
-  right: 20px;
-  bottom: 20px;
+  right: var(--space-5);
+  bottom: var(--space-5);
   z-index: 50;
   display: grid;
-  gap: 8px;
-  width: min(320px, calc(100vw - 32px));
+  gap: var(--space-2);
+  width: min(320px, calc(100vw - var(--space-7)));
 }
 
 .toast {
   display: grid;
-  gap: 4px;
-  padding: 12px;
+  gap: var(--space-1);
+  padding: var(--space-3);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  box-shadow: var(--shadow-toast);
 }
 
 .toast[data-tone="success"] {
@@ -34,7 +34,7 @@
   display: flex;
   align-items: start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .title {
@@ -55,10 +55,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: var(--space-6);
+  height: var(--space-6);
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--text-faint);
 }

@@ -5,6 +5,131 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-04-08 — FMEA Workflow Restructure, BOM Inheritance, Global Run Log
+
+### Added
+
+- **Functional-to-Piece-Part workflow** (`functional_to_piecepart`): a new
+  primary FMEA workflow that detects circuit-block rows in an existing
+  functional FMEA, parses the comma-separated RefDes column (e.g.
+  `Failure Mode Causes (RefDes)`) on each block, and expands them into
+  piece-part rows beneath each block. The original functional rows are
+  preserved as-is.
+- **Failure Modes Standard selector:** every FMEA workflow now exposes a
+  **FMD-91 vs FMD-2016** radio (default: FMD-2016). The selection drives
+  the output column headers (`FMD-91 Commodity Type 1/2` vs
+  `FMD-2016 Commodity Type 1/2`) and, if the failure modes file carries a
+  `Standard` column, filters the library to the matching standard.
+- **BOM Inheritance + BOM_Additions sheet:** when a grouping or functional
+  source references a pin/variant RefDes (e.g. `U200-X`) that does not
+  exist in the BOM, the generator now looks up the base RefDes (`U200`)
+  and inherits Part Number, Part Description, HDA Commodity 1-2, and FMD
+  Commodity 1-2. Every inherited row is recorded in a new
+  **BOM_Additions** sheet in the output workbook, with columns RefDes,
+  Base RefDes, Usage fraction, Part Number, Part Description, HDA
+  Commodity 1-2, FMD Commodity 1-2, and Source Workflow. The sheet opens
+  with an explanatory banner row telling reviewers to copy the inherited
+  rows into their BOM.
+- **Merge Column Scope picker** for the Fill Gaps workflow: a new panel
+  that defaults to "Merge All Columns" and can switch to "Select Columns
+  to Merge", where a checkbox list of detected template columns controls
+  exactly which generator columns are written into the preserved
+  template.
+- **Global Run Log Console** (Phase B): a new cross-tool run log panel
+  docked at the bottom of the app shell. Persistent across tool switches,
+  filterable ("All tools" vs "Current tool only"), exportable as a `.log`
+  snapshot, collapsible via a header chevron, and backed by a 5000-entry
+  in-memory ring buffer. The canonical full log still lives on disk at
+  `~/.reliability_tools/logs/`.
+- **Design system tokens** (Phase G): spacing tokens `--space-1..8`
+  (4/8/12/16/20/24/32/48 px); border-radius tokens `--radius-xs`,
+  `--radius-sm`, `--radius-md`, `--radius-lg`, `--radius-xl`,
+  `--radius-pill`; shadow tokens `--shadow-popover`,
+  `--shadow-focus-ring`, `--shadow-rail-active`, `--shadow-toast` (with
+  per-theme overrides for dark themes); and `--text-on-accent` for
+  primary button text.
+- **Memory guard** on `process_functional_to_piecepart`: warns above
+  100k input rows and hard-fails above 1M output rows.
+
+### Changed
+
+- **FMEA workflow restructure:** the tool now exposes four primary
+  workflows with clean names — **Generate Piece-Part from BOM Only**
+  (`bom_only`), **Generate Piece-Part from Grouping File**
+  (`piece_part_generate`), **Generate Piece-Part from Functional FMEA**
+  (`functional_to_piecepart`), and **Fill Gaps (Advanced)** (`fill_gaps`).
+  Every FMEA workflow now requires a failure modes file.
+- **Fill Gaps default output strategy** now auto-sets to "Existing
+  Workbook (Preserve Formatting)" when the user selects the Fill Gaps
+  workflow. The preserve-formatting path — previously blocked by a legacy
+  validation — is fully functional for fill_gaps runs.
+- **Output strategy wording:**
+  - "New Workbook (Standard)" is now "New Workbook" — writes a fresh
+    workbook with all generator columns and summary sheets.
+  - "Preserve Original Template" is now "Existing Workbook (Preserve
+    Formatting)" — writes new piece-part rows directly into the selected
+    functional or piece-part FMEA workbook, appending any new columns at
+    the very end of the sheet and preserving all existing rows, data,
+    formatting, fonts, and column widths.
+- **Tool rail labels** (Phase G): "FMEA" -> "FMEA Generator", "Compare"
+  -> "Cross Compare", "Rates" -> "Failure Rate Integration", "RefDes" ->
+  "RefDes Extractor". Backend workflow IDs are unchanged.
+- **Consistent `:focus-visible`** styles are now applied across all
+  interactive elements; hardcoded pixel values throughout the CSS have
+  been replaced with the new spacing tokens; Column Mapping dropdown
+  widths were widened (previously cramped).
+- **Phase 0 unfreezing:** 9 frozen Python modules were unfrozen to allow
+  the sprint work: `refdes_extractor_logic`, `pinlist_parenting`,
+  `group_detection`, `extraction_engine`, `geometry_analyzer`,
+  `bom_verifier`, `fmea_generator_logic`, `fmea_template_writer`, and
+  `fmea_template_analyzer`. `# FROZEN -- Do not modify this file.`
+  headers were replaced with dated relaxation notes.
+
+### Fixed
+
+- **P0:** `dialog:allow-open` capability added to
+  `src-tauri/capabilities/default.json`. Without it, the Browse button on
+  every input card silently failed in the desktop build.
+- **P0:** FMD-91 + Existing Workbook (Preserve Formatting) no longer
+  silently drops FMD commodity columns. The template analyzer and writer
+  are now parametrized by the selected FMD standard.
+- **P0:** `columnSelection` state no longer leaks across workflows.
+  Switching away from Fill Gaps resets the column picker state, and the
+  backend only applies the column filter for Fill Gaps runs.
+- **P0:** the Fill Gaps default-strategy `useEffect` no longer fights a
+  user's manual output-strategy selection. It only flips on the
+  transition into `fill_gaps`.
+- **P1:** inherited BOM variants are no longer double-flagged as "Part
+  Usage mismatch" validation warnings. The expected Part Usage is now
+  computed against the source-derived variant count rather than the BOM
+  instance count.
+- **P1:** `process_functional_to_piecepart` column detection for group
+  stub metadata (`FMEA-ID`, `Function Description`, `Schematic Page`)
+  now uses the shared synonym lookup helper instead of hardcoded header
+  names.
+- **P1:** legacy `enrichments: { functional: true }` payloads are now
+  rejected with a hard `ValidationError` instead of silently ignored.
+
+### Removed
+
+- **Enrichment toggles (Functional FMEA + Piece-Part FMEA):** the old
+  enrichment grafting system is gone. Functional FMEA is now its own
+  primary workflow (`functional_to_piecepart`); piece-part enrichment
+  was dropped entirely.
+- **Phase H1 dead-code cleanup:** ~825 lines of dead enrichment merge
+  code removed from `fmea_generator_logic.py` (2319 -> 1494 lines).
+  Deleted `MergeSourceSpec`, `MergeIssue`, and `MergeResult` dataclasses;
+  `FUNCTIONAL_MERGE_SPEC` and `PIECEPART_MERGE_SPEC` constants; and 18
+  dead methods including `_apply_functional_merge`,
+  `_apply_piecepart_merge`, and `_build_merge_summary_sheets`. The
+  corresponding "Applying Piece-Part effect merge..." stage weight was
+  dropped from `runtime.py`.
+- **Phase H2 type cleanup:** the vestigial `enrichments` field was
+  removed from `DemoScenario`, `RunRequestBody`, 9 `scenarios.ts`
+  literals, and the `EMPTY_ENRICHMENTS` constant in `FmeaTool.tsx`, plus
+  the BOM Compare, Failure Rate, and RefDes tool components.
+- **Phase H3:** `piecePartFmea` removed from the `FileRole` type union.
+
 ## [0.2.2] - 2026-04-07 — Reliability and Diagnostics
 
 ### Fixed

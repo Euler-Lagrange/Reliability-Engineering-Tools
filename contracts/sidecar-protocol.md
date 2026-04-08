@@ -84,9 +84,9 @@ All eight commands currently implemented by the sidecar:
   - request body:
     - `workflowId` — routes to the tool runtime; see Workflow Routing below
     - `outputStrategyId`
-    - `enrichments`
     - `inputs`
     - `mappings`
+    - `options` — see Run Options below
   - result payload:
     - `ok`
     - `reason_code`
@@ -96,9 +96,9 @@ All eight commands currently implemented by the sidecar:
   - request body:
     - `workflowId`
     - `outputStrategyId`
-    - `enrichments`
     - `inputs`
     - `mappings`
+    - `options` — see Run Options below
   - immediate response: `ack` (see Streamed Run Events below)
   - terminal result payload (emitted as `result` kind):
     - `status`
@@ -107,7 +107,10 @@ All eight commands currently implemented by the sidecar:
     - `output_file`
     - `primary_metric`
     - `secondary_metric`
-    - `notes`
+    - `notes` — may include a note about inherited BOM additions when the
+      workbook contains a `BOM_Additions` sheet (emitted whenever pin/variant
+      RefDes such as `U200-X` inherited their data from a base BOM row like
+      `U200`)
     - `log_lines`
     - `row_count`
     - `warning_count`
@@ -133,14 +136,48 @@ determines which backend module handles the request.
 |-------------|--------------|
 | `piece_part_generate` | `fmea.runtime` |
 | `bom_only` | `fmea.runtime` |
+| `functional_to_piecepart` | `fmea.runtime` |
 | `fill_gaps` | `fmea.runtime` |
 | `bom_compare_group` | `bom_compare.runtime` |
 | `bom_compare_custom` | `bom_compare.runtime` |
 | `failure_rate_link` | `failure_rate.runtime` |
 | `refdes_extract` | `refdes_extractor.runtime` |
 
+The `functional_to_piecepart` workflow reads a functional FMEA file, detects
+circuit-block rows, parses the comma-separated RefDes column (e.g.,
+`Failure Mode Causes (RefDes)`) on each circuit-block row, and generates
+piece-part rows beneath each block using BOM + HDA + failure modes data.
+The original functional rows are preserved as-is. Required inputs:
+`functionalFmea`, `bom`, `failureModes` (HDA is optional).
+
 Unknown workflow IDs fall through to the FMEA runtime, which will reject them
 via its own validation.
+
+## Run Options
+
+`validate_run` and `execute_run` accept an `options` object on the request
+body. Currently defined fields:
+
+- `failureModesStandard` — string, `"FMD-91"` or `"FMD-2016"`. **Required**
+  for all FMEA workflows. Drives the output column headers
+  (`FMD-91 Commodity Type 1/2` vs `FMD-2016 Commodity Type 1/2`) and filters
+  the failure modes file by an optional `Standard` column. Missing this
+  field on an FMEA workflow yields validation `reason_code`
+  `"missing_failure_modes_standard"` with `toast_text`
+  `"Select FMD-91 or FMD-2016 before running."`.
+- `columnSelection` — object, optional. Defaults to
+  `{ "mode": "all", "columns": [] }`. Shape:
+  `{ "mode": "all" | "subset", "columns": string[] }`. When
+  `mode == "subset"`, the backend filters the generated DataFrame to the
+  intersection of requested columns and actual columns; columns that do not
+  exist in the DataFrame are ignored, and an empty intersection is logged as
+  a warning.
+
+The legacy `enrichments` field has been removed. The backend tolerates
+legacy payloads for backward compatibility but hard-fails with
+`ValidationError` if `enrichments.functional` or `enrichments.piecePart`
+is truthy, to protect against stale clients. Functional FMEA is now its
+own primary workflow (`functional_to_piecepart`), not an enrichment toggle.
 
 ## Error Envelope
 
@@ -270,7 +307,7 @@ attempts automatic reconnection with exponential backoff (2s, 4s, 8s, 15s, 30s).
 
 - The desktop shell keeps a managed Python sidecar session alive across bridge commands.
 - Implemented commands: `health_check`, `list_sheets`, `inspect_input`, `analyze_template`, `validate_run`, `execute_run`, `cancel_run`, `read_flet_config`.
-- Supported workflows: `piece_part_generate`, `bom_only`, `fill_gaps`, `bom_compare_group`, `bom_compare_custom`, `failure_rate_link`, `refdes_extract`.
+- Supported workflows: `piece_part_generate`, `bom_only`, `functional_to_piecepart`, `fill_gaps`, `bom_compare_group`, `bom_compare_custom`, `failure_rate_link`, `refdes_extract`.
 - Supported FMEA output strategies: `new_workbook_standard`, `existing_workbook_preserve_formatting`.
 - `execute_run` uses a background thread with streamed events; all other commands are synchronous request/response.
 - Run-scoped events are correlated by `run_id` and routed to the frontend via Tauri event channels.
