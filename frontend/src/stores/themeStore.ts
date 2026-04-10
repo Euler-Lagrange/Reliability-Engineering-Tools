@@ -8,7 +8,10 @@ export type ThemeId =
   | "midnight_blue"
   | "high_contrast"
   | "synthwave"
-  | "mission_control";
+  | "mission_control"
+  | "kraft_paper"
+  | "forest_depth"
+  | "graphite_dawn";
 export type ThemeMode = "system" | ThemeId;
 
 interface ThemeState {

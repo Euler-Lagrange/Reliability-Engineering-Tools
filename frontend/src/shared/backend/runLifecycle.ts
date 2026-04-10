@@ -201,10 +201,6 @@ export function buildRunTimeline<ResultT>(session: ManagedRunSession<ResultT>): 
   });
 }
 
-export function isBusyRunPhase(phase: RunMode) {
-  return phase === "starting" || phase === "running" || phase === "cancelling";
-}
-
 /**
  * Hook that exposes the active run for a specific tool, persisted in the
  * global ``runStore`` so it survives tool unmount/remount.

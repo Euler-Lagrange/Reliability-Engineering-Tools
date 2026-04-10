@@ -311,7 +311,15 @@ def _build_fill_gaps_run_body(tmp_path: Path) -> dict:
             input_state("bom", "BOM workbook", bom_path),
             input_state("failureModes", "Failure modes workbook", failure_modes_path),
         ],
-        "mappings": [],
+        # Fix C2: merge modes require an explicit Failure Mode Causes
+        # mapping. Without this the validator rejects the run.
+        "mappings": [
+            {
+                "canonical": "Failure Mode Causes",
+                "mappedTo": "Failure Mode Causes",
+                "status": "mapped",
+            },
+        ],
     }
 
 

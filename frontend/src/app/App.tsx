@@ -1,16 +1,27 @@
-import { Suspense } from "react";
-import { Command, Sparkle, WarningCircle } from "@phosphor-icons/react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Command,
+  Copy,
+  Faders,
+  Sparkle,
+  Terminal,
+  WarningCircle,
+} from "@phosphor-icons/react";
 import styles from "./AppShell.module.css";
 import { toolDefinitions } from "./toolRegistry";
+import { CommandPalette, type CommandPaletteAction } from "../components/primitives/CommandPalette";
 import { GlobalLogPanel } from "../components/GlobalLogPanel";
 import { ErrorBoundary } from "../shared/errors/ErrorBoundary";
 import { useBackendBootstrap } from "../shared/backend/useBackendBootstrap";
+import { useBackendBusyReset } from "../shared/backend/useBackendBusyReset";
 import { useGlobalLogSubscription } from "../shared/backend/useGlobalLogSubscription";
 import { useAppShortcuts } from "../shared/hooks/useAppShortcuts";
 import { NotificationCenter } from "../shared/notifications/NotificationCenter";
 import { ThemeController, useResolvedTheme } from "../shared/theme/ThemeController";
-import { RAIL_THEMES, labelForTheme } from "../shared/theme/themeRegistry";
-import { useShellStore } from "../stores/shellStore";
+import { RAIL_THEMES, THEME_REGISTRY, labelForTheme } from "../shared/theme/themeRegistry";
+import { useGlobalLogStore } from "../stores/globalLogStore";
+import { useNotificationStore } from "../stores/notificationStore";
+import { useShellStore, type ToolId } from "../stores/shellStore";
 import { useThemeStore } from "../stores/themeStore";
 
 const backendStatusTone = {
@@ -39,6 +50,12 @@ export function App() {
   useAppShortcuts();
   useBackendBootstrap();
   useGlobalLogSubscription();
+  // Phase B4: shell-level guarantee that reaching any terminal run phase
+  // (idle / cancelled / success / failure) releases the "busy" chip.
+  // Belt-and-suspenders with the per-tool setBackendState calls — the
+  // hook fires after the tool has already updated, and re-fires in
+  // edge cases (validation failures) where the tool never would.
+  useBackendBusyReset();
 
   const activeToolId = useShellStore((state) => state.activeToolId);
   const setActiveToolId = useShellStore((state) => state.setActiveToolId);
@@ -48,9 +65,155 @@ export function App() {
   const themeMode = useThemeStore((state) => state.mode);
   const setThemeMode = useThemeStore((state) => state.setMode);
   const resolvedTheme = useResolvedTheme();
+  const toggleLogVisible = useGlobalLogStore((state) => state.toggleVisible);
+  const pushNotification = useNotificationStore((state) => state.push);
 
   const activeTool = toolDefinitions.find((tool) => tool.id === activeToolId) ?? toolDefinitions[0];
   const ActiveToolComponent = activeTool.component;
+
+  // Phase 4 Task 4: focus management on tool switch.
+  // The main element has tabIndex={-1} so it can programmatically receive
+  // focus, and aria-live="polite" so screen readers announce the active
+  // tool label when focus lands here. We push the focus() into a useEffect
+  // keyed on activeToolId to avoid racing React's render cycle from the
+  // click handler.
+  const mainRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    mainRef.current?.focus();
+  }, [activeToolId]);
+
+  // Phase 4 Task 7: Cmd+K command palette.
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setCommandPaletteOpen((prev) => !prev);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  const commandPaletteActions = useMemo<CommandPaletteAction[]>(() => {
+    const actions: CommandPaletteAction[] = [];
+
+    // One action per tool.
+    toolDefinitions.forEach((tool, index) => {
+      actions.push({
+        id: `tool/${tool.id}`,
+        label: tool.label,
+        hint: tool.eyebrow,
+        category: "Tools",
+        icon: tool.icon,
+        shortcut: index < 9 ? `Ctrl+${index + 1}` : undefined,
+        onSelect: () => setActiveToolId(tool.id as ToolId),
+      });
+    });
+
+    // One action per theme.
+    THEME_REGISTRY.forEach((theme) => {
+      actions.push({
+        id: `theme/${theme.id}`,
+        label: `Theme: ${theme.label}`,
+        hint: theme.description,
+        category: "Themes",
+        icon: theme.icon,
+        onSelect: () => setThemeMode(theme.id),
+      });
+    });
+
+    // Utility actions.
+    actions.push({
+      id: "app/settings",
+      label: "Open Settings",
+      category: "App",
+      icon: Faders,
+      onSelect: () => setActiveToolId("settings"),
+    });
+    actions.push({
+      id: "app/log-toggle",
+      label: "Toggle log panel",
+      category: "App",
+      icon: Terminal,
+      onSelect: () => toggleLogVisible(),
+    });
+    actions.push({
+      id: "app/log-path",
+      label: "Copy log file path",
+      category: "App",
+      icon: Copy,
+      onSelect: () => {
+        // TODO: wire to backend once the sidecar exposes its log directory.
+        // For now surface a notification so the user gets feedback instead
+        // of silent failure.
+        void navigator.clipboard?.writeText("~/.reliability_tools/logs/").catch(() => {});
+        pushNotification({
+          tone: "info",
+          title: "Log path copied (placeholder)",
+          detail: "Backend does not yet expose its real log directory. Copied a placeholder path.",
+        });
+      },
+    });
+
+    return actions;
+  }, [pushNotification, setActiveToolId, setThemeMode, toggleLogVisible]);
+
+  // Phase 4 Task 9: Tauri native file drop.
+  // We lazily import the Tauri webview API so browser-mock dev mode stays
+  // functional. When a drop event lands, we surface a notification listing
+  // the paths — routing the first path into the active tool's file handler
+  // would require exposing tool-internal pickers via the shell store, which
+  // the current architecture does not do. TODO: thread dropped paths
+  // through a shellStore-level event bus so each tool can pick up the
+  // dropped file for its first input role.
+  useEffect(() => {
+    const isTauri =
+      typeof window !== "undefined" &&
+      ("__TAURI_INTERNALS__" in window || "__TAURI__" in window);
+    if (!isTauri) {
+      return;
+    }
+
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const { getCurrentWebview } = await import("@tauri-apps/api/webview");
+        const handle = await getCurrentWebview().onDragDropEvent((event) => {
+          if (event.payload.type !== "drop") {
+            return;
+          }
+          const paths = event.payload.paths ?? [];
+          if (paths.length === 0) {
+            return;
+          }
+          pushNotification({
+            tone: "info",
+            title: `Received ${paths.length} dropped file${paths.length === 1 ? "" : "s"}`,
+            detail: `Route via the tool's browse button. First path: ${paths[0]}`,
+          });
+        });
+        if (cancelled) {
+          handle();
+        } else {
+          unlisten = handle;
+        }
+      } catch (error) {
+        // Tauri API not available or permission denied — silently ignore
+        // so browser-mock mode keeps working.
+        void error;
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, [pushNotification]);
 
   return (
     <>
@@ -92,7 +255,7 @@ export function App() {
             </nav>
 
             <div className={styles.footer}>
-              <div className={styles.themeGroup}>
+              <div className={`${styles.themeGroup} rail-footer__themes`} aria-label="Theme">
                 <p className={styles.themeLabel}>Theme</p>
                 <div className={styles.themeButtons}>
                   {RAIL_THEMES.map((theme) => {
@@ -121,34 +284,56 @@ export function App() {
             <header className={styles.topbar}>
               <div className={styles.titleGroup}>
                 <p className="eyebrow">{activeTool.eyebrow}</p>
-                <h1 className={styles.title}>{activeTool.label}</h1>
+                <h1 className={styles.title} title={activeTool.label}>
+                  {activeTool.label}
+                </h1>
                 <p className={styles.subtitle}>{activeTool.description}</p>
               </div>
 
               <div className={styles.statusRow}>
-                <span className={`status-chip status-chip--${backendStatusTone[backendStatus]}`}>
-                  {backendStatusLabel[backendStatus]}
-                </span>
-                <span className="status-chip status-chip--info" title={backendMessage ?? undefined}>
-                  {backendModeLabel[backendMode]}
-                </span>
-                <span className="status-chip status-chip--info">
-                  {labelForTheme(resolvedTheme)}
-                </span>
-                <span className="status-chip status-chip--pending">
-                  <Command size={12} weight="bold" />
-                  Ctrl+[ / Ctrl+]
-                </span>
-                {activeTool.status === "placeholder" ? (
-                  <span className="status-chip status-chip--warning">
-                    <WarningCircle size={12} weight="fill" />
-                    Placeholder
-                  </span>
-                ) : null}
+                <div className="topbar__chip-groups">
+                  <div className="topbar__chip-group" aria-label="Connection health">
+                    <span className={`status-chip status-chip--${backendStatusTone[backendStatus]}`}>
+                      {backendStatusLabel[backendStatus]}
+                    </span>
+                    <span
+                      className="status-chip status-chip--info"
+                      title={backendMessage ?? undefined}
+                    >
+                      {backendModeLabel[backendMode]}
+                    </span>
+                  </div>
+                  <span className="topbar__chip-divider" aria-hidden="true" />
+                  <div className="topbar__chip-group" aria-label="Theme identity">
+                    <span className="status-chip status-chip--info">
+                      {labelForTheme(resolvedTheme)}
+                    </span>
+                  </div>
+                  <span className="topbar__chip-spacer" aria-hidden="true" />
+                  <span className="topbar__chip-divider" aria-hidden="true" />
+                  <div className="topbar__chip-group" aria-label="Keyboard hint">
+                    <span className="status-chip status-chip--pending">
+                      <Command size={12} weight="bold" />
+                      Ctrl+[ / Ctrl+]
+                    </span>
+                    {import.meta.env.DEV && activeTool.status === "placeholder" ? (
+                      <span className="status-chip status-chip--warning">
+                        <WarningCircle size={12} weight="fill" />
+                        Placeholder
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
               </div>
             </header>
 
-            <main className={styles.content}>
+            <main
+              ref={mainRef}
+              className={styles.content}
+              tabIndex={-1}
+              aria-live="polite"
+              aria-label={`${activeTool.label} workspace`}
+            >
               <ErrorBoundary
                 title={`${activeTool.label} failed to render`}
                 detail="This tool boundary caught an error so the rest of the suite shell can keep running."
@@ -174,6 +359,11 @@ export function App() {
         </div>
       </ErrorBoundary>
       <NotificationCenter />
+      <CommandPalette
+        actions={commandPaletteActions}
+        open={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+      />
     </>
   );
 }

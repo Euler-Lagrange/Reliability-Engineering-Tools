@@ -20,6 +20,9 @@ describe("THEME_REGISTRY", () => {
       "high_contrast",
       "synthwave",
       "mission_control",
+      "kraft_paper",
+      "forest_depth",
+      "graphite_dawn",
     ]);
     const actual = new Set(THEME_REGISTRY.map((entry) => entry.id));
     expect(actual).toEqual(expected);

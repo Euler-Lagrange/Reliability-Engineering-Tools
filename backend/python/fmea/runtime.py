@@ -1,14 +1,159 @@
 from __future__ import annotations
 
+import logging
+import re
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from common.exceptions import ValidationError
 
 from shared.pre_run_validation import LabeledState, LabeledValue, validate_pre_run_state
 from fmea.fmea_generator_logic import FMEAProcessor, write_excel_report
+
+_logger = logging.getLogger(__name__)
+
+# Sentinel used by the frontend mapping table for "do not map this column".
+# Mirrors frontend/src/app/types.ts DO_NOT_MAP_VALUE.
+DO_NOT_MAP_SENTINEL = "__do_not_map__"
+
+
+# Fix D: map frontend canonical names (from FMEA_COLUMN_METADATA) to
+# ``(HEADER_CONFIG file type, backend canonical key)`` tuples so explicit
+# user mappings reach ``FMEAProcessor.map_columns()`` and override the
+# heuristic column resolver, not just the A5 Part Usage gate.
+#
+# The frontend sends a single flat mapping table that spans all input
+# files (e.g. "Failure Mode" → <column in FM file>, "Part Usage" → <column
+# in BOM file>). The backend's ``process*()`` methods call ``map_columns``
+# once per file type, passing ``col_overrides.get('BOM')`` /
+# ``col_overrides.get('HDA')`` / etc. as the per-file overrides dict.
+# Before Fix D, that lookup always returned ``None`` because the flat
+# overrides dict was keyed by frontend canonical labels, not by file-type
+# strings. Now we build BOTH shapes in ``_build_column_overrides`` so:
+#
+#   * The flat entries continue to feed the A5 Part Usage gate and any
+#     future direct-canonical lookups (e.g. in ``_generate_component_rows``).
+#   * The nested per-file entries feed ``map_columns`` so the heuristic
+#     fallback is replaced by the user's explicit picks.
+#
+# Canonical labels not in this table are intentionally kept flat-only —
+# the backend is still forward-compatible with new frontend canonicals
+# that have not been wired into the HEADER_CONFIG plumbing yet.
+#
+# The FMD Commodity rows use dynamic labels on the frontend
+# (``FMD-91 Commodity Type 1`` vs ``FMD-2016 Commodity Type 1``), so we
+# register BOTH variants against the same backend key.
+#
+# Fix R2-M3: the overrides dict that ``_build_column_overrides`` returns
+# carries BOTH flat canonical keys and nested per-file buckets at the
+# same top level, so the file-type bucket names below are RESERVED: no
+# future frontend canonical label may collide with any of the entries in
+# ``_RESERVED_FILE_TYPE_KEYS``. If a new canonical clash is ever needed,
+# restructure the return shape into ``{"flat": {...}, "nested": {...}}``
+# instead of adding the clash to the flat dict.
+_RESERVED_FILE_TYPE_KEYS: frozenset[str] = frozenset(
+    {"BOM", "HDA", "FAILURE_MODES", "COMPONENT_GROUPING"}
+)
+FRONTEND_TO_BACKEND_MAPPING: dict[str, tuple[str, str]] = {
+    # Grouping file
+    "FMEA-ID": ("COMPONENT_GROUPING", "component_group"),
+    "Failure Mode Causes": ("COMPONENT_GROUPING", "ref_des"),
+    # BOM file
+    "Component Part Description": ("BOM", "description"),
+    "Part Usage": ("BOM", "part_usage"),
+    # HDA file — BAE taxonomy
+    "BAE HDA Commodity Level 1": ("HDA", "commodity_level1"),
+    "BAE HDA Commodity Level 2": ("HDA", "commodity_level2"),
+    # HDA file — FMD standard-specific commodity types.
+    # Frontend sends the ACTIVE label (e.g. ``FMD-91 Commodity Type 1``);
+    # both labels point at the same backend key so either standard works.
+    "FMD-91 Commodity Type 1": ("HDA", "fmd_type1"),
+    "FMD-2016 Commodity Type 1": ("HDA", "fmd_type1"),
+    "FMD-91 Commodity Type 2": ("HDA", "fmd_type2"),
+    "FMD-2016 Commodity Type 2": ("HDA", "fmd_type2"),
+    # Failure Modes file
+    "Failure Mode": ("FAILURE_MODES", "failure_mode"),
+    "Failure Mode Ratio": ("FAILURE_MODES", "ratio"),
+}
+
+
+def _build_column_overrides(body_mappings: Any) -> dict[str, Any]:
+    """Convert the frontend's mapping list into the backend column_overrides dict.
+
+    The frontend sends ``body.mappings`` as a list of
+    ``{canonical, mappedTo, status, ...}`` objects (see
+    ``FmeaTool.tsx buildRunRequest``). The backend processor reads the
+    result in two different shapes in two different places, so we build
+    BOTH shapes into a single dict that carries them side-by-side:
+
+    * **Flat entries** — keyed by the frontend canonical name
+      (e.g. ``{"Part Usage": "Qty"}``). Used by direct lookups such as
+      the A5 Part Usage discrepancy gate in
+      ``_generate_component_rows``.
+    * **Nested per-file entries** — keyed by the ``HEADER_CONFIG``
+      file type (``BOM``, ``HDA``, ``FAILURE_MODES``,
+      ``COMPONENT_GROUPING``) with inner dicts mapping the backend
+      canonical key (e.g. ``part_usage``) to the user-picked column
+      name. Used by ``FMEAProcessor.map_columns()`` to override the
+      heuristic resolver.
+
+    Example output for a run that mapped Failure Mode → ``fm_col`` and
+    Part Usage → ``Qty``::
+
+        {
+            "Failure Mode": "fm_col",
+            "Part Usage": "Qty",
+            "FAILURE_MODES": {"failure_mode": "fm_col"},
+            "BOM": {"part_usage": "Qty"},
+        }
+
+    Rows whose ``mappedTo`` is empty or set to the ``DO_NOT_MAP``
+    sentinel are skipped so the heuristic column resolver can still run.
+    """
+    overrides: dict[str, Any] = {}
+    if not body_mappings:
+        return overrides
+    for row in body_mappings:
+        if not isinstance(row, Mapping):
+            continue
+        canonical = str(row.get("canonical", "")).strip()
+        mapped_to = row.get("mappedTo")
+        if not canonical:
+            continue
+        if mapped_to in (None, "", DO_NOT_MAP_SENTINEL):
+            continue
+        mapped_str = str(mapped_to).strip()
+        # Fix R2-M3: defensively reject canonical labels that would
+        # clash with the reserved file-type bucket keys we use for
+        # nested shapes below. See ``_RESERVED_FILE_TYPE_KEYS`` above.
+        if canonical in _RESERVED_FILE_TYPE_KEYS:
+            raise ValidationError(
+                f"Canonical column label {canonical!r} collides with a "
+                f"reserved file-type bucket key. Rename the frontend "
+                f"canonical to something else, or refactor "
+                f"_build_column_overrides to use a nested return shape."
+            )
+        # Flat shape (used by direct-canonical lookups downstream).
+        overrides[canonical] = mapped_str
+        # Nested per-file shape (used by map_columns heuristic override).
+        # Fix D: only entries whose canonical is in FRONTEND_TO_BACKEND_MAPPING
+        # gain a nested entry. Unknown canonicals remain flat-only so the
+        # backend is forward-compatible with new frontend labels.
+        target = FRONTEND_TO_BACKEND_MAPPING.get(canonical)
+        if target is not None:
+            file_type, backend_key = target
+            bucket = overrides.setdefault(file_type, {})
+            if isinstance(bucket, dict):
+                bucket[backend_key] = mapped_str
+    return overrides
+
+# Phase 4 / A6: CCA identifier (prefix) must be 1-8 chars of uppercase
+# alphanumerics or hyphens, and must start with an alphanumeric. Frontend
+# enforces this pattern too; backend re-validates defensively in case a
+# stale client or integration test ships an unvalidated value.
+CCA_PREFIX_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9\-]{0,7}$")
 
 SUPPORTED_EXECUTION_WORKFLOWS = {
     "piece_part_generate",
@@ -197,6 +342,37 @@ def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
     )
     inputs_by_role = _collect_inputs(body)
 
+    # Fix C2: merge modes parse "Failure Mode Causes" as a comma-separated
+    # list of reference designators to derive each group's component set.
+    # Without an explicit mapping for that column, the backend runs but
+    # silently produces empty component lists — the generated FMEA is
+    # effectively blank. Block that upfront.
+    if workflow_id in ("fill_gaps", "functional_to_piecepart"):
+        body_mappings = body.get("mappings") or []
+        mapped_canonicals: dict[str, Any] = {}
+        for row in body_mappings:
+            if isinstance(row, Mapping):
+                # Fix R2-H3: strip canonical to match the normalization in
+                # ``_build_column_overrides`` so a padded/case-different
+                # canonical can't bypass the validator while still landing
+                # in the overrides dict under the stripped key.
+                mapped_canonicals[str(row.get("canonical", "")).strip()] = row.get(
+                    "mappedTo"
+                )
+        fmc_mapped_to = mapped_canonicals.get("Failure Mode Causes")
+        if not fmc_mapped_to or fmc_mapped_to == DO_NOT_MAP_SENTINEL:
+            return {
+                "ok": False,
+                "reason_code": "missing_failure_mode_causes_mapping",
+                "toast_text": (
+                    "Map the 'Failure Mode Causes' column before running a "
+                    "merge. The backend parses it to identify components in "
+                    "each function group."
+                ),
+                "validations": [],
+                "mode": "desktop-bridge",
+            }
+
     required_roles = _required_roles(workflow_id, output_strategy_id)
     required_files = [
         LabeledValue(_role_label(role), (inputs_by_role.get(role) or {}).get("path"))
@@ -233,6 +409,34 @@ def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
             toast_text="Select FMD-91 or FMD-2016 before running.",
             affected_labels=result.affected_labels,
         )
+    elif workflow_id == "bom_only":
+        # Phase 4 / A6: BOM-Only mode requires a CCA identifier — it
+        # replaces the default "BOM" group label in generated FMEA-IDs.
+        # Frontend validates but we re-check here so an unvalidated
+        # client (e.g., integration test) can't slip an invalid value
+        # through and silently produce "-C200-A" or "bom-c200-A" output.
+        cca_prefix_raw = options.get("ccaPrefix")
+        cca_prefix = str(cca_prefix_raw).strip() if cca_prefix_raw is not None else ""
+        if not cca_prefix:
+            result = type(result)(
+                ok=False,
+                reason_code="missing_cca_prefix",
+                toast_text=(
+                    "Enter a CCA identifier in the Workflow card before "
+                    "running BOM-Only mode."
+                ),
+                affected_labels=result.affected_labels,
+            )
+        elif not CCA_PREFIX_PATTERN.match(cca_prefix):
+            result = type(result)(
+                ok=False,
+                reason_code="invalid_cca_prefix",
+                toast_text=(
+                    "CCA identifier must be 1-8 uppercase alphanumerics "
+                    "or hyphens."
+                ),
+                affected_labels=result.affected_labels,
+            )
 
     return {
         "ok": result.ok,
@@ -250,7 +454,50 @@ def _selected_sheet(inputs_by_role: dict[str, dict[str, Any]], role: str) -> str
     return value or None
 
 
-def _resolve_output_directory(inputs_by_role: dict[str, dict[str, Any]]) -> Path:
+def _resolve_output_directory(
+    inputs_by_role: dict[str, dict[str, Any]],
+    explicit_directory: str | None = None,
+    log_callback: Callable[[str], None] | None = None,
+) -> Path:
+    """Resolve the output directory for the generated FMEA workbook.
+
+    Phase 4 / A7: when the frontend sends a top-level ``outputDirectory``
+    field on the run request body, honor it. If the provided path is
+    invalid (missing, not a directory, or unwriteable), fall back to the
+    existing "first input file parent" heuristic.
+
+    Fix B3: the invalid-path fallback used to be silent, so the user saw
+    their workbook land in an unexpected location with no indication of
+    why. We now emit a WARNING log on every fallback path so the run
+    log surfaces the reason.
+    """
+    def _warn(message: str) -> None:
+        # Fix R2-L2: always log to the module logger as a secondary sink
+        # so warnings are preserved even when no log_callback is wired
+        # (e.g., direct-call integration tests or programmatic callers).
+        _logger.warning(message)
+        if log_callback is not None:
+            try:
+                log_callback(f"WARNING: {message}")
+            except Exception:  # pragma: no cover - defensive
+                pass
+
+    if explicit_directory:
+        candidate = str(explicit_directory).strip()
+        if candidate:
+            try:
+                path = Path(candidate).expanduser().resolve()
+                if path.is_dir():
+                    return path
+                _warn(
+                    f"Explicit outputDirectory '{candidate}' is not a "
+                    f"directory; falling back to input-file heuristic."
+                )
+            except (OSError, ValueError) as exc:
+                _warn(
+                    f"Failed to resolve outputDirectory '{candidate}': "
+                    f"{exc}. Falling back to input-file heuristic."
+                )
     for role in ("targetWorkbook", "bom", "grouping", "existingFmea"):
         candidate = str((inputs_by_role.get(role) or {}).get("path", "")).strip()
         if candidate:
@@ -342,9 +589,20 @@ def execute_run_request(
         "mode": str(column_selection_raw.get("mode", "all")).strip() or "all",
         "columns": [str(c) for c in (column_selection_raw.get("columns") or [])],
     }
+    # Phase 4 / A6: CCA identifier (BOM-Only only). Already validated above.
+    cca_prefix_raw = options.get("ccaPrefix")
+    cca_prefix = (
+        str(cca_prefix_raw).strip()
+        if workflow_id == "bom_only" and cca_prefix_raw is not None
+        else None
+    ) or None
     inputs_by_role = _collect_inputs(body)
-    output_directory = _resolve_output_directory(inputs_by_role)
-    output_path = output_directory / _build_output_name(workflow_id)
+    # Fix A2: plumb the frontend's column mapping rows through to the
+    # processor as column_overrides. Previously we hardcoded {} and the
+    # user's explicit column picks were silently discarded, forcing the
+    # backend to fall back to heuristic column detection.
+    body_mappings = body.get("mappings") or []
+    column_overrides = _build_column_overrides(body_mappings)
 
     logs: list[str] = []
     current_stage_message = "Preparing migrated backend run..."
@@ -353,6 +611,18 @@ def execute_run_request(
         logs.append(message)
         if log_callback:
             log_callback(message)
+
+    # Phase 4 / A7: honor explicit outputDirectory when the frontend sends one.
+    # Fix B3: pass stream_log_callback so fallback warnings reach the run log.
+    explicit_output_directory = body.get("outputDirectory")
+    if explicit_output_directory is not None:
+        explicit_output_directory = str(explicit_output_directory).strip() or None
+    output_directory = _resolve_output_directory(
+        inputs_by_role,
+        explicit_directory=explicit_output_directory,
+        log_callback=stream_log_callback,
+    )
+    output_path = output_directory / _build_output_name(workflow_id)
 
     def runtime_status_callback(message: str) -> None:
         nonlocal current_stage_message
@@ -397,6 +667,14 @@ def execute_run_request(
     )
 
     processor = FMEAProcessor(log_callback=stream_log_callback)
+    # Phase 4 / A6: set CCA prefix BEFORE process*() runs so _format_fmea_id
+    # sees it. _reset_state() deliberately preserves this field.
+    processor.cca_prefix = cca_prefix
+    # Phase 4 / A7: explicit output directory override (used by
+    # _resolve_output_directory-style callers inside the processor if any;
+    # today the runtime owns output path resolution directly but we plumb
+    # the override so processor-internal helpers can see it too).
+    processor.output_directory_override = str(output_directory) if explicit_output_directory else None
     if processor_ready_callback:
         processor_ready_callback(processor)
 
@@ -408,7 +686,7 @@ def execute_run_request(
             "hda": str((inputs_by_role.get("hda") or {}).get("path", "")).strip() or None,
             "group": str((inputs_by_role.get("grouping") or {}).get("path", "")).strip() or None,
             "verbose": False,
-            "column_overrides": {},
+            "column_overrides": column_overrides,
             "failure_modes_standard": failure_modes_standard,
             "fmea_sheet": _selected_sheet(inputs_by_role, "existingFmea"),
             "bom_sheet": _selected_sheet(inputs_by_role, "bom"),
@@ -441,15 +719,17 @@ def execute_run_request(
             "bom": str((inputs_by_role.get("bom") or {}).get("path", "")).strip() or None,
             "hda": str((inputs_by_role.get("hda") or {}).get("path", "")).strip() or None,
             "fm": str((inputs_by_role.get("failureModes") or {}).get("path", "")).strip() or None,
+            "group": str((inputs_by_role.get("grouping") or {}).get("path", "")).strip() or None,
             "out_folder": str(output_directory),
             "out_name": output_path.stem,
             "verbose": False,
-            "column_overrides": {},
+            "column_overrides": column_overrides,
             "failure_modes_standard": failure_modes_standard,
             "func_sheet": _selected_sheet(inputs_by_role, "functionalFmea"),
             "bom_sheet": _selected_sheet(inputs_by_role, "bom"),
             "hda_sheet": _selected_sheet(inputs_by_role, "hda"),
             "fm_sheet": _selected_sheet(inputs_by_role, "failureModes"),
+            "group_sheet": _selected_sheet(inputs_by_role, "grouping"),
         }
 
         def functional_progress_adapter(current: int, total: int) -> None:
@@ -485,7 +765,7 @@ def execute_run_request(
             "use_func": False,
             "use_piecepart_merge": False,
             "verbose": False,
-            "column_overrides": {},
+            "column_overrides": column_overrides,
             "template_preserve": False,
             "failure_modes_standard": failure_modes_standard,
             "group_sheet": _selected_sheet(inputs_by_role, "grouping"),

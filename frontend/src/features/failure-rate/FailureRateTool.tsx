@@ -5,6 +5,12 @@ import { MappingTable } from "../../components/MappingTable";
 import { RunStatePanel } from "../../components/RunStatePanel";
 import { SectionCard } from "../../components/SectionCard";
 import { ValidationPreview } from "../../components/ValidationPreview";
+import { CheckboxField } from "../../components/primitives/CheckboxField";
+import { ContextTabs } from "../../components/primitives/ContextTabs";
+import { EmptyState } from "../../components/primitives/EmptyState";
+import { OptionsField } from "../../components/primitives/OptionsField";
+import { OptionsSection } from "../../components/primitives/OptionsSection";
+import { ChartLine } from "@phosphor-icons/react";
 import { executeRunResultSchema } from "../../contracts/sidecar";
 import {
   failureRateDemoScenarios,
@@ -19,8 +25,10 @@ import type {
   RunMode,
   ValidationMessage,
 } from "../../app/types";
+import { DO_NOT_MAP_VALUE } from "../../app/types";
 import { backendClient, type RunRequestBody } from "../../shared/backend/client";
-import { buildRunTimeline, isBusyRunPhase, useBackendRunLifecycle } from "../../shared/backend/runLifecycle";
+import { buildCancelNotification } from "../../shared/backend/cancelError";
+import { buildRunTimeline, useBackendRunLifecycle } from "../../shared/backend/runLifecycle";
 import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
 import { useRoleRequestSequence } from "../../shared/hooks/useRoleRequestSequence";
 import { useNotificationStore } from "../../stores/notificationStore";
@@ -84,7 +92,6 @@ export function FailureRateTool() {
   const [runResult, setRunResult] = useState<typeof baseScenario.runSequence.result | null>(null);
   const [runLogLines, setRunLogLines] = useState<string[]>([]);
   const [cancelledNotice, setCancelledNotice] = useState<string | null>(null);
-  const [cancelPending, setCancelPending] = useState(false);
   const contextHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const handledDesktopTerminalRef = useRef<string | null>(null);
   const backendMode = useShellStore((state) => state.backendMode);
@@ -166,14 +173,27 @@ export function FailureRateTool() {
         ? desktopRunSession.statusMessage
         : null
       : cancelledNotice;
-  const panelCancelPending =
-    backendClient.runtimeMode === "desktop-bridge" ? panelRunMode === "cancelling" : cancelPending;
   const panelTruncatedLogCount =
     backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.truncatedLogCount : 0;
   const panelErrorCode =
     backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.errorCode : null;
   const panelErrorTraceback =
     backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.errorTraceback : null;
+
+  // Pristine = no real input loaded yet AND no run has been started.
+  const isPristine =
+    inputStates.every((input) => input.isExample === true) &&
+    panelRunMode === "idle";
+
+  const handleLoadExample = () => {
+    pushNotification({
+      tone: "info",
+      title: "Example files coming soon",
+      detail: "Bundled example parts lists aren't shipping yet. For now, browse to a real workbook.",
+    });
+  };
+
+  const firstInputRole = inputStates[0]?.role ?? null;
 
   // Desktop run terminal state handler
   useEffect(() => {
@@ -458,7 +478,6 @@ export function FailureRateTool() {
       setRunLogLines([]);
       setCancelledNotice(null);
       setRunResult(null);
-      setCancelPending(false);
       setContextView("run");
       setRunMode("running");
       setRunIndex(0);
@@ -467,11 +486,15 @@ export function FailureRateTool() {
 
     const runRequest = buildRunRequest();
 
+    // Fix R2-C1: clear any stale active run from a previous run BEFORE flipping
+    // the busy chip. Otherwise useBackendBusyReset would see (previous run's
+    // terminal phase + busy) and instantly clear the "Validating..." message.
+    resetDesktopRunSession();
+
     setContextView("run");
     setRunLogLines([]);
     setRunResult(null);
     setCancelledNotice(null);
-    setCancelPending(false);
     setBackendState({
       backendStatus: "busy",
       backendMessage: "Validating run configuration...",
@@ -529,7 +552,20 @@ export function FailureRateTool() {
 
   function handleCancel() {
     if (backendClient.runtimeMode === "desktop-bridge") {
-      if (!desktopRunSession.runId || !isBusyRunPhase(desktopRunSession.phase)) {
+      // Phase B3: reject cancels issued while the session is still idle
+      // so stale run IDs never reach the sidecar.
+      //
+      // Fix E3: only fire the cancel on ``starting`` / ``running``
+      // phases. A previous helper also matched ``cancelling`` which
+      // let a double-click trigger a second cancel_run request — the
+      // sidecar would reject the second one with "No active run
+      // matches" and the user saw a confusing notification after
+      // they already cancelled.
+      if (
+        !desktopRunSession.runId ||
+        (desktopRunSession.phase !== "starting" &&
+          desktopRunSession.phase !== "running")
+      ) {
         return;
       }
 
@@ -544,26 +580,18 @@ export function FailureRateTool() {
           });
         })
         .catch((error: unknown) => {
-          const detail = error instanceof Error ? error.message : "Unknown cancel failure";
-          pushNotification({
-            tone: "error",
-            title: "Cancel failed",
-            detail,
-          });
+          // Phase B3: surface the sidecar's real error message (Tauri
+          // rejects with a raw string, not an Error instance).
+          pushNotification(buildCancelNotification(error));
         });
       return;
     }
 
-    if (!cancelPending) {
-      setCancelPending(true);
-      setCancelledNotice("Press cancel again to confirm.");
-      return;
-    }
-
+    // Browser-mock: HoldButton already captured the press-and-hold
+    // confirmation, so cancel immediately.
     setRunMode("idle");
     setRunIndex(-1);
     setRunResult(null);
-    setCancelPending(false);
     setCancelledNotice("Demo run cancelled. The workspace returned to a safe idle state.");
   }
 
@@ -587,47 +615,120 @@ export function FailureRateTool() {
 
         <section className="workspace-grid workspace-grid--single">
           <div className="workspace-grid__main">
-            <SectionCard title="Input Files" eyebrow="Data Sources">
-              <InputGrid inputs={inputStates} onBrowse={handleBrowse} onSheetChange={handleSheetChange} />
+            <SectionCard
+              title="Input Files"
+              eyebrow="Data Sources"
+              description="Load the parts list to enrich with failure rates."
+            >
+              {isPristine ? (
+                <EmptyState
+                  icon={ChartLine}
+                  headline="Link failure rates"
+                  body="Select a parts list to enrich with failure rate data. Outputs are written alongside the original workbook."
+                  primaryAction={{
+                    label: "Browse for parts list",
+                    onClick: () => {
+                      if (firstInputRole) {
+                        void handleBrowse(firstInputRole);
+                      }
+                    },
+                  }}
+                  secondaryAction={{
+                    label: "Load example",
+                    onClick: handleLoadExample,
+                  }}
+                />
+              ) : (
+                <InputGrid
+                  inputs={inputStates}
+                  onBrowse={handleBrowse}
+                  onSheetChange={handleSheetChange}
+                  getDisabledSheetReason={(input) => {
+                    // Sheet picker disabledReason — surfaced as a muted
+                    // caption below the disabled CustomSelect via
+                    // aria-describedby.
+                    if (input.isResolvingSheets) {
+                      return "Loading sheets from the desktop bridge…";
+                    }
+                    if (input.sheets.length === 0) {
+                      return "Select a parts list first";
+                    }
+                    return undefined;
+                  }}
+                />
+              )}
             </SectionCard>
 
-            <SectionCard title="Column Mapping" eyebrow="Field Assignment">
+            <SectionCard
+              title="Column Mapping"
+              eyebrow="Field Assignment"
+              description="Map the part identifier columns."
+            >
               <MappingTable
                 rows={mappingRows}
                 overrides={mappingOverrides}
                 onOverride={(canonical, mappedTo) =>
                   setMappingOverrides((current) => ({ ...current, [canonical]: mappedTo }))
                 }
+                onApplyRecommendation={(canonical, suggested) =>
+                  setMappingOverrides((current) => ({ ...current, [canonical]: suggested }))
+                }
+                onApplyAllSuggestions={() => {
+                  setMappingOverrides((current) => {
+                    const next = { ...current };
+                    for (const row of mappingRows) {
+                      const mapped = next[row.canonical] ?? row.mappedTo;
+                      if (
+                        row.recommendation &&
+                        row.options.includes(row.recommendation) &&
+                        row.recommendation !== mapped
+                      ) {
+                        next[row.canonical] = row.recommendation;
+                      }
+                    }
+                    return next;
+                  });
+                }}
+                onClearAllMappings={() => {
+                  // "Clear all" is an explicit Do-Not-Map request; see
+                  // MappingTable Phase 2 comment. Sets every row to the
+                  // sentinel so the backend can distinguish intentional
+                  // unmapping from missing defaults.
+                  setMappingOverrides(() => {
+                    const next: Record<string, string> = {};
+                    for (const row of mappingRows) {
+                      next[row.canonical] = DO_NOT_MAP_VALUE;
+                    }
+                    return next;
+                  });
+                }}
               />
             </SectionCard>
 
-            <SectionCard title="Options" eyebrow="Configuration">
-              <div className="setup-grid">
-                <div className="setup-block">
-                  <p className="setup-block__label">Failure rate unit</p>
-                  <CustomSelect
-                    label="Unit mode"
-                    value={options.unitMode}
-                    options={[
-                      { value: "per_hour", label: "Per hour" },
-                      { value: "per_million_hours", label: "Per million hours" },
-                      { value: "per_billion_hours", label: "Per billion hours" },
-                    ]}
-                    onChange={(value) => setOptions((prev) => ({ ...prev, unitMode: value }))}
-                  />
-                </div>
-                <div className="setup-block">
-                  <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
-                    <input
-                      type="checkbox"
-                      checked={options.validateFmr}
-                      onChange={() => setOptions((prev) => ({ ...prev, validateFmr: !prev.validateFmr }))}
-                    />
-                    <span>Validate FMR sums (sum to 1.0)</span>
-                  </label>
-                </div>
-              </div>
-            </SectionCard>
+            <OptionsSection
+              title="Options"
+              eyebrow="Configuration"
+              description="Choose units and validation behavior."
+            >
+              <OptionsField label="Failure rate unit">
+                <CustomSelect
+                  label="Unit mode"
+                  value={options.unitMode}
+                  options={[
+                    { value: "per_hour", label: "Per hour" },
+                    { value: "per_million_hours", label: "Per million hours" },
+                    { value: "per_billion_hours", label: "Per billion hours" },
+                  ]}
+                  onChange={(value) => setOptions((prev) => ({ ...prev, unitMode: value }))}
+                />
+              </OptionsField>
+              <CheckboxField
+                id="failure-rate-validate-fmr"
+                label="Validate FMR sums (sum to 1.0)"
+                checked={options.validateFmr}
+                onChange={(next) => setOptions((prev) => ({ ...prev, validateFmr: next }))}
+              />
+            </OptionsSection>
           </div>
 
           <aside className="workspace-grid__side workspace-grid__side--sticky">
@@ -635,22 +736,15 @@ export function FailureRateTool() {
               title={contextView === "preview" ? "Review" : "Execution"}
               eyebrow="Context Panel"
               actions={
-                <div style={{ display: "flex", gap: "0.25rem" }}>
-                  <button
-                    type="button"
-                    className={`context-tab ${contextView === "preview" ? "context-tab--active" : ""}`}
-                    onClick={() => setContextView("preview")}
-                  >
-                    Preview
-                  </button>
-                  <button
-                    type="button"
-                    className={`context-tab ${contextView === "run" ? "context-tab--active" : ""}`}
-                    onClick={() => setContextView("run")}
-                  >
-                    Run
-                  </button>
-                </div>
+                <ContextTabs<"preview" | "run">
+                  ariaLabel="Context panel"
+                  activeId={contextView}
+                  onChange={(id) => setContextView(id)}
+                  tabs={[
+                    { id: "preview", label: "Preview" },
+                    { id: "run", label: "Run" },
+                  ]}
+                />
               }
             >
               <h3 className="sr-only-focusable" ref={contextHeadingRef} tabIndex={-1}>
@@ -669,7 +763,6 @@ export function FailureRateTool() {
                   }}
                   onCancel={handleCancel}
                   cancelledNotice={panelCancelledNotice}
-                  cancelPending={panelCancelPending}
                   logLines={panelLogLines}
                   truncatedLogCount={panelTruncatedLogCount}
                   errorCode={panelErrorCode}

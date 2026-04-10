@@ -69,6 +69,13 @@ export interface RunRequestBody {
   inputs: RunRequestInput[];
   mappings: RunRequestMapping[];
   options?: Record<string, unknown>;
+  /**
+   * Absolute path to the folder where the generated output file should be
+   * written. When null/undefined, the backend falls back to the "first input
+   * file parent" heuristic. Phase 3 plumbs this from the FMEA Workflow card
+   * output folder picker; Phase 4 wires the backend consumer.
+   */
+  outputDirectory?: string | null;
 }
 
 function isTauriRuntime() {
@@ -102,6 +109,22 @@ async function openPdfFileInDesktop() {
   if (!selection || Array.isArray(selection)) {
     return null;
   }
+  return selection;
+}
+
+async function openDirectoryInDesktop(defaultPath?: string) {
+  const { open } = await import("@tauri-apps/plugin-dialog");
+  const selection = await open({
+    title: "Select output folder",
+    directory: true,
+    multiple: false,
+    defaultPath: defaultPath || undefined,
+  });
+
+  if (!selection || Array.isArray(selection)) {
+    return null;
+  }
+
   return selection;
 }
 
@@ -141,6 +164,7 @@ export interface BackendClient {
   subscribeToSessionEvents: (handler: (event: BackendSessionEvent) => void) => Promise<() => void>;
   openExcelFile: () => Promise<string | null>;
   openPdfFile: () => Promise<string | null>;
+  openDirectory: (defaultPath?: string) => Promise<string | null>;
 }
 
 export const backendClient: BackendClient = {
@@ -225,5 +249,12 @@ export const backendClient: BackendClient = {
     }
 
     return openPdfFileInDesktop();
+  },
+  async openDirectory(defaultPath) {
+    if (!isTauriRuntime()) {
+      return null;
+    }
+
+    return openDirectoryInDesktop(defaultPath);
   },
 };

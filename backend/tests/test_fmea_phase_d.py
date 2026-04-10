@@ -155,8 +155,8 @@ def test_inheritance_creates_bom_addition(tmp_path: Path) -> None:
 
 
 def test_inheritance_writes_bom_additions_sheet(tmp_path: Path) -> None:
-    """write_excel_report should emit a BOM_Additions sheet whenever
-    proc.bom_additions is non-empty."""
+    """write_excel_report should emit a "FMEA Gen New RefDes" sheet whenever
+    proc.bom_additions is non-empty (Phase 4 / A9 rename of BOM_Additions)."""
     paths = _write_fixture(
         tmp_path,
         bom_rows=[
@@ -212,8 +212,10 @@ def test_inheritance_writes_bom_additions_sheet(tmp_path: Path) -> None:
 
     wb = load_workbook(out_path)
     try:
-        assert "BOM_Additions" in wb.sheetnames, wb.sheetnames
-        sheet = wb["BOM_Additions"]
+        # Phase 4 / A9: the user-visible sheet title was renamed from
+        # "BOM_Additions" to "FMEA Gen New RefDes".
+        assert "FMEA Gen New RefDes" in wb.sheetnames, wb.sheetnames
+        sheet = wb["FMEA Gen New RefDes"]
         # Phase D banner row at row 1 + header row at row 2 + 2 data rows = 4
         assert sheet.max_row >= 4
         # Row 1 is the explanatory banner (merged across the column range)
@@ -478,7 +480,14 @@ def test_validate_run_accepts_fill_gaps_with_preserve_formatting(tmp_path: Path)
             state("failureModes", paths["fm"]),
             state("targetWorkbook", target),
         ],
-        "mappings": [],
+        # Fix C2: merge modes require Failure Mode Causes mapping.
+        "mappings": [
+            {
+                "canonical": "Failure Mode Causes",
+                "mappedTo": "Failure Mode Causes",
+                "status": "mapped",
+            },
+        ],
     }
     result = validate_run_request(body)
     assert result["ok"] is True, result
@@ -889,3 +898,1988 @@ def test_functional_to_piecepart_preserves_functional_rows(tmp_path: Path) -> No
     assert len(pp_rows) == 2, f"Expected 2 piece-part rows, got {len(pp_rows)}"
     refdes_seen = set(pp_rows["Failure Mode Causes"].dropna().tolist())
     assert refdes_seen == {"R100", "C200"}, refdes_seen
+
+
+# ----- Phase 4 / A6: CCA prefix plumbing --------------------------------------
+
+
+def _state(role: str, path: Path, sheet: str = "Sheet1") -> dict:
+    return {
+        "role": role,
+        "label": role,
+        "path": str(path),
+        "selectedSheet": sheet,
+        "source": "desktop-bridge",
+        "isResolvingSheets": False,
+        "isAnalyzing": False,
+        "resolutionError": None,
+        "sheets": [{"id": "s1", "label": sheet}],
+    }
+
+
+def test_bom_only_requires_cca_prefix(tmp_path: Path) -> None:
+    """Phase 4 / A6: BOM-Only validation must reject a run with no
+    ccaPrefix in options."""
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "C200",
+                "Part Number": "CAP-1",
+                "Description": "Cap",
+                "BAE HDA Commodity I": "Capacitor",
+                "BAE HDA Commodity II": "Ceramic",
+                "Part Usage": "1",
+            }
+        ],
+    )
+    body = {
+        "workflowId": "bom_only",
+        "outputStrategyId": "new_workbook_standard",
+        "options": {"failureModesStandard": "FMD-2016"},
+        "inputs": [
+            _state("bom", paths["bom"]),
+            _state("failureModes", paths["fm"]),
+        ],
+        "mappings": [],
+    }
+    result = validate_run_request(body)
+    assert result["ok"] is False, result
+    assert result["reason_code"] == "missing_cca_prefix", result
+
+
+def test_bom_only_rejects_invalid_cca_prefix(tmp_path: Path) -> None:
+    """Phase 4 / A6: a lowercase / space-containing ccaPrefix must be
+    rejected with invalid_cca_prefix."""
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "C200",
+                "Part Number": "CAP-1",
+                "Description": "Cap",
+                "BAE HDA Commodity I": "Capacitor",
+                "BAE HDA Commodity II": "Ceramic",
+                "Part Usage": "1",
+            }
+        ],
+    )
+    body = {
+        "workflowId": "bom_only",
+        "outputStrategyId": "new_workbook_standard",
+        "options": {
+            "failureModesStandard": "FMD-2016",
+            "ccaPrefix": "p S u",  # lowercase + space
+        },
+        "inputs": [
+            _state("bom", paths["bom"]),
+            _state("failureModes", paths["fm"]),
+        ],
+        "mappings": [],
+    }
+    result = validate_run_request(body)
+    assert result["ok"] is False, result
+    assert result["reason_code"] == "invalid_cca_prefix", result
+
+
+def test_bom_only_uses_cca_prefix_in_fmea_ids(tmp_path: Path) -> None:
+    """Phase 4 / A6: a successful BOM-Only run with ccaPrefix='PSU'
+    should produce output FMEA-IDs that start with 'PSU-' (not 'BOM-')."""
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "C200",
+                "Part Number": "CAP-1",
+                "Description": "Cap",
+                "BAE HDA Commodity I": "Capacitor",
+                "BAE HDA Commodity II": "Ceramic",
+                "Part Usage": "1",
+            }
+        ],
+        fm_rows=[
+            {
+                "FMD-2016 Commodity Type 1": "Capacitor",
+                "FMD-2016 Commodity Type 2": "Ceramic",
+                "Failure Mode": "Short",
+                "Failure Mode Ratio": 1.0,
+            }
+        ],
+    )
+
+    body = {
+        "workflowId": "bom_only",
+        "outputStrategyId": "new_workbook_standard",
+        "options": {
+            "failureModesStandard": "FMD-2016",
+            "ccaPrefix": "PSU",
+        },
+        "outputDirectory": str(tmp_path),
+        "inputs": [
+            _state("bom", paths["bom"]),
+            _state("failureModes", paths["fm"]),
+        ],
+        "mappings": [],
+    }
+    result = execute_run_request(body)
+    assert result["status"] == "success", result
+    # Output workbook should exist and contain FMEA IDs prefixed by PSU.
+    output_file = Path(result["output_file"])
+    assert output_file.exists(), output_file
+    from openpyxl import load_workbook
+
+    wb = load_workbook(output_file)
+    try:
+        ws = wb["FMEA"]
+        header_row = [c.value for c in ws[1]]
+        id_col_idx = header_row.index("FMEA-ID") + 1
+        seen_ids = []
+        for row_idx in range(2, ws.max_row + 1):
+            val = ws.cell(row=row_idx, column=id_col_idx).value
+            if val:
+                seen_ids.append(str(val))
+        assert seen_ids, "No FMEA-IDs found in output"
+        assert any(i.startswith("PSU-") for i in seen_ids), seen_ids
+        # And critically, NONE of them should use the legacy "BOM-" prefix
+        assert not any(i.startswith("BOM-") for i in seen_ids), seen_ids
+        # Fix A3: piece-part FMEA-IDs in BOM-Only mode must use the
+        # hyphenated "<PREFIX>-<REFDES>-<SUFFIX>" shape, not the
+        # buggy "<PREFIX>-<REFDES><SUFFIX>" that dropped the hyphen.
+        import re as _re
+        piece_part_ids = [i for i in seen_ids if i.startswith("PSU-")]
+        # Every piece-part ID should match e.g. "PSU-C200-A".
+        pattern = _re.compile(r"^PSU-[A-Z0-9]+-[A-Z]+$")
+        unmatched = [i for i in piece_part_ids if not pattern.match(i)]
+        assert not unmatched, (
+            f"Expected every PSU-... ID to match PSU-<REFDES>-<SUFFIX> "
+            f"(fix A3); unmatched: {unmatched}"
+        )
+    finally:
+        wb.close()
+
+
+# ----- Phase 4 / A7: explicit outputDirectory honored -------------------------
+
+
+def test_explicit_output_directory_honored(tmp_path: Path) -> None:
+    """Phase 4 / A7: when body['outputDirectory'] is set, the generated
+    workbook should land under that directory rather than the heuristic
+    fallback (parent of the first input file)."""
+    inputs_dir = tmp_path / "inputs"
+    outputs_dir = tmp_path / "custom-outputs"
+    outputs_dir.mkdir(parents=True, exist_ok=True)
+    paths = _write_fixture(
+        inputs_dir,
+        bom_rows=[
+            {
+                "Reference Designator": "R100",
+                "Part Number": "RES-1",
+                "Description": "Resistor",
+                "BAE HDA Commodity I": "Resistor",
+                "BAE HDA Commodity II": "Chip",
+                "Part Usage": "1",
+            }
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "RES-001",
+                "Reference Designator": "R100",
+                "Function Description": "Pull-up",
+                "Schematic Page": "3",
+            }
+        ],
+        fm_rows=[
+            {
+                "FMD-2016 Commodity Type 1": "Resistor",
+                "FMD-2016 Commodity Type 2": "Chip",
+                "Failure Mode": "Open",
+                "Failure Mode Ratio": 1.0,
+            }
+        ],
+    )
+    body = {
+        "workflowId": "piece_part_generate",
+        "outputStrategyId": "new_workbook_standard",
+        "options": {"failureModesStandard": "FMD-2016"},
+        "outputDirectory": str(outputs_dir),
+        "inputs": [
+            _state("grouping", paths["grouping"]),
+            _state("bom", paths["bom"]),
+            _state("failureModes", paths["fm"]),
+        ],
+        "mappings": [],
+    }
+    result = execute_run_request(body)
+    assert result["status"] == "success", result
+    out_path = Path(result["output_file"])
+    assert out_path.exists(), out_path
+    # Crucial: the file should be under the explicit outputs_dir, NOT
+    # under inputs_dir (the heuristic would pick the BOM's parent).
+    assert out_path.parent.resolve() == outputs_dir.resolve(), (
+        f"Expected output under {outputs_dir}, got {out_path.parent}"
+    )
+
+
+# ----- Phase 4 / A8: Part Usage discrepancy ------------------------------------
+
+
+def test_part_usage_mismatch_flags_row_and_logs_diagnostic(tmp_path: Path) -> None:
+    """Phase 4 / A8: when BOM's mapped Part Usage disagrees with the
+    computed (1/N) value, the row should be flagged and a diagnostic
+    entry should be recorded."""
+    # Three BOM rows for R100 would give expected usage = 1/3, but we
+    # mark it as 1/2 — the generator should detect the mismatch.
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "R100",
+                "Part Number": "RES-1",
+                "Description": "Resistor",
+                "BAE HDA Commodity I": "Resistor",
+                "BAE HDA Commodity II": "Chip",
+                "Part Usage": "1/2",  # Mapped value
+            },
+            {
+                "Reference Designator": "R100",
+                "Part Number": "RES-1",
+                "Description": "Resistor",
+                "BAE HDA Commodity I": "Resistor",
+                "BAE HDA Commodity II": "Chip",
+                "Part Usage": "1/2",
+            },
+            {
+                "Reference Designator": "R100",
+                "Part Number": "RES-1",
+                "Description": "Resistor",
+                "BAE HDA Commodity I": "Resistor",
+                "BAE HDA Commodity II": "Chip",
+                "Part Usage": "1/2",
+            },
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "RES-001",
+                "Reference Designator": "R100",
+                "Function Description": "Pull-up",
+                "Schematic Page": "3",
+            }
+        ],
+        fm_rows=[
+            {
+                "FMD-2016 Commodity Type 1": "Resistor",
+                "FMD-2016 Commodity Type 2": "Chip",
+                "Failure Mode": "Open",
+                "Failure Mode Ratio": 1.0,
+            }
+        ],
+    )
+
+    proc = FMEAProcessor()
+    df = proc.process(
+        {
+            "group": str(paths["grouping"]),
+            "bom": str(paths["bom"]),
+            "fm": str(paths["fm"]),
+            "hda": None,
+            "func": None,
+            "piecepart_fmea": None,
+            "out_folder": str(tmp_path),
+            "out_name": "out",
+            "bom_only_mode": False,
+            "use_func": False,
+            "use_piecepart_merge": False,
+            "verbose": False,
+            # Fix A5: Part Usage discrepancy capture is now gated on an
+            # explicit mapping. Simulate the user picking the BOM's
+            # Part Usage column by setting the canonical mapping key.
+            "column_overrides": {"Part Usage": "Part Usage"},
+            "failure_modes_standard": "FMD-2016",
+            "group_sheet": "Sheet1",
+            "bom_sheet": "Sheet1",
+            "hda_sheet": None,
+            "fm_sheet": "Sheet1",
+            "func_sheet": None,
+            "piecepart_fmea_sheet": None,
+        }
+    )
+
+    # At least one discrepancy entry should have been captured.
+    assert proc.part_usage_discrepancies, proc.part_usage_discrepancies
+    first = proc.part_usage_discrepancies[0]
+    assert first["refdes"] == "R100", first
+    # Fix A5: new schema uses consistent count semantics.
+    assert {"refdes", "mapped_count", "computed_count", "diff"} <= set(first.keys()), first
+    # BOM says Part Usage=1/2 → mapped_count=2. Three R100 rows exist
+    # in the BOM → computed_count=3. diff = 3 - 2 = 1.
+    assert first["mapped_count"] == 2, first
+    assert first["computed_count"] == 3, first
+    assert first["diff"] == 1, first
+    # Fix R2-H1: the previous "mapped + diff == computed" assertion was
+    # tautological and never caught anything. The new sanity checks are
+    # non-negativity of both counts — test that each entry honors them.
+    for entry in proc.part_usage_discrepancies:
+        assert entry["mapped_count"] >= 0, entry
+        assert entry["computed_count"] >= 0, entry
+
+    # At least one row for R100 should be tagged as a validation warning
+    # (yellow fill via fmea_row_style).
+    pp = df[
+        (df["Failure Mode Causes"] == "R100")
+        & (df["_row_type"] == "validation_warning")
+    ]
+    assert not pp.empty, df
+
+    # Write the workbook and verify the diagnostics sheet shows up.
+    out_path = tmp_path / "diag_out.xlsx"
+    write_excel_report(df, out_path, proc)
+    from openpyxl import load_workbook
+
+    wb = load_workbook(out_path)
+    try:
+        assert "Part Usage Diagnostics" in wb.sheetnames, wb.sheetnames
+        ws = wb["Part Usage Diagnostics"]
+        headers = [ws.cell(row=1, column=c).value for c in range(1, ws.max_column + 1)]
+        assert "RefDes" in headers
+        assert "Mapped Count" in headers
+        assert "Computed Count" in headers
+        assert "Diff" in headers
+    finally:
+        wb.close()
+
+
+def test_part_usage_suspicious_mapped_value_increments_counter_but_still_records_entry(
+    tmp_path: Path,
+) -> None:
+    """Fix R2-H1 / R3-M2: a suspiciously large mapped_count (Part Usage
+    < 1e-6, implying > 1,000,000 instances) is almost certainly a BOM
+    data-entry typo. R3-M2 changes the behavior:
+
+    1. The discrepancy entry is STILL recorded in
+       ``part_usage_discrepancies`` so the user sees it in the
+       "Part Usage Diagnostics" sheet. Previously we dropped the entry
+       entirely, which made the warning useless for triage.
+    2. A per-processor counter (``part_usage_suspicious_count``) tracks
+       how many rows tripped the threshold.
+    3. ONE aggregated WARNING is emitted after the generator loop
+       completes, not one per row (prevents log spam for BOMs with many
+       suspicious values).
+    """
+    log_lines: list[str] = []
+
+    def _log(message: str) -> None:
+        log_lines.append(message)
+
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "R200",
+                "Part Number": "RES-1",
+                "Description": "Resistor",
+                "BAE HDA Commodity I": "Resistor",
+                "BAE HDA Commodity II": "Chip",
+                # Part Usage = 5e-8 → round(1/5e-8) = 20,000,000. Way
+                # above the new 1,000,000 suspicious threshold. The
+                # real base count is 2 (two BOM rows for R200) so the
+                # usage is obviously wrong, triggering the mismatch
+                # branch; the suspicious counter should increment and
+                # the entry should still be recorded.
+                "Part Usage": "0.00000005",
+            },
+            {
+                "Reference Designator": "R200",
+                "Part Number": "RES-1",
+                "Description": "Resistor",
+                "BAE HDA Commodity I": "Resistor",
+                "BAE HDA Commodity II": "Chip",
+                "Part Usage": "0.00000005",
+            },
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "RES-002",
+                "Reference Designator": "R200",
+                "Function Description": "Pull-down",
+                "Schematic Page": "4",
+            }
+        ],
+        fm_rows=[
+            {
+                "FMD-2016 Commodity Type 1": "Resistor",
+                "FMD-2016 Commodity Type 2": "Chip",
+                "Failure Mode": "Open",
+                "Failure Mode Ratio": 1.0,
+            }
+        ],
+    )
+
+    proc = FMEAProcessor(log_callback=_log)
+    proc.process(
+        {
+            "group": str(paths["grouping"]),
+            "bom": str(paths["bom"]),
+            "fm": str(paths["fm"]),
+            "hda": None,
+            "func": None,
+            "piecepart_fmea": None,
+            "out_folder": str(tmp_path),
+            "out_name": "out",
+            "bom_only_mode": False,
+            "use_func": False,
+            "use_piecepart_merge": False,
+            "verbose": False,
+            "column_overrides": {"Part Usage": "Part Usage"},
+            "failure_modes_standard": "FMD-2016",
+            "group_sheet": "Sheet1",
+            "bom_sheet": "Sheet1",
+            "hda_sheet": None,
+            "fm_sheet": "Sheet1",
+            "func_sheet": None,
+            "piecepart_fmea_sheet": None,
+        }
+    )
+
+    # Fix R3-M2: the discrepancy entry IS present (not skipped).
+    refdes_in_discrepancies = [
+        entry["refdes"] for entry in proc.part_usage_discrepancies
+    ]
+    assert "R200" in refdes_in_discrepancies, proc.part_usage_discrepancies
+    # Two BOM rows referencing R200 both trip the threshold.
+    assert proc.part_usage_suspicious_count >= 1, (
+        proc.part_usage_suspicious_count
+    )
+
+    # Fix R3-M2: ONE aggregated WARNING was logged after the generator
+    # loop, mentioning the > 1,000,000 threshold. No per-row
+    # "suspiciously large" spam from the old implementation should
+    # remain.
+    warnings = [line for line in log_lines if "WARNING" in line]
+    assert any("1,000,000" in w for w in warnings), warnings
+    assert any(
+        "Part Usage Diagnostics" in w for w in warnings
+    ), warnings
+    # The old per-row message is gone.
+    assert not any(
+        "suspiciously large" in w for w in warnings
+    ), warnings
+
+
+def test_part_usage_large_legitimate_mapped_count_is_recorded_normally(
+    tmp_path: Path,
+) -> None:
+    """Fix R3-M2: a legitimately large mapped count (e.g. 15,000
+    instances of a single decoupling-cap variant) must be recorded as
+    a normal discrepancy entry without tripping the suspicious-count
+    aggregator. Production dense SMD PCBs routinely have thousands of
+    instances of the same cap line; the old 10,000 threshold dropped
+    these silently, which was wrong. The new 1,000,000 threshold
+    leaves them untouched."""
+    log_lines: list[str] = []
+
+    def _log(message: str) -> None:
+        log_lines.append(message)
+
+    # Part Usage = 1/15000 ≈ 6.667e-5 → round(1/6.667e-5) = 15,000.
+    # Well below the new 1,000,000 threshold.
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "C400",
+                "Part Number": "CAP-1",
+                "Description": "Decoupling Cap",
+                "BAE HDA Commodity I": "Capacitor",
+                "BAE HDA Commodity II": "Ceramic",
+                "Part Usage": str(1.0 / 15000.0),
+            },
+            {
+                "Reference Designator": "C400",
+                "Part Number": "CAP-1",
+                "Description": "Decoupling Cap",
+                "BAE HDA Commodity I": "Capacitor",
+                "BAE HDA Commodity II": "Ceramic",
+                "Part Usage": str(1.0 / 15000.0),
+            },
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "CAP-DEC",
+                "Reference Designator": "C400",
+                "Function Description": "Decoupling",
+                "Schematic Page": "7",
+            }
+        ],
+        fm_rows=[
+            {
+                "FMD-2016 Commodity Type 1": "Capacitor",
+                "FMD-2016 Commodity Type 2": "Ceramic",
+                "Failure Mode": "Short",
+                "Failure Mode Ratio": 1.0,
+            }
+        ],
+    )
+
+    proc = FMEAProcessor(log_callback=_log)
+    proc.process(
+        {
+            "group": str(paths["grouping"]),
+            "bom": str(paths["bom"]),
+            "fm": str(paths["fm"]),
+            "hda": None,
+            "func": None,
+            "piecepart_fmea": None,
+            "out_folder": str(tmp_path),
+            "out_name": "out",
+            "bom_only_mode": False,
+            "use_func": False,
+            "use_piecepart_merge": False,
+            "verbose": False,
+            "column_overrides": {"Part Usage": "Part Usage"},
+            "failure_modes_standard": "FMD-2016",
+            "group_sheet": "Sheet1",
+            "bom_sheet": "Sheet1",
+            "hda_sheet": None,
+            "fm_sheet": "Sheet1",
+            "func_sheet": None,
+            "piecepart_fmea_sheet": None,
+        }
+    )
+
+    # The discrepancy entry IS present — usage mismatch (expected 1/2
+    # vs listed 1/15000) triggers the mismatch branch for both rows.
+    refdes_in_discrepancies = [
+        entry["refdes"] for entry in proc.part_usage_discrepancies
+    ]
+    assert "C400" in refdes_in_discrepancies, proc.part_usage_discrepancies
+
+    # R3-M2: counter is ZERO because 15,000 < 1,000,000 threshold.
+    assert proc.part_usage_suspicious_count == 0, (
+        proc.part_usage_suspicious_count
+    )
+
+    # No aggregated suspicious-count warning should appear.
+    warnings = [line for line in log_lines if "WARNING" in line]
+    assert not any(
+        "1,000,000" in w for w in warnings
+    ), warnings
+
+
+# ----- Phase 4 / A5: Group-level union merge ----------------------------------
+
+
+def _merge_fixture(
+    tmp_path: Path,
+    *,
+    old_fmea_rows: list[dict],
+    grouping_rows: list[dict] | None,
+    bom_rows: list[dict],
+    fm_rows: list[dict] | None = None,
+) -> dict:
+    """Build fixture files for a union-merge test run.
+
+    Produces an existing FMEA workbook + (optional) grouping + BOM + FM
+    and returns their paths.
+    """
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    paths: dict[str, Path] = {}
+
+    bom_path = tmp_path / "bom.xlsx"
+    pd.DataFrame(bom_rows).to_excel(bom_path, index=False)
+    paths["bom"] = bom_path
+
+    old_path = tmp_path / "old_fmea.xlsx"
+    pd.DataFrame(old_fmea_rows).to_excel(old_path, index=False)
+    paths["fmea"] = old_path
+
+    if grouping_rows is not None:
+        grouping_path = tmp_path / "grouping.xlsx"
+        pd.DataFrame(grouping_rows).to_excel(grouping_path, index=False)
+        paths["group"] = grouping_path
+
+    fm_path = tmp_path / "failure_modes.xlsx"
+    pd.DataFrame(
+        fm_rows
+        or [
+            {
+                "FMD-2016 Commodity Type 1": "Resistor",
+                "FMD-2016 Commodity Type 2": "Chip",
+                "Failure Mode": "Open",
+                "Failure Mode Ratio": 1.0,
+            },
+            {
+                "FMD-2016 Commodity Type 1": "Capacitor",
+                "FMD-2016 Commodity Type 2": "Ceramic",
+                "Failure Mode": "Short",
+                "Failure Mode Ratio": 1.0,
+            },
+            {
+                "FMD-2016 Commodity Type 1": "Inductor",
+                "FMD-2016 Commodity Type 2": "SMD",
+                "Failure Mode": "Open",
+                "Failure Mode Ratio": 1.0,
+            },
+        ]
+    ).to_excel(fm_path, index=False)
+    paths["fm"] = fm_path
+    return paths
+
+
+def _merge_bom_rows() -> list[dict]:
+    return [
+        {
+            "Reference Designator": "L100",
+            "Part Number": "IND-1",
+            "Description": "Inductor",
+            "BAE HDA Commodity I": "Inductor",
+            "BAE HDA Commodity II": "SMD",
+            "Part Usage": "1",
+        },
+        {
+            "Reference Designator": "C200",
+            "Part Number": "CAP-1",
+            "Description": "Capacitor",
+            "BAE HDA Commodity I": "Capacitor",
+            "BAE HDA Commodity II": "Ceramic",
+            "Part Usage": "1",
+        },
+        {
+            "Reference Designator": "R34",
+            "Part Number": "RES-1",
+            "Description": "Resistor",
+            "BAE HDA Commodity I": "Resistor",
+            "BAE HDA Commodity II": "Chip",
+            "Part Usage": "1",
+        },
+    ]
+
+
+def _run_gaps_merge(
+    tmp_path: Path,
+    paths: dict,
+    *,
+    include_grouping: bool = True,
+) -> tuple[FMEAProcessor, pd.DataFrame]:
+    proc = FMEAProcessor()
+    df = proc.process_gaps(
+        {
+            "fmea": str(paths["fmea"]),
+            "bom": str(paths["bom"]),
+            "fm": str(paths["fm"]),
+            "hda": None,
+            "group": str(paths["group"]) if include_grouping and "group" in paths else None,
+            "verbose": False,
+            "column_overrides": {},
+            "failure_modes_standard": "FMD-2016",
+            "fmea_sheet": "Sheet1",
+            "bom_sheet": "Sheet1",
+            "fm_sheet": "Sheet1",
+            "hda_sheet": None,
+            "group_sheet": "Sheet1" if include_grouping and "group" in paths else None,
+        }
+    )
+    return proc, df
+
+
+def test_union_merge_both_sources_no_diagnostic(tmp_path: Path) -> None:
+    """Phase 4 / A5: when a component exists in BOTH old FMEA and
+    grouping file, the generated row must not carry a merge diagnostic."""
+    paths = _merge_fixture(
+        tmp_path,
+        old_fmea_rows=[
+            {
+                "FMEA Level": "Circuit Block",
+                "FMEA-ID": "CPU-200",
+                "Failure Mode Causes": "L100, C200",
+                "Function Description": "Power rail filter",
+                "Schematic Page": "1",
+                "Local Effect": "",
+                "Next Higher Effect": "",
+                "End Effect": "",
+            },
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "CPU-200",
+                "Reference Designator": "L100, C200",
+                "Function Description": "Power rail filter",
+                "Schematic Page": "1",
+            }
+        ],
+        bom_rows=_merge_bom_rows(),
+    )
+    proc, df = _run_gaps_merge(tmp_path, paths)
+    # The circuit-block row + 2 piece-part rows
+    pp = df[df["_row_type"].isin(("piece_part", "validation_warning"))]
+    refdes = set(pp["Failure Mode Causes"].dropna().tolist())
+    assert refdes == {"L100", "C200"}, refdes
+    # No merge diagnostics recorded at all
+    assert proc.group_merge_diagnostics == [], proc.group_merge_diagnostics
+
+
+def test_union_merge_old_only_flags_missing_from_grouping(tmp_path: Path) -> None:
+    """Phase 4 / A5: when a component is only in the old FMEA, its row
+    must carry the 'missing from Grouping File' diagnostic."""
+    paths = _merge_fixture(
+        tmp_path,
+        old_fmea_rows=[
+            {
+                "FMEA Level": "Circuit Block",
+                "FMEA-ID": "CPU-200",
+                "Failure Mode Causes": "L100, C200, R34",
+                "Function Description": "Power rail",
+                "Schematic Page": "1",
+            },
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "CPU-200",
+                "Reference Designator": "L100, C200",  # R34 absent
+                "Function Description": "Power rail",
+                "Schematic Page": "1",
+            }
+        ],
+        bom_rows=_merge_bom_rows(),
+    )
+    proc, df = _run_gaps_merge(tmp_path, paths)
+    r34_rows = df[
+        (df["Failure Mode Causes"] == "R34")
+        & (df["_row_type"].isin(("piece_part", "validation_warning", "piece_part_no_match")))
+    ]
+    assert not r34_rows.empty, df
+    diagnostics = r34_rows["Diagnostic"].dropna().tolist()
+    assert any(
+        FMEAProcessor.MERGE_DIAG_OLD_ONLY in d for d in diagnostics
+    ), diagnostics
+    # And a structured entry was recorded
+    matches = [
+        d for d in proc.group_merge_diagnostics
+        if d.get("refdes") == "R34"
+        and d.get("diagnostic") == FMEAProcessor.MERGE_DIAG_OLD_ONLY
+    ]
+    assert matches, proc.group_merge_diagnostics
+
+
+def test_union_merge_grouping_only_flags_missing_from_merged(tmp_path: Path) -> None:
+    """Phase 4 / A5: when a component is only in the grouping file, its
+    row must carry the 'missing from Merged FMEA' diagnostic."""
+    paths = _merge_fixture(
+        tmp_path,
+        old_fmea_rows=[
+            {
+                "FMEA Level": "Circuit Block",
+                "FMEA-ID": "CPU-200",
+                "Failure Mode Causes": "L100, C200",  # R34 absent
+                "Function Description": "Power rail",
+                "Schematic Page": "1",
+            },
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "CPU-200",
+                "Reference Designator": "L100, C200, R34",
+                "Function Description": "Power rail",
+                "Schematic Page": "1",
+            }
+        ],
+        bom_rows=_merge_bom_rows(),
+    )
+    proc, df = _run_gaps_merge(tmp_path, paths)
+    r34_rows = df[
+        (df["Failure Mode Causes"] == "R34")
+        & (df["_row_type"].isin(("piece_part", "validation_warning", "piece_part_no_match")))
+    ]
+    assert not r34_rows.empty, df
+    diagnostics = r34_rows["Diagnostic"].dropna().tolist()
+    assert any(
+        FMEAProcessor.MERGE_DIAG_GROUPING_ONLY in d for d in diagnostics
+    ), diagnostics
+    matches = [
+        d for d in proc.group_merge_diagnostics
+        if d.get("refdes") == "R34"
+        and d.get("diagnostic") == FMEAProcessor.MERGE_DIAG_GROUPING_ONLY
+    ]
+    assert matches, proc.group_merge_diagnostics
+
+
+def test_union_merge_group_only_in_old_fmea(tmp_path: Path) -> None:
+    """Phase 4 / A5: a function group only in the old FMEA should be
+    preserved with a group-level diagnostic."""
+    paths = _merge_fixture(
+        tmp_path,
+        old_fmea_rows=[
+            {
+                "FMEA Level": "Circuit Block",
+                "FMEA-ID": "CPU-200",
+                "Failure Mode Causes": "L100",
+                "Function Description": "Legacy group",
+                "Schematic Page": "1",
+            },
+        ],
+        grouping_rows=[
+            # Different group only — CPU-200 absent from grouping.
+            {
+                "Component Group": "OTHER",
+                "Reference Designator": "C200",
+                "Function Description": "Other",
+                "Schematic Page": "2",
+            }
+        ],
+        bom_rows=_merge_bom_rows(),
+    )
+    proc, df = _run_gaps_merge(tmp_path, paths)
+    # The old-only group CPU-200 should have a group-level diagnostic
+    group_level = [
+        d for d in proc.group_merge_diagnostics
+        if d.get("source") == "group"
+        and d.get("group") == "CPU-200"
+    ]
+    assert group_level, proc.group_merge_diagnostics
+    assert any(
+        d.get("diagnostic") == FMEAProcessor.MERGE_DIAG_GROUP_OLD_ONLY
+        for d in group_level
+    ), group_level
+    # The L100 row belongs to CPU-200 and should inherit the diagnostic
+    l100_rows = df[df["Failure Mode Causes"] == "L100"]
+    assert not l100_rows.empty, df
+
+
+def test_union_merge_group_only_in_grouping(tmp_path: Path) -> None:
+    """Phase 4 / A5: a group only in the grouping file should be
+    generated with the 'New function group' group diagnostic."""
+    paths = _merge_fixture(
+        tmp_path,
+        old_fmea_rows=[
+            {
+                "FMEA Level": "Circuit Block",
+                "FMEA-ID": "OLD-GRP",
+                "Failure Mode Causes": "L100",
+                "Function Description": "Old only",
+                "Schematic Page": "1",
+            },
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "OLD-GRP",
+                "Reference Designator": "L100",
+                "Function Description": "Old only",
+                "Schematic Page": "1",
+            },
+            {
+                "Component Group": "NEW-GRP",
+                "Reference Designator": "C200",
+                "Function Description": "Brand new",
+                "Schematic Page": "2",
+            },
+        ],
+        bom_rows=_merge_bom_rows(),
+    )
+    proc, df = _run_gaps_merge(tmp_path, paths)
+    new_group_diags = [
+        d for d in proc.group_merge_diagnostics
+        if d.get("source") == "group" and d.get("group") == "NEW-GRP"
+    ]
+    assert new_group_diags, proc.group_merge_diagnostics
+    assert any(
+        d.get("diagnostic") == FMEAProcessor.MERGE_DIAG_GROUP_NEW
+        for d in new_group_diags
+    ), new_group_diags
+
+
+def test_union_merge_inherits_local_effect_from_old_fmea(tmp_path: Path) -> None:
+    """Phase 4 / A5: Local Effect on the old FMEA's circuit-block row
+    should flow into the generated piece-part rows beneath it."""
+    paths = _merge_fixture(
+        tmp_path,
+        old_fmea_rows=[
+            {
+                "FMEA Level": "Circuit Block",
+                "FMEA-ID": "CPU-200",
+                "Failure Mode Causes": "L100, C200",
+                "Function Description": "Power rail filter",
+                "Schematic Page": "1",
+                "Local Effect": "No voltage",
+                "Next Higher Effect": "Power supply fails",
+                "End Effect": "System down",
+            },
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "CPU-200",
+                "Reference Designator": "L100, C200",
+                "Function Description": "Power rail filter",
+                "Schematic Page": "1",
+            }
+        ],
+        bom_rows=_merge_bom_rows(),
+    )
+    proc, df = _run_gaps_merge(tmp_path, paths)
+    # Every generated piece-part row for CPU-200 should carry the
+    # inherited effect values.
+    pp = df[df["_row_type"].isin(("piece_part", "validation_warning"))]
+    assert not pp.empty
+    local_effects = set(pp["Local Effect"].dropna().tolist())
+    next_effects = set(pp["Next Higher Effect"].dropna().tolist())
+    end_effects = set(pp["End Effect"].dropna().tolist())
+    assert "No voltage" in local_effects, local_effects
+    assert "Power supply fails" in next_effects, next_effects
+    assert "System down" in end_effects, end_effects
+
+
+# ----- Fix E1 / E2: grouping file hygiene warnings ---------------------------
+
+
+def test_duplicate_grouping_file_group_emits_warning(tmp_path: Path) -> None:
+    """Fix E1: two rows in the grouping file that share the same
+    component_group but disagree on description or schematic page
+    should emit a WARNING log so the user notices the data-entry
+    mismatch. Components are still unioned (first-row-wins for
+    metadata, components unioned across both)."""
+    log_lines: list[str] = []
+
+    # FMEAProcessor.log() formats the message as
+    #   "[HH:MM:SS] LEVEL: <body>"
+    # then calls log_callback with that single string.
+    def _log(message: str) -> None:
+        log_lines.append(message)
+
+    proc = FMEAProcessor(log_callback=_log)
+    group_df = pd.DataFrame(
+        [
+            {
+                "component_group": "PSU-1",
+                "description": "Primary power",
+                "schematic_page": "3",
+                "ref_des": "R1, R2",
+            },
+            {
+                # Same label, conflicting description AND schematic page.
+                "component_group": "PSU-1",
+                "description": "Backup power",
+                "schematic_page": "9",
+                "ref_des": "R3",
+            },
+        ]
+    )
+    groups = proc._parse_grouping_file_groups(group_df)
+
+    # Components are unioned across rows.
+    assert groups["PSU-1"]["components"] == {"R1", "R2", "R3"}
+    # First-row-wins for metadata.
+    assert groups["PSU-1"]["description"] == "Primary power"
+    assert groups["PSU-1"]["schematic_page"] == "3"
+    # Two WARNING log entries — one for description drift, one for page.
+    warnings = [line for line in log_lines if "WARNING" in line]
+    assert any("description differs" in w for w in warnings), warnings
+    assert any("schematic page differs" in w for w in warnings), warnings
+
+
+def test_local_effect_user_mapping_reaches_parser(tmp_path: Path) -> None:
+    """Fix R2-H2: when the user explicitly maps "Local Effect" to a
+    non-standard column name (e.g. "Component Impact"), the parser must
+    honor that pick instead of falling through to the heuristic resolver
+    (which will not find "Component Impact" in the synonym list)."""
+    proc = FMEAProcessor()
+    # Seed the flat column_overrides that the frontend would normally
+    # provide via _build_column_overrides.
+    proc.column_overrides = {
+        "Local Effect": "Component Impact",
+        "Next Higher Effect": "Subsystem Impact",
+        "End Effect": "System Impact",
+    }
+
+    fmea_df = pd.DataFrame(
+        [
+            {
+                "FMEA Level": "Circuit Block",
+                "FMEA-ID": "GRP-1",
+                "Failure Mode Causes": "R1, R2",
+                "Function Description": "Filter",
+                "Schematic Page": "1",
+                # Non-standard column names that the synonym resolver
+                # would otherwise miss.
+                "Component Impact": "Local impact text",
+                "Subsystem Impact": "Next higher impact text",
+                "System Impact": "End impact text",
+            },
+            {
+                "FMEA Level": "Piece Part",
+                "FMEA-ID": "GRP-1",
+                "Failure Mode Causes": "R1",
+                "Function Description": "",
+                "Schematic Page": "1",
+                "Component Impact": "",
+                "Subsystem Impact": "",
+                "System Impact": "",
+            },
+        ]
+    )
+    groups = proc._parse_old_fmea_groups(fmea_df)
+
+    # The parser should have read the Local/Next/End Effect values from
+    # the user-mapped columns, not the synonyms-based heuristic.
+    assert "GRP-1" in groups, groups
+    entry = groups["GRP-1"]
+    assert entry["local_effect"] == "Local impact text", entry
+    assert entry["next_higher_effect"] == "Next higher impact text", entry
+    assert entry["end_effect"] == "End impact text", entry
+
+
+def test_failure_mode_causes_mapping_reaches_grouping_parser(
+    tmp_path: Path,
+) -> None:
+    """Fix R2-L4: when the user maps "Failure Mode Causes" to a
+    non-standard column name (e.g. "MyRefs") on the grouping file /
+    existing FMEA, ``_parse_old_fmea_groups`` must honor that mapping
+    and read components from "MyRefs" instead of the heuristic detector
+    that would otherwise try common synonyms and fail."""
+    proc = FMEAProcessor()
+    proc.column_overrides = {
+        "Failure Mode Causes": "MyRefs",
+    }
+
+    fmea_df = pd.DataFrame(
+        [
+            {
+                "FMEA Level": "Circuit Block",
+                "FMEA-ID": "GRP-1",
+                # Put a deliberately-wrong-looking value in the typical
+                # refdes columns to make sure the parser ignores them.
+                "Failure Mode Causes": "SHOULD_NOT_BE_READ",
+                "MyRefs": "R1, R2, R3",
+                "Function Description": "Bias network",
+                "Schematic Page": "1",
+            },
+        ]
+    )
+    groups = proc._parse_old_fmea_groups(fmea_df)
+    assert "GRP-1" in groups
+    components = groups["GRP-1"]["components"]
+    # The parser should have read R1/R2/R3 from "MyRefs".
+    assert "R1" in components
+    assert "R2" in components
+    assert "R3" in components
+    # And not seen the typical-column sentinel.
+    assert "SHOULD_NOT_BE_READ" not in components
+
+
+def test_blank_fmea_id_circuit_block_row_is_skipped(tmp_path: Path) -> None:
+    """Fix E2: a circuit-block row with a blank FMEA-ID must be SKIPPED
+    with a WARNING log. Previously the parser synthesized ``GROUP-{pos+1}``
+    which was non-deterministic across runs and could collide with a
+    real group literally named ``GROUP-2`` etc."""
+    log_lines: list[str] = []
+
+    def _log(message: str) -> None:
+        log_lines.append(message)
+
+    proc = FMEAProcessor(log_callback=_log)
+    fmea_df = pd.DataFrame(
+        [
+            {
+                "FMEA Level": "Circuit Block",
+                "FMEA-ID": "",  # blank — should trigger skip
+                "Failure Mode Causes": "C1, C2",
+                "Function Description": "Filter",
+                "Schematic Page": "1",
+            },
+            {
+                "FMEA Level": "Piece Part",
+                "FMEA-ID": "",  # piece-parts under the skipped group
+                "Failure Mode Causes": "C1",
+                "Function Description": "",
+                "Schematic Page": "1",
+            },
+            {
+                "FMEA Level": "Circuit Block",
+                "FMEA-ID": "GRP-2",  # real label — should survive
+                "Failure Mode Causes": "R1",
+                "Function Description": "Bias",
+                "Schematic Page": "2",
+            },
+        ]
+    )
+    groups = proc._parse_old_fmea_groups(fmea_df)
+
+    # The blank-labeled circuit-block row was skipped; no GROUP-1 / GROUP-2
+    # synthetic key contaminates the output.
+    assert "" not in groups
+    assert not any(label.startswith("GROUP-") for label in groups), list(
+        groups.keys()
+    )
+    # The real GRP-2 label survives.
+    assert "GRP-2" in groups
+    # The WARNING log was emitted mentioning the blank row.
+    warnings = [line for line in log_lines if "WARNING" in line]
+    assert any("blank FMEA-ID" in w for w in warnings), warnings
+    # Fix R2-M2: a second WARNING should report the total count of
+    # piece-part rows orphaned under the skipped circuit-block so the
+    # user knows the full scope of the data loss.
+    orphan_warnings = [w for w in warnings if "orphaned" in w]
+    assert orphan_warnings, warnings
+    # The fixture has 1 piece-part row under the skipped circuit-block.
+    assert "1 piece-part row" in orphan_warnings[0], orphan_warnings
+
+
+def test_piece_parts_before_first_circuit_block_warn_separately(
+    tmp_path: Path,
+) -> None:
+    """Fix R3-L1: a piece-part row that appears BEFORE any circuit-block
+    row in the source workbook is a DIFFERENT root cause than a
+    piece-part orphaned under a skipped blank-id block. The user can
+    fix the latter by filling in the blank FMEA-ID cell, but the
+    former is a structural problem in the source file that requires
+    re-ordering rows. The two cases must produce distinct warnings so
+    the user knows what to actually fix."""
+    log_lines: list[str] = []
+
+    def _log(message: str) -> None:
+        log_lines.append(message)
+
+    proc = FMEAProcessor(log_callback=_log)
+    fmea_df = pd.DataFrame(
+        [
+            # Two piece-part rows BEFORE any circuit-block — structural
+            # issue, not a blank-id skip.
+            {
+                "FMEA Level": "Piece Part",
+                "FMEA-ID": "",
+                "Failure Mode Causes": "C1",
+                "Function Description": "",
+                "Schematic Page": "1",
+            },
+            {
+                "FMEA Level": "Piece Part",
+                "FMEA-ID": "",
+                "Failure Mode Causes": "C2",
+                "Function Description": "",
+                "Schematic Page": "1",
+            },
+            {
+                "FMEA Level": "Circuit Block",
+                "FMEA-ID": "GRP-1",
+                "Failure Mode Causes": "R1",
+                "Function Description": "Bias",
+                "Schematic Page": "2",
+            },
+        ]
+    )
+    groups = proc._parse_old_fmea_groups(fmea_df)
+
+    # The real group survives.
+    assert "GRP-1" in groups
+
+    warnings = [line for line in log_lines if "WARNING" in line]
+    # The "before any circuit-block" warning should fire with count=2.
+    structural_warnings = [
+        w for w in warnings if "before any circuit-block row" in w
+    ]
+    assert structural_warnings, warnings
+    assert "2 piece-part row" in structural_warnings[0], structural_warnings
+    # The "orphaned under skipped" warning should NOT fire — no blank
+    # circuit-block row was skipped in this fixture.
+    assert not any(
+        "orphaned under skipped" in w for w in warnings
+    ), warnings
+
+
+# ----- Fix A2: mappings -> column_overrides plumbing -------------------------
+
+
+def test_validate_run_mappings_become_column_overrides(tmp_path: Path) -> None:
+    """Fix A2: body['mappings'] must be converted into the processor's
+    column_overrides dict so the user's explicit column picks are honored
+    by the backend instead of silently discarded."""
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "C200",
+                "Part Number": "CAP-1",
+                "Description": "Cap",
+                "BAE HDA Commodity I": "Capacitor",
+                "BAE HDA Commodity II": "Ceramic",
+                "Part Usage": "1",
+            }
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "GRP-1",
+                "Reference Designator": "C200",
+                "Function Description": "Filter",
+                "Schematic Page": "1",
+            }
+        ],
+        fm_rows=[
+            {
+                "FMD-2016 Commodity Type 1": "Capacitor",
+                "FMD-2016 Commodity Type 2": "Ceramic",
+                "Failure Mode": "Short",
+                "Failure Mode Ratio": 1.0,
+            }
+        ],
+    )
+
+    captured: dict = {}
+
+    def _capture_processor(proc: FMEAProcessor) -> None:
+        # Attach a post-run hook. The runtime calls processor_ready_callback
+        # BEFORE process() runs, but we want the final column_overrides
+        # that were actually stashed on the processor by the run. We can
+        # read it immediately after execute_run_request returns by
+        # referencing the same processor instance.
+        captured["proc"] = proc
+
+    body = {
+        "workflowId": "piece_part_generate",
+        "outputStrategyId": "new_workbook_standard",
+        "options": {"failureModesStandard": "FMD-2016"},
+        "outputDirectory": str(tmp_path),
+        "inputs": [
+            _state("grouping", paths["grouping"]),
+            _state("bom", paths["bom"]),
+            _state("failureModes", paths["fm"]),
+        ],
+        "mappings": [
+            {
+                "canonical": "Failure Mode",
+                "mappedTo": "fm_col",
+                "status": "mapped",
+            },
+            {
+                "canonical": "Part Usage",
+                "mappedTo": "Part Usage",
+                "status": "mapped",
+            },
+            # Empty mappedTo should be skipped
+            {"canonical": "Local Effect", "mappedTo": "", "status": "unmapped"},
+            # DO_NOT_MAP sentinel should be skipped
+            {
+                "canonical": "End Effect",
+                "mappedTo": "__do_not_map__",
+                "status": "manual",
+            },
+        ],
+    }
+    execute_run_request(body, processor_ready_callback=_capture_processor)
+    proc = captured["proc"]
+    assert proc is not None
+    # The processor's column_overrides should contain the two mapped rows
+    # as flat entries and neither the empty nor the DO_NOT_MAP sentinel row.
+    # Fix D: the dict now ALSO carries nested per-file shapes derived
+    # from FRONTEND_TO_BACKEND_MAPPING, so map_columns can use them.
+    assert proc.column_overrides["Failure Mode"] == "fm_col", proc.column_overrides
+    assert proc.column_overrides["Part Usage"] == "Part Usage", proc.column_overrides
+    assert "Local Effect" not in proc.column_overrides, proc.column_overrides
+    assert "End Effect" not in proc.column_overrides, proc.column_overrides
+    # Nested shapes: Failure Mode belongs to FAILURE_MODES file; Part
+    # Usage belongs to BOM file.
+    assert proc.column_overrides.get("FAILURE_MODES") == {
+        "failure_mode": "fm_col",
+    }, proc.column_overrides
+    assert proc.column_overrides.get("BOM") == {
+        "part_usage": "Part Usage",
+    }, proc.column_overrides
+
+
+# ----- Fix D: flat-to-nested column_overrides translation --------------------
+
+
+def test_flat_mappings_translated_to_nested_col_overrides(tmp_path: Path) -> None:
+    """Fix D: ``_build_column_overrides`` should produce BOTH flat and
+    nested shapes so ``map_columns`` can override its heuristic resolver
+    with the user's explicit picks."""
+    from fmea.runtime import _build_column_overrides
+
+    body_mappings = [
+        {"canonical": "Failure Mode", "mappedTo": "FailureMode", "status": "mapped"},
+        {
+            "canonical": "Component Part Description",
+            "mappedTo": "Desc",
+            "status": "mapped",
+        },
+        {"canonical": "Part Usage", "mappedTo": "Qty", "status": "mapped"},
+        {"canonical": "FMEA-ID", "mappedTo": "GroupID", "status": "mapped"},
+        {
+            "canonical": "BAE HDA Commodity Level 1",
+            "mappedTo": "HDA1",
+            "status": "mapped",
+        },
+        # FMD standard-specific label — the frontend sends the active
+        # label verbatim; both FMD-91 and FMD-2016 point at fmd_type1.
+        {
+            "canonical": "FMD-91 Commodity Type 1",
+            "mappedTo": "FmdT1",
+            "status": "mapped",
+        },
+        {"canonical": "Failure Mode Ratio", "mappedTo": "Ratio", "status": "mapped"},
+        {"canonical": "Failure Mode Causes", "mappedTo": "Refs", "status": "mapped"},
+        # Unmapped / sentinel rows should be ignored entirely.
+        {"canonical": "Local Effect", "mappedTo": "", "status": "unmapped"},
+        {"canonical": "End Effect", "mappedTo": "__do_not_map__", "status": "manual"},
+    ]
+    overrides = _build_column_overrides(body_mappings)
+
+    # Flat entries — all mapped rows present under their frontend canonical.
+    assert overrides["Failure Mode"] == "FailureMode"
+    assert overrides["Component Part Description"] == "Desc"
+    assert overrides["Part Usage"] == "Qty"
+    assert overrides["FMEA-ID"] == "GroupID"
+    assert overrides["BAE HDA Commodity Level 1"] == "HDA1"
+    assert overrides["FMD-91 Commodity Type 1"] == "FmdT1"
+    assert overrides["Failure Mode Ratio"] == "Ratio"
+    assert overrides["Failure Mode Causes"] == "Refs"
+    # Sentinel / empty rows are skipped entirely.
+    assert "Local Effect" not in overrides
+    assert "End Effect" not in overrides
+
+    # Nested per-file entries — derived from FRONTEND_TO_BACKEND_MAPPING.
+    assert overrides["FAILURE_MODES"] == {
+        "failure_mode": "FailureMode",
+        "ratio": "Ratio",
+    }
+    assert overrides["BOM"] == {
+        "description": "Desc",
+        "part_usage": "Qty",
+    }
+    assert overrides["HDA"] == {
+        "commodity_level1": "HDA1",
+        "fmd_type1": "FmdT1",
+    }
+    assert overrides["COMPONENT_GROUPING"] == {
+        "component_group": "GroupID",
+        "ref_des": "Refs",
+    }
+
+
+def test_reserved_file_type_key_collision_raises(tmp_path: Path) -> None:
+    """Fix R2-M3: ``_build_column_overrides`` carries both flat canonical
+    keys and nested file-type buckets (``BOM``, ``HDA``, ``FAILURE_MODES``,
+    ``COMPONENT_GROUPING``) at the same top level. If a future frontend
+    canonical literally matches one of those reserved names, the flat
+    write would silently clobber the nested sub-dict. Guard against that
+    by raising ValidationError at build time."""
+    from fmea.runtime import _build_column_overrides
+    from common.exceptions import ValidationError
+    import pytest as _pytest
+
+    body_mappings = [
+        # A hypothetical future canonical that collides with the BOM
+        # file-type bucket name.
+        {"canonical": "BOM", "mappedTo": "SomeCol", "status": "mapped"},
+    ]
+
+    with _pytest.raises(ValidationError):
+        _build_column_overrides(body_mappings)
+
+
+def test_unknown_canonical_keeps_flat_only(tmp_path: Path) -> None:
+    """Fix D: canonicals that are NOT in FRONTEND_TO_BACKEND_MAPPING
+    must still populate the flat dict (forward-compat with future
+    frontend additions) but must NOT contaminate any nested sub-dict."""
+    from fmea.runtime import _build_column_overrides
+
+    body_mappings = [
+        {"canonical": "Future Column", "mappedTo": "xcol", "status": "mapped"},
+        {"canonical": "Failure Mode", "mappedTo": "fm", "status": "mapped"},
+    ]
+    overrides = _build_column_overrides(body_mappings)
+
+    # Flat dict carries both.
+    assert overrides["Future Column"] == "xcol"
+    assert overrides["Failure Mode"] == "fm"
+    # The known canonical got nested; the unknown one did not.
+    assert overrides["FAILURE_MODES"] == {"failure_mode": "fm"}
+    for file_type in ("BOM", "HDA", "COMPONENT_GROUPING"):
+        if file_type in overrides:
+            # "Future Column" must not appear under any nested bucket.
+            bucket = overrides[file_type]
+            assert isinstance(bucket, dict)
+            assert "xcol" not in bucket.values(), bucket
+
+
+def test_nested_col_overrides_reach_map_columns(tmp_path: Path) -> None:
+    """Fix D: when the user explicitly maps Part Usage to a non-standard
+    column header (``Qty``), the nested ``BOM`` sub-dict should reach
+    ``FMEAProcessor.map_columns()`` and rename that column to
+    ``part_usage`` so the generator honors the user's pick instead of
+    guessing via synonyms. Integration-test: run the processor end to
+    end and verify usage ends up on the output row."""
+    # Fabricate a BOM with a custom Part Usage header name that would
+    # NOT match the synonym list — the only way the processor can see
+    # it is via the explicit override.
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "C200",
+                "Part Number": "CAP-1",
+                "Description": "Cap",
+                "BAE HDA Commodity I": "Capacitor",
+                "BAE HDA Commodity II": "Ceramic",
+                # Intentionally obscure header: 'Assembly Count' is NOT in
+                # the ``part_usage`` synonym list, so the heuristic resolver
+                # will return None and the processor will default to 1.
+                # When the override is applied, the processor will rename
+                # this column to ``part_usage`` and the custom value wins.
+                "Assembly Count": "1/2",
+            },
+            {
+                "Reference Designator": "C200",
+                "Part Number": "CAP-1",
+                "Description": "Cap",
+                "BAE HDA Commodity I": "Capacitor",
+                "BAE HDA Commodity II": "Ceramic",
+                "Assembly Count": "1/2",
+            },
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "GRP-1",
+                "Reference Designator": "C200",
+                "Function Description": "Filter",
+                "Schematic Page": "1",
+            }
+        ],
+        fm_rows=[
+            {
+                "FMD-2016 Commodity Type 1": "Capacitor",
+                "FMD-2016 Commodity Type 2": "Ceramic",
+                "Failure Mode": "Short",
+                "Failure Mode Ratio": 1.0,
+            }
+        ],
+    )
+
+    captured: dict = {}
+
+    def _capture_processor(proc: FMEAProcessor) -> None:
+        captured["proc"] = proc
+
+    body = {
+        "workflowId": "piece_part_generate",
+        "outputStrategyId": "new_workbook_standard",
+        "options": {"failureModesStandard": "FMD-2016"},
+        "outputDirectory": str(tmp_path),
+        "inputs": [
+            _state("grouping", paths["grouping"]),
+            _state("bom", paths["bom"]),
+            _state("failureModes", paths["fm"]),
+        ],
+        "mappings": [
+            # Override: the BOM's Part Usage column is named "Assembly Count".
+            {
+                "canonical": "Part Usage",
+                "mappedTo": "Assembly Count",
+                "status": "manual",
+            },
+        ],
+    }
+    execute_run_request(body, processor_ready_callback=_capture_processor)
+    proc = captured["proc"]
+    assert proc is not None
+    # The processor should have received a nested BOM override.
+    assert proc.column_overrides.get("BOM") == {
+        "part_usage": "Assembly Count",
+    }, proc.column_overrides
+    # And the BOM's per-RefDes usage_base_counts should reflect the two
+    # C200 rows — which only happens if the rename succeeded and the
+    # index build was able to read the per-row usage value.
+    assert "C200" in proc.usage_base_counts
+    assert proc.usage_base_counts["C200"] == 2, proc.usage_base_counts
+
+
+# ----- Fix A4: missing-from-BOM union component emits placeholder row --------
+
+
+def test_fill_gaps_requires_failure_mode_causes_mapping(tmp_path: Path) -> None:
+    """Fix C2: fill_gaps without a Failure Mode Causes mapping should
+    be rejected with reason_code='missing_failure_mode_causes_mapping'.
+    The backend parses that column as a comma-separated RefDes list; an
+    unmapped value produces empty component sets and a blank FMEA."""
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "R100",
+                "Part Number": "RES-1",
+                "Description": "Resistor",
+                "BAE HDA Commodity I": "Resistor",
+                "BAE HDA Commodity II": "Chip",
+                "Part Usage": "1",
+            }
+        ],
+    )
+    existing_fmea = tmp_path / "existing.xlsx"
+    pd.DataFrame([{"FMEA-ID": "X-001"}]).to_excel(existing_fmea, index=False)
+
+    body = {
+        "workflowId": "fill_gaps",
+        "outputStrategyId": "new_workbook_standard",
+        "options": {"failureModesStandard": "FMD-2016"},
+        "inputs": [
+            _state("existingFmea", existing_fmea),
+            _state("bom", paths["bom"]),
+            _state("failureModes", paths["fm"]),
+        ],
+        "mappings": [],
+    }
+    result = validate_run_request(body)
+    assert result["ok"] is False, result
+    assert result["reason_code"] == "missing_failure_mode_causes_mapping", result
+
+
+def test_functional_to_piecepart_requires_failure_mode_causes_mapping(
+    tmp_path: Path,
+) -> None:
+    """Fix C2: functional_to_piecepart has the same requirement as
+    fill_gaps — Failure Mode Causes must be explicitly mapped."""
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "R100",
+                "Part Number": "RES-1",
+                "Description": "Resistor",
+                "BAE HDA Commodity I": "Resistor",
+                "BAE HDA Commodity II": "Chip",
+                "Part Usage": "1",
+            }
+        ],
+    )
+    functional = tmp_path / "functional.xlsx"
+    pd.DataFrame([{"FMEA-ID": "F-001"}]).to_excel(functional, index=False)
+
+    body = {
+        "workflowId": "functional_to_piecepart",
+        "outputStrategyId": "new_workbook_standard",
+        "options": {"failureModesStandard": "FMD-2016"},
+        "inputs": [
+            _state("functionalFmea", functional),
+            _state("bom", paths["bom"]),
+            _state("failureModes", paths["fm"]),
+        ],
+        "mappings": [
+            # Explicitly set to DO_NOT_MAP → should be treated as missing.
+            {
+                "canonical": "Failure Mode Causes",
+                "mappedTo": "__do_not_map__",
+                "status": "manual",
+            },
+        ],
+    }
+    result = validate_run_request(body)
+    assert result["ok"] is False, result
+    assert result["reason_code"] == "missing_failure_mode_causes_mapping", result
+
+
+def test_functional_to_piecepart_honors_failure_mode_causes_mapping(
+    tmp_path: Path,
+) -> None:
+    """Fix R3-M1: when the functional FMEA uses a non-standard RefDes
+    column header (e.g. ``FuncRefs``) and the user explicitly maps
+    ``Failure Mode Causes`` → ``FuncRefs`` in the frontend, the
+    processor must honor that mapping instead of falling through to
+    ``detect_refdes_column_for_fmea`` (which doesn't know about the
+    custom header and raises ``ColumnMappingError``). Mirrors the
+    R2-H2 override pattern that was already applied to the sibling
+    ``_parse_old_fmea_groups`` path."""
+    # Functional FMEA with a NON-STANDARD refdes column — no synonym
+    # of "Reference Designator" / "RefDes" / "Failure Mode Causes" is
+    # present, so the heuristic detector would return None. The
+    # "FMEA Level" column marks the row as a circuit block so
+    # classify_fmea_rows picks it up for piece-part generation.
+    func_rows = [
+        {
+            "FMEA Level": "Circuit Block",
+            "MyGroupID": "CPU-100",
+            "MyDescription": "Clock generator",
+            "MyPage": "3",
+            "FuncRefs": "R100, C100",
+        },
+    ]
+    func_path = tmp_path / "functional.xlsx"
+    pd.DataFrame(func_rows).to_excel(func_path, index=False)
+
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "R100",
+                "Part Number": "RES-1",
+                "Description": "Resistor",
+                "BAE HDA Commodity I": "Resistor",
+                "BAE HDA Commodity II": "Chip",
+                "Part Usage": "1",
+            },
+            {
+                "Reference Designator": "C100",
+                "Part Number": "CAP-1",
+                "Description": "Cap",
+                "BAE HDA Commodity I": "Capacitor",
+                "BAE HDA Commodity II": "Ceramic",
+                "Part Usage": "1",
+            },
+        ],
+        fm_rows=[
+            {
+                "FMD-2016 Commodity Type 1": "Resistor",
+                "FMD-2016 Commodity Type 2": "Chip",
+                "Failure Mode": "Open",
+                "Failure Mode Ratio": 1.0,
+            },
+            {
+                "FMD-2016 Commodity Type 1": "Capacitor",
+                "FMD-2016 Commodity Type 2": "Ceramic",
+                "Failure Mode": "Short",
+                "Failure Mode Ratio": 1.0,
+            },
+        ],
+    )
+
+    # Call process_functional_to_piecepart directly with the flat
+    # column_overrides shape the runtime constructs from frontend
+    # mappings. The key observation: without R3-M1, this run raises
+    # ColumnMappingError on the refdes column because
+    # detect_refdes_column_for_fmea can't find "FuncRefs" via synonyms.
+    proc = FMEAProcessor()
+    df = proc.process_functional_to_piecepart(
+        {
+            "func": str(func_path),
+            "bom": str(paths["bom"]),
+            "fm": str(paths["fm"]),
+            "hda": None,
+            "group": None,
+            "verbose": False,
+            "column_overrides": {
+                "Failure Mode Causes": "FuncRefs",
+                "FMEA-ID": "MyGroupID",
+                "Function Description": "MyDescription",
+                "Schematic Page": "MyPage",
+            },
+            "failure_modes_standard": "FMD-2016",
+            "func_sheet": "Sheet1",
+            "bom_sheet": "Sheet1",
+            "hda_sheet": None,
+            "fm_sheet": "Sheet1",
+            "group_sheet": None,
+        }
+    )
+
+    # The run succeeded and emitted piece-part rows for both R100 and C100.
+    assert not df.empty
+    # Piece-part rows should reference R100 and C100 via the
+    # 'Failure Mode Causes' output column (this is the canonical output
+    # header regardless of the input header name).
+    pp_rows = df[df["_row_type"].isin(("piece_part", "validation_warning"))]
+    refdes_seen = set(pp_rows["Failure Mode Causes"].dropna().tolist())
+    assert {"R100", "C100"} <= refdes_seen, refdes_seen
+
+
+def test_validate_run_fmc_mapping_is_whitespace_insensitive(
+    tmp_path: Path,
+) -> None:
+    """Fix R2-H3: the validator must normalize the canonical key the
+    same way ``_build_column_overrides`` does (``.strip()``), otherwise
+    a padded canonical (``' Failure Mode Causes '``) bypasses the
+    validator but still lands in the overrides dict under a different
+    key, producing a silent mismatch downstream."""
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "R100",
+                "Part Number": "RES-1",
+                "Description": "Resistor",
+                "BAE HDA Commodity I": "Resistor",
+                "BAE HDA Commodity II": "Chip",
+                "Part Usage": "1",
+            }
+        ],
+    )
+    existing_fmea = tmp_path / "existing.xlsx"
+    pd.DataFrame([{"FMEA-ID": "X-001"}]).to_excel(existing_fmea, index=False)
+
+    body = {
+        "workflowId": "fill_gaps",
+        "outputStrategyId": "new_workbook_standard",
+        "options": {"failureModesStandard": "FMD-2016"},
+        "inputs": [
+            _state("existingFmea", existing_fmea),
+            _state("bom", paths["bom"]),
+            _state("failureModes", paths["fm"]),
+        ],
+        "mappings": [
+            # Padded canonical — should still be treated as a valid
+            # "Failure Mode Causes" mapping after the stripping fix.
+            {
+                "canonical": " Failure Mode Causes ",
+                "mappedTo": "RefDes",
+                "status": "mapped",
+            },
+        ],
+    }
+    result = validate_run_request(body)
+    # The FMC mapping gate should PASS (reason code must not match the
+    # missing-FMC one). Any remaining validation failures are for other
+    # reasons (missing files, etc.) which this test doesn't care about.
+    assert result["reason_code"] != "missing_failure_mode_causes_mapping", result
+
+
+def test_piece_part_generate_does_not_require_failure_mode_causes_mapping(
+    tmp_path: Path,
+) -> None:
+    """Fix C2: non-merge modes (piece_part_generate, bom_only) must NOT
+    require the Failure Mode Causes mapping. They derive components from
+    the grouping file or BOM directly, so the column is informational."""
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "R100",
+                "Part Number": "RES-1",
+                "Description": "Resistor",
+                "BAE HDA Commodity I": "Resistor",
+                "BAE HDA Commodity II": "Chip",
+                "Part Usage": "1",
+            }
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "G1",
+                "Reference Designator": "R100",
+                "Function Description": "Pull-up",
+                "Schematic Page": "1",
+            }
+        ],
+    )
+    body = {
+        "workflowId": "piece_part_generate",
+        "outputStrategyId": "new_workbook_standard",
+        "options": {"failureModesStandard": "FMD-2016"},
+        "inputs": [
+            _state("grouping", paths["grouping"]),
+            _state("bom", paths["bom"]),
+            _state("failureModes", paths["fm"]),
+        ],
+        "mappings": [],  # deliberately empty
+    }
+    result = validate_run_request(body)
+    # Should NOT reject for missing Failure Mode Causes.
+    assert result["reason_code"] != "missing_failure_mode_causes_mapping", result
+    assert result["ok"] is True, result
+
+
+def test_functional_to_piecepart_with_grouping_emits_union_merge_diagnostics(
+    tmp_path: Path,
+) -> None:
+    """Fix C1: functional_to_piecepart now accepts an optional grouping
+    file. When supplied, components present in the grouping file but NOT
+    referenced by the functional FMEA should be emitted via
+    process_union_merge with the MERGE_DIAG_GROUPING_ONLY diagnostic
+    attached. Components that appear in both are preserved from the
+    functional expansion (no duplicate rows)."""
+    # Functional FMEA references L100 and C200 under group CPU-200.
+    # Grouping file lists CPU-200 = [L100, C200, R34] — R34 is the
+    # extra row that should show up with the diagnostic.
+    inputs_dir = tmp_path
+    inputs_dir.mkdir(parents=True, exist_ok=True)
+
+    func_rows = [
+        {
+            "FMEA Level": "Circuit Block",
+            "FMEA-ID": "CPU-200",
+            "Failure Mode Causes": "L100, C200",
+            "Function Description": "Power rail",
+            "Schematic Page": "1",
+        },
+    ]
+    grouping_rows = [
+        {
+            "Component Group": "CPU-200",
+            "Reference Designator": "L100, C200, R34",
+            "Function Description": "Power rail",
+            "Schematic Page": "1",
+        }
+    ]
+    bom_rows = _merge_bom_rows()
+
+    fm_path = inputs_dir / "failure_modes.xlsx"
+    pd.DataFrame(
+        [
+            {
+                "FMD-2016 Commodity Type 1": "Resistor",
+                "FMD-2016 Commodity Type 2": "Chip",
+                "Failure Mode": "Open",
+                "Failure Mode Ratio": 1.0,
+            },
+            {
+                "FMD-2016 Commodity Type 1": "Capacitor",
+                "FMD-2016 Commodity Type 2": "Ceramic",
+                "Failure Mode": "Short",
+                "Failure Mode Ratio": 1.0,
+            },
+            {
+                "FMD-2016 Commodity Type 1": "Inductor",
+                "FMD-2016 Commodity Type 2": "SMD",
+                "Failure Mode": "Open",
+                "Failure Mode Ratio": 1.0,
+            },
+        ]
+    ).to_excel(fm_path, index=False)
+
+    func_path = inputs_dir / "functional.xlsx"
+    pd.DataFrame(func_rows).to_excel(func_path, index=False)
+
+    bom_path = inputs_dir / "bom.xlsx"
+    pd.DataFrame(bom_rows).to_excel(bom_path, index=False)
+
+    group_path = inputs_dir / "grouping.xlsx"
+    pd.DataFrame(grouping_rows).to_excel(group_path, index=False)
+
+    proc = FMEAProcessor()
+    df = proc.process_functional_to_piecepart(
+        {
+            "func": str(func_path),
+            "bom": str(bom_path),
+            "fm": str(fm_path),
+            "hda": None,
+            "group": str(group_path),
+            "verbose": False,
+            "column_overrides": {},
+            "failure_modes_standard": "FMD-2016",
+            "func_sheet": "Sheet1",
+            "bom_sheet": "Sheet1",
+            "hda_sheet": None,
+            "fm_sheet": "Sheet1",
+            "group_sheet": "Sheet1",
+        }
+    )
+
+    # R34 should appear in the output with the grouping-only diagnostic.
+    r34_rows = df[df["Failure Mode Causes"] == "R34"]
+    assert not r34_rows.empty, (
+        f"Expected R34 from the grouping file to show up in the "
+        f"functional output. Columns: {list(df.columns)}"
+    )
+    diagnostics = " ".join(
+        str(d) for d in r34_rows.get("Diagnostic", pd.Series(dtype=str)).dropna().tolist()
+    )
+    assert FMEAProcessor.MERGE_DIAG_GROUPING_ONLY in diagnostics, diagnostics
+
+
+def test_invalid_output_directory_logs_warning_and_falls_back(tmp_path: Path) -> None:
+    """Fix B3: when outputDirectory points to a nonexistent path, the
+    runtime must log a WARNING about the fallback and then drop the
+    output into the input-file heuristic location. Previously the
+    fallback was silent, leaving users confused about where their
+    workbook actually landed."""
+    inputs_dir = tmp_path / "inputs"
+    inputs_dir.mkdir(parents=True, exist_ok=True)
+    paths = _write_fixture(
+        inputs_dir,
+        bom_rows=[
+            {
+                "Reference Designator": "R100",
+                "Part Number": "RES-1",
+                "Description": "Resistor",
+                "BAE HDA Commodity I": "Resistor",
+                "BAE HDA Commodity II": "Chip",
+                "Part Usage": "1",
+            }
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "RES-001",
+                "Reference Designator": "R100",
+                "Function Description": "Pull-up",
+                "Schematic Page": "3",
+            }
+        ],
+        fm_rows=[
+            {
+                "FMD-2016 Commodity Type 1": "Resistor",
+                "FMD-2016 Commodity Type 2": "Chip",
+                "Failure Mode": "Open",
+                "Failure Mode Ratio": 1.0,
+            }
+        ],
+    )
+    bogus_dir = tmp_path / "does_not_exist" / "nested"
+    # Intentionally do NOT create bogus_dir.
+    body = {
+        "workflowId": "piece_part_generate",
+        "outputStrategyId": "new_workbook_standard",
+        "options": {"failureModesStandard": "FMD-2016"},
+        "outputDirectory": str(bogus_dir),
+        "inputs": [
+            _state("grouping", paths["grouping"]),
+            _state("bom", paths["bom"]),
+            _state("failureModes", paths["fm"]),
+        ],
+        "mappings": [],
+    }
+
+    captured_logs: list[str] = []
+
+    def _log_cb(msg: str) -> None:
+        captured_logs.append(msg)
+
+    result = execute_run_request(body, log_callback=_log_cb)
+    assert result["status"] == "success", result
+    out_path = Path(result["output_file"])
+    # Output should have landed in the fallback directory (input-file
+    # heuristic → BOM's parent == inputs_dir), NOT under bogus_dir.
+    assert out_path.parent.resolve() == inputs_dir.resolve(), (
+        f"Expected fallback to {inputs_dir}, got {out_path.parent}"
+    )
+    # And we must have surfaced a WARNING about the fallback.
+    warnings = [m for m in captured_logs if "WARNING" in m and "outputDirectory" in m]
+    assert warnings, captured_logs
+
+
+def test_union_merge_missing_from_bom_emits_placeholder_with_diagnostic(
+    tmp_path: Path,
+) -> None:
+    """Fix A4: when a union-set component is missing from the BOM (and its
+    base variant is also missing), process_union_merge must emit a
+    synthetic placeholder row so the merge diagnostic still has something
+    to attach to. Without this, the component vanishes from the output
+    entirely (no piece-part row, no diagnostic visible to the user)."""
+    paths = _merge_fixture(
+        tmp_path,
+        old_fmea_rows=[
+            {
+                "FMEA Level": "Circuit Block",
+                "FMEA-ID": "CPU-200",
+                "Failure Mode Causes": "L100, C200",
+                "Function Description": "Power rail",
+                "Schematic Page": "1",
+            },
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "CPU-200",
+                # Z999 is in the grouping file but NOT in the BOM.
+                "Reference Designator": "L100, C200, Z999",
+                "Function Description": "Power rail",
+                "Schematic Page": "1",
+            }
+        ],
+        bom_rows=_merge_bom_rows(),  # no Z999
+    )
+    proc, df = _run_gaps_merge(tmp_path, paths)
+    # The placeholder row for Z999 must exist.
+    z999_rows = df[df["Failure Mode Causes"] == "Z999"]
+    assert not z999_rows.empty, (
+        f"Expected a placeholder row for Z999 (missing from BOM). "
+        f"Columns available: {list(df.columns)}"
+    )
+    # And it must carry the grouping-only merge diagnostic so the user
+    # sees BOTH "missing from BOM" (the placeholder message) and the
+    # "present in Grouping File but missing from Merged FMEA" diagnostic.
+    diagnostics = " ".join(
+        str(d) for d in z999_rows["Diagnostic"].dropna().tolist()
+    )
+    assert "missing from BOM" in diagnostics, diagnostics
+    assert FMEAProcessor.MERGE_DIAG_GROUPING_ONLY in diagnostics, diagnostics

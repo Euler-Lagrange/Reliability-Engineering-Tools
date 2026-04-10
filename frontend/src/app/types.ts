@@ -26,7 +26,18 @@ export type OutputStrategyId =
   | "new_workbook_standard"
   | "existing_workbook_best_effort"
   | "existing_workbook_preserve_formatting";
-export type MappingStatus = "mapped" | "manual" | "attention";
+export type MappingStatus = "mapped" | "manual" | "attention" | "derived" | "not_mapped";
+export type MappingOrigin = "mapped" | "derived" | "merge_only";
+
+/**
+ * Sentinel value the mapping UI sends when the user explicitly chooses
+ * "— Do Not Map —" for a column. The backend receives this as-is and
+ * decides whether to hard-error (for `required: true` rows) or derive
+ * the value from another source. Do NOT compare raw header strings to
+ * this value — real workbook headers never start with double underscores.
+ */
+export const DO_NOT_MAP_VALUE = "__do_not_map__";
+export const DO_NOT_MAP_LABEL = "— Do Not Map —";
 export type ValidationSeverity = "info" | "warning" | "error";
 export type RunEventStatus = "completed" | "active" | "pending";
 export type RunMode = "idle" | "starting" | "running" | "cancelling" | "success" | "failure" | "cancelled" | "disconnected";
@@ -95,6 +106,26 @@ export interface ColumnMappingRow {
   status: MappingStatus;
   recommendation: string;
   options: string[];
+  /**
+   * Stylized long-form "About this column" body text. When present, the
+   * MappingTable renders an `(i)` info button next to the canonical label
+   * that expands an inline accent-bordered help panel. When undefined, the
+   * info button is not rendered (backward-compatible with tools that
+   * haven't authored help text yet).
+   */
+  help?: string;
+  /**
+   * Drives status chip colour and visibility logic downstream. `derived`
+   * columns (like FMEA Level) render as read-only informational rows in
+   * the mapping table. `merge_only` columns are hidden in non-merge modes.
+   */
+  origin?: MappingOrigin;
+  /**
+   * If true, the row is a critical column: selecting "— Do Not Map —"
+   * should cause the backend to raise a validation error rather than
+   * silently derive a value.
+   */
+  required?: boolean;
 }
 
 export interface ValidationMessage {

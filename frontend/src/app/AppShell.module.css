@@ -1,7 +1,11 @@
 .shell {
   display: grid;
   grid-template-columns: 144px minmax(0, 1fr); /* off-grid 144px: rail width tuned to fit longest tool label "Failure Rate Integration" wrapped to 2 lines */
-  min-height: 100vh;
+  /* Phase B1: separate scroll regions. The shell itself never scrolls;
+     the rail and the main column each own their own overflow so the tool
+     buttons + theme pickers stay pinned while the main content scrolls. */
+  height: 100vh;
+  overflow: hidden;
   background: var(--bg);
 }
 
@@ -14,6 +18,12 @@
   padding: var(--space-5) var(--space-4);
   border-right: 1px solid var(--line);
   background: var(--surface-muted);
+  /* Phase B1: independent vertical scrolling. The middle row (tool list)
+     is the 1fr track — with grid-template-rows: auto 1fr auto, the brand
+     stays pinned at the top and the theme footer stays pinned at the
+     bottom while only the tool list scrolls when it overflows. */
+  height: 100vh;
+  overflow-y: auto;
 }
 
 .brand {
@@ -100,6 +110,12 @@
 .themeGroup {
   display: grid;
   gap: var(--space-2);
+  /* Phase 4 Task 3: visual separator between tool list and theme picker.
+     The top border divides the rail into "navigation" (tools) and
+     "identity" (theme) regions. */
+  border-top: 1px solid var(--line);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
 }
 
 .themeLabel {
@@ -152,6 +168,13 @@
   display: grid;
   grid-template-rows: auto 1fr auto;
   min-width: 0;
+  /* Phase B1: the main column fills the viewport exactly once. The
+     grid's middle row (.content) is the overflow area so the topbar and
+     the GlobalLogPanel stay pinned while tool body content scrolls
+     independently of the rail. overflow is set on .content, not here —
+     .main stays a rigid 100vh container. */
+  height: 100vh;
+  overflow: hidden;
 }
 
 .topbar {
@@ -199,6 +222,14 @@
   font-size: var(--text-2xl);
   line-height: 1.05;
   letter-spacing: -0.03em;
+  /* Phase 4 Task 2: topbar title truncation. The title may grow to long
+     tool labels on compact windows; clamp() keeps it within a sane range
+     and ellipsises the overflow. The full label is exposed via the
+     native `title` attribute on the <h1>. */
+  max-width: clamp(200px, 40vw, 640px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .subtitle {
@@ -219,6 +250,13 @@
   /* Asymmetric padding: top is less than bottom because the topbar
      directly above already established vertical rhythm. */
   min-width: 0;
+  /* Phase B1: .content is the scroll region inside the main column.
+     min-height: 0 is required to let a grid 1fr track actually shrink
+     below its intrinsic content size — without it the row bloats and
+     pushes the pinned log panel off-screen. overflow-y here makes the
+     middle of the main column the only thing that scrolls. */
+  min-height: 0;
+  overflow-y: auto;
   padding: var(--space-4) var(--space-6) var(--space-6);
 }
 
@@ -245,12 +283,36 @@
 @media (max-width: 900px) {
   .shell {
     grid-template-columns: 1fr;
+    /* Phase B1: restore document-scroll model on narrow layouts where the
+       rail flips to a horizontal strip. A single 100vh shell with
+       per-axis overflow would trap the horizontal rail under the topbar
+       and break touch scrolling. */
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
   }
 
   .rail {
     grid-template-columns: auto 1fr auto;
     grid-template-rows: none;
     align-items: center;
+    /* Phase B1: the horizontal rail must not carry vertical scroll. */
+    height: auto;
+    overflow-y: visible;
+  }
+
+  .main {
+    /* Phase B1: restore natural height for the narrow layout so the
+       whole shell scrolls as one document. */
+    height: auto;
+    overflow: visible;
+  }
+
+  .content {
+    /* Phase B1: on narrow layouts there is only one scroll region (the
+       document), so .content must not be its own scroller either. */
+    min-height: auto;
+    overflow-y: visible;
   }
 
   .toolList {

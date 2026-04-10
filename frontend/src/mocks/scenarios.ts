@@ -102,64 +102,13 @@ const allPrototypeInputs = [
   baseInputs.targetWorkbook,
 ];
 
-const baseMappings: ColumnMappingRow[] = [
-  {
-    canonical: "FMEA ID",
-    mappedTo: "Identification Number",
-    status: "mapped",
-    recommendation: "Matched from profile",
-    options: ["Identification Number", "FMEA ID", "Item ID"],
-  },
-  {
-    canonical: "Failure Mode",
-    mappedTo: "Failure Mode",
-    status: "mapped",
-    recommendation: "Exact header match",
-    options: ["Failure Mode", "Mode Description", "Cause"],
-  },
-  {
-    canonical: "Failure Mode Ratio",
-    mappedTo: "Failure Mode Ratio",
-    status: "mapped",
-    recommendation: "Strict synonym matched",
-    options: ["Failure Mode Ratio", "FMR", "Mode Ratio"],
-  },
-  {
-    canonical: "Part Usage",
-    mappedTo: "Part Usage",
-    status: "mapped",
-    recommendation: "Typed numeric field",
-    options: ["Part Usage", "Usage", "Quantity Per Assembly"],
-  },
-  {
-    canonical: "Local Effect",
-    mappedTo: "Local Effect",
-    status: "mapped",
-    recommendation: "Mapped from profile",
-    options: ["Local Effect", "Failure Local Effect", "Subsystem Effect"],
-  },
-  {
-    canonical: "Next Higher Effect",
-    mappedTo: "Next Higher Effect",
-    status: "manual",
-    recommendation: "Manual confirmation recommended",
-    options: ["Next Higher Effect", "System Effect", "Intermediate Effect"],
-  },
-  {
-    canonical: "End Effect",
-    mappedTo: "End Effect",
-    status: "mapped",
-    recommendation: "Exact header match",
-    options: ["End Effect", "Mission Effect", "Top Level Effect"],
-  },
-  {
-    canonical: "Detection Method",
-    mappedTo: "Failure Detection Method",
-    status: "attention",
-    recommendation: "Best candidate found, needs operator review",
-    options: ["Failure Detection Method", "Detection", "Do Not Map"],
-  },
-];
+// Fix F1: the pre-Phase-5 7-row FMEA mapping fixture has been removed.
+// FmeaTool.tsx now builds its mapping rows from `FMEA_COLUMN_METADATA`
+// (see `features/fmea/mappingColumns.ts`) instead of reading
+// `scenario.mappings`, so the FMEA demo scenarios supply an empty list
+// for the required `DemoScenario.mappings` field. BOM Compare and
+// Failure Rate scenarios still use their own tool-specific mapping
+// fixtures (`bomCompareGroupMappings`, `failureRateMappings`).
 
 const warningHeavyMessages: ValidationMessage[] = [
   {
@@ -185,46 +134,55 @@ const warningHeavyMessages: ValidationMessage[] = [
   },
 ];
 
+/**
+ * FMEA workflow options.
+ *
+ * Display order is deliberate (Phase 3): merge workflows first, generate
+ * workflows second. The labels describe the user's mental model ("what am
+ * I starting from?") rather than the legacy "workflow name" framing. The
+ * backend workflow IDs are unchanged — they are a contract with
+ * `fmea/runtime.py`. Only user-facing copy changes here.
+ */
 export const workflowOptions: WorkflowOption[] = [
   {
-    id: "bom_only",
-    title: "Generate Piece-Part from BOM Only",
+    id: "functional_to_piecepart",
+    title: "Merge Functional FMEA",
     summary:
-      "Expands every reference designator in a BOM into piece-part FMEA rows. Use this when the design is too early for a grouping file.",
-    eyebrow: "Fast start",
-    badge: "Lean",
-    requiredRoles: ["bom", "failureModes"],
-    optionalRoles: ["hda"],
+      "Expand a functional FMEA into piece-part rows using group-level union merge.",
+    eyebrow: "Merge",
+    badge: "Functional",
+    requiredRoles: ["functionalFmea", "bom", "failureModes"],
+    optionalRoles: ["hda", "grouping"],
+  },
+  {
+    id: "fill_gaps",
+    title: "Merge Piece-Part FMEA",
+    summary:
+      "Bring forward an existing piece-part FMEA, union component lists, and fill gaps.",
+    eyebrow: "Merge",
+    badge: "Piece-Part",
+    requiredRoles: ["existingFmea", "bom", "failureModes"],
+    optionalRoles: ["hda", "grouping"],
   },
   {
     id: "piece_part_generate",
-    title: "Generate Piece-Part from Grouping File",
+    title: "Piece-Part from Grouping File",
     summary:
-      "Creates a piece-part FMEA from circuit-block groups defined in a grouping workbook plus BOM and HDA data.",
-    eyebrow: "Recommended",
+      "Build a new piece-part FMEA from a grouping workbook + BOM + failure modes.",
+    eyebrow: "Generate",
     badge: "Balanced",
     requiredRoles: ["grouping", "bom", "failureModes"],
     optionalRoles: ["hda"],
   },
   {
-    id: "functional_to_piecepart",
-    title: "Generate Piece-Part from Functional FMEA",
+    id: "bom_only",
+    title: "Piece-Part from BOM Only",
     summary:
-      "Detects circuit-block rows in an existing functional FMEA, expands the comma-separated RefDes column into piece-part rows, and inserts them under each block.",
-    eyebrow: "New workflow",
-    badge: "Functional",
-    requiredRoles: ["functionalFmea", "bom", "failureModes"],
+      "Build a piece-part FMEA with just a BOM and failure modes. Requires a CCA prefix.",
+    eyebrow: "Generate",
+    badge: "Lean",
+    requiredRoles: ["bom", "failureModes"],
     optionalRoles: ["hda"],
-  },
-  {
-    id: "fill_gaps",
-    title: "Fill Gaps (Advanced)",
-    summary:
-      "Takes an existing functional or piece-part FMEA and adds piece-part rows for any BOM components missing from it. New columns are appended at the very end of the sheet. All existing rows, data, formatting, fonts, and column widths are preserved.",
-    eyebrow: "Delta mode",
-    badge: "Advanced",
-    requiredRoles: ["existingFmea", "bom", "failureModes"],
-    optionalRoles: ["hda", "grouping"],
   },
 ];
 
@@ -336,7 +294,7 @@ export const demoScenarios: DemoScenario[] = [
     workflowId: "piece_part_generate",
     outputStrategyId: "new_workbook_standard",
     inputs: allPrototypeInputs,
-    mappings: baseMappings,
+    mappings: [],
     validations: [
       {
         id: "v-1",
@@ -367,7 +325,7 @@ export const demoScenarios: DemoScenario[] = [
     workflowId: "fill_gaps",
     outputStrategyId: "existing_workbook_best_effort",
     inputs: allPrototypeInputs,
-    mappings: baseMappings,
+    mappings: [],
     validations: [
       {
         id: "v-2",
@@ -398,7 +356,7 @@ export const demoScenarios: DemoScenario[] = [
     workflowId: "piece_part_generate",
     outputStrategyId: "existing_workbook_preserve_formatting",
     inputs: allPrototypeInputs,
-    mappings: baseMappings,
+    mappings: [],
     validations: [
       {
         id: "v-3",
@@ -429,9 +387,7 @@ export const demoScenarios: DemoScenario[] = [
     workflowId: "piece_part_generate",
     outputStrategyId: "existing_workbook_preserve_formatting",
     inputs: allPrototypeInputs,
-    mappings: baseMappings.map((row) =>
-      row.canonical === "Detection Method" ? { ...row, mappedTo: "Detection", status: "attention" } : row,
-    ),
+    mappings: [],
     validations: warningHeavyMessages,
     previewRows,
     runSequence: {
@@ -454,7 +410,7 @@ export const demoScenarios: DemoScenario[] = [
     workflowId: "piece_part_generate",
     outputStrategyId: "existing_workbook_preserve_formatting",
     inputs: allPrototypeInputs,
-    mappings: baseMappings,
+    mappings: [],
     validations: [
       {
         id: "v-4",
@@ -485,7 +441,7 @@ export const demoScenarios: DemoScenario[] = [
     workflowId: "fill_gaps",
     outputStrategyId: "existing_workbook_preserve_formatting",
     inputs: allPrototypeInputs,
-    mappings: baseMappings,
+    mappings: [],
     validations: warningHeavyMessages,
     previewRows,
     runSequence: {
@@ -594,7 +550,7 @@ export const bomCompareGroupMappings: ColumnMappingRow[] = [
     mappedTo: "Description",
     status: "mapped",
     recommendation: "Optional",
-    options: ["Description", "Part Description", "Do Not Map"],
+    options: ["Description", "Part Description"],
   },
 ];
 
@@ -719,7 +675,7 @@ export const failureRateMappings: ColumnMappingRow[] = [
     mappedTo: "",
     status: "attention",
     recommendation: "Optional. Select a Function column for FR rollup.",
-    options: ["Function", "Do Not Map"],
+    options: ["Function"],
   },
 ];
 

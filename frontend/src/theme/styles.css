@@ -263,6 +263,90 @@
   --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
+/* Kraft Paper — warm paper and graphite. Workshop notebook aesthetic.
+   Low-glare warm surfaces reduce eye strain vs pure white under fluorescent
+   shop lighting. All weights, radii, spacing identical to Light Precision —
+   the personality is entirely in the hex values, no texture or grain. */
+:root[data-theme="kraft_paper"] {
+  --bg: #f4efe6;
+  --surface: #fbf7ee;
+  --surface-muted: #f0eadd;
+  --surface-soft: #ebe4d2;
+  --line: #d8cfbb;
+  --line-strong: #b8ac92;
+  --text: #2a2620;
+  --text-secondary: #4a4338;
+  --text-muted: #6b6354;
+  --text-faint: #8c8473;
+  --text-on-accent: #fbf7ee;
+  --accent: #8a4b1f;
+  --accent-soft: rgba(138, 75, 31, 0.10);
+  --success: #3d6b2e;
+  --success-soft: rgba(61, 107, 46, 0.10);
+  --warning: #8a5a08;
+  --warning-soft: rgba(138, 90, 8, 0.12);
+  --danger: #9c3021;
+  --danger-soft: rgba(156, 48, 33, 0.10);
+}
+
+/* Forest Depth — deep pine and moss. Biophilic dark theme for long runs.
+   For the engineer who runs multi-hour sessions and finds every existing
+   dark theme visually clinical. Desaturated greens are among the most
+   restful dark-theme hues. Identity is entirely in hue — no leaf imagery,
+   no organic radius bumps, no glow shadows. */
+:root[data-theme="forest_depth"] {
+  --bg: #0d1410;
+  --surface: #121a15;
+  --surface-muted: #0f1612;
+  --surface-soft: #18221c;
+  --line: #23332a;
+  --line-strong: #334a3d;
+  --text: #e4ede6;
+  --text-secondary: #b8c9be;
+  --text-muted: #869889;
+  --text-faint: #5c6d63;
+  --text-on-accent: #0d1410;
+  --accent: #7dd3a8;
+  --accent-soft: rgba(125, 211, 168, 0.14);
+  --success: #7dd3a8;
+  --success-soft: rgba(125, 211, 168, 0.14);
+  --warning: #e6b860;
+  --warning-soft: rgba(230, 184, 96, 0.14);
+  --danger: #e8887a;
+  --danger-soft: rgba(232, 136, 122, 0.14);
+  --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.55);
+  --shadow-focus-ring: 0 0 0 3px rgba(125, 211, 168, 0.18);
+  --shadow-rail-active: 0 0 0 1px rgba(125, 211, 168, 0.18), 0 6px 18px rgba(125, 211, 168, 0.14);
+  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* Graphite Dawn — soft charcoal on warm ivory. Newsprint precision.
+   The transition-from-dark-mode light theme. Borderline-monochrome with
+   a single cool indigo accent to prevent all-sepia collapse and preserve
+   primary-action contrast. Distinguishable from Kraft Paper at a glance
+   via the accent hue. */
+:root[data-theme="graphite_dawn"] {
+  --bg: #efeae1;
+  --surface: #f8f4ea;
+  --surface-muted: #ebe6dc;
+  --surface-soft: #e3ddd1;
+  --line: #d0c8b8;
+  --line-strong: #a89e88;
+  --text: #1e1d1a;
+  --text-secondary: #3e3c36;
+  --text-muted: #615d54;
+  --text-faint: #837e72;
+  --text-on-accent: #f8f4ea;
+  --accent: #5a4fcf;
+  --accent-soft: rgba(90, 79, 207, 0.10);
+  --success: #2f6b3a;
+  --success-soft: rgba(47, 107, 58, 0.10);
+  --warning: #8a5a00;
+  --warning-soft: rgba(138, 90, 0, 0.12);
+  --danger: #a33628;
+  --danger-soft: rgba(163, 54, 40, 0.10);
+}
+
 /* Mission Control — NASA/JPL instrument panel aesthetic. Monospaced
    typography throughout, subtle cyan accents, dimmed readout colors.
    Tuned for technical precision, not retro flair. */
@@ -813,7 +897,22 @@ button:disabled {
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
-  word-break: break-all;
+}
+
+/* RTL flip + ellipsis: when a long file path overflows, show the filename
+   end (e.g. "...\Reports\FMEA.xlsx") instead of the drive letter. The
+   native `title` tooltip on the span still exposes the full path on hover.
+   `unicode-bidi: plaintext` keeps "C:\path\file.xlsx" rendering LTR within
+   the truncation so the visible fragment still reads as a path. */
+.input-card__path {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+  unicode-bidi: plaintext;
 }
 
 .input-card__path--example {
@@ -1273,12 +1372,44 @@ tbody tr:hover {
   border-top: 1px solid var(--line);
   background: var(--surface);
   padding: var(--space-2) var(--space-6) 14px; /* 14px bottom off-grid: leaves room for last line baseline */
-  max-height: 280px; /* off-grid: panel max height */
+  /* Phase B2: user-resizable panel. The CSS variable is set inline on
+     .run-log-panel by GlobalLogPanel.tsx and persisted to localStorage.
+     The fallback matches the previous hardcoded 280px so first-run
+     users see the same thing as before. */
+  max-height: var(--log-panel-height, 280px);
   overflow-y: auto;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   line-height: 1.55;
   color: var(--text-secondary);
+}
+
+/* Phase B2: resize handle. Sits between the topbar gradient and the
+   header, providing a thin grab target that lets the user drag the log
+   panel taller or shorter. The handle is transparent by default, shows
+   a faint band on hover, and latches to the accent color while a drag
+   is in progress. */
+.run-log-panel__resize-handle {
+  display: block;
+  width: 100%;
+  height: 6px; /* off-grid: minimal grab target height */
+  cursor: ns-resize;
+  background: transparent;
+  border: none;
+  touch-action: none;
+}
+
+.run-log-panel__resize-handle:hover {
+  background: var(--line);
+}
+
+.run-log-panel__resize-handle:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
+}
+
+.run-log-panel__resize-handle[data-resizing="true"] {
+  background: var(--accent);
 }
 
 .run-log-panel__empty {
@@ -1515,6 +1646,1157 @@ tbody tr:hover {
   .timeline__item .status-chip {
     justify-self: start;
   }
+}
+
+/* ============================================================
+   Shared primitives (Phase 1 extraction).
+   These classes back the components in components/primitives/.
+   The chip group wrapper deliberately reuses the existing
+   `.toggle-chip` base rules (lines ~748+) so the FMEA gold-standard
+   visual contract is preserved when consumers migrate. New CSS here
+   is purely additive: layout wrappers and net-new selectors.
+   ============================================================ */
+
+.toggle-chip-group {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.toggle-chip-group .toggle-chip:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.toggle-chip-group .toggle-chip.is-selected {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.toggle-chip-group .toggle-chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.options-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.options-field__label {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-uppercase);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.options-field__hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.options-field__disabled-reason {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+.checkbox-field {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--space-2);
+  cursor: pointer;
+  padding: var(--space-1) 0;
+}
+
+.checkbox-field input[type="checkbox"] {
+  accent-color: var(--accent);
+  margin-top: 2px; /* off-grid: optical alignment with first text line */
+  flex-shrink: 0;
+}
+
+.checkbox-field__label {
+  font-size: var(--text-base);
+  color: var(--text);
+  line-height: var(--leading-snug);
+}
+
+.checkbox-field__hint {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-top: var(--space-1);
+}
+
+.checkbox-field input:disabled + .checkbox-field__label {
+  color: var(--text-faint);
+}
+
+.context-tabs {
+  display: flex;
+  flex-direction: row;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: var(--surface-muted);
+  border-radius: var(--radius-md);
+}
+
+.context-tabs__tab {
+  appearance: none;
+  border: none;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition:
+    background 140ms var(--ease),
+    color 140ms var(--ease),
+    box-shadow 140ms var(--ease);
+}
+
+.context-tabs__tab:hover:not(.is-active) {
+  color: var(--text);
+}
+
+.context-tabs__tab.is-active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04); /* off-grid: lift the active tab off the muted track */
+}
+
+.context-tabs__tab:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
+}
+
+.options-section__grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* ============================================================
+   Phase 2 primitives — state clarity & actionability.
+   HoldButton, progress telemetry, MappingTable toolbar,
+   CustomSelect disabled hints, path copy button.
+   Keep additive; don't modify Phase 1 selectors above.
+   ============================================================ */
+
+/* ---- HoldButton -------------------------------------------------- */
+
+.hold-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 36px; /* off-grid: matches .ghost-button / .toggle-chip control height */
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+  transition:
+    border-color 160ms var(--ease),
+    background 160ms var(--ease),
+    color 160ms var(--ease),
+    box-shadow 160ms var(--ease);
+}
+
+.hold-button:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+.hold-button:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
+  border-color: var(--accent);
+}
+
+.hold-button--danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.hold-button--danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.hold-button[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.hold-button__fill {
+  position: absolute;
+  inset: 0;
+  background: var(--accent-soft);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0ms linear;
+  pointer-events: none;
+}
+
+.hold-button--danger .hold-button__fill {
+  background: var(--danger-soft);
+}
+
+.hold-button.is-holding .hold-button__fill {
+  transform: scaleX(1);
+  transition: transform var(--hold-duration, 600ms) linear;
+}
+
+.hold-button__label {
+  position: relative;
+  z-index: 1;
+}
+
+.hold-button__dialog {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  background: var(--surface);
+  color: var(--text);
+  max-width: 360px;
+}
+
+.hold-button__dialog::backdrop {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.hold-button__dialog-body {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.hold-button__dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.hold-button__dialog-confirm--danger {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+/* Hidden but accessible live region for "Holding to confirm..." text. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- Input path copy affordance --------------------------------- */
+
+.input-card__header-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.input-card__path-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.input-card__path-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color 140ms var(--ease),
+    border-color 140ms var(--ease),
+    background 140ms var(--ease);
+}
+
+.input-card__path-copy:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--line);
+  background: var(--surface-soft);
+}
+
+.input-card__path-copy:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
+  border-color: var(--accent);
+}
+
+.input-card__path-copy--copied {
+  color: var(--success);
+}
+
+/* ---- RunStatePanel progress telemetry --------------------------- */
+
+.run-state__progress-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.run-state__progress-meta-dot {
+  color: var(--text-faint);
+}
+
+.progress-shell--indeterminate .progress-shell__bar {
+  width: 35%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--accent) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: run-state-indeterminate 1400ms linear infinite;
+}
+
+@keyframes run-state-indeterminate {
+  0% {
+    transform: translateX(-60%);
+  }
+  100% {
+    transform: translateX(260%);
+  }
+}
+
+/* ---- CustomSelect disabled reason caption ------------------------ */
+
+.custom-select__disabled-reason {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+/* ---- MappingTable toolbar + bulk actions ------------------------ */
+
+.mapping-table__toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.mapping-table__toolbar-spacer {
+  flex: 1;
+}
+
+.mapping-table__unmapped-count {
+  display: inline-flex;
+  align-items: center;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+}
+
+.mapping-table__use-recommendation {
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--line);
+  padding: 2px var(--space-2); /* off-grid: 2px vertical keeps inline-row height compact */
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-family: inherit;
+  transition:
+    border-color 140ms var(--ease),
+    background 140ms var(--ease);
+}
+
+.mapping-table__use-recommendation:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.mapping-table__use-recommendation:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
+  border-color: var(--accent);
+}
+
+.mapping-table__use-recommendation:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mapping-table__recommendation-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* ============================================================
+   Phase 3 primitives — narrative, recovery, observability.
+   EmptyState, ErrorBoundary detail surface, ValidationPreview
+   export toolbar, GlobalLogPanel filter counts.
+   Keep additive; don't modify Phase 1 or Phase 2 selectors above.
+   ============================================================ */
+
+/* ---- EmptyState -------------------------------------------------- */
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-3);
+  padding: var(--space-7) var(--space-5);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+
+.empty-state--compact {
+  padding: var(--space-5) var(--space-4);
+  gap: var(--space-2);
+}
+
+.empty-state__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.empty-state__headline {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+  margin: 0;
+}
+
+.empty-state--compact .empty-state__headline {
+  font-size: var(--text-base);
+}
+
+.empty-state__body {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  line-height: var(--leading-snug);
+  max-width: 48ch;
+  margin: 0;
+}
+
+.empty-state__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.empty-state__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-4);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    background 140ms var(--ease),
+    color 140ms var(--ease),
+    border-color 140ms var(--ease),
+    box-shadow 140ms var(--ease);
+}
+
+.empty-state__action--primary {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border: 1px solid var(--accent);
+}
+
+.empty-state__action--primary:hover {
+  filter: brightness(0.92);
+}
+
+.empty-state__action--secondary {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--line);
+}
+
+.empty-state__action--secondary:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+
+.empty-state__action:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
+}
+
+/* ---- ErrorBoundary detail surface ------------------------------- */
+
+.error-boundary__summary {
+  margin-top: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.error-boundary__details {
+  margin-top: var(--space-3);
+  font-size: var(--text-xs);
+}
+
+.error-boundary__details summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-weight: var(--weight-medium);
+}
+
+.error-boundary__stack {
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.error-boundary__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.error-boundary__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-4);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    background 140ms var(--ease),
+    color 140ms var(--ease),
+    border-color 140ms var(--ease),
+    box-shadow 140ms var(--ease);
+}
+
+.error-boundary__action--primary {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border: 1px solid var(--accent);
+}
+
+.error-boundary__action--primary:hover {
+  filter: brightness(0.92);
+}
+
+.error-boundary__action--secondary {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--line);
+}
+
+.error-boundary__action--secondary:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+
+.error-boundary__action:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
+}
+
+/* ---- ValidationPreview export toolbar --------------------------- */
+
+.validation-preview__toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-muted);
+}
+
+.validation-preview__toolbar-count {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  flex: 1;
+}
+
+.validation-preview__export-button {
+  font-family: inherit;
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-3);
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    background 140ms var(--ease),
+    color 140ms var(--ease),
+    border-color 140ms var(--ease),
+    box-shadow 140ms var(--ease);
+}
+
+.validation-preview__export-button:hover {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+
+.validation-preview__export-button:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
+  border-color: var(--accent);
+}
+
+/* ---- GlobalLogPanel filter counts -------------------------------- */
+
+.global-log-panel__filter-counts {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: var(--space-2);
+  font-size: var(--text-2xs);
+  color: var(--text-faint);
+}
+
+.global-log-panel__filter-total {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.global-log-panel__filter-count {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.global-log-panel__filter-count-dot {
+  display: inline-block;
+  width: 6px; /* off-grid: small severity dot */
+  height: 6px; /* off-grid: small severity dot */
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.global-log-panel__filter-count-dot--error {
+  background: var(--danger);
+}
+
+.global-log-panel__filter-count-dot--warn {
+  background: var(--warning);
+}
+
+.global-log-panel__filter-count-dot--info {
+  background: var(--accent);
+}
+
+/* ============================================================
+   Phase 4 primitives — shell polish & a11y.
+   Topbar chip grouping, title truncation helper, toast dwell
+   animation, command palette, settings additions.
+   Keep additive; don't modify Phase 1/2/3 selectors above.
+   ============================================================ */
+
+/* ---- Topbar chip groupings (Task 1) ----------------------------- */
+
+.topbar__chip-groups {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.topbar__chip-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.topbar__chip-divider {
+  width: 1px;
+  height: 16px; /* off-grid: divider height matches chip baseline */
+  background: var(--line);
+  flex-shrink: 0;
+}
+
+.topbar__chip-spacer {
+  flex: 1;
+}
+
+/* ---- Toast dwell tuning (Task 5) -------------------------------- */
+
+.notification-toast {
+  position: relative;
+  overflow: hidden;
+}
+
+.notification-toast__progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px; /* off-grid: 2px dwell bar */
+  background: var(--accent);
+  transform-origin: left;
+  animation: notification-drain var(--dwell, 5000ms) linear forwards;
+}
+
+.notification-toast--warning .notification-toast__progress {
+  background: var(--warning);
+}
+
+.notification-toast--success .notification-toast__progress {
+  background: var(--success);
+}
+
+.notification-toast--error .notification-toast__progress {
+  display: none;
+}
+
+.notification-toast:hover .notification-toast__progress {
+  animation-play-state: paused;
+}
+
+@keyframes notification-drain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.notification-toast__dismiss {
+  padding: var(--space-1);
+}
+
+/* ---- Command palette (Task 7) ----------------------------------- */
+
+.command-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 10vh; /* off-grid: offset palette above center */
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
+}
+
+.command-palette {
+  width: 560px; /* off-grid: palette fixed width tuned for action list */
+  max-width: 90vw;
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-popover);
+}
+
+.command-palette__search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.command-palette__search-icon {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.command-palette__input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--text-md);
+  color: var(--text);
+  outline: none;
+}
+
+.command-palette__input::placeholder {
+  color: var(--text-faint);
+}
+
+.command-palette__results {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: var(--space-1) 0 var(--space-2);
+}
+
+.command-palette__category {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  padding: var(--space-3) var(--space-4) var(--space-1);
+  background: var(--surface);
+  color: var(--text-faint);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-uppercase);
+  text-transform: uppercase;
+}
+
+.command-palette__action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms var(--ease), color 120ms var(--ease);
+}
+
+.command-palette__action:hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.command-palette__action.is-active {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.command-palette__action-icon {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.command-palette__action.is-active .command-palette__action-icon {
+  color: var(--accent);
+}
+
+.command-palette__action-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-palette__action-shortcut {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.command-palette__empty {
+  padding: var(--space-4);
+}
+
+/* ---- Settings additions (Task 8) -------------------------------- */
+
+.settings__logs-path {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.settings__logs-path code {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-2);
+  background: var(--surface-muted);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  color: var(--text-secondary);
+}
+
+.settings__health-dot {
+  display: inline-block;
+  width: 8px; /* off-grid: health dot */
+  height: 8px; /* off-grid: health dot */
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.settings__health-dot--green {
+  background: var(--success);
+}
+
+.settings__health-dot--warning {
+  background: var(--warning);
+}
+
+.settings__health-dot--danger {
+  background: var(--danger);
+}
+
+/* ============================================================
+   Mapping table — Phase 2 help panel (A3.3)
+   Expandable "About this column" panel. Accent-soft background,
+   2px accent left border, eyebrow + body text. Also the status
+   chip variants for the new `derived` and `not_mapped` states
+   introduced with the Do Not Map sentinel.
+   ============================================================ */
+.mapping-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+}
+
+.mapping-table__help-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px; /* off-grid: compact info glyph target */
+  height: 18px; /* off-grid: compact info glyph target */
+  padding: 0;
+  margin-left: var(--space-1);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background 140ms var(--ease),
+    color 140ms var(--ease);
+}
+
+.mapping-table__help-button:hover {
+  background: var(--surface-muted);
+  color: var(--accent);
+}
+
+.mapping-table__help-button[aria-expanded="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.mapping-table__help-button:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
+}
+
+.mapping-table__help-panel {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--accent-soft);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-sm);
+}
+
+.mapping-table__help-eyebrow {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-uppercase);
+  color: var(--accent);
+}
+
+.mapping-table__help-body {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--leading-relaxed);
+}
+
+/* "— Do Not Map —" trigger wrapper. Targets the Radix trigger inside
+   the wrapper so we don't have to plumb a className prop through
+   CustomSelect for a single style variant. */
+.mapping-table__trigger-wrapper--not-mapped .custom-select__trigger,
+.mapping-table__trigger-wrapper--not-mapped .custom-select__value {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Status chip variants for the new mapping states. Derived rows render
+   on a neutral surface (matching the read-only nature of the row).
+   Not-mapped rows use a muted italic label so the "absence" reads as
+   intentional. */
+.status-chip--derived {
+  color: var(--text-muted);
+  background: var(--surface-muted);
+  border-color: var(--line);
+}
+
+.status-chip--not_mapped {
+  color: var(--text-muted);
+  background: var(--surface-muted);
+  border-color: var(--line);
+  font-style: italic;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* ============================================================
+   Phase 3 primitives — FMEA Workflow / Inputs restructure.
+   CCA identifier input, output folder chip, run-state disabled
+   hint. Keep additive; do not modify Phase 1/2 selectors above.
+   ============================================================ */
+
+.fmea-cca-input {
+  appearance: none;
+  width: 100%;
+  max-width: 220px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  transition:
+    border-color 140ms var(--ease),
+    box-shadow 140ms var(--ease);
+}
+
+.fmea-cca-input::placeholder {
+  color: var(--text-faint);
+  text-transform: none;
+  letter-spacing: normal;
+  font-family: inherit;
+}
+
+.fmea-cca-input:hover:not(:focus) {
+  border-color: var(--line-strong);
+}
+
+.fmea-cca-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--shadow-focus-ring);
+}
+
+.fmea-cca-input[aria-invalid="true"] {
+  border-color: var(--danger, #c33);
+}
+
+.fmea-cca-input__error {
+  margin: var(--space-1) 0 0 0;
+  font-size: var(--text-xs);
+  color: var(--danger, #c33);
+}
+
+.fmea-output-folder {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.fmea-output-folder__path {
+  flex: 1 1 260px;
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fmea-output-folder__actions {
+  display: flex;
+  flex-direction: row;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.fmea-output-folder__button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.run-state__start-disabled-reason {
+  margin: calc(var(--space-2) * -1) 0 var(--space-2) 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 /* ============================================================

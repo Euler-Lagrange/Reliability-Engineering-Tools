@@ -134,6 +134,16 @@ ROW_TYPE_COL = '_row_type'
 ALPHABET_LENGTH = 26  # Length of uppercase alphabet for suffix generation
 INDEX_CANCEL_CHECK_INTERVAL = 50  # Rows between cancellation checks during index build
 
+# Phase 4 / A9: the internal key for the variant-inheritance summary remains
+# "BOM_Additions" so existing code paths (and legacy DataFrame-dict lookups)
+# keep working, but the user-visible sheet title is now "FMEA Gen New RefDes"
+# per the restructure spec. Anything that surfaces to the user (worksheet
+# title, UI logs) should use NEW_REFDES_SHEET_NAME; internal plumbing can
+# continue to use the legacy key.
+NEW_REFDES_SHEET_NAME = "FMEA Gen New RefDes"
+# Phase 4 / A8: Part Usage discrepancy diagnostic sheet title.
+PART_USAGE_DIAGNOSTICS_SHEET_NAME = "Part Usage Diagnostics"
+
 # Phase D/H5: safety caps for process_functional_to_piecepart to prevent
 # accidental OOM on pathological functional-FMEA inputs. A single functional
 # row can reference many refdes, so output grows quickly. The warning
@@ -257,6 +267,41 @@ class FMEAProcessor:
         # (grouping/functional/BOM). Drives the usage_fraction display in
         # BOM_Additions entries (1/N where N is the variant count).
         self.variant_counts_by_base: Dict[str, int] = defaultdict(int)
+        # Phase 4 / A6: CCA identifier supplied by the user in BOM-Only mode.
+        # When set, _format_fmea_id() uses it as the {GROUP} portion of the
+        # FMEA-ID so output IDs look like "PSU-C200-A" instead of "BOM-C200-A".
+        # None in all other modes (group label comes from the grouping row).
+        self.cca_prefix: Optional[str] = None
+        # Phase 4 / A7: explicit output directory from the frontend run body.
+        # When set, _resolve_output_directory() returns this instead of the
+        # "first input file parent" heuristic.
+        self.output_directory_override: Optional[str] = None
+        # Phase 4 / A8: Part Usage discrepancy entries — mapped-vs-computed
+        # mismatches that show up in the "Part Usage Diagnostics" output
+        # sheet and drive yellow row fill on affected piece-part rows.
+        self.part_usage_discrepancies: List[Dict[str, Any]] = []
+        # Fix R3-M2: counter for discrepancy entries whose mapped count
+        # exceeded the suspicious-value threshold (> 1,000,000 instances
+        # implied by a near-zero Part Usage value like 0.0000001). We
+        # STILL record the entry in ``part_usage_discrepancies`` so the
+        # user sees it in the diagnostics sheet, but we increment this
+        # counter per-row and emit ONE aggregated WARNING after the
+        # generator loop finishes — previously we spammed the log with
+        # one WARNING per row, which drowned out other messages for
+        # BOMs with many suspicious values.
+        self.part_usage_suspicious_count: int = 0
+        # Phase 4 / A5: group-level merge diagnostic entries — attached per
+        # row during process_union_merge() so each generated piece-part
+        # carries its "missing from X" diagnostic.
+        self.group_merge_diagnostics: List[Dict[str, Any]] = []
+        # Fix A2/A5: flat column_overrides dict from the frontend mapping
+        # table. Shape: {canonical_label: actual_column_name}, e.g.
+        # {"Part Usage": "Qty Per Assy"}. Used by _generate_component_rows
+        # to gate Part Usage discrepancy capture behind an explicit user
+        # mapping (so BOMs with default "1" Part Usage don't spam the
+        # diagnostics sheet). Populated at run-start by process*() from
+        # inputs['column_overrides'].
+        self.column_overrides: Dict[str, Any] = {}
 
     def _reset_state(self) -> None:
         """Reset all mutable state for a new processing run.
@@ -285,6 +330,20 @@ class FMEAProcessor:
         self.bom_additions = []
         self.failure_modes_standard = "FMD-2016"
         self.variant_counts_by_base = defaultdict(int)
+        # Phase 4 / A6: cca_prefix and A7: output_directory_override are
+        # both set by the runtime BEFORE process*() is called. They must
+        # NOT be cleared here — clearing them would erase the value the
+        # runtime adapter just wrote. They're per-run configuration, not
+        # accumulated-state that needs resetting between retries.
+        # (cca_prefix / output_directory_override deliberately preserved)
+        self.part_usage_discrepancies = []
+        # Fix R3-M2: reset the suspicious-count aggregator between runs
+        # so we don't roll a count forward from a previous invocation.
+        self.part_usage_suspicious_count = 0
+        self.group_merge_diagnostics = []
+        # Fix A2/A5: clear stale column_overrides between runs. Each
+        # process*() method re-assigns this from its inputs dict.
+        self.column_overrides = {}
 
     def log(self, message: str, level: str = 'INFO') -> None:
         """Log a message with timestamp and level."""
@@ -298,6 +357,25 @@ class FMEAProcessor:
         elif level == 'WARNING': _logger.warning(message)
         elif level == 'ERROR': _logger.error(message)
         else: _logger.info(message)
+
+    def _emit_part_usage_suspicious_summary(self) -> None:
+        """Fix R3-M2: emit a single aggregated WARNING for suspicious
+        Part Usage discrepancies instead of per-row log spam.
+
+        Called after each process*() workflow's main generator loop
+        completes. When the counter is zero, does nothing. The entries
+        themselves are always appended to ``part_usage_discrepancies``
+        regardless of the suspicious flag so the user sees them in the
+        diagnostics sheet.
+        """
+        if self.part_usage_suspicious_count > 0:
+            self.log(
+                f"Part Usage: {self.part_usage_suspicious_count} "
+                f"discrepancy entries have mapped counts > 1,000,000 — "
+                f"likely data-entry typos in the BOM. Review the "
+                f"'Part Usage Diagnostics' sheet.",
+                "WARNING",
+            )
 
     def read_excel_safe(self, file_path: Union[str, Path], sheet_name=None) -> pd.DataFrame:
         """Read Excel file with error handling.
@@ -558,7 +636,11 @@ class FMEAProcessor:
             self.failure_modes_standard = str(inputs.get('failure_modes_standard') or 'FMD-2016')
 
         # Extract column overrides (format: {'FILE_TYPE': {'internal_key': 'actual_col_name'}})
+        # Fix A2/A5: also expose the full overrides dict on self so
+        # _generate_component_rows can inspect it (e.g., to gate Part
+        # Usage discrepancy capture behind an explicit mapping).
         col_overrides = inputs.get('column_overrides') or {}
+        self.column_overrides = col_overrides
 
         if status_callback:
             status_callback("Reading input files...")
@@ -665,36 +747,612 @@ class FMEAProcessor:
 
         self.log(f"Results: {len(self.successful_matches)} components matched | {len(self.no_matches)} with no failure modes (see No_Matches sheet)", "INFO")
         if self.bom_additions:
-            self.log(f"BOM Additions: {len(self.bom_additions)} variant RefDes inherited from base components (see BOM_Additions sheet)", "INFO")
+            self.log(f"BOM Additions: {len(self.bom_additions)} variant RefDes inherited from base components (see 'FMEA Gen New RefDes' sheet)", "INFO")
+        # Fix R3-M2: aggregate per-row "suspicious mapped count" flags
+        # into a single summary WARNING instead of logging one per row.
+        self._emit_part_usage_suspicious_summary()
         return pd.DataFrame(output_rows)
+
+    # ------------------------------------------------------------------
+    # Phase 4 / A5: Group-level union merge helpers
+    # ------------------------------------------------------------------
+
+    # Diagnostic strings for group-level union merge rows. Exposed as
+    # class attributes so tests can reference the exact strings without
+    # duplicating them and to keep the wording in one place.
+    #
+    # Fix F4: Merge diagnostic strings MUST NOT contain ';' — that
+    # character is used as the join separator in ``_attach_diag`` so a
+    # message containing ';' would corrupt downstream parsing of the
+    # Diagnostic column. ``_attach_diag`` asserts this at append time
+    # as defense in depth, but keep ';' out of the constants below.
+    MERGE_DIAG_OLD_ONLY = (
+        "Component missing from Grouping File but was present in Merged FMEA"
+    )
+    MERGE_DIAG_GROUPING_ONLY = (
+        "Component present in Grouping File but missing from Merged FMEA"
+    )
+    MERGE_DIAG_GROUP_OLD_ONLY = (
+        "Function group present in Merged FMEA but absent from Grouping File"
+    )
+    MERGE_DIAG_GROUP_NEW = "New function group added since last FMEA"
+
+    def _parse_old_fmea_groups(
+        self,
+        fmea_df: pd.DataFrame,
+        refdes_col: Optional[str] = None,
+    ) -> Dict[str, Dict[str, Any]]:
+        """Parse an existing FMEA DataFrame into group-level records.
+
+        Iterates rows in order. Circuit-block rows start a new group
+        (keyed by FMEA-ID / group label from the row). The refdes column
+        (detected or passed in) on the circuit-block row is parsed as a
+        CSV list of reference designators. Local / Next Higher / End
+        Effect columns are captured if present, for inheritance during
+        the union merge. Piece-part rows under a circuit-block row also
+        contribute their RefDes to the group's component set as a
+        fallback in case the circuit-block row's RefDes list is empty.
+
+        Args:
+            fmea_df: raw existing FMEA DataFrame
+            refdes_col: optional explicit refdes column; if None, detected
+                via :func:`common.fmea_utils.detect_refdes_column_for_fmea`
+
+        Returns:
+            ``{group_label: {components: set[str], description: str,
+            schematic_page: str, local_effect: str, next_higher_effect: str,
+            end_effect: str}}``. Group labels are kept in their original
+            form (not normalized) so the output FMEA-IDs are stable.
+        """
+        from common.fmea_utils import (
+            detect_refdes_column_for_fmea,
+            classify_fmea_rows,
+        )
+
+        groups: Dict[str, Dict[str, Any]] = {}
+        if fmea_df is None or fmea_df.empty:
+            return groups
+
+        # Fix R2-H2b: honor the user's explicit "Failure Mode Causes"
+        # mapping for the existing FMEA refdes column. Without this,
+        # ``_parse_old_fmea_groups`` falls through to the heuristic
+        # detector even when the user explicitly mapped a non-standard
+        # column name in the frontend, producing empty groups.
+        column_overrides_flat = getattr(self, 'column_overrides', {}) or {}
+        if refdes_col is None:
+            fmc_override = column_overrides_flat.get("Failure Mode Causes")
+            if (
+                isinstance(fmc_override, str)
+                and fmc_override.strip()
+                and fmc_override in fmea_df.columns
+            ):
+                refdes_col = fmc_override
+            else:
+                refdes_col = detect_refdes_column_for_fmea(fmea_df, self.log)
+        if not refdes_col:
+            self.log(
+                "No RefDes column found on existing FMEA; cannot parse groups.",
+                "WARNING",
+            )
+            return groups
+
+        classifications, _, _ = classify_fmea_rows(fmea_df, self.log, self.cancel)
+
+        fmea_id_col = resolve_column(
+            fmea_df, ['FMEA-ID', 'FMEA ID', 'Function ID', 'Component Group', 'ID'],
+        )
+        desc_col = resolve_column(
+            fmea_df, ['Function Description', 'Description', 'Functional Description'],
+        )
+        page_col = resolve_column(
+            fmea_df, ['Schematic Page', 'Page', 'Sheet', 'Schematic'],
+        )
+
+        # Fix R2-H2: honor the user's explicit Local/Next Higher/End
+        # Effect mappings before falling back to synonym-based heuristic
+        # resolution. Fix R3-L2: Phase D's FRONTEND_TO_BACKEND_MAPPING
+        # deliberately omits "Local Effect", "Next Higher Effect", and
+        # "End Effect" because these are FMEA-output columns (written
+        # to the generated workbook), not input-file columns registered
+        # in HEADER_CONFIG. They're consumed here by reading the existing
+        # FMEA directly via column_overrides + resolve_column, not
+        # through the ``map_columns()`` heuristic path that HEADER_CONFIG
+        # drives. The user's explicit picks therefore never reach the
+        # nested shape; they DO land in the flat shape, though, so
+        # consult that directly.
+        def _resolve_effect_column(
+            canonical: str,
+            fallback_synonyms: list[str],
+        ) -> Optional[str]:
+            override = column_overrides_flat.get(canonical)
+            if (
+                isinstance(override, str)
+                and override.strip()
+                and override in fmea_df.columns
+            ):
+                return override
+            return resolve_column(fmea_df, fallback_synonyms)
+
+        local_col = _resolve_effect_column("Local Effect", ['Local Effect'])
+        next_col = _resolve_effect_column(
+            "Next Higher Effect", ['Next Higher Effect']
+        )
+        end_col = _resolve_effect_column("End Effect", ['End Effect'])
+
+        def _cell(row: pd.Series, col: Optional[str]) -> str:
+            if not col:
+                return ''
+            val = row.get(col)
+            if val is None:
+                return ''
+            try:
+                if pd.isna(val):
+                    return ''
+            except (TypeError, ValueError):
+                pass
+            return clean_string(val)
+
+        current_label: Optional[str] = None
+        # Fix R2-M2 / R3-L1: track piece-part rows orphaned under skipped
+        # circuit-block rows (blank FMEA-ID) so we can warn the user
+        # about ALL lost rows, not just the single block warning. R3-L1
+        # splits the counter into TWO distinct buckets so the warning
+        # text accurately describes each root cause:
+        #   1. ``orphaned_under_skipped`` — piece-part row appeared AFTER
+        #      a circuit-block row that was skipped for having a blank
+        #      FMEA-ID (user should fix the blank cell)
+        #   2. ``orphaned_before_first_block`` — piece-part row appeared
+        #      BEFORE any circuit-block row in the source workbook at
+        #      all (source data is structurally malformed; a piece-part
+        #      can't be re-parented just by filling in a cell)
+        orphaned_under_skipped = 0
+        orphaned_before_first_block = 0
+        seen_any_circuit_block = False
+        for pos, (_, row) in enumerate(fmea_df.iterrows()):
+            if pos % INDEX_CANCEL_CHECK_INTERVAL == 0:
+                self.cancel.check("Parsing existing FMEA cancelled by user.")
+
+            rtype = (
+                classifications[pos].row_type
+                if pos < len(classifications)
+                else 'other'
+            )
+            if rtype == 'circuit_block':
+                seen_any_circuit_block = True
+                label_raw = _cell(row, fmea_id_col)
+                if not label_raw:
+                    # Fix E2: SKIP blank-labeled circuit-block rows instead
+                    # of synthesizing a label. Previously we minted
+                    # ``GROUP-{pos+1}`` which (a) was non-deterministic
+                    # across runs when row order changed, and (b) could
+                    # silently collide with a real group literally named
+                    # ``GROUP-1`` / ``GROUP-2`` / etc. Skipping forces
+                    # the user to fix their data (they'll see the warning
+                    # and go fill in the FMEA-ID cell), which is safer
+                    # than inventing a label. Any piece-part rows below
+                    # will be dropped from the group union until the
+                    # user fixes the source data.
+                    self.log(
+                        f"Skipped circuit-block row {pos + 2}: blank FMEA-ID.",
+                        "WARNING",
+                    )
+                    current_label = None
+                    continue
+                current_label = label_raw
+                if current_label not in groups:
+                    groups[current_label] = {
+                        'components': set(),
+                        'description': _cell(row, desc_col),
+                        'schematic_page': _cell(row, page_col),
+                        'local_effect': _cell(row, local_col),
+                        'next_higher_effect': _cell(row, next_col),
+                        'end_effect': _cell(row, end_col),
+                    }
+                # Parse the CSV refdes list on the circuit-block row
+                refs = split_refdes_list(row.get(refdes_col, ''))
+                for ref in refs:
+                    canon = canonicalize_refdes(ref)
+                    if canon:
+                        groups[current_label]['components'].add(canon)
+            elif rtype == 'piece_part':
+                if current_label is None:
+                    # Fix R2-M2 / R3-L1: this piece-part row has no
+                    # group to attach to. Distinguish between the two
+                    # root causes so the warning is actionable:
+                    #   - we've seen a circuit-block row (which must
+                    #     have been skipped for blank FMEA-ID) →
+                    #     orphaned_under_skipped
+                    #   - we've seen NO circuit-block at all yet →
+                    #     orphaned_before_first_block (source ordering
+                    #     issue; the user can't fix this by filling in
+                    #     a blank cell)
+                    if seen_any_circuit_block:
+                        orphaned_under_skipped += 1
+                    else:
+                        orphaned_before_first_block += 1
+                    continue
+                # Fallback: collect piece-part refdes under the current group
+                refs = split_refdes_list(row.get(refdes_col, ''))
+                for ref in refs:
+                    canon = canonicalize_refdes(ref)
+                    if canon:
+                        groups[current_label]['components'].add(canon)
+
+        if orphaned_under_skipped:
+            # Fix R2-M2: surface the TOTAL number of orphaned piece-part
+            # rows so the user knows the scope of the data loss. The
+            # per-block "blank FMEA-ID" warning only mentions the block
+            # itself, not the piece-parts dropped along with it.
+            self.log(
+                f"{orphaned_under_skipped} piece-part row(s) were "
+                f"orphaned under skipped circuit-block(s) with blank "
+                f"FMEA-IDs. Fix those blank cells to include the "
+                f"components in the merge.",
+                "WARNING",
+            )
+        if orphaned_before_first_block:
+            # Fix R3-L1: a piece-part row that appears before any
+            # circuit-block at all is a structural problem in the source
+            # workbook — the user can't attach it to a group just by
+            # filling in a blank cell. Call that out separately.
+            self.log(
+                f"{orphaned_before_first_block} piece-part row(s) appear "
+                f"before any circuit-block row in the existing FMEA. "
+                f"Check the source workbook structure — these rows "
+                f"cannot be merged.",
+                "WARNING",
+            )
+
+        return groups
+
+    def _parse_grouping_file_groups(
+        self,
+        group_df: pd.DataFrame,
+    ) -> Dict[str, Dict[str, Any]]:
+        """Parse a grouping-file DataFrame (already column-mapped) into the
+        same shape as :meth:`_parse_old_fmea_groups` so the union merge
+        can compare the two uniformly.
+
+        Expects canonical columns: ``component_group``, ``ref_des``,
+        ``description``, ``schematic_page``. Missing columns are treated
+        as empty. Groups with blank component_group are skipped.
+
+        Fix E1: when two rows share the same ``component_group`` label,
+        the first row's description and schematic page win (components
+        are still unioned). If the later row has a DIFFERENT description
+        or schematic page, a ``WARNING`` is logged so the user knows
+        their grouping file has a data-entry mismatch.
+        """
+        groups: Dict[str, Dict[str, Any]] = {}
+        if group_df is None or group_df.empty:
+            return groups
+        for _, row in group_df.iterrows():
+            label = clean_string(row.get('component_group'))
+            if not label:
+                continue
+            if label not in groups:
+                groups[label] = {
+                    'components': set(),
+                    'description': clean_string(row.get('description', '')),
+                    'schematic_page': clean_string(row.get('schematic_page', '')),
+                    'local_effect': '',
+                    'next_higher_effect': '',
+                    'end_effect': '',
+                }
+            else:
+                # E1: Detect duplicate-group metadata drift and surface
+                # it as a WARNING. Components are still unioned below.
+                existing = groups[label]
+                new_desc = clean_string(row.get('description', ''))
+                new_page = clean_string(row.get('schematic_page', ''))
+                if new_desc and existing['description'] and new_desc != existing['description']:
+                    self.log(
+                        f"Duplicate group '{label}' in grouping file: "
+                        f"description differs ('{existing['description']}' "
+                        f"vs '{new_desc}'). Keeping first.",
+                        "WARNING",
+                    )
+                if new_page and existing['schematic_page'] and new_page != existing['schematic_page']:
+                    self.log(
+                        f"Duplicate group '{label}' in grouping file: "
+                        f"schematic page differs "
+                        f"('{existing['schematic_page']}' vs '{new_page}'). "
+                        f"Keeping first.",
+                        "WARNING",
+                    )
+            for ref in split_refdes_list(row.get('ref_des', '')):
+                canon = canonicalize_refdes(ref)
+                if canon:
+                    groups[label]['components'].add(canon)
+        return groups
+
+    def process_union_merge(
+        self,
+        *,
+        old_fmea_df: Optional[pd.DataFrame],
+        grouping_df: Optional[pd.DataFrame],
+        fm_df: pd.DataFrame,
+        source_workflow: str = "union_merge",
+        old_fmea_refdes_col: Optional[str] = None,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Phase 4 / A5: group-level union merge.
+
+        Unions the function groups from (old FMEA) and (grouping file),
+        then for each component in each group emits a piece-part row via
+        :meth:`_generate_component_rows`. Bidirectional diagnostics flag
+        components that only exist on one side, and group-level
+        diagnostics flag groups that only exist on one side.
+
+        Requirements:
+            - ``fm_df`` must already be column-mapped (canonical names)
+              and filtered by the selected FMD standard.
+            - ``self._build_indexes`` must have been called beforehand
+              so ``self.bom_index`` is populated.
+
+        Args:
+            old_fmea_df: existing FMEA DataFrame (raw, with original column
+                names) or None if this workflow has no old FMEA.
+            grouping_df: grouping file DataFrame (already column-mapped to
+                canonical names) or None if this workflow has no grouping
+                file.
+            fm_df: failure modes DataFrame (canonical, filtered).
+            source_workflow: tag written onto bom_additions entries for
+                variant inheritance during the merge.
+            old_fmea_refdes_col: optional explicit refdes column on the
+                old FMEA; auto-detected when None.
+            progress_callback: optional ``(current, total)`` callback.
+
+        Returns:
+            List of row dicts (ready for a DataFrame). Circuit-block
+            rows are NOT emitted — callers that want them should add
+            them separately (e.g., ``process_functional_to_piecepart``
+            preserves its own functional passthrough rows).
+        """
+        # Parse both sources
+        old_groups = self._parse_old_fmea_groups(
+            old_fmea_df if old_fmea_df is not None else pd.DataFrame(),
+            refdes_col=old_fmea_refdes_col,
+        )
+        new_groups = self._parse_grouping_file_groups(
+            grouping_df if grouping_df is not None else pd.DataFrame(),
+        )
+
+        self.log(
+            f"Union merge: {len(old_groups)} group(s) from old FMEA, "
+            f"{len(new_groups)} group(s) from grouping file.",
+            "INFO",
+        )
+
+        all_group_labels = set(old_groups.keys()) | set(new_groups.keys())
+        total_groups = len(all_group_labels)
+        output_rows: List[Dict[str, Any]] = []
+
+        def _populate_effects(
+            row: Dict[str, Any],
+            effects: Dict[str, str],
+        ) -> None:
+            """Inherit Local/Next Higher/End Effect values from the old
+            FMEA's circuit-block row onto a generated piece-part row.
+            Only overwrites blanks so explicit per-component values (if
+            any are produced by ``_generate_component_rows``) are kept.
+            """
+            mapping = {
+                'Local Effect': effects.get('local_effect', ''),
+                'Next Higher Effect': effects.get('next_higher_effect', ''),
+                'End Effect': effects.get('end_effect', ''),
+            }
+            for k, v in mapping.items():
+                if v and not row.get(k):
+                    row[k] = v
+
+        def _attach_diag(row: Dict[str, Any], message: str) -> None:
+            # Fix R2-L1: hard-check that the message does not contain the
+            # ';' separator. Previously this used ``assert`` which can
+            # be stripped under ``python -O`` — not a live issue today
+            # (PyInstaller spec uses ``optimize=0``) but harden anyway
+            # so a future ``-O`` run can't silently ship ambiguous
+            # diagnostic output. The MERGE_DIAG_* class attributes have
+            # a matching comment above their definitions describing
+            # this constraint.
+            if ";" in message:
+                raise ValueError(
+                    f"Merge diagnostic messages must not contain ';' "
+                    f"(used as join separator): {message!r}"
+                )
+            existing = row.get('Diagnostic', '')
+            row['Diagnostic'] = f"{existing}; {message}" if existing else message
+
+        def _record_merge_diag(
+            group_label: str,
+            refdes: str,
+            source: str,
+            message: str,
+        ) -> None:
+            self.group_merge_diagnostics.append({
+                'group': group_label,
+                'refdes': refdes,
+                'source': source,
+                'diagnostic': message,
+            })
+
+        for gidx, group_label in enumerate(sorted(all_group_labels)):
+            self.cancel.check("Union merge cancelled by user.")
+            if progress_callback:
+                progress_callback(gidx + 1, total_groups or 1)
+
+            old_entry = old_groups.get(group_label)
+            new_entry = new_groups.get(group_label)
+
+            # Group-level diagnostics
+            if old_entry is not None and new_entry is None:
+                _record_merge_diag(
+                    group_label, '', 'group', self.MERGE_DIAG_GROUP_OLD_ONLY,
+                )
+            elif new_entry is not None and old_entry is None:
+                _record_merge_diag(
+                    group_label, '', 'group', self.MERGE_DIAG_GROUP_NEW,
+                )
+
+            # Component union
+            old_components = (old_entry or {}).get('components', set())
+            new_components = (new_entry or {}).get('components', set())
+            union = sorted(old_components | new_components)
+
+            # Effects come from the old FMEA (if present)
+            effects = old_entry if old_entry is not None else {}
+
+            # Group description/page: prefer grouping file when present,
+            # else inherit from old FMEA.
+            desc = (new_entry or {}).get('description', '') or (
+                effects.get('description', '')
+            )
+            page = (new_entry or {}).get('schematic_page', '') or (
+                effects.get('schematic_page', '')
+            )
+            group_row_stub = {
+                'component_group': group_label,
+                'description': desc,
+                'schematic_page': page,
+            }
+
+            # Emit the circuit-block header row so the structure is
+            # preserved in the output. _generate_group_rows applies
+            # the standard FMD column headers and row_type.
+            circuit_rows = self._generate_group_rows(group_row_stub)
+            # Inherit effects on the circuit-block row too
+            for row in circuit_rows:
+                _populate_effects(row, effects)
+                if old_entry is not None and new_entry is None:
+                    _attach_diag(row, self.MERGE_DIAG_GROUP_OLD_ONLY)
+                elif new_entry is not None and old_entry is None:
+                    _attach_diag(row, self.MERGE_DIAG_GROUP_NEW)
+            output_rows.extend(circuit_rows)
+
+            for union_idx, ref in enumerate(union):
+                # Fix E4: a group with 500+ components would otherwise be
+                # uncancellable for the duration of its row generation
+                # — cancel.check was only called once per group at the
+                # top of the outer loop. Add a gated inner check every
+                # 32 components, following the same cadence idiom used
+                # in ``_build_indexes`` (which uses
+                # ``INDEX_CANCEL_CHECK_INTERVAL``).
+                if union_idx and (union_idx & 31) == 0:
+                    self.cancel.check("Union merge cancelled by user.")
+                # Fix A1: a malformed BOM cell (bad numeric, missing key,
+                # non-ASCII blob) can raise ValueError/TypeError/KeyError
+                # while building rows for a single component. Without this
+                # guard, the entire merge run tears down and the user loses
+                # every group processed so far. We must re-raise
+                # CancellationError / InterruptedError before the broad
+                # catch — they inherit from OSError/Exception but we do
+                # NOT want to swallow user cancellation.
+                try:
+                    rows = self._generate_component_rows(
+                        ref,
+                        group_row_stub,
+                        fm_df,
+                        mode='standard',
+                        source_workflow=source_workflow,
+                    )
+                except (InterruptedError,):
+                    # CancellationError inherits from InterruptedError;
+                    # both must propagate so the cancel button works.
+                    raise
+                except (ValueError, TypeError, KeyError) as exc:
+                    self.log(
+                        f"Row generation failed for '{ref}' in group "
+                        f"'{group_label}': {exc}. Emitting placeholder.",
+                        "WARNING",
+                    )
+                    rows = [{
+                        'RefDes': ref,
+                        'Failure Mode Causes': ref,
+                        'Diagnostic': f"Row generation failed for {ref}: {exc}",
+                        '_row_type': 'piece_part_no_match',
+                        '_style_hint': 'error',
+                    }]
+
+                # Fix A4: when a component is in the union set (expected
+                # to appear in the merge) but _generate_component_rows
+                # returned [] (because it's missing from BOM AND its base
+                # variant is also missing), emit a synthetic placeholder
+                # so the merge diagnostic below still has a row to attach
+                # to. Without this the user saw neither a piece-part row
+                # nor a diagnostic — the component just vanished.
+                if not rows:
+                    rows = [{
+                        'RefDes': ref,
+                        'Failure Mode Causes': ref,
+                        'Component Part Number': '',
+                        'Component Part Description': '(Missing from BOM)',
+                        'Diagnostic': (
+                            f'Component {ref} present in merge set '
+                            f'but missing from BOM.'
+                        ),
+                        '_row_type': 'piece_part_no_match',
+                        '_style_hint': 'error',
+                    }]
+
+                # Inherit effects from the old FMEA circuit-block row
+                for row in rows:
+                    _populate_effects(row, effects)
+
+                in_old = ref in old_components
+                in_new = ref in new_components
+
+                if in_old and not in_new:
+                    for row in rows:
+                        _attach_diag(row, self.MERGE_DIAG_OLD_ONLY)
+                    _record_merge_diag(
+                        group_label, ref, 'component', self.MERGE_DIAG_OLD_ONLY,
+                    )
+                elif in_new and not in_old:
+                    for row in rows:
+                        _attach_diag(row, self.MERGE_DIAG_GROUPING_ONLY)
+                    _record_merge_diag(
+                        group_label, ref, 'component', self.MERGE_DIAG_GROUPING_ONLY,
+                    )
+                # else: in both → no diagnostic
+
+                output_rows.extend(rows)
+
+        self.log(
+            f"Union merge produced {len(output_rows)} row(s) across "
+            f"{total_groups} function group(s) "
+            f"({len(self.group_merge_diagnostics)} merge diagnostics).",
+            "INFO",
+        )
+        return output_rows
 
     def process_gaps(
         self,
         inputs: Dict[str, Any],
         progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> pd.DataFrame:
-        """
-        Generate FMEA rows for RefDes in BOM but not in existing FMEA (Fill Gaps mode).
+        """Phase 4 / A5: Fill-gaps / Merge Piece-Part FMEA workflow.
 
-        This mode finds components in the BOM that are missing from an existing FMEA
-        and generates complete FMEA piece-part rows for them.
+        Replaces the old BOM-driven set-difference logic with a
+        group-level union merge. Reads the existing FMEA (required),
+        an optional grouping file, BOM, and failure modes; unions the
+        function groups from the two sources and emits piece-part rows
+        via :meth:`process_union_merge` with bidirectional diagnostic
+        flags (components missing from one side, groups missing from
+        one side).
 
         Required inputs:
             - 'fmea': Path to existing FMEA file
-            - 'bom': Path to BOM/PL file
-            - 'fm': Path to Failure Modes file
+            - 'bom':  Path to BOM/PL file
+            - 'fm':   Path to Failure Modes file
 
         Optional inputs:
-            - 'hda': Path to HDA file
-            - 'group': Path to Grouping file (for circuit block assignment)
-            - 'fmea_refdes_col': Column name for RefDes in FMEA (auto-detected if not provided)
-
-        Returns:
-            DataFrame with generated FMEA rows for missing RefDes
+            - 'hda':   Path to HDA file
+            - 'group': Path to Grouping file (used for the union merge
+              source; when omitted the merge degenerates to "preserve
+              everything in the old FMEA")
+            - 'fmea_refdes_col': Column name for RefDes in the old FMEA
+              (auto-detected if not provided)
         """
-        # Import FMEA detection utilities from common (Refinement 1: avoid app-to-app coupling)
-        from common.fmea_utils import detect_refdes_column_for_fmea, classify_fmea_rows
-
         with self._lock:
             # NOTE: cancel.reset() removed for Tauri sidecar — each run creates a fresh
             # FMEAProcessor, so the token starts clean. Resetting here would race with
@@ -704,7 +1362,9 @@ class FMEAProcessor:
             self.failure_modes_standard = str(inputs.get('failure_modes_standard') or 'FMD-2016')
 
         # Extract column overrides (format: {'FILE_TYPE': {'internal_key': 'actual_col_name'}})
+        # Fix A2/A5: also expose on self — see the matching comment in process().
         col_overrides = inputs.get('column_overrides') or {}
+        self.column_overrides = col_overrides
 
         # 1. Load files
         self.log("Loading input files...")
@@ -713,132 +1373,78 @@ class FMEAProcessor:
         fm_df = self.read_excel_safe(inputs['fm'], sheet_name=inputs.get('fm_sheet'))
         hda_df = self._resolve_hda_dataframe(inputs.get('hda'), bom_raw, col_overrides.get('HDA'), inputs.get('hda_sheet'))
 
-        # 2. Auto-detect FMEA RefDes column
-        fmea_refdes_col = inputs.get('fmea_refdes_col')
-        if not fmea_refdes_col:
-            fmea_refdes_col = detect_refdes_column_for_fmea(fmea_df, self.log)
-        if not fmea_refdes_col:
-            raise ColumnMappingError("RefDes", "FMEA file", tried_synonyms=["Reference Designator", "Failure Mode Causes", "RefDes"])
-
-        self.log(f"Using FMEA RefDes column: '{fmea_refdes_col}'")
-
-        # 3. Classify FMEA rows to extract piece-part RefDes only
-        self.log("Classifying FMEA rows...")
-        classifications, level_col, _ = classify_fmea_rows(fmea_df, self.log, self.cancel)
-
-        # Refinement 2: Use position-based iteration (safer than row_index - 2)
-        existing_refdes = set()
-        for pos, (df_idx, row) in enumerate(fmea_df.iterrows()):
-            if pos < len(classifications) and classifications[pos].row_type == 'piece_part':
-                val = row.get(fmea_refdes_col)
-                if pd.notna(val):
-                    for ref in split_refdes_list(str(val)):
-                        existing_refdes.add(canonicalize_refdes(ref))
-
-        self.log(f"Found {len(existing_refdes)} unique piece-part RefDes in existing FMEA")
-
-        # 4. Extract BOM RefDes (normalized)
-        b_map = self.map_columns(bom_raw, HEADER_CONFIG['BOM'], REQUIRED_COLS['BOM'],
-                                 source_name="BOM file", overrides=col_overrides.get('BOM'))
+        # 2. Map BOM + FM columns to canonical names so _build_indexes
+        # and _generate_component_rows have the shapes they expect.
+        b_map = self.map_columns(
+            bom_raw, HEADER_CONFIG['BOM'], REQUIRED_COLS['BOM'],
+            source_name="BOM file", overrides=col_overrides.get('BOM'),
+        )
         bom_df = bom_raw.rename(columns={v: k for k, v in b_map.items()})
+        ensure_columns_exist(bom_df, REQUIRED_COLS['BOM'], "BOM file")
 
-        bom_refdes = set()
-        # Phase D note: fill_gaps never triggers the inheritance code path.
-        # missing_refdes = bom_refdes - existing_refdes, so by construction
-        # the RefDes we generate piece-part rows for are ALREADY in the BOM.
-        # The base-variant fallback in _generate_component_rows therefore
-        # never fires for fill_gaps. We intentionally DO NOT populate
-        # variant_counts_by_base here — it would be built from the BOM,
-        # which is the wrong source for inheritance accounting anyway.
-        for val in bom_df['ref_des'].dropna():
-            for ref in split_refdes_list(str(val)):
-                canon = canonicalize_refdes(ref)
-                bom_refdes.add(canon)
-
-        self.log(f"Found {len(bom_refdes)} unique RefDes in BOM")
-
-        # 5. Find gaps
-        missing_refdes = sorted(bom_refdes - existing_refdes)
-        self.log(f"Found {len(missing_refdes)} RefDes in BOM but not in FMEA")
-
-        if not missing_refdes:
-            self.log("No gaps found - FMEA is complete!", "INFO")
-            return pd.DataFrame()
-
-        # 6. Build RefDes→Group lookup (optional Grouping file)
-        refdes_to_group = {}
-        group_conflicts = []  # Refinement 3: track conflicts
-        if inputs.get('group'):
-            self.log("Loading Grouping file for circuit block assignment...")
-            group_df = self.read_excel_safe(inputs['group'], sheet_name=inputs.get('group_sheet'))
-            g_map = self.map_columns(group_df, HEADER_CONFIG['COMPONENT_GROUPING'],
-                                     REQUIRED_COLS['COMPONENT_GROUPING'],
-                                     source_name="Grouping file", overrides=col_overrides.get('COMPONENT_GROUPING'))
-            group_df = group_df.rename(columns={v: k for k, v in g_map.items()})
-
-            for _, row in group_df.iterrows():
-                grp_id = clean_string(row.get('component_group'))
-                grp_desc = clean_string(row.get('description', ''))
-                grp_page = clean_string(row.get('schematic_page', ''))
-                for ref in split_refdes_list(row.get('ref_des', '')):
-                    ref_canon = canonicalize_refdes(ref)
-                    if ref_canon in refdes_to_group:
-                        # Refinement 3: Log conflict, keep first (consistent with BOM)
-                        if len(group_conflicts) < 10:
-                            existing_grp = refdes_to_group[ref_canon]['component_group']
-                            group_conflicts.append(f"{ref}: '{existing_grp}' vs '{grp_id}'")
-                    else:
-                        refdes_to_group[ref_canon] = {
-                            'component_group': grp_id,
-                            'description': grp_desc,
-                            'schematic_page': grp_page
-                        }
-
-            if group_conflicts:
-                self.log(f"WARNING: {len(group_conflicts)}+ RefDes in multiple groups (using first)", "WARNING")
-                for conflict in group_conflicts[:5]:
-                    self.log(f"  - {conflict}")
-
-            self.log(f"Loaded {len(refdes_to_group)} RefDes→Group mappings")
-
-        # 7. Map FM columns, filter by FMD standard, and build indexes
-        f_map = self.map_columns(fm_df, HEADER_CONFIG['FAILURE_MODES'], REQUIRED_COLS['FAILURE_MODES'],
-                                 source_name="Failure Modes file", overrides=col_overrides.get('FAILURE_MODES'))
+        f_map = self.map_columns(
+            fm_df, HEADER_CONFIG['FAILURE_MODES'], REQUIRED_COLS['FAILURE_MODES'],
+            source_name="Failure Modes file", overrides=col_overrides.get('FAILURE_MODES'),
+        )
         fm_df = fm_df.rename(columns={v: k for k, v in f_map.items()})
+        ensure_columns_exist(fm_df, REQUIRED_COLS['FAILURE_MODES'], "Failure Modes file")
         fm_df = self._filter_failure_modes_by_standard(fm_df, self.failure_modes_standard)
 
+        # 3. Load optional grouping file and map its columns so
+        # process_union_merge sees canonical names.
+        group_df = None
+        if inputs.get('group'):
+            self.log("Loading Grouping file for union merge...")
+            group_raw = self.read_excel_safe(
+                inputs['group'], sheet_name=inputs.get('group_sheet'),
+            )
+            g_map = self.map_columns(
+                group_raw, HEADER_CONFIG['COMPONENT_GROUPING'],
+                REQUIRED_COLS['COMPONENT_GROUPING'],
+                source_name="Grouping file",
+                overrides=col_overrides.get('COMPONENT_GROUPING'),
+            )
+            group_df = group_raw.rename(columns={v: k for k, v in g_map.items()})
+
+            # Seed variant_counts_by_base from the grouping file so any
+            # inherited variant encountered during merge gets the right
+            # 1/N fraction on its BOM_Additions entry.
+            self.variant_counts_by_base.clear()
+            for _, grow in group_df.iterrows():
+                for ref in split_refdes_list(grow.get('ref_des', '')):
+                    base = canonicalize_refdes(get_usage_base_refdes(ref))
+                    if base:
+                        self.variant_counts_by_base[base] += 1
+
+        # 4. Build BOM / HDA / FM indexes
         self._build_indexes(bom_df, hda_df, fm_df)
 
-        # 8. Generate rows for missing RefDes
-        self.log("Generating FMEA rows for missing RefDes...")
-        output_rows = []
-        total = len(missing_refdes)
-        for idx, ref_des in enumerate(missing_refdes):
-            self.cancel.check()
-            if progress_callback:
-                progress_callback(idx + 1, total)
+        # 5. Run the group-level union merge
+        self.log("Running group-level union merge...")
+        merge_rows = self.process_union_merge(
+            old_fmea_df=fmea_df,
+            grouping_df=group_df,
+            fm_df=fm_df,
+            source_workflow='fill_gaps',
+            old_fmea_refdes_col=inputs.get('fmea_refdes_col'),
+            progress_callback=progress_callback,
+        )
 
-            # Use Grouping file mapping if available, otherwise GAP_FILL marker
-            group_row = refdes_to_group.get(canonicalize_refdes(ref_des), {
-                'component_group': 'GAP_FILL',
-                'description': 'Auto-generated to fill FMEA gaps',
-                'schematic_page': ''
-            })
-
-            rows = self._generate_component_rows(ref_des, group_row, fm_df, mode='standard', source_workflow='fill_gaps')
-
-            # Add diagnostic note indicating gap-fill origin
-            for row in rows:
-                existing_diag = row.get('Diagnostic', '')
-                gap_note = "Generated by Fill Gaps mode"
-                row['Diagnostic'] = f"{gap_note}; {existing_diag}" if existing_diag else gap_note
-
-            output_rows.extend(rows)
-
-        self.log(f"Generated {len(output_rows)} FMEA rows for {len(missing_refdes)} missing RefDes")
+        self.log(
+            f"Generated {len(merge_rows)} FMEA rows via union merge "
+            f"({len(self.group_merge_diagnostics)} diagnostics).",
+        )
         if self.bom_additions:
-            self.log(f"BOM Additions: {len(self.bom_additions)} variant RefDes inherited from base components (see BOM_Additions sheet)", "INFO")
-        return pd.DataFrame(output_rows)
+            self.log(
+                f"BOM Additions: {len(self.bom_additions)} variant RefDes "
+                f"inherited from base components "
+                f"(see 'FMEA Gen New RefDes' sheet)",
+                "INFO",
+            )
+        # Fix R3-M2: aggregate per-row "suspicious mapped count" flags
+        # into a single summary WARNING instead of logging one per row.
+        self._emit_part_usage_suspicious_summary()
+        return pd.DataFrame(merge_rows)
 
     def process_functional_to_piecepart(
         self,
@@ -872,6 +1478,7 @@ class FMEAProcessor:
             self.failure_modes_standard = str(inputs.get('failure_modes_standard') or 'FMD-2016')
 
         col_overrides = inputs.get('column_overrides') or {}
+        self.column_overrides = col_overrides  # Fix A2/A5
 
         if status_callback:
             status_callback("Reading input files...")
@@ -899,6 +1506,25 @@ class FMEAProcessor:
         ensure_columns_exist(fm_df, REQUIRED_COLS['FAILURE_MODES'], "Failure Modes file")
         fm_df = self._filter_failure_modes_by_standard(fm_df, self.failure_modes_standard)
 
+        # Fix C1: optional grouping file for union-merge second pass.
+        # When the user supplies a grouping file alongside a functional
+        # FMEA, we parse it to canonical names here so the functional-
+        # expansion loop below can reference it. The actual merge happens
+        # after the expansion is built.
+        group_df = None
+        if inputs.get('group'):
+            self.log("Loading Grouping file for functional union merge...")
+            group_raw = self.read_excel_safe(
+                inputs['group'], sheet_name=inputs.get('group_sheet'),
+            )
+            g_map = self.map_columns(
+                group_raw, HEADER_CONFIG['COMPONENT_GROUPING'],
+                REQUIRED_COLS['COMPONENT_GROUPING'],
+                source_name="Grouping file",
+                overrides=col_overrides.get('COMPONENT_GROUPING'),
+            )
+            group_df = group_raw.rename(columns={v: k for k, v in g_map.items()})
+
         if status_callback:
             status_callback("Building indexes...")
         self.log("Building indexes...")
@@ -906,8 +1532,47 @@ class FMEAProcessor:
 
         if status_callback:
             status_callback("Parsing functional FMEA blocks...")
-        # Detect the RefDes column on the functional sheet
-        refdes_col = detect_refdes_column_for_fmea(func_raw, self.log)
+        # Fix R3-M1: honor the user's explicit column mappings before
+        # falling back to heuristic detection / synonym resolution. The
+        # sibling merge path (``_parse_old_fmea_groups``) already did
+        # this in R2-H2/R2-H2b; without it here, a user who explicitly
+        # mapped "Failure Mode Causes" to a non-standard header (e.g.
+        # "FuncRefs") saw their pick silently discarded and the run
+        # threw ColumnMappingError. The ``isinstance(..., str)`` check
+        # defends against the flat+nested dict shape where file-type
+        # keys (``BOM``, ``HDA``, ...) are nested dicts, not strings.
+        #
+        # Phase D's FRONTEND_TO_BACKEND_MAPPING deliberately omits these
+        # FMEA-output columns (Local/Next Higher/End Effect, FMEA-ID,
+        # Function Description, Schematic Page) because they're consumed
+        # by reading an existing/functional FMEA directly via
+        # column_overrides + resolve_column, not through the
+        # ``map_columns()`` heuristic path that HEADER_CONFIG drives.
+        column_overrides_flat = getattr(self, 'column_overrides', {}) or {}
+
+        def _resolve_override_or_fallback(
+            canonical: str,
+            fallback_synonyms: Optional[list[str]],
+            heuristic: Optional[Callable[[], Optional[str]]] = None,
+        ) -> Optional[str]:
+            override = column_overrides_flat.get(canonical)
+            if (
+                isinstance(override, str)
+                and override.strip()
+                and override in func_raw.columns
+            ):
+                return override
+            if heuristic is not None:
+                return heuristic()
+            if fallback_synonyms:
+                return resolve_column(func_raw, fallback_synonyms)
+            return None
+
+        refdes_col = _resolve_override_or_fallback(
+            "Failure Mode Causes",
+            fallback_synonyms=None,
+            heuristic=lambda: detect_refdes_column_for_fmea(func_raw, self.log),
+        )
         if not refdes_col:
             raise ColumnMappingError(
                 "RefDes",
@@ -919,15 +1584,20 @@ class FMEAProcessor:
         # Phase D: resolve the other functional-FMEA columns via synonyms
         # so we don't hardcode header names like "FMEA-ID" that real
         # workbooks rarely use literally. Each of these can be None if
-        # not present — the row loop handles fallbacks.
-        fmea_id_col = resolve_column(
-            func_raw, ['FMEA-ID', 'FMEA ID', 'Function ID', 'Component Group', 'ID']
+        # not present — the row loop handles fallbacks. Fix R3-M1: also
+        # consult column_overrides first so the user's explicit picks
+        # win over the heuristic synonym resolver.
+        fmea_id_col = _resolve_override_or_fallback(
+            "FMEA-ID",
+            ['FMEA-ID', 'FMEA ID', 'Function ID', 'Component Group', 'ID'],
         )
-        func_desc_col = resolve_column(
-            func_raw, ['Function Description', 'Description', 'Functional Description']
+        func_desc_col = _resolve_override_or_fallback(
+            "Function Description",
+            ['Function Description', 'Description', 'Functional Description'],
         )
-        sch_page_col = resolve_column(
-            func_raw, ['Schematic Page', 'Page', 'Sheet', 'Schematic']
+        sch_page_col = _resolve_override_or_fallback(
+            "Schematic Page",
+            ['Schematic Page', 'Page', 'Sheet', 'Schematic'],
         )
         self.log(
             f"Functional FMEA column resolution: id='{fmea_id_col}', "
@@ -1042,10 +1712,94 @@ class FMEAProcessor:
                     context="functional_to_piecepart",
                 )
 
+        # Fix C1: when the user supplied a grouping file, run a second
+        # pass to catch components that exist in the grouping file but
+        # were NOT emitted by the functional expansion. The simpler
+        # acceptable alternative (documented in the fix spec) is used
+        # here: call process_union_merge with old_fmea_df=None and the
+        # grouping file as the new source, then blend the result by
+        # deduplicating on (group_label, canonicalized refdes).
+        # Components unique to the functional expansion are preserved
+        # as-is (no diagnostic); components unique to the grouping file
+        # get the MERGE_DIAG_GROUPING_ONLY diagnostic attached by
+        # process_union_merge. Components in both keep their functional
+        # row and drop the merge-pass duplicate.
+        if group_df is not None:
+            if status_callback:
+                status_callback("Merging functional FMEA with grouping file...")
+            self.log("Running union merge against grouping file...")
+            merge_rows = self.process_union_merge(
+                old_fmea_df=None,
+                grouping_df=group_df,
+                fm_df=fm_df,
+                source_workflow='functional_to_piecepart',
+                old_fmea_refdes_col=None,
+                progress_callback=None,
+            )
+
+            # Build a dedup set of (group_label, canonical refdes) that
+            # the functional expansion already emitted. Use 'FMEA-ID'
+            # or 'component_group' as the group label when present,
+            # otherwise '' — that mirrors the grouping file key format.
+            existing_keys: set[tuple[str, str]] = set()
+            for row in output_rows:
+                if row.get(ROW_TYPE_COL) not in ('piece_part', 'validation_warning', 'piece_part_no_match'):
+                    continue
+                ref = clean_string(row.get('Failure Mode Causes'))
+                ref_canon = canonicalize_refdes(ref)
+                # Functional rows don't carry a group_label directly;
+                # match on refdes alone for the dedup. We use '' as the
+                # placeholder group label so any merge row with the
+                # same refdes canonical is considered a duplicate.
+                existing_keys.add(('', ref_canon))
+
+            added = 0
+            dedup_dropped = 0
+            for mrow in merge_rows:
+                # Skip circuit-block rows from the merge pass — the
+                # functional expansion already preserved the original
+                # functional row structure and we don't want to
+                # duplicate block headers.
+                if mrow.get(ROW_TYPE_COL) == 'circuit_block':
+                    continue
+                mref = clean_string(mrow.get('Failure Mode Causes'))
+                mref_canon = canonicalize_refdes(mref)
+                if ('', mref_canon) in existing_keys:
+                    # Fix R2-M1: the dedup key is refdes-only (no group
+                    # label) because functional rows don't carry a
+                    # reliable group_label in an accessible field. As a
+                    # result, a refdes that legitimately belongs to two
+                    # DIFFERENT function groups — one from the functional
+                    # FMEA and one from the grouping file — gets silently
+                    # collapsed into a single entry. Count the drops and
+                    # emit a WARNING after the loop so the user knows to
+                    # review the output manually if the same refdes is
+                    # expected in multiple groups.
+                    dedup_dropped += 1
+                    continue
+                output_rows.append(mrow)
+                added += 1
+            self.log(
+                f"Functional union merge added {added} row(s) for components "
+                f"present in the grouping file but not in the functional FMEA.",
+                "INFO",
+            )
+            if dedup_dropped:
+                self.log(
+                    f"Functional merge: {dedup_dropped} row(s) were dropped "
+                    f"as refdes duplicates between the functional FMEA and "
+                    f"grouping file. If the same refdes legitimately belongs "
+                    f"to multiple groups, review the output manually.",
+                    "WARNING",
+                )
+
         self.log(
             f"Emitted {len(output_rows)} rows ({total_blocks} circuit blocks processed; "
             f"{len(self.bom_additions)} BOM additions inferred)"
         )
+        # Fix R3-M2: aggregate per-row "suspicious mapped count" flags
+        # into a single summary WARNING instead of logging one per row.
+        self._emit_part_usage_suspicious_summary()
         return pd.DataFrame(output_rows)
 
     def _generate_group_rows(
@@ -1073,8 +1827,25 @@ class FMEAProcessor:
         suffix: str,
         mode: str = "standard",
     ) -> str:
-        """Format FMEA ID based on mode."""
-        return f"{group_label}-{ref_des}{suffix}" if mode == 'bom_only' else f"{group_label}-{ref_des}-{suffix}"
+        """Format FMEA ID based on mode.
+
+        Phase 4 / A6: in BOM-Only mode, when ``self.cca_prefix`` is set
+        (the CCA identifier the user typed in the Workflow card), use it
+        as the group label so output IDs look like "PSU-C200-A" instead
+        of "BOM-C200-A". Other modes still use the ``group_label`` argument
+        (from the grouping row / existing FMEA circuit-block row).
+
+        Fix A3: the previous BOM-Only branch returned
+        ``f"{label}-{ref_des}{suffix}"`` without a hyphen before the
+        suffix, producing IDs like ``PSU-C200A`` instead of the documented
+        ``PSU-C200-A``. All modes now share the same hyphenated shape.
+        """
+        effective_label = group_label
+        if mode == 'bom_only' and self.cca_prefix:
+            effective_label = self.cca_prefix
+        if suffix:
+            return f"{effective_label}-{ref_des}-{suffix}"
+        return f"{effective_label}-{ref_des}"
 
     def _generate_bom_only_rows(
         self,
@@ -1201,6 +1972,91 @@ class FMEAProcessor:
             usage_warning = self._check_single_usage(ref_des, _usage_value)
         if usage_warning:
             diag_msgs.append(usage_warning)
+            # Phase 4 / A8 + Fix A5: structured Part Usage discrepancy
+            # tracking. The user explicitly mapped Part Usage from the
+            # BOM (via the column mapping table) and the generator
+            # derived an independent count (usage_base_counts[base] for
+            # non-inherited rows, or variant_counts_by_base for inherited
+            # ones). When those disagree, surface a dedicated "Part
+            # Usage Diagnostics" sheet entry AND a yellow row fill.
+            #
+            # Fix A5 part 1: gate this on an explicit "Part Usage"
+            # mapping. Without this gate, BOMs with the default "1"
+            # Part Usage value spam the diagnostics sheet for every
+            # component whose base appears more than once. We check
+            # against the frontend's canonical label ("Part Usage") and
+            # also accept legacy snake_case ("part_usage") in case a
+            # programmatic caller still uses that shape.
+            part_usage_explicitly_mapped = bool(
+                self.column_overrides.get('Part Usage')
+                or self.column_overrides.get('part_usage')
+            )
+            if part_usage_explicitly_mapped:
+                if inherited_from_base is not None:
+                    _computed_count = self.variant_counts_by_base.get(inherited_from_base, 0)
+                else:
+                    _computed_count = self.usage_base_counts.get(
+                        get_usage_base_refdes(ref_des), 0,
+                    )
+                # Fix A5 part 2: the original implementation mixed units
+                # in ``diff`` — ``mapped`` was a fraction, ``computed``
+                # was a count, and ``diff = computed - 1/mapped``. We
+                # now convert the mapped fraction into an equivalent
+                # count (round(1/mapped)) so both sides are in the same
+                # unit, and ``diff`` is a meaningful count delta.
+                mapped_count_from_fraction = (
+                    int(round(1.0 / _usage_value))
+                    if _usage_value
+                    else 0
+                )
+                _diff = _computed_count - mapped_count_from_fraction
+                # Fix R2-H1: the previous assertion was tautological
+                # (``a == b + (a - b)``) and could not catch any real
+                # error. Replace it with a pair of meaningful checks:
+                #
+                # 1. Non-negativity — both counts are instance counts
+                #    and must be >= 0. A negative value would indicate
+                #    a corrupt BOM or usage parse error upstream.
+                # 2. Bounded-value sanity — a Part Usage like 1e-7
+                #    yields mapped_count = 10,000,000 which is almost
+                #    certainly a data-entry error (e.g., user typed
+                #    0.0000001 instead of 1.0). R3-M2: such entries
+                #    now STAY in the discrepancies sheet so the user
+                #    can triage them, but they increment a per-processor
+                #    suspicious counter that emits ONE aggregated
+                #    WARNING at the end of the workflow (rather than
+                #    spamming the log with one WARNING per row).
+                assert (
+                    mapped_count_from_fraction >= 0 and _computed_count >= 0
+                ), (
+                    f"Part Usage counts must be non-negative: "
+                    f"computed={_computed_count}, "
+                    f"mapped={mapped_count_from_fraction}, "
+                    f"usage_value={_usage_value}, refdes={ref_des}"
+                )
+                # Fix R3-M2: raise the threshold to 1,000,000 instances.
+                # Production dense SMD PCBs can legitimately have 15,000+
+                # instances of a single decoupling-cap variant sharing
+                # one BOM line; the old 10,000 threshold was dropping
+                # legitimate discrepancies silently. The new ceiling is
+                # well above any real-world PCB but still catches the
+                # obvious typo pattern (Part Usage = 0.0000001).
+                #
+                # Also: ALWAYS append the discrepancy entry so the user
+                # still sees it in the "Part Usage Diagnostics" sheet.
+                # The old behavior skipped the entry entirely, making
+                # the warning useless as a triage aid. Instead, flag
+                # the row internally via a per-processor counter and
+                # emit ONE aggregated WARNING after the main generator
+                # loop finishes (see each process*() method).
+                if mapped_count_from_fraction > 1_000_000:
+                    self.part_usage_suspicious_count += 1
+                self.part_usage_discrepancies.append({
+                    'refdes': ref_des,
+                    'mapped_count': mapped_count_from_fraction,
+                    'computed_count': _computed_count,
+                    'diff': _diff,
+                })
             # Capture structured usage warning for Validation_Warnings sheet
             base = get_usage_base_refdes(ref_des)
             if inherited_from_base is not None:
@@ -1385,11 +2241,23 @@ def write_excel_report(
     if validation_warnings:
         summaries['Validation_Warnings'] = pd.DataFrame(validation_warnings)
 
-    # Phase D: BOM Additions sheet — pin/variant RefDes that inherited
-    # data from a base component during piece-part generation. Gives the
-    # user a paste-back list to add to their BOM.
+    # Phase D / A9: Variant inheritance summary sheet — pin/variant RefDes
+    # that inherited data from a base component during piece-part generation.
+    # Gives the user a paste-back list to add to their BOM. Phase 4 renamed
+    # the user-visible title from "BOM_Additions" to NEW_REFDES_SHEET_NAME
+    # ("FMEA Gen New RefDes"); internal processor state (proc.bom_additions)
+    # keeps the old name for backward compatibility.
     if proc.bom_additions:
-        summaries['BOM_Additions'] = pd.DataFrame([
+        # Fix F3: one-shot migration heads-up log so users with downstream
+        # scripts that read a legacy ``BOM_Additions`` sheet know to
+        # update their consumers. Only emitted when the sheet is actually
+        # written (i.e., there is inheritance data for this run).
+        proc.log(
+            "Note: the output sheet previously named 'BOM_Additions' is now "
+            "'FMEA Gen New RefDes'. Update any downstream scripts or macros.",
+            "INFO",
+        )
+        summaries[NEW_REFDES_SHEET_NAME] = pd.DataFrame([
             {
                 'RefDes': e['ref_des'],
                 'Base RefDes': e['base_refdes'],
@@ -1404,6 +2272,24 @@ def write_excel_report(
                 'Notes': e['notes'],
             }
             for e in proc.bom_additions
+        ])
+
+    # Phase 4 / A8 + Fix A5: Part Usage Diagnostics sheet — mismatches
+    # between the explicitly mapped Part Usage from the BOM and the
+    # computed FMEA-Gen count. Only populated when
+    # proc.part_usage_discrepancies has entries (see
+    # _generate_component_rows). Fix A5 switched the entry schema to
+    # consistent count semantics: ``mapped_count`` and ``computed_count``
+    # are both integer instance counts, and ``diff`` is a count delta.
+    if getattr(proc, 'part_usage_discrepancies', None):
+        summaries[PART_USAGE_DIAGNOSTICS_SHEET_NAME] = pd.DataFrame([
+            {
+                'RefDes': entry.get('refdes', ''),
+                'Mapped Count': entry.get('mapped_count', ''),
+                'Computed Count': entry.get('computed_count', ''),
+                'Diff': entry.get('diff', ''),
+            }
+            for entry in proc.part_usage_discrepancies
         ])
 
     # Create workbook
@@ -1454,7 +2340,8 @@ def write_excel_report(
         'BOM_Missing_Refs': 'info',
         'BOM_Duplicate_Refs': 'highlight',
         'Validation_Warnings': 'warning',  # Yellow for FMR/usage validation issues
-        'BOM_Additions': 'highlight',      # Phase D: variant rows inherited from base components
+        NEW_REFDES_SHEET_NAME: 'highlight',      # Phase D/A9: variant rows inherited from base components
+        PART_USAGE_DIAGNOSTICS_SHEET_NAME: 'warning',  # Phase 4/A8
     }
 
     for name, frame in summaries.items():
@@ -1467,9 +2354,10 @@ def write_excel_report(
             else:
                 style_worksheet(ws, frame, row_style_func=lambda r, i, s=style_name: s, max_width=40)
 
-            # Phase D: prepend an explanation banner row on the BOM_Additions
-            # sheet so the paste-back intent is obvious at a glance.
-            if name == 'BOM_Additions':
+            # Phase D / A9: prepend an explanation banner row on the
+            # "FMEA Gen New RefDes" sheet so the paste-back intent is
+            # obvious at a glance.
+            if name == NEW_REFDES_SHEET_NAME:
                 col_count = len(frame.columns)
                 if col_count > 0:
                     ws.insert_rows(1)

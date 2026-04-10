@@ -4,6 +4,13 @@ import { InputGrid } from "../../components/InputGrid";
 import { RunStatePanel } from "../../components/RunStatePanel";
 import { SectionCard } from "../../components/SectionCard";
 import { ValidationPreview } from "../../components/ValidationPreview";
+import { CheckboxField } from "../../components/primitives/CheckboxField";
+import { ContextTabs } from "../../components/primitives/ContextTabs";
+import { EmptyState } from "../../components/primitives/EmptyState";
+import { OptionsField } from "../../components/primitives/OptionsField";
+import { OptionsSection } from "../../components/primitives/OptionsSection";
+import { ToggleChip } from "../../components/primitives/ToggleChip";
+import { MagnifyingGlass } from "@phosphor-icons/react";
 import { executeRunResultSchema } from "../../contracts/sidecar";
 import {
   refdesDemoScenarios,
@@ -17,7 +24,8 @@ import type {
   ValidationMessage,
 } from "../../app/types";
 import { backendClient, type RunRequestBody } from "../../shared/backend/client";
-import { buildRunTimeline, isBusyRunPhase, useBackendRunLifecycle } from "../../shared/backend/runLifecycle";
+import { buildCancelNotification } from "../../shared/backend/cancelError";
+import { buildRunTimeline, useBackendRunLifecycle } from "../../shared/backend/runLifecycle";
 import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
 import { useRoleRequestSequence } from "../../shared/hooks/useRoleRequestSequence";
 import { useNotificationStore } from "../../stores/notificationStore";
@@ -55,10 +63,24 @@ function parseRefDesRunResult(payload: unknown) {
   return executeRunResultSchema.parse(payload);
 }
 
+type ExtractionMode = "functional" | "piece_part";
+type BackendMode = "auto" | "nextgen" | "legacy";
+
+interface RefDesOptions {
+  extraction_mode: ExtractionMode;
+  backend_mode: BackendMode;
+  geometry_analysis_enabled: boolean;
+  adaptive_geometry_enabled: boolean;
+  geometry_batch_size: number;
+  max_pin_label_length: number;
+  prov_distance: number;
+  [key: string]: unknown;
+}
+
 export function RefDesExtractorTool() {
   const baseScenario = refdesDemoScenarios[0];
   const [inputStates, setInputStates] = useState<InputFileState[]>(() => cloneInputs(baseScenario.inputs));
-  const [options, setOptions] = useState({
+  const [options, setOptions] = useState<RefDesOptions>({
     extraction_mode: "functional",
     backend_mode: "auto",
     geometry_analysis_enabled: true,
@@ -75,7 +97,6 @@ export function RefDesExtractorTool() {
   const [runResult, setRunResult] = useState<typeof baseScenario.runSequence.result | null>(null);
   const [runLogLines, setRunLogLines] = useState<string[]>([]);
   const [cancelledNotice, setCancelledNotice] = useState<string | null>(null);
-  const [cancelPending, setCancelPending] = useState(false);
   const contextHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const handledDesktopTerminalRef = useRef<string | null>(null);
   const backendMode = useShellStore((state) => state.backendMode);
@@ -170,14 +191,27 @@ export function RefDesExtractorTool() {
         ? desktopRunSession.statusMessage
         : null
       : cancelledNotice;
-  const panelCancelPending =
-    backendClient.runtimeMode === "desktop-bridge" ? panelRunMode === "cancelling" : cancelPending;
   const panelTruncatedLogCount =
     backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.truncatedLogCount : 0;
   const panelErrorCode =
     backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.errorCode : null;
   const panelErrorTraceback =
     backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.errorTraceback : null;
+
+  // Pristine = no real input loaded yet AND no run has been started.
+  const isPristine =
+    visibleInputs.every((input) => input.isExample === true) &&
+    panelRunMode === "idle";
+
+  const handleLoadExample = () => {
+    pushNotification({
+      tone: "info",
+      title: "Example files coming soon",
+      detail: "Bundled example schematics aren't shipping yet. For now, browse to a real PDF.",
+    });
+  };
+
+  const firstInputRole = visibleInputs[0]?.role ?? null;
 
   // Desktop run terminal state handler
   useEffect(() => {
@@ -403,7 +437,6 @@ export function RefDesExtractorTool() {
       setRunLogLines([]);
       setCancelledNotice(null);
       setRunResult(null);
-      setCancelPending(false);
       setContextView("run");
       setRunMode("running");
       setRunIndex(0);
@@ -412,11 +445,15 @@ export function RefDesExtractorTool() {
 
     const runRequest = buildRunRequest();
 
+    // Fix R2-C1: clear any stale active run from a previous run BEFORE flipping
+    // the busy chip. Otherwise useBackendBusyReset would see (previous run's
+    // terminal phase + busy) and instantly clear the "Validating..." message.
+    resetDesktopRunSession();
+
     setContextView("run");
     setRunLogLines([]);
     setRunResult(null);
     setCancelledNotice(null);
-    setCancelPending(false);
     setBackendState({
       backendStatus: "busy",
       backendMessage: "Validating run configuration...",
@@ -474,7 +511,20 @@ export function RefDesExtractorTool() {
 
   function handleCancel() {
     if (backendClient.runtimeMode === "desktop-bridge") {
-      if (!desktopRunSession.runId || !isBusyRunPhase(desktopRunSession.phase)) {
+      // Phase B3: reject cancels issued while the session is still idle
+      // so stale run IDs never reach the sidecar.
+      //
+      // Fix E3: only fire the cancel on ``starting`` / ``running``
+      // phases. A previous helper also matched ``cancelling`` which
+      // let a double-click trigger a second cancel_run request — the
+      // sidecar would reject the second one with "No active run
+      // matches" and the user saw a confusing notification after
+      // they already cancelled.
+      if (
+        !desktopRunSession.runId ||
+        (desktopRunSession.phase !== "starting" &&
+          desktopRunSession.phase !== "running")
+      ) {
         return;
       }
 
@@ -489,26 +539,18 @@ export function RefDesExtractorTool() {
           });
         })
         .catch((error: unknown) => {
-          const detail = error instanceof Error ? error.message : "Unknown cancel failure";
-          pushNotification({
-            tone: "error",
-            title: "Cancel failed",
-            detail,
-          });
+          // Phase B3: surface the sidecar's real error message (Tauri
+          // rejects with a raw string, not an Error instance).
+          pushNotification(buildCancelNotification(error));
         });
       return;
     }
 
-    if (!cancelPending) {
-      setCancelPending(true);
-      setCancelledNotice("Press cancel again to confirm.");
-      return;
-    }
-
+    // Browser-mock: HoldButton already captured the press-and-hold
+    // confirmation, so cancel immediately.
     setRunMode("idle");
     setRunIndex(-1);
     setRunResult(null);
-    setCancelPending(false);
     setCancelledNotice("Demo run cancelled. The workspace returned to a safe idle state.");
   }
 
@@ -532,87 +574,87 @@ export function RefDesExtractorTool() {
 
         <section className="workspace-grid workspace-grid--single">
           <div className="workspace-grid__main">
-            <SectionCard title="Input Files" eyebrow="Data Sources">
-              <InputGrid inputs={visibleInputs} onBrowse={handleBrowse} onSheetChange={handleSheetChange} />
+            <SectionCard
+              title="Input Files"
+              eyebrow="Data Sources"
+              description="Load the schematic PDF and the BOM. The pinlist is required for piece-part extraction."
+            >
+              {isPristine ? (
+                <EmptyState
+                  icon={MagnifyingGlass}
+                  headline="Extract reference designators"
+                  body="Pick a schematic PDF and BOM to extract reference designators. Piece-part extraction also requires a pinlist."
+                  primaryAction={{
+                    label: "Browse for schematic",
+                    onClick: () => {
+                      if (firstInputRole) {
+                        void handleBrowse(firstInputRole);
+                      }
+                    },
+                  }}
+                  secondaryAction={{
+                    label: "Load example",
+                    onClick: handleLoadExample,
+                  }}
+                />
+              ) : (
+                <InputGrid inputs={visibleInputs} onBrowse={handleBrowse} onSheetChange={handleSheetChange} />
+              )}
             </SectionCard>
 
-            <SectionCard title="Options" eyebrow="Extraction Settings">
-              <div className="setup-grid">
-                <div className="setup-block">
-                  <p className="setup-block__label">Extraction mode</p>
-                  <div style={{ display: "flex", gap: "0.5rem" }}>
-                    {(["functional", "piece_part"] as const).map((mode) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        className={`toggle-chip ${options.extraction_mode === mode ? "toggle-chip--active" : ""}`}
-                        data-active={options.extraction_mode === mode}
-                        onClick={() => setOptions((prev) => ({ ...prev, extraction_mode: mode }))}
-                        style={{
-                          padding: "4px 12px",
-                          borderRadius: "999px",
-                          border: options.extraction_mode === mode ? "1px solid var(--accent)" : "1px solid var(--line)",
-                          background: options.extraction_mode === mode ? "var(--accent)" : "transparent",
-                          color: options.extraction_mode === mode ? "#ffffff" : "var(--text)",
-                          cursor: "pointer",
-                          fontSize: "var(--text-base)",
-                          fontWeight: "var(--weight-medium)",
-                          fontFamily: "inherit",
-                        }}
-                      >
-                        {mode === "functional" ? "Functional" : "Piece-Part"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+            <OptionsSection
+              title="Options"
+              eyebrow="Extraction Settings"
+              description="Pick the extraction strategy and backend."
+            >
+              <OptionsField label="Extraction mode">
+                <ToggleChip<ExtractionMode>
+                  ariaLabel="Extraction mode"
+                  mode="radio"
+                  value={options.extraction_mode}
+                  onChange={(next) =>
+                    setOptions((prev) => ({ ...prev, extraction_mode: next as ExtractionMode }))
+                  }
+                  options={[
+                    { value: "functional", label: "Functional" },
+                    { value: "piece_part", label: "Piece-Part" },
+                  ]}
+                />
+              </OptionsField>
 
-                <div className="setup-block">
-                  <p className="setup-block__label">Backend</p>
-                  <CustomSelect
-                    label="Backend mode"
-                    value={options.backend_mode}
-                    options={[
-                      { value: "auto", label: "Auto (recommended)" },
-                      { value: "nextgen", label: "NextGen only" },
-                      { value: "legacy", label: "Legacy only" },
-                    ]}
-                    onChange={(v) => setOptions((prev) => ({ ...prev, backend_mode: v }))}
-                  />
-                </div>
+              <OptionsField label="Backend">
+                <CustomSelect
+                  label="Backend mode"
+                  value={options.backend_mode}
+                  options={[
+                    { value: "auto", label: "Auto (recommended)" },
+                    { value: "nextgen", label: "NextGen only" },
+                    { value: "legacy", label: "Legacy only" },
+                  ]}
+                  onChange={(v) =>
+                    setOptions((prev) => ({ ...prev, backend_mode: v as BackendMode }))
+                  }
+                />
+              </OptionsField>
 
-                <div className="setup-block">
-                  <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
-                    <input
-                      type="checkbox"
-                      checked={options.geometry_analysis_enabled}
-                      onChange={() =>
-                        setOptions((prev) => ({
-                          ...prev,
-                          geometry_analysis_enabled: !prev.geometry_analysis_enabled,
-                        }))
-                      }
-                    />
-                    <span>Enable geometry analysis</span>
-                  </label>
-                </div>
+              <CheckboxField
+                id="refdes-geometry-analysis"
+                label="Enable geometry analysis"
+                checked={options.geometry_analysis_enabled}
+                onChange={(next) =>
+                  setOptions((prev) => ({ ...prev, geometry_analysis_enabled: next }))
+                }
+              />
 
-                <div className="setup-block">
-                  <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
-                    <input
-                      type="checkbox"
-                      checked={options.adaptive_geometry_enabled}
-                      onChange={() =>
-                        setOptions((prev) => ({
-                          ...prev,
-                          adaptive_geometry_enabled: !prev.adaptive_geometry_enabled,
-                        }))
-                      }
-                    />
-                    <span>Adaptive geometry (smart page gating)</span>
-                  </label>
-                </div>
-              </div>
-            </SectionCard>
+              <CheckboxField
+                id="refdes-adaptive-geometry"
+                label="Adaptive geometry (smart page gating)"
+                checked={options.adaptive_geometry_enabled}
+                onChange={(next) =>
+                  setOptions((prev) => ({ ...prev, adaptive_geometry_enabled: next }))
+                }
+              />
+            </OptionsSection>
           </div>
 
           <aside className="workspace-grid__side workspace-grid__side--sticky">
@@ -620,22 +662,15 @@ export function RefDesExtractorTool() {
               title={contextView === "preview" ? "Review" : "Execution"}
               eyebrow="Context Panel"
               actions={
-                <div style={{ display: "flex", gap: "0.25rem" }}>
-                  <button
-                    type="button"
-                    className={`context-tab ${contextView === "preview" ? "context-tab--active" : ""}`}
-                    onClick={() => setContextView("preview")}
-                  >
-                    Preview
-                  </button>
-                  <button
-                    type="button"
-                    className={`context-tab ${contextView === "run" ? "context-tab--active" : ""}`}
-                    onClick={() => setContextView("run")}
-                  >
-                    Run
-                  </button>
-                </div>
+                <ContextTabs<"preview" | "run">
+                  ariaLabel="Context panel"
+                  activeId={contextView}
+                  onChange={(id) => setContextView(id)}
+                  tabs={[
+                    { id: "preview", label: "Preview" },
+                    { id: "run", label: "Run" },
+                  ]}
+                />
               }
             >
               <h3 className="sr-only-focusable" ref={contextHeadingRef} tabIndex={-1}>
@@ -654,7 +689,6 @@ export function RefDesExtractorTool() {
                   }}
                   onCancel={handleCancel}
                   cancelledNotice={panelCancelledNotice}
-                  cancelPending={panelCancelPending}
                   logLines={panelLogLines}
                   truncatedLogCount={panelTruncatedLogCount}
                   errorCode={panelErrorCode}

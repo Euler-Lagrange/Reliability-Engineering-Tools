@@ -1,4 +1,5 @@
 import type { RunEvent, RunMode, RunResult } from "../app/types";
+import { HoldButton } from "./primitives/HoldButton";
 
 interface RunStatePanelProps {
   runMode: RunMode;
@@ -8,7 +9,6 @@ interface RunStatePanelProps {
   onStart: () => void;
   onCancel: () => void;
   cancelledNotice: string | null;
-  cancelPending: boolean;
   logLines?: string[];
   /** Number of log lines that were dropped from the start of the buffer. */
   truncatedLogCount?: number;
@@ -19,6 +19,41 @@ interface RunStatePanelProps {
   errorCode?: string | null;
   /** Full Python traceback for the error, if available. */
   errorTraceback?: string | null;
+  /**
+   * Known completion percentage 0..100. When undefined (and the run is
+   * active) the progress bar switches to an indeterminate sliding stripe
+   * with a "Working…" caption instead of a static empty bar.
+   */
+  percent?: number;
+  /** Optional estimated seconds remaining hint. */
+  etaSeconds?: number;
+  /** Optional human-readable stage label, e.g. "Parsing BOM". */
+  stageLabel?: string;
+  /**
+   * Extra gate that disables the Start button on top of the usual
+   * busy-state logic. When set, the caller is declaring that the tool
+   * cannot legally kick off a run (e.g. a required config field is
+   * empty). Paired with {@link startDisabledReason} so the UI can
+   * surface *why* the button is unreachable.
+   */
+  startDisabled?: boolean;
+  /** Caption shown below the Start button when {@link startDisabled} is true. */
+  startDisabledReason?: string;
+}
+
+function formatEta(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return "";
+  }
+  if (seconds < 60) {
+    return `~${Math.round(seconds)}s remaining`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const remainder = Math.round(seconds % 60);
+  if (remainder === 0) {
+    return `~${minutes}m remaining`;
+  }
+  return `~${minutes}m ${remainder}s remaining`;
 }
 
 export function RunStatePanel({
@@ -29,7 +64,6 @@ export function RunStatePanel({
   onStart,
   onCancel,
   cancelledNotice,
-  cancelPending,
   logLines = [],
   truncatedLogCount = 0,
   startLabel = "Start demo run",
@@ -37,20 +71,74 @@ export function RunStatePanel({
   statusMessage = null,
   errorCode = null,
   errorTraceback = null,
+  percent,
+  etaSeconds,
+  stageLabel,
+  startDisabled = false,
+  startDisabledReason,
 }: RunStatePanelProps) {
   const isBusy = runMode === "starting" || runMode === "running" || runMode === "cancelling";
   const canCancel = runMode === "starting" || runMode === "running";
+  const isActiveRun = runMode === "starting" || runMode === "running";
+  const startButtonDisabled = isBusy || startDisabled;
+  const showStartDisabledReason =
+    !isBusy && startDisabled && typeof startDisabledReason === "string" && startDisabledReason.length > 0;
+
+  // Determinate vs indeterminate progress rendering.
+  // When percent is undefined AND the run is active, we show the sliding
+  // indeterminate stripe. Otherwise we fall back to the legacy numeric
+  // progress prop.
+  const hasKnownPercent = typeof percent === "number" && Number.isFinite(percent);
+  const indeterminate = !hasKnownPercent && isActiveRun;
+  const displayPercent = hasKnownPercent ? Math.max(0, Math.min(100, percent as number)) : progress;
+
+  const metaParts: string[] = [];
+  if (hasKnownPercent) {
+    metaParts.push(`${Math.round(displayPercent)}%`);
+  } else if (indeterminate) {
+    metaParts.push("Working…");
+  }
+  if (typeof etaSeconds === "number") {
+    const etaText = formatEta(etaSeconds);
+    if (etaText) {
+      metaParts.push(etaText);
+    }
+  }
+  if (stageLabel) {
+    metaParts.push(stageLabel);
+  }
+  const showMeta = metaParts.length > 0;
+
+  const progressShellClassName = indeterminate
+    ? "progress-shell progress-shell--indeterminate"
+    : "progress-shell";
+  const barStyle = indeterminate ? undefined : { width: `${displayPercent}%` };
 
   return (
     <div className="run-state">
       <div className="run-state__controls">
-        <button type="button" className="primary-button" onClick={onStart} disabled={isBusy}>
+        <button
+          type="button"
+          className="primary-button"
+          onClick={onStart}
+          disabled={startButtonDisabled}
+          aria-describedby={showStartDisabledReason ? "run-state-start-disabled-reason" : undefined}
+        >
           {isBusy ? (runMode === "cancelling" ? "Cancelling..." : "Running...") : startLabel}
         </button>
-        <button type="button" className="ghost-button" onClick={onCancel} disabled={!canCancel}>
-          {cancelPending ? "Confirm cancel" : "Cancel"}
-        </button>
+        <HoldButton
+          label="Cancel"
+          holdingLabel="Hold to cancel run..."
+          variant="danger"
+          disabled={!canCancel}
+          onConfirm={onCancel}
+        />
       </div>
+      {showStartDisabledReason ? (
+        <p className="run-state__start-disabled-reason" id="run-state-start-disabled-reason">
+          {startDisabledReason}
+        </p>
+      ) : null}
 
       {runId || statusMessage ? (
         <div className="analysis-summary">
@@ -60,15 +148,29 @@ export function RunStatePanel({
       ) : null}
 
       <div
-        className="progress-shell"
+        className={progressShellClassName}
         role="progressbar"
         aria-label="Run progress"
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuenow={progress}
+        aria-valuenow={indeterminate ? undefined : Math.round(displayPercent)}
       >
-        <div className="progress-shell__bar" style={{ width: `${progress}%` }} />
+        <div className="progress-shell__bar" style={barStyle} />
       </div>
+      {showMeta ? (
+        <p className="run-state__progress-meta" aria-live="polite">
+          {metaParts.map((part, index) => (
+            <span key={`${index}-${part}`}>
+              {index > 0 ? (
+                <span className="run-state__progress-meta-dot" aria-hidden="true">
+                  {" • "}
+                </span>
+              ) : null}
+              {part}
+            </span>
+          ))}
+        </p>
+      ) : null}
 
       <div className="timeline">
         {timeline.map((event) => (

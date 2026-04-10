@@ -6,6 +6,9 @@ import { SectionCard } from "../../components/SectionCard";
 import { StrategySelector } from "../../components/StrategySelector";
 import { ValidationPreview } from "../../components/ValidationPreview";
 import { WorkflowSelector } from "../../components/WorkflowSelector";
+import { OptionsField } from "../../components/primitives/OptionsField";
+import { ToggleChip } from "../../components/primitives/ToggleChip";
+import { FolderOpen } from "@phosphor-icons/react";
 import { executeRunResultSchema } from "../../contracts/sidecar";
 import { demoScenarios, outputStrategies, workflowOptions } from "../../mocks/scenarios";
 import type {
@@ -14,6 +17,7 @@ import type {
   FileRole,
   InputInspection,
   InputFileState,
+  MappingStatus,
   OutputStrategyId,
   RunEvent,
   RunEventTemplate,
@@ -22,8 +26,18 @@ import type {
   ValidationMessage,
   WorkflowId,
 } from "../../app/types";
+import { DO_NOT_MAP_VALUE } from "../../app/types";
+import { FMEA_COLUMN_METADATA, resolveColumnLabel } from "./mappingColumns";
+import {
+  buildAggregatedMappingSource,
+  buildWorkbookColumnUnion,
+  normalizeHeader,
+  resolveSheetInspections,
+  shouldShowTargetWorkbook,
+} from "./mappingAnalysis";
 import { backendClient, type RunRequestBody } from "../../shared/backend/client";
-import { buildRunTimeline, isBusyRunPhase, useBackendRunLifecycle } from "../../shared/backend/runLifecycle";
+import { buildCancelNotification } from "../../shared/backend/cancelError";
+import { buildRunTimeline, useBackendRunLifecycle } from "../../shared/backend/runLifecycle";
 import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
 import { useRoleRequestSequence } from "../../shared/hooks/useRoleRequestSequence";
 import { useNotificationStore } from "../../stores/notificationStore";
@@ -51,28 +65,59 @@ const fmeaRunEvents: RunEventTemplate[] = [
   },
 ];
 
-function getVisibleRoles(workflowId: WorkflowId): FileRole[] {
-  const workflow = workflowOptions.find((option) => option.id === workflowId);
-  return [
-    ...(workflow?.requiredRoles ?? []),
-    ...(workflow?.optionalRoles ?? []),
-  ];
+export type HdaSource = "inline" | "separate";
+
+/**
+ * Phase 3 role visibility matrix. The display order returned here determines
+ * the order of file cards inside the Inputs SectionCard. When `hdaSource`
+ * is `"inline"` the `hda` role is omitted entirely; the backend still
+ * resolves HDA data from BOM columns via `_resolve_hda_dataframe()`.
+ *
+ * Only the roles specific to each workflow mode are returned. Output-only
+ * roles such as `targetWorkbook` are rendered separately in the Outputs
+ * section and only added to the run payload when the selected strategy
+ * requires them.
+ */
+export function getVisibleRoles(workflowId: WorkflowId, hdaSource: HdaSource): FileRole[] {
+  const hda: FileRole[] = hdaSource === "separate" ? ["hda"] : [];
+  switch (workflowId) {
+    case "functional_to_piecepart":
+      return ["functionalFmea", "bom", "failureModes", ...hda, "grouping"];
+    case "fill_gaps":
+      return ["existingFmea", "bom", "failureModes", ...hda, "grouping"];
+    case "piece_part_generate":
+      return ["grouping", "bom", "failureModes", ...hda];
+    case "bom_only":
+      return ["bom", "failureModes", ...hda];
+    default: {
+      // Non-FMEA workflow IDs shouldn't reach this helper, but if they do
+      // fall back to the shared workflowOptions metadata for safety.
+      const workflow = workflowOptions.find((option) => option.id === workflowId);
+      return [
+        ...(workflow?.requiredRoles ?? []),
+        ...(workflow?.optionalRoles ?? []),
+      ];
+    }
+  }
 }
 
-function buildVisibleInputs(
+function buildWorkflowInputs(
   inputs: InputFileState[],
   workflowId: WorkflowId,
-  outputStrategyId: OutputStrategyId,
+  hdaSource: HdaSource,
 ) {
-  const orderedRoles: FileRole[] = [...getVisibleRoles(workflowId)];
-
-  if (outputStrategyId !== "new_workbook_standard") {
-    orderedRoles.push("targetWorkbook");
-  }
-
-  return orderedRoles
+  return getVisibleRoles(workflowId, hdaSource)
     .map((role) => inputs.find((input) => input.role === role))
     .filter((input): input is InputFileState => Boolean(input));
+}
+
+function buildOutputInputs(inputs: InputFileState[], outputStrategyId: OutputStrategyId) {
+  if (!shouldShowTargetWorkbook(outputStrategyId)) {
+    return [];
+  }
+
+  const targetWorkbook = inputs.find((input) => input.role === "targetWorkbook");
+  return targetWorkbook ? [targetWorkbook] : [];
 }
 
 function buildTimeline(runMode: RunMode, runIndex: number, templates: RunEventTemplate[]): RunEvent[] {
@@ -99,8 +144,25 @@ function buildRunRequest(
   mappingRows: ColumnMappingRow[],
   mappingOverrides: Record<string, string>,
   failureModesStandard: "FMD-91" | "FMD-2016",
-  columnSelection: { mode: "all" | "subset"; columns: string[] },
+  options: {
+    ccaPrefix: string | null;
+    outputDirectory: string | null;
+    hdaSource: HdaSource;
+  },
 ): RunRequestBody {
+  const toolOptions: Record<string, unknown> = {
+    failureModesStandard,
+    hdaSource: options.hdaSource,
+  };
+
+  // Phase 3: CCA prefix is ONLY sent for BOM-Only runs. In every other
+  // mode the backend derives the prefix from the grouping / functional /
+  // existing FMEA source file, and leaking a stale user-entered prefix
+  // into those runs would produce a wrong FMEA-ID.
+  if (workflowId === "bom_only" && options.ccaPrefix) {
+    toolOptions.ccaPrefix = options.ccaPrefix;
+  }
+
   return {
     workflowId,
     outputStrategyId,
@@ -120,11 +182,35 @@ function buildRunRequest(
       mappedTo: mappingOverrides[row.canonical] ?? row.mappedTo,
       status: mappingOverrides[row.canonical] ? "manual" : row.status,
     })),
-    options: {
-      failureModesStandard,
-      columnSelection,
-    },
+    options: toolOptions,
+    // Top-level outputDirectory: Phase 4 backend will honor this when
+    // present, else fall back to the first-input-file-parent heuristic.
+    // Phase 3 plumbs the field; no-op on the current backend.
+    outputDirectory: options.outputDirectory,
   };
+}
+
+/**
+ * Strip a CCA prefix candidate to the allowed character set.
+ * A-Z, 0-9, hyphen; max 8 characters. Input is upper-cased first.
+ */
+export function sanitizeCcaPrefix(raw: string): string {
+  return raw.toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 8);
+}
+
+const CCA_PREFIX_PATTERN = /^[A-Z0-9][A-Z0-9-]{0,7}$/;
+const CCA_PREFIX_STORAGE_KEY = "fmea.lastCcaPrefix";
+
+function readStoredCcaPrefix(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  try {
+    const stored = window.localStorage.getItem(CCA_PREFIX_STORAGE_KEY);
+    return stored ? sanitizeCcaPrefix(stored) : "";
+  } catch {
+    return "";
+  }
 }
 
 function toFailureResult(detail: string) {
@@ -143,10 +229,6 @@ function parseFmeaRunResult(payload: unknown) {
   return executeRunResultSchema.parse(payload);
 }
 
-function normalizeHeader(value: string) {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ");
-}
-
 function cloneInputs(inputs: InputFileState[]) {
   return inputs.map((input) => ({
     ...input,
@@ -158,38 +240,67 @@ function cloneInputs(inputs: InputFileState[]) {
   }));
 }
 
-function buildMappingRows(
-  rows: ColumnMappingRow[],
+/**
+ * Phase 5: Build the FMEA mapping rows from the canonical metadata.
+ *
+ * Rows are filtered per workflow (BOM-Only hides FMEA-ID; non-merge modes
+ * hide Local/Next Higher/End Effect). The FMD Commodity Type rows get
+ * their label swapped to track the active FMD standard. When the user
+ * has loaded a workbook, each row's dropdown options include every
+ * inspected column and the row auto-maps to an exact header match. When
+ * no workbook has been inspected, rows render with the inspected-column
+ * list empty (CustomSelect will still offer the "— Do Not Map —" sentinel
+ * from MappingTable).
+ *
+ * The `origin`, `required`, and `help` fields flow straight through from
+ * `FMEA_COLUMN_METADATA` — this is the single source of truth Phase 5
+ * wires into the expandable help panel.
+ */
+function buildFmeaMappingRows(
+  workflowId: WorkflowId,
+  fmdStandard: "FMD-91" | "FMD-2016",
   inspectedColumns: string[],
   sourceLabel: string | null,
 ): ColumnMappingRow[] {
-  if (inspectedColumns.length === 0) {
-    return rows;
-  }
+  const exactMap = new Map(
+    inspectedColumns.map((column) => [normalizeHeader(column), column] as const),
+  );
 
-  const exactMap = new Map(inspectedColumns.map((column) => [normalizeHeader(column), column]));
+  return FMEA_COLUMN_METADATA.filter((meta) => meta.isVisibleInMode(workflowId)).map(
+    (meta) => {
+      const canonical = resolveColumnLabel(meta, fmdStandard);
+      const exactMatch = exactMap.get(normalizeHeader(canonical));
+      const options = Array.from(
+        new Set(exactMatch ? [exactMatch, ...inspectedColumns] : [...inspectedColumns]),
+      );
 
-  return rows.map((row) => {
-    const exactMatch = exactMap.get(normalizeHeader(row.canonical));
-    const mergedOptions = Array.from(new Set([...(exactMatch ? [exactMatch] : []), ...inspectedColumns, ...row.options]));
+      let mappedTo = "";
+      let status: MappingStatus = meta.origin === "derived" ? "derived" : "not_mapped";
+      let recommendation =
+        meta.origin === "derived"
+          ? "Generated automatically from BOM and grouping data."
+          : "No column mapped yet.";
 
-    if (!exactMatch) {
+      if (meta.origin !== "derived" && exactMatch) {
+        mappedTo = exactMatch;
+        status = "mapped";
+        recommendation = sourceLabel
+          ? `Exact header found in ${sourceLabel}.`
+          : "Exact header found in inspected workbook.";
+      }
+
       return {
-        ...row,
-        options: mergedOptions,
+        canonical,
+        mappedTo,
+        status,
+        recommendation,
+        options,
+        help: meta.help,
+        origin: meta.origin,
+        required: meta.required,
       };
-    }
-
-    return {
-      ...row,
-      mappedTo: exactMatch,
-      status: "mapped",
-      recommendation: sourceLabel
-        ? `Exact header found in ${sourceLabel}.`
-        : "Exact header found in inspected workbook.",
-      options: mergedOptions,
-    };
-  });
+    },
+  );
 }
 
 function buildAnalysisCards(
@@ -225,15 +336,27 @@ function buildAnalysisCards(
   return cards;
 }
 
+function failureModesHintForStandard(failureModesStandard: "FMD-91" | "FMD-2016") {
+  return failureModesStandard === "FMD-91"
+    ? "Uses the FMD-91 commodity labels in column mapping and failure-mode lookups."
+    : "Uses the FMD-2016 commodity labels in column mapping and failure-mode lookups.";
+}
+
 export function FmeaTool() {
   const [workflowId, setWorkflowId] = useState<WorkflowId>(baseScenario.workflowId);
   const [outputStrategyId, setOutputStrategyId] = useState<OutputStrategyId>(baseScenario.outputStrategyId);
   const [failureModesStandard, setFailureModesStandard] = useState<"FMD-91" | "FMD-2016">("FMD-2016");
-  const [columnSelectionMode, setColumnSelectionMode] = useState<"all" | "subset">("all");
-  const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
+  // Phase 3: HDA source selector (inline vs separate file). Default inline
+  // mirrors the legacy backend behavior where HDA columns live in the BOM.
+  const [hdaSource, setHdaSource] = useState<HdaSource>("inline");
+  // Phase 3: CCA identifier input — only meaningful in BOM-Only mode but
+  // persisted so switching modes + coming back doesn't clear it.
+  const [ccaPrefix, setCcaPrefix] = useState<string>(() => readStoredCcaPrefix());
+  const [ccaPrefixTouched, setCcaPrefixTouched] = useState<boolean>(false);
   const [inputStates, setInputStates] = useState<InputFileState[]>(() => cloneInputs(baseScenario.inputs));
   const [validations, setValidations] = useState<ValidationMessage[]>(baseScenario.validations);
   const [inputInspections, setInputInspections] = useState<Partial<Record<FileRole, InputInspection>>>({});
+  const [workbookColumnsByRole, setWorkbookColumnsByRole] = useState<Partial<Record<FileRole, string[]>>>({});
   const [templateAnalyses, setTemplateAnalyses] = useState<Partial<Record<FileRole, TemplateAnalysis>>>({});
   const [mappingOverrides, setMappingOverrides] = useState<Record<string, string>>({});
   const [runMode, setRunMode] = useState<RunMode>("idle");
@@ -243,11 +366,12 @@ export function FmeaTool() {
   const [runLogLines, setRunLogLines] = useState<string[]>([]);
   const [cancelledNotice, setCancelledNotice] = useState<string | null>(null);
   const [contextView, setContextView] = useState<"preview" | "run">("preview");
-  const [cancelPending, setCancelPending] = useState(false);
   const contextHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const handledDesktopTerminalRef = useRef<string | null>(null);
   const backendMode = useShellStore((state) => state.backendMode);
   const setBackendState = useShellStore((state) => state.setBackendState);
+  const fmeaOutputDirectory = useShellStore((state) => state.fmeaOutputDirectory);
+  const setFmeaOutputDirectory = useShellStore((state) => state.setFmeaOutputDirectory);
   const pushNotification = useNotificationStore((state) => state.push);
   const {
     session: desktopRunSession,
@@ -262,41 +386,33 @@ export function FmeaTool() {
     startTransition(() => {
       setValidations(baseScenario.validations);
       setMappingOverrides({});
-      setInputInspections({});
-      setTemplateAnalyses({});
+      // Fix B2: inspection / analysis state is keyed by FileRole and is
+      // NOT workflow-specific, so the previous
+      // clear-on-mode-switch was overly aggressive: the loaded files
+      // stayed in inputStates (InputGrid rendered them as loaded), but
+      // the mapping table lost its inspected columns and every row fell
+      // back to "not mapped". Now we preserve the role-keyed maps and let the
+      // per-role resolution flow handle inspection updates naturally.
+      //
+      // Fix R2-M4 (deferred): we intentionally do NOT clear
+      // inputInspections/workbookColumnsByRole/templateAnalyses on
+      // workflow change. Hidden-role data is harmless because the active
+      // workflow only reads visible roles. Stale data for hidden
+      // roles is harmless. If the user modifies a file externally and
+      // returns to this mode, re-picking the file in the InputCard
+      // triggers a fresh inspection and writes the new data over the
+      // stale entry, so no staleness can leak into a run.
       setRunMode("idle");
       setRunIndex(-1);
       setRunTemplates(baseScenario.runSequence.events);
       setRunResult(null);
       setRunLogLines([]);
       setCancelledNotice(null);
-      setCancelPending(false);
       setContextView("preview");
       handledDesktopTerminalRef.current = null;
       resetDesktopRunSession();
     });
   }, [workflowId, outputStrategyId]);
-
-  // Fill Gaps defaults to preserve-formatting since the whole point of
-  // "advanced fill gaps" is writing new piece-part rows into the source
-  // workbook in place. We ONLY flip on the transition INTO fill_gaps
-  // (not on every render), so a user who later manually picks
-  // new_workbook_standard stays on that choice.
-  // Also reset column selection state when leaving fill_gaps — the
-  // "Merge Column Scope" UI is fill_gaps-only, and stale subset state
-  // would otherwise silently truncate output from other workflows.
-  const prevWorkflowIdRef = useRef(workflowId);
-  useEffect(() => {
-    const prev = prevWorkflowIdRef.current;
-    if (prev !== "fill_gaps" && workflowId === "fill_gaps") {
-      setOutputStrategyId("existing_workbook_preserve_formatting");
-    }
-    if (prev === "fill_gaps" && workflowId !== "fill_gaps") {
-      setColumnSelectionMode("all");
-      setSelectedColumns([]);
-    }
-    prevWorkflowIdRef.current = workflowId;
-  }, [workflowId]);
 
   useEffect(() => {
     contextHeadingRef.current?.focus();
@@ -329,25 +445,38 @@ export function FmeaTool() {
     return () => window.clearTimeout(timer);
   }, [runIndex, runMode, runTemplates]);
 
-  const visibleInputs = useMemo(
-    () => buildVisibleInputs(inputStates, workflowId, outputStrategyId),
-    [inputStates, outputStrategyId, workflowId],
+  const workflowInputs = useMemo(
+    () => buildWorkflowInputs(inputStates, workflowId, hdaSource),
+    [inputStates, workflowId, hdaSource],
   );
-  const preferredAnalysisRole = visibleInputs.find((input) => input.source === "desktop-bridge")?.role ?? null;
+  const outputInputs = useMemo(
+    () => buildOutputInputs(inputStates, outputStrategyId),
+    [inputStates, outputStrategyId],
+  );
+  const runInputs = useMemo(
+    () => [...workflowInputs, ...outputInputs],
+    [workflowInputs, outputInputs],
+  );
+  const preferredAnalysisRole = workflowInputs.find((input) => input.source === "desktop-bridge")?.role ?? null;
   const activeInspection = preferredAnalysisRole ? inputInspections[preferredAnalysisRole] ?? null : null;
-  const activeTemplateAnalysis = templateAnalyses.targetWorkbook ?? null;
-  const inspectedColumns =
-    activeTemplateAnalysis?.columns ??
-    activeInspection?.columns ??
-    [];
-  const inspectedSourceLabel = activeTemplateAnalysis
-    ? `${activeTemplateAnalysis.sheet} template`
-    : activeInspection
-      ? `${activeInspection.sheet} input`
-      : null;
+  const activeTemplateAnalysis = outputInputs.some((input) => input.role === "targetWorkbook")
+    ? templateAnalyses.targetWorkbook ?? null
+    : null;
+  const aggregatedMappingSource = useMemo(
+    () => buildAggregatedMappingSource(workflowInputs, workbookColumnsByRole),
+    [workflowInputs, workbookColumnsByRole],
+  );
+  const inspectedColumns = aggregatedMappingSource.columns;
+  const inspectedSourceLabel = aggregatedMappingSource.sourceLabelText;
   const effectiveMappings = useMemo(
-    () => buildMappingRows(baseScenario.mappings, inspectedColumns, inspectedSourceLabel),
-    [inspectedColumns, inspectedSourceLabel],
+    () =>
+      buildFmeaMappingRows(
+        workflowId,
+        failureModesStandard,
+        inspectedColumns,
+        inspectedSourceLabel,
+      ),
+    [workflowId, failureModesStandard, inspectedColumns, inspectedSourceLabel],
   );
   const analysisCards = useMemo(
     () => buildAnalysisCards(activeInspection, activeTemplateAnalysis),
@@ -387,8 +516,6 @@ export function FmeaTool() {
         ? desktopRunSession.statusMessage
         : null
       : cancelledNotice;
-  const panelCancelPending =
-    backendClient.runtimeMode === "desktop-bridge" ? panelRunMode === "cancelling" : cancelPending;
   const panelRunId = backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.runId : null;
   const panelStatusMessage =
     backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.statusMessage : null;
@@ -408,6 +535,65 @@ export function FmeaTool() {
   const mappingCoverageLabel = mappingCoverage === null ? "TBD" : `${mappingCoverage}%`;
 
   const activeWorkflow = workflowOptions.find((workflow) => workflow.id === workflowId) ?? workflowOptions[0];
+
+  // Phase 3 (A6): BOM-Only mode gates on a non-empty CCA identifier
+  // that matches the pattern backend Phase 4 will also enforce.
+  const isBomOnly = workflowId === "bom_only";
+  const ccaPrefixValid = CCA_PREFIX_PATTERN.test(ccaPrefix);
+  const ccaPrefixError =
+    isBomOnly && ccaPrefixTouched && !ccaPrefixValid
+      ? "Enter 1–8 uppercase letters, digits, or hyphens (e.g. PSU)."
+      : null;
+  const bomOnlyBlockedReason =
+    isBomOnly && !ccaPrefixValid
+      ? "Enter a CCA identifier in the Workflow card before running BOM-Only mode."
+      : null;
+
+  const handleCcaPrefixChange = (raw: string) => {
+    const sanitized = sanitizeCcaPrefix(raw);
+    setCcaPrefix(sanitized);
+    setCcaPrefixTouched(true);
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(CCA_PREFIX_STORAGE_KEY, sanitized);
+      }
+    } catch {
+      // localStorage quota / privacy mode — drop silently, the in-memory
+      // state is still authoritative for the current session.
+    }
+  };
+
+  // Phase 3 (A7): output folder picker. On the browser preview we surface
+  // a gentle notification instead of silently failing — the plugin dialog
+  // is a no-op in that runtime.
+  const handleBrowseOutputDirectory = async () => {
+    if (backendClient.runtimeMode !== "desktop-bridge") {
+      pushNotification({
+        tone: "info",
+        title: "Desktop runtime required",
+        detail: "Picking an output folder uses the native OS dialog — run the Tauri desktop shell to set a real path.",
+      });
+      return;
+    }
+
+    try {
+      const picked = await backendClient.openDirectory(fmeaOutputDirectory ?? undefined);
+      if (picked) {
+        setFmeaOutputDirectory(picked);
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Unknown folder picker failure";
+      pushNotification({
+        tone: "error",
+        title: "Folder picker failed",
+        detail,
+      });
+    }
+  };
+
+  const handleClearOutputDirectory = () => {
+    setFmeaOutputDirectory(null);
+  };
 
   useEffect(() => {
     if (backendClient.runtimeMode !== "desktop-bridge" || !desktopRunSession.runId) {
@@ -470,7 +656,7 @@ export function FmeaTool() {
     }
   }, [desktopRunSession, pushNotification, setBackendState]);
 
-  async function inspectRole(role: FileRole, path: string, sheet: string) {
+  async function inspectRole(role: FileRole, path: string, sheet: string, workbookSheets?: string[]) {
     if (!sheet) {
       return;
     }
@@ -493,7 +679,7 @@ export function FmeaTool() {
     );
 
     try {
-      if (role === "targetWorkbook" && outputStrategyId !== "new_workbook_standard") {
+      if (role === "targetWorkbook" && shouldShowTargetWorkbook(outputStrategyId)) {
         const template = await backendClient.analyzeTemplate(path, sheet, role);
         if (!fileRequestSeq.isCurrent(role, token)) return;
         setInputStates((current) =>
@@ -522,8 +708,21 @@ export function FmeaTool() {
           lastBackendCheckAt: new Date().toISOString(),
         });
       } else {
-        const inspection = await backendClient.inspectInput(path, sheet, role);
+        const sheetQueue = Array.from(new Set([sheet, ...(workbookSheets ?? []).filter((name) => !!name)]));
+        const inspectionResults = await Promise.allSettled(
+          sheetQueue.map((sheetName) => backendClient.inspectInput(path, sheetName, role)),
+        );
         if (!fileRequestSeq.isCurrent(role, token)) return;
+        const { selectedInspection, successfulInspections, skippedSheets } = resolveSheetInspections(
+          sheet,
+          sheetQueue.map((sheetName, index) => ({
+            sheetName,
+            result: inspectionResults[index],
+          })),
+        );
+        const workbookColumns = buildWorkbookColumnUnion(
+          successfulInspections.map((candidate) => candidate.columns),
+        );
         setInputStates((current) =>
           current.map((input) =>
             input.role === role ? { ...input, isAnalyzing: false, tag: "Analyzed" } : input,
@@ -533,19 +732,27 @@ export function FmeaTool() {
           ...current,
           [role]: {
             role,
-            path: inspection.path,
-            sheet: inspection.sheet,
-            headerRow: inspection.header_row,
-            rowCount: inspection.row_count,
-            columns: inspection.columns,
-            previewRows: inspection.preview_rows,
-            mode: inspection.mode,
+            path: selectedInspection.path,
+            sheet: selectedInspection.sheet,
+            headerRow: selectedInspection.header_row,
+            rowCount: selectedInspection.row_count,
+            columns: selectedInspection.columns,
+            previewRows: selectedInspection.preview_rows,
+            mode: selectedInspection.mode,
           },
         }));
+        setWorkbookColumnsByRole((current) => ({
+          ...current,
+          [role]: workbookColumns,
+        }));
+        const skippedDetail =
+          skippedSheets.length > 0
+            ? ` Skipped ${skippedSheets.length} non-tabular sheet${skippedSheets.length === 1 ? "" : "s"}.`
+            : "";
         setBackendState({
           backendStatus: "ready",
-          backendMode: inspection.mode,
-          backendMessage: `Inspected ${inspection.sheet} with ${inspection.columns.length} headers.`,
+          backendMode: selectedInspection.mode,
+          backendMessage: `Inspected ${selectedInspection.sheet} and indexed ${workbookColumns.length} unique header${workbookColumns.length === 1 ? "" : "s"} across ${successfulInspections.length} readable sheet${successfulInspections.length === 1 ? "" : "s"}.${skippedDetail}`,
           lastBackendCheckAt: new Date().toISOString(),
         });
       }
@@ -609,6 +816,21 @@ export function FmeaTool() {
           : input,
       ),
     );
+    setInputInspections((current) => {
+      const next = { ...current };
+      delete next[role];
+      return next;
+    });
+    setWorkbookColumnsByRole((current) => {
+      const next = { ...current };
+      delete next[role];
+      return next;
+    });
+    setTemplateAnalyses((current) => {
+      const next = { ...current };
+      delete next[role];
+      return next;
+    });
     setBackendState({
       backendStatus: "busy",
       backendMessage: `Inspecting workbook for ${role}...`,
@@ -644,7 +866,7 @@ export function FmeaTool() {
         lastBackendCheckAt: new Date().toISOString(),
       });
       if (result.sheets[0]) {
-        await inspectRole(role, result.path, result.sheets[0]);
+        await inspectRole(role, result.path, result.sheets[0], result.sheets);
       }
     } catch (error) {
       if (!fileRequestSeq.isCurrent(role, token)) return;
@@ -678,6 +900,7 @@ export function FmeaTool() {
 
   function handleSheetChange(role: FileRole, selectedSheet: string) {
     let nextPath = "";
+    let nextSheets: string[] = [];
     setInputStates((current) =>
       current.map((input) => {
         if (input.role !== role) {
@@ -685,6 +908,7 @@ export function FmeaTool() {
         }
 
         nextPath = input.path;
+        nextSheets = input.sheets.map((sheetOption) => sheetOption.label);
         return {
           ...input,
           selectedSheet,
@@ -693,46 +917,60 @@ export function FmeaTool() {
     );
 
     if (backendClient.runtimeMode === "desktop-bridge" && nextPath) {
-      void inspectRole(role, nextPath, selectedSheet);
+      void inspectRole(role, nextPath, selectedSheet, nextSheets);
     }
   }
 
   async function handleStartRun() {
+    // Phase 3 (A6): frontend-side BOM-Only CCA prefix gate. Mark the
+    // field as touched so the inline error renders, and short-circuit
+    // before we even build the request.
+    if (isBomOnly && !ccaPrefixValid) {
+      setCcaPrefixTouched(true);
+      pushNotification({
+        tone: "warning",
+        title: "CCA identifier required",
+        detail: "Enter a CCA identifier in the Workflow card before running BOM-Only mode.",
+      });
+      return;
+    }
+
     if (backendClient.runtimeMode !== "desktop-bridge") {
       setRunTemplates(baseScenario.runSequence.events);
       setRunLogLines([]);
       setCancelledNotice(null);
       setRunResult(null);
-      setCancelPending(false);
       setContextView("run");
       setRunMode("running");
       setRunIndex(0);
       return;
     }
 
-    // Only send columnSelection for fill_gaps — the UI is fill_gaps-only,
-    // and a stale subset selection must not silently truncate output
-    // from other workflows. Defense-in-depth complement to the useEffect
-    // that resets columnSelectionMode on workflow change.
-    const effectiveColumnSelection =
-      workflowId === "fill_gaps"
-        ? { mode: columnSelectionMode, columns: selectedColumns }
-        : { mode: "all" as const, columns: [] as string[] };
     const runRequest = buildRunRequest(
       workflowId,
       outputStrategyId,
-      visibleInputs,
+      runInputs,
       effectiveMappings,
       mappingOverrides,
       failureModesStandard,
-      effectiveColumnSelection,
+      {
+        ccaPrefix: isBomOnly ? ccaPrefix : null,
+        outputDirectory: fmeaOutputDirectory,
+        hdaSource,
+      },
     );
+
+    // Fix R2-C1: clear any stale active run from a previous run BEFORE flipping
+    // the busy chip. If the previous run's phase is still "success"/"cancelled"/
+    // "failure" when we flip backendStatus to "busy", useBackendBusyReset will
+    // see (terminal phase + busy) and instantly clear the busy chip, making the
+    // "Validating..." message flicker away on every second run.
+    resetDesktopRunSession();
 
     setContextView("run");
     setRunLogLines([]);
     setRunResult(null);
     setCancelledNotice(null);
-    setCancelPending(false);
     setBackendState({
       backendStatus: "busy",
       backendMessage: "Validating run configuration...",
@@ -788,6 +1026,16 @@ export function FmeaTool() {
     }
   }
 
+  const getDisabledSheetReason = (input: InputFileState) => {
+    if (input.isResolvingSheets) {
+      return "Loading sheets from the desktop bridge…";
+    }
+    if (input.sheets.length === 0) {
+      return "Waiting for workbook…";
+    }
+    return undefined;
+  };
+
   return (
     <div className="tool-workspace">
       <section className="tool-banner">
@@ -809,13 +1057,13 @@ export function FmeaTool() {
         <div className="workspace-grid__main">
           <SectionCard
             className="section-card--compact"
-            title="Run Setup"
+            title="Piece-Part FMEA Generation Options"
             eyebrow="Configuration"
-            description="Pick a primary workflow, choose how the output should be written, and select the failure modes standard before reviewing inputs and mappings."
+            description="Choose the generation path, confirm the standards in play, and load the source workbooks this mode needs."
             actions={
               <div className="header-metrics">
                 <span className="header-metric">
-                  <span>Workflow</span>
+                  <span>Mode</span>
                   <strong>{activeWorkflow.title}</strong>
                 </span>
                 <span className="header-metric">
@@ -827,111 +1075,170 @@ export function FmeaTool() {
           >
             <div className="setup-grid">
               <div className="setup-block setup-block--full">
-                <p className="setup-block__label">Workflow</p>
-                <WorkflowSelector workflows={workflowOptions} selectedWorkflowId={workflowId} onSelect={setWorkflowId} />
+                <OptionsField
+                  label="Mode"
+                  hint="Choose the starting point that best matches your source data."
+                >
+                  <WorkflowSelector
+                    workflows={workflowOptions}
+                    selectedWorkflowId={workflowId}
+                    onSelect={setWorkflowId}
+                  />
+                </OptionsField>
               </div>
 
               <div className="setup-block">
-                <p className="setup-block__label">Output</p>
-                <StrategySelector
-                  strategies={outputStrategies}
-                  selectedStrategyId={outputStrategyId}
-                  onSelect={setOutputStrategyId}
-                />
+                <OptionsField
+                  label="Failure Modes Standard"
+                  hint={failureModesHintForStandard(failureModesStandard)}
+                >
+                  <ToggleChip<"FMD-91" | "FMD-2016">
+                    ariaLabel="Failure modes standard"
+                    mode="radio"
+                    value={failureModesStandard}
+                    onChange={(next) => setFailureModesStandard(next as "FMD-91" | "FMD-2016")}
+                    options={[
+                      { value: "FMD-91", label: "FMD-91" },
+                      { value: "FMD-2016", label: "FMD-2016" },
+                    ]}
+                  />
+                </OptionsField>
               </div>
 
               <div className="setup-block">
-                <p className="setup-block__label">Failure Modes Standard</p>
-                <div className="toggle-row" role="radiogroup" aria-label="Failure modes standard">
-                  <button
-                    type="button"
-                    className="toggle-chip"
-                    data-active={failureModesStandard === "FMD-91"}
-                    role="radio"
-                    aria-checked={failureModesStandard === "FMD-91"}
-                    onClick={() => setFailureModesStandard("FMD-91")}
-                  >
-                    FMD-91
-                  </button>
-                  <button
-                    type="button"
-                    className="toggle-chip"
-                    data-active={failureModesStandard === "FMD-2016"}
-                    role="radio"
-                    aria-checked={failureModesStandard === "FMD-2016"}
-                    onClick={() => setFailureModesStandard("FMD-2016")}
-                  >
-                    FMD-2016
-                  </button>
-                </div>
+                <OptionsField
+                  label="HDA source"
+                  hint="Where the HDA taxonomy columns live — inline in the BOM or a separate workbook."
+                >
+                  <ToggleChip<HdaSource>
+                    ariaLabel="HDA source"
+                    mode="radio"
+                    value={hdaSource}
+                    onChange={(next) => setHdaSource(next as HdaSource)}
+                    options={[
+                      { value: "inline", label: "HDA columns inline in BOM" },
+                      { value: "separate", label: "Separate HDA file" },
+                    ]}
+                  />
+                </OptionsField>
               </div>
 
-              {workflowId === "fill_gaps" ? (
-                <div className="setup-block setup-block--full">
-                  <p className="setup-block__label">Merge Column Scope</p>
-                  <div className="toggle-row" role="radiogroup" aria-label="Merge column scope">
-                    <button
-                      type="button"
-                      className="toggle-chip"
-                      data-active={columnSelectionMode === "all"}
-                      role="radio"
-                      aria-checked={columnSelectionMode === "all"}
-                      onClick={() => setColumnSelectionMode("all")}
+              {isBomOnly ? (
+                <div className="setup-block">
+                  <OptionsField
+                    label="CCA Identifier"
+                    hint="Used as the prefix for generated FMEA-IDs — e.g. `PSU` produces `PSU-C200-A`."
+                    required
+                    htmlFor="fmea-cca-prefix"
+                  >
+                    <input
+                      id="fmea-cca-prefix"
+                      type="text"
+                      className="fmea-cca-input"
+                      value={ccaPrefix}
+                      onChange={(event) => handleCcaPrefixChange(event.target.value)}
+                      onBlur={() => setCcaPrefixTouched(true)}
+                      maxLength={8}
+                      placeholder="e.g. PSU"
+                      aria-label="CCA identifier"
+                      aria-invalid={ccaPrefixError ? true : undefined}
+                      aria-describedby={ccaPrefixError ? "fmea-cca-prefix-error" : undefined}
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                  </OptionsField>
+                  {ccaPrefixError ? (
+                    <p
+                      id="fmea-cca-prefix-error"
+                      className="fmea-cca-input__error"
+                      role="alert"
                     >
-                      Merge All Columns
-                    </button>
-                    <button
-                      type="button"
-                      className="toggle-chip"
-                      data-active={columnSelectionMode === "subset"}
-                      role="radio"
-                      aria-checked={columnSelectionMode === "subset"}
-                      onClick={() => setColumnSelectionMode("subset")}
-                    >
-                      Select Columns to Merge
-                    </button>
-                  </div>
-                  {columnSelectionMode === "subset" ? (
-                    inspectedColumns.length > 0 ? (
-                      <div className="column-picker">
-                        {inspectedColumns.map((column) => {
-                          const checked = selectedColumns.includes(column);
-                          return (
-                            <label key={column} className="column-picker__row">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    setSelectedColumns((current) => [...current, column]);
-                                  } else {
-                                    setSelectedColumns((current) => current.filter((c) => c !== column));
-                                  }
-                                }}
-                              />
-                              <span>{column}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <p className="section-card__microcopy">
-                        Browse the existing FMEA workbook above to load its columns, then choose which columns to merge here.
-                      </p>
-                    )
+                      {ccaPrefixError}
+                    </p>
                   ) : null}
                 </div>
               ) : null}
+
+              <div className="setup-block setup-block--full">
+                <InputGrid
+                  inputs={workflowInputs}
+                  onBrowse={handleBrowse}
+                  onSheetChange={handleSheetChange}
+                  getDisabledSheetReason={getDisabledSheetReason}
+                />
+              </div>
             </div>
           </SectionCard>
 
           <SectionCard
             className="section-card--compact"
-            title="Input Files"
-            eyebrow="Inputs"
-            description="Only the files needed for the active run are shown. Browse a real workbook to load sheets through the desktop backend bridge."
+            title="Outputs"
+            eyebrow="Workbook & folder"
+            description={
+              workflowId === "fill_gaps"
+                ? "Choose how Dark Star writes the finished workbook. Fill-gaps often targets an existing workbook copy, but the output strategy stays explicit here."
+                : "Choose how Dark Star writes the finished workbook, then confirm the destination workbook and output folder."
+            }
           >
-            <InputGrid inputs={visibleInputs} onBrowse={handleBrowse} onSheetChange={handleSheetChange} />
+            <div className="setup-grid">
+              <div className="setup-block setup-block--full">
+                <OptionsField
+                  label="Output Strategy"
+                  hint="How the generator writes its results — new workbook, or onto a copy of an existing one."
+                >
+                  <StrategySelector
+                    strategies={outputStrategies}
+                    selectedStrategyId={outputStrategyId}
+                    onSelect={setOutputStrategyId}
+                  />
+                </OptionsField>
+              </div>
+
+              {outputInputs.length > 0 ? (
+                <div className="setup-block setup-block--full">
+                  <InputGrid
+                    inputs={outputInputs}
+                    onBrowse={handleBrowse}
+                    onSheetChange={handleSheetChange}
+                    getDisabledSheetReason={getDisabledSheetReason}
+                  />
+                </div>
+              ) : null}
+
+              <div className="setup-block setup-block--full">
+                <OptionsField
+                  label="Output Folder"
+                  hint="Defaults to the folder of your first loaded input."
+                >
+                  <div className="fmea-output-folder">
+                    <code className="fmea-output-folder__path" title={fmeaOutputDirectory ?? undefined}>
+                      {fmeaOutputDirectory ?? "Default: alongside first input"}
+                    </code>
+                    <div className="fmea-output-folder__actions">
+                      <button
+                        type="button"
+                        className="ghost-button fmea-output-folder__button"
+                        onClick={() => {
+                          void handleBrowseOutputDirectory();
+                        }}
+                      >
+                        <FolderOpen size={14} weight="regular" aria-hidden="true" />
+                        <span>Change…</span>
+                      </button>
+                      {fmeaOutputDirectory ? (
+                        <button
+                          type="button"
+                          className="ghost-button"
+                          onClick={handleClearOutputDirectory}
+                        >
+                          Reset
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </OptionsField>
+              </div>
+            </div>
           </SectionCard>
 
           <SectionCard
@@ -971,6 +1278,34 @@ export function FmeaTool() {
               onOverride={(canonical, mappedTo) =>
                 setMappingOverrides((current) => ({ ...current, [canonical]: mappedTo }))
               }
+              onApplyRecommendation={(canonical, suggested) =>
+                setMappingOverrides((current) => ({ ...current, [canonical]: suggested }))
+              }
+              onApplyAllSuggestions={() => {
+                setMappingOverrides((current) => {
+                  const next = { ...current };
+                  for (const row of effectiveMappings) {
+                    const mapped = next[row.canonical] ?? row.mappedTo;
+                    if (row.recommendation && row.options.includes(row.recommendation) && row.recommendation !== mapped) {
+                      next[row.canonical] = row.recommendation;
+                    }
+                  }
+                  return next;
+                });
+              }}
+              onClearAllMappings={() => {
+                // "Clear all" is an explicit Do-Not-Map request — we set
+                // every row to the DO_NOT_MAP sentinel so the backend sees
+                // intentional unmapping rather than a blank mapping that
+                // could be silently auto-resolved. Phase 2 infra change.
+                setMappingOverrides(() => {
+                  const next: Record<string, string> = {};
+                  for (const row of effectiveMappings) {
+                    next[row.canonical] = DO_NOT_MAP_VALUE;
+                  }
+                  return next;
+                });
+              }}
             />
           </SectionCard>
         </div>
@@ -1030,7 +1365,6 @@ export function FmeaTool() {
                   timeline={panelTimeline}
                   result={panelRunResult}
                   cancelledNotice={panelCancelledNotice}
-                  cancelPending={panelCancelPending}
                   logLines={panelLogLines}
                   truncatedLogCount={panelTruncatedLogCount}
                   errorCode={panelErrorCode}
@@ -1038,12 +1372,33 @@ export function FmeaTool() {
                   startLabel={backendClient.runtimeMode === "desktop-bridge" ? "Start real run" : "Start demo run"}
                   runId={panelRunId}
                   statusMessage={panelStatusMessage}
+                  startDisabled={bomOnlyBlockedReason !== null}
+                  startDisabledReason={bomOnlyBlockedReason ?? undefined}
                   onStart={() => {
                     void handleStartRun();
                   }}
                   onCancel={() => {
                     if (backendClient.runtimeMode === "desktop-bridge") {
-                      if (!desktopRunSession.runId || !isBusyRunPhase(desktopRunSession.phase)) {
+                      // Phase B3: require a concrete running/cancelling run
+                      // ID before even attempting a cancel. The previous
+                      // guard also accepted "idle" briefly during phase
+                      // transitions which let the request reach the
+                      // sidecar with a stale run id.
+                      //
+                      // Fix E3: explicitly only fire the cancel on
+                      // ``starting`` / ``running`` phases. A previous
+                      // helper (since removed in R2-L3) also matched
+                      // ``cancelling``, so a user double-clicking Cancel
+                      // while the first cancel was in flight triggered
+                      // a second ``cancel_run`` request. If the first
+                      // one already completed the sidecar would reply
+                      // with "No active run matches" and surface a
+                      // confusing post-cancel notification.
+                      if (
+                        !desktopRunSession.runId ||
+                        (desktopRunSession.phase !== "starting" &&
+                          desktopRunSession.phase !== "running")
+                      ) {
                         return;
                       }
 
@@ -1058,26 +1413,19 @@ export function FmeaTool() {
                           });
                         })
                         .catch((error: unknown) => {
-                          const detail = error instanceof Error ? error.message : "Unknown cancel failure";
-                          pushNotification({
-                            tone: "error",
-                            title: "Cancel failed",
-                            detail,
-                          });
+                          // Phase B3: forward the sidecar's actual error
+                          // message through the Tauri bridge rejection
+                          // (which is a raw string, not an Error).
+                          pushNotification(buildCancelNotification(error));
                         });
                       return;
                     }
 
-                    if (!cancelPending) {
-                      setCancelPending(true);
-                      setCancelledNotice("Press cancel again to confirm.");
-                      return;
-                    }
-
+                    // Browser-mock: the HoldButton already captured the
+                    // press-and-hold confirmation, so cancel immediately.
                     setRunMode("idle");
                     setRunIndex(-1);
                     setRunResult(null);
-                    setCancelPending(false);
                     setCancelledNotice("Demo run cancelled. The workspace returned to a safe idle state without losing context.");
                   }}
                 />

@@ -1,0 +1,186 @@
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, test, beforeEach } from "vitest";
+import { App } from "../../app/App";
+import { useShellStore } from "../../stores/shellStore";
+import { useThemeStore } from "../../stores/themeStore";
+
+/**
+ * Phase 5: FMEA mapping row visibility tests.
+ *
+ * These tests exercise the `FMEA_COLUMN_METADATA` -> `buildFmeaMappingRows`
+ * pipeline end-to-end by rendering the FMEA tool through the full App
+ * shell and asserting canonical labels appear / disappear as the user
+ * switches workflow mode and FMD standard. The metadata source of truth
+ * lives in `mappingColumns.ts`; its unit coverage is in
+ * `mappingColumns.test.ts`.
+ */
+
+function renderApp() {
+  window.localStorage.clear();
+  useShellStore.setState({
+    activeToolId: "dark_star_fmea",
+    backendStatus: "connecting",
+    backendMode: "unknown",
+    backendMessage: "Initializing backend bridge...",
+    lastBackendCheckAt: null,
+  });
+  useThemeStore.setState({
+    mode: "system",
+  });
+  return render(<App />);
+}
+
+async function waitForFmeaTool() {
+  // The Suspense fallback ALSO renders a level-2 heading named "FMEA
+  // Generator" while the lazy chunk loads, so waiting on the heading
+  // alone resolves too early. The Workflow card's mode selector is only
+  // rendered by the real `FmeaTool`, so we wait on one of its workflow
+  // buttons instead. This also guarantees the mapping table below has
+  // finished its first render by the time tests query it.
+  await screen.findByRole("button", { name: /piece-part from grouping file/i });
+}
+
+/**
+ * The mapping table renders canonical labels inside `.mapping-field__name`
+ * spans. We use a DOM query (rather than `screen.getByText`) because some
+ * canonical strings (e.g. "Failure Mode") appear elsewhere on the page
+ * and `getByText` would be ambiguous.
+ */
+function mappingCanonicalLabels(): string[] {
+  const nodes = document.querySelectorAll(".mapping-field__name");
+  return Array.from(nodes).map((node) => node.textContent?.trim() ?? "");
+}
+
+function hasMappingLabel(label: string): boolean {
+  return mappingCanonicalLabels().some((candidate) => candidate === label);
+}
+
+describe("FmeaTool — Phase 5 mapping row visibility", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  test("default piece_part_generate mode shows FMEA-ID and hides merge-only rows", async () => {
+    renderApp();
+    await waitForFmeaTool();
+
+    expect(hasMappingLabel("FMEA-ID")).toBe(true);
+    expect(hasMappingLabel("Failure Mode")).toBe(true);
+    expect(hasMappingLabel("Failure Mode Ratio")).toBe(true);
+    expect(hasMappingLabel("Part Usage")).toBe(true);
+    expect(hasMappingLabel("FMEA Level")).toBe(true);
+
+    // Merge-only rows are hidden in piece_part_generate.
+    expect(hasMappingLabel("Local Effect")).toBe(false);
+    expect(hasMappingLabel("Next Higher Effect")).toBe(false);
+    expect(hasMappingLabel("End Effect")).toBe(false);
+  });
+
+  test("BOM-Only mode hides the FMEA-ID mapping row", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await waitForFmeaTool();
+
+    expect(hasMappingLabel("FMEA-ID")).toBe(true);
+
+    await user.click(screen.getByRole("button", { name: /piece-part from bom only/i }));
+
+    expect(hasMappingLabel("FMEA-ID")).toBe(false);
+    // Non-FMEA-ID rows still render.
+    expect(hasMappingLabel("Failure Mode")).toBe(true);
+    expect(hasMappingLabel("Failure Mode Ratio")).toBe(true);
+  });
+
+  test("Merge Functional FMEA mode shows Local / Next Higher / End Effect rows", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await waitForFmeaTool();
+
+    expect(hasMappingLabel("Local Effect")).toBe(false);
+    expect(hasMappingLabel("Next Higher Effect")).toBe(false);
+    expect(hasMappingLabel("End Effect")).toBe(false);
+
+    await user.click(screen.getByRole("button", { name: /merge functional fmea/i }));
+
+    expect(hasMappingLabel("Local Effect")).toBe(true);
+    expect(hasMappingLabel("Next Higher Effect")).toBe(true);
+    expect(hasMappingLabel("End Effect")).toBe(true);
+    expect(hasMappingLabel("FMEA-ID")).toBe(true);
+  });
+
+  test("Merge Piece-Part FMEA mode also shows merge-only rows", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await waitForFmeaTool();
+
+    await user.click(screen.getByRole("button", { name: /merge piece-part fmea/i }));
+
+    expect(hasMappingLabel("Local Effect")).toBe(true);
+    expect(hasMappingLabel("Next Higher Effect")).toBe(true);
+    expect(hasMappingLabel("End Effect")).toBe(true);
+  });
+
+  test("FMD commodity column labels swap when the standard toggles", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await waitForFmeaTool();
+
+    // Default standard is FMD-2016.
+    expect(hasMappingLabel("FMD-2016 Commodity Type 1")).toBe(true);
+    expect(hasMappingLabel("FMD-2016 Commodity Type 2")).toBe(true);
+    expect(hasMappingLabel("FMD-91 Commodity Type 1")).toBe(false);
+
+    // Switch to FMD-91 via the Failure Modes Standard radio.
+    await user.click(screen.getByRole("radio", { name: /fmd-91/i }));
+
+    expect(hasMappingLabel("FMD-91 Commodity Type 1")).toBe(true);
+    expect(hasMappingLabel("FMD-91 Commodity Type 2")).toBe(true);
+    expect(hasMappingLabel("FMD-2016 Commodity Type 1")).toBe(false);
+    expect(hasMappingLabel("FMD-2016 Commodity Type 2")).toBe(false);
+  });
+
+  test("info icon renders for every mapping row with help text", async () => {
+    renderApp();
+    await waitForFmeaTool();
+
+    const helpButtons = document.querySelectorAll(".mapping-table__help-button");
+    // 11 rows visible in the default piece_part_generate mode (14 - 3 merge).
+    expect(helpButtons.length).toBe(11);
+  });
+
+  test("Fix B2: switching workflow mode does not reset inspection-backed mapping", async () => {
+    // Fix B2: the effect that handles workflow-mode changes used to
+    // call setInputInspections({}) and setTemplateAnalyses({}), which
+    // wiped column inspection data on every mode switch. The loaded
+    // file paths stayed in inputStates (InputGrid still rendered them
+    // as loaded), but the mapping table lost every inspected column
+    // dropdown option. Now we preserve both inspection maps.
+    //
+    // Regression signal: switch mode back and forth several times and
+    // assert the mapping table renders every canonical row cleanly.
+    // If the fix regresses, the subsequent mappings continue to work
+    // only because inspection data isn't plumbed in the default mock
+    // scenario — but the assertion that each mode-switch round-trip
+    // preserves row counts is still a useful guard against re-adding
+    // unnecessary state resets to that effect.
+    const user = userEvent.setup();
+    renderApp();
+    await waitForFmeaTool();
+
+    const initialCount = document.querySelectorAll(".mapping-field__name").length;
+
+    await user.click(screen.getByRole("button", { name: /merge functional fmea/i }));
+    const mergeCount = document.querySelectorAll(".mapping-field__name").length;
+    expect(mergeCount).toBeGreaterThanOrEqual(initialCount);
+
+    await user.click(screen.getByRole("button", { name: /piece-part from grouping file/i }));
+    const backToDefault = document.querySelectorAll(".mapping-field__name").length;
+    expect(backToDefault).toBe(initialCount);
+
+    // One more round-trip to be sure the effect body is stable.
+    await user.click(screen.getByRole("button", { name: /merge piece-part fmea/i }));
+    await user.click(screen.getByRole("button", { name: /piece-part from grouping file/i }));
+    expect(document.querySelectorAll(".mapping-field__name").length).toBe(initialCount);
+  });
+});

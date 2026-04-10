@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 import { useShellStore } from "../stores/shellStore";
@@ -50,28 +50,170 @@ describe("tauri_build shell", () => {
     expect(document.documentElement.dataset.theme).toBe("light_precision");
   });
 
-  test("shows target workbook only for existing-workbook strategies", async () => {
+  test("default FMEA layout shows generation options first and outputs second", async () => {
+    renderApp();
+    await waitForFmeaTool();
+
+    const generationHeading = screen.getByRole("heading", {
+      name: /piece-part fmea generation options/i,
+      level: 2,
+    });
+    const outputsHeading = screen.getByRole("heading", {
+      name: /outputs/i,
+      level: 2,
+    });
+
+    const generationSection = generationHeading.closest("section");
+    const outputsSection = outputsHeading.closest("section");
+
+    expect(generationSection).not.toBeNull();
+    expect(outputsSection).not.toBeNull();
+
+    if (!generationSection || !outputsSection) {
+      throw new Error("Expected FMEA setup sections to render.");
+    }
+
+    expect(within(generationSection).getByRole("button", { name: /piece-part from grouping file/i })).toBeInTheDocument();
+    expect(within(generationSection).getByRole("radio", { name: /fmd-2016/i })).toBeInTheDocument();
+    expect(within(generationSection).getByText("Grouping workbook")).toBeInTheDocument();
+    expect(within(generationSection).getByText("BOM workbook")).toBeInTheDocument();
+    expect(within(generationSection).getByText("Failure modes workbook")).toBeInTheDocument();
+
+    expect(within(outputsSection).getByText("Output Folder")).toBeInTheDocument();
+    expect(within(outputsSection).queryByText("Target workbook")).not.toBeInTheDocument();
+  });
+
+  test("shows target workbook only for preserve-formatting strategy", async () => {
     const user = userEvent.setup();
     renderApp();
     await waitForFmeaTool();
 
-    expect(screen.queryByText("Target workbook")).not.toBeInTheDocument();
+    const outputsSection = screen.getByRole("heading", { name: /outputs/i, level: 2 }).closest("section");
+    if (!outputsSection) {
+      throw new Error("Expected Outputs section to render.");
+    }
+
+    expect(within(outputsSection).queryByText("Target workbook")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /best effort/i }));
+    expect(within(outputsSection).queryByText("Target workbook")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: /preserve formatting/i }));
 
-    expect(screen.getByText("Target workbook")).toBeInTheDocument();
+    expect(within(outputsSection).getByText("Target workbook")).toBeInTheDocument();
   });
 
-  test("switches inputs when workflow changes to fill gaps", async () => {
+  test("moves focus into the main workspace after a tool switch", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await waitForFmeaTool();
+
+    await user.click(screen.getByRole("button", { name: /compare/i }));
+
+    await screen.findByRole("heading", { name: /bom comparison tool/i });
+
+    await waitFor(() => {
+      const main = document.querySelector("main[aria-label='Cross Compare workspace']");
+      expect(main).not.toBeNull();
+      expect(document.activeElement).toBe(main);
+    });
+  });
+
+  test("switches inputs when workflow changes to Merge Piece-Part FMEA", async () => {
     const user = userEvent.setup();
     renderApp();
     await waitForFmeaTool();
 
     expect(screen.queryByText("Existing FMEA workbook")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /fill gaps/i }));
+    await user.click(screen.getByRole("button", { name: /merge piece-part fmea/i }));
 
     expect(screen.getByText("Existing FMEA workbook")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Functional FMEA" })).not.toBeInTheDocument();
+  });
+
+  test("shows CCA identifier field only in BOM-Only mode", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await waitForFmeaTool();
+
+    // Default mode is piece_part_generate — no CCA input visible.
+    expect(screen.queryByLabelText("CCA identifier")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /piece-part from bom only/i }));
+    expect(screen.getByLabelText("CCA identifier")).toBeInTheDocument();
+
+    // Switching away hides it again.
+    await user.click(screen.getByRole("button", { name: /piece-part from grouping file/i }));
+    expect(screen.queryByLabelText("CCA identifier")).not.toBeInTheDocument();
+  });
+
+  test("shows HDA file input only when Separate HDA file is selected", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await waitForFmeaTool();
+
+    // Default is "HDA columns inline in BOM" — HDA workbook should be hidden.
+    expect(screen.queryByText("HDA workbook")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("radio", { name: /separate hda file/i }));
+    expect(screen.getByText("HDA workbook")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("radio", { name: /hda columns inline in bom/i }));
+    expect(screen.queryByText("HDA workbook")).not.toBeInTheDocument();
+  });
+
+  test("updates visible inputs when FMEA mode changes between all four workflows", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await waitForFmeaTool();
+
+    // Start with Merge Functional: functionalFmea shown, existingFmea hidden.
+    await user.click(screen.getByRole("button", { name: /merge functional fmea/i }));
+    expect(screen.getByText("Functional FMEA workbook")).toBeInTheDocument();
+    expect(screen.queryByText("Existing FMEA workbook")).not.toBeInTheDocument();
+    expect(screen.getByText("BOM workbook")).toBeInTheDocument();
+
+    // Merge Piece-Part FMEA: existingFmea shown, functionalFmea hidden.
+    await user.click(screen.getByRole("button", { name: /merge piece-part fmea/i }));
+    expect(screen.getByText("Existing FMEA workbook")).toBeInTheDocument();
+    expect(screen.queryByText("Functional FMEA workbook")).not.toBeInTheDocument();
+
+    // Piece-Part from Grouping File: grouping shown, no FMEA sources.
+    await user.click(screen.getByRole("button", { name: /piece-part from grouping file/i }));
+    expect(screen.getByText("Grouping workbook")).toBeInTheDocument();
+    expect(screen.queryByText("Functional FMEA workbook")).not.toBeInTheDocument();
+    expect(screen.queryByText("Existing FMEA workbook")).not.toBeInTheDocument();
+
+    // BOM-Only: neither functional nor existing nor grouping visible.
+    await user.click(screen.getByRole("button", { name: /piece-part from bom only/i }));
+    expect(screen.queryByText("Functional FMEA workbook")).not.toBeInTheDocument();
+    expect(screen.queryByText("Existing FMEA workbook")).not.toBeInTheDocument();
+    expect(screen.queryByText("Grouping workbook")).not.toBeInTheDocument();
+    expect(screen.getByText("BOM workbook")).toBeInTheDocument();
+  });
+
+  test("workflow changes do not leave target workbook visible after returning to new workbook", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await waitForFmeaTool();
+
+    const outputsSection = screen.getByRole("heading", { name: /outputs/i, level: 2 }).closest("section");
+    if (!outputsSection) {
+      throw new Error("Expected Outputs section to render.");
+    }
+
+    await user.click(screen.getByRole("button", { name: /merge piece-part fmea/i }));
+    expect(within(outputsSection).queryByText("Target workbook")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /preserve formatting/i }));
+    expect(within(outputsSection).getByText("Target workbook")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /new workbook/i }));
+    expect(within(outputsSection).queryByText("Target workbook")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /piece-part from grouping file/i }));
+    expect(within(outputsSection).queryByText("Target workbook")).not.toBeInTheDocument();
   });
 });
