@@ -15,6 +15,7 @@ frontend/src/           # React + TypeScript UI
   app/                  # Shell, tool registry, types
   features/             # Tool components (one dir per tool)
   components/           # Shared UI components
+    primitives/         # Reusable low-level UI primitives
   shared/               # Backend client, theme, errors, hooks
   stores/               # Zustand state (shell, theme, notifications)
   contracts/            # Zod schemas for sidecar protocol
@@ -63,14 +64,14 @@ NDJSON over stdio. Commands: `health_check`, `list_sheets`, `inspect_input`, `an
 npm run dev              # Vite dev server (browser preview mode)
 npm run build            # Production build
 npm run typecheck        # TypeScript type checking
-npm test                 # Vitest (34 tests)
+npm test                 # Vitest (143 tests)
 
 # Desktop (requires Rust toolchain)
 npm run tauri:dev        # Dev mode with hot reload
 npm run tauri:build:portable  # Release build → src-tauri/target/.../release/
 
 # Python sidecar (use project venv)
-.venv\Scripts\python.exe -m pytest backend/tests -v    # 70 backend tests (33 sidecar + 17 audit + 8 cancel bridge + 12 FMEA phase D)
+.venv\Scripts\python.exe -m pytest backend/tests -v    # 101 backend tests (33 sidecar + 17 audit + 8 cancel bridge + 43 FMEA phase D)
 .venv\Scripts\python.exe backend/python/sidecar_main.py --self-test
 
 # Full release
@@ -103,10 +104,14 @@ Each tool component uses:
 - `SectionCard` for layout sections
 - Mock scenarios for browser-preview mode
 - `<GlobalLogPanel>` is mounted at the App shell level (not per-tool), so every tool automatically gets the cross-tool run log. Tools don't need to render it.
+- `cancelError.ts` for cancel/abort error normalization
+- `useBackendBusyReset` hook for clearing stale busy status
+- `useCopyToClipboard` hook for clipboard operations
 
 ### File Picker
 - `backendClient.openExcelFile()` for `.xlsx/.xls/.xlsm`
 - `backendClient.openPdfFile()` for `.pdf`
+- `backendClient.openDirectory()` for output folder selection
 - After picking: `listSheets()` → `inspectInput()` for Excel; direct path set for PDF
 
 ## Python Import Policy
@@ -149,11 +154,11 @@ The audit runs:
 
 ## Testing
 
-### Backend Tests (70 total)
+### Backend Tests (101 total)
 - 33 sidecar integration tests in `test_sidecar_main.py`
 - 17 security-audit tests in `test_security_audit.py` (synthetic positives + live tree scan)
 - 8 cancel-bridge tests in `test_cancel_bridge.py`
-- 12 FMEA Phase D tests in `test_fmea_phase_d.py`
+- 43 FMEA Phase D tests in `test_fmea_phase_d.py`
 - Sidecar tests are subprocess-based: spawn sidecar, send NDJSON commands, verify responses
 - `stderr=subprocess.DEVNULL` to avoid Windows pipe buffer deadlock
 - `SIDECAR_HEARTBEAT_INTERVAL=9999` suppresses heartbeats during tests
@@ -162,14 +167,27 @@ The audit runs:
 - `pytest.importorskip("fitz")` for RefDes tests requiring PyMuPDF
 - `backend/tests/conftest.py` installs a `sys.path` shim for in-process unit tests
 
-### Frontend Tests (34 total)
+### Frontend Tests (143 total)
 - Vitest + React Testing Library
 - Browser-mock mode (no Tauri runtime needed)
-- `src/app/App.test.tsx` — 4 tests
+- `src/app/App.test.tsx` — 10 tests
 - `src/components/CustomSelect.test.tsx` — 1 test
+- `src/components/MappingTable.test.tsx` — 10 tests
+- `src/components/RunStatePanel.test.tsx` — 5 tests
+- `src/components/GlobalLogPanel.resize.test.tsx` — 13 tests
+- `src/components/primitives/CommandPalette.test.tsx` — 5 tests
+- `src/components/primitives/HoldButton.test.tsx` — 5 tests
+- `src/components/primitives/EmptyState.test.tsx` — 5 tests
+- `src/features/fmea/FmeaTool.test.tsx` — 7 tests
+- `src/features/fmea/mappingColumns.test.ts` — 21 tests
+- `src/features/fmea/mappingAnalysis.test.ts` — 6 tests
 - `src/shared/backend/runLifecycle.test.ts` — 8 tests
+- `src/shared/backend/cancelError.test.ts` — 12 tests
+- `src/shared/backend/client.cancelRun.test.ts` — 2 tests
+- `src/shared/backend/useBackendBusyReset.test.ts` — 9 tests
 - `src/shared/theme/themeRegistry.test.ts` — 10 tests
 - `src/shared/hooks/useRoleRequestSequence.test.ts` — 5 tests
+- `src/shared/hooks/useCopyToClipboard.test.ts` — 3 tests
 - `src/stores/globalLogStore.test.ts` — 6 tests
 
 ## Critical Gotchas

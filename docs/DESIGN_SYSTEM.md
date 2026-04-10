@@ -316,7 +316,7 @@ This is the "boxes super close together horizontally" fix — without these
 constraints the select cells collapsed to fit their current text and the
 dropdown menus clipped long column names.
 
-## The 7 Themes
+## The 10 Themes
 
 Themes are toggled by setting `data-theme` on the `<html>` element from
 `ThemeController.tsx`. The attribute is **always** set: Light Precision
@@ -336,6 +336,9 @@ that one registry.
 | High Contrast | `high_contrast` | Accessibility, projectors, older monitors | Pure black/white with a yellow accent — targets WCAG AAA |
 | Synthwave | `synthwave` | Off-hours dev-tool vibe | Hot magenta on deep purple, 80s retro-futurism |
 | Mission Control | `mission_control` | Technical-precision instrument-panel aesthetic | Near-black with cyan accents, monospaced typography throughout |
+| Kraft Paper | `kraft_paper` | Workshop notebook aesthetic | Warm paper and graphite (light). Icon: NotePencil |
+| Forest Depth | `forest_depth` | Biophilic dark theme for long runs | Deep pine and moss (dark). Icon: TreeEvergreen |
+| Graphite Dawn | `graphite_dawn` | Newsprint precision | Soft charcoal on warm ivory (light). Icon: Compass |
 
 ## Mission Control Special Rules
 
@@ -403,6 +406,21 @@ tool's `*Tool.tsx`.
 | `CustomSelect` | `CustomSelect.tsx` | Accessible dropdown with keyboard navigation |
 | `ValidationPreview` | `ValidationPreview.tsx` | Pre-run validation message list |
 | `ScenarioRail` | `ScenarioRail.tsx` | Demo scenario picker (browser preview only) |
+
+### Primitives (`components/primitives/`)
+
+Reusable building-block components extracted from tool surfaces.
+
+| Component | File | Purpose |
+|-----------|------|---------|
+| `CommandPalette` | `CommandPalette.tsx` | Ctrl+K action search and navigation overlay |
+| `ToggleChip` | `ToggleChip.tsx` | Boolean toggle styled as a chip |
+| `OptionsField` | `OptionsField.tsx` | Labeled field wrapper for option controls |
+| `ContextTabs` | `ContextTabs.tsx` | Tabbed context switcher |
+| `CheckboxField` | `CheckboxField.tsx` | Labeled checkbox with description |
+| `OptionsSection` | `OptionsSection.tsx` | Grouped options container with heading |
+| `HoldButton` | `HoldButton.tsx` | Press-and-hold confirmation button |
+| `EmptyState` | `EmptyState.tsx` | Placeholder for empty content areas |
 
 ## CSS Module Conventions
 

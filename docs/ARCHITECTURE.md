@@ -23,6 +23,7 @@ request, response, and streamed run event.
 │   ├── src/
 │   │   ├── app/                # AppShell, tool registry, types
 │   │   ├── components/         # Shared UI (SectionCard, MappingTable, …)
+│   │   │   └── primitives/     # Reusable building blocks (CommandPalette, ToggleChip, …)
 │   │   ├── contracts/          # Zod schemas for sidecar payloads
 │   │   ├── features/           # One directory per tool
 │   │   ├── mocks/              # Browser-preview demo scenarios
@@ -92,6 +93,12 @@ that hosts:
   frontend fails loudly at the schema boundary, not deep inside a render.
 - **Mocks** (`frontend/src/mocks/scenarios.ts`) — fully populated demo
   scenarios so the browser preview (`npm run dev`) works without a backend.
+- **Primitives** (`frontend/src/components/primitives/`) — reusable
+  building-block components extracted from tool surfaces: `CommandPalette`,
+  `ToggleChip`, `OptionsField`, `ContextTabs`, `CheckboxField`,
+  `OptionsSection`, `HoldButton`, `EmptyState`. The Command Palette
+  (Ctrl+K) is mounted at the `AppShell` level and provides cross-tool
+  navigation and action dispatch.
 
 ## Rust Bridge Layer
 
@@ -251,7 +258,7 @@ Full payload schemas live in `contracts/sidecar-protocol.md`.
 
 | Tool | Workflow IDs | Frontend component | Runtime adapter | Logic module |
 |------|--------------|--------------------|-----------------|--------------|
-| FMEA | `piece_part_generate`, `bom_only`, `fill_gaps` | `frontend/src/features/fmea/FmeaTool.tsx` | `fmea/runtime.py` | `fmea/fmea_generator_logic.py` (+ template analyzer/writer) |
+| FMEA | `piece_part_generate`, `bom_only`, `functional_to_piecepart`, `fill_gaps` | `frontend/src/features/fmea/FmeaTool.tsx` | `fmea/runtime.py` | `fmea/fmea_generator_logic.py` (+ template analyzer/writer) |
 | BOM Compare | `bom_compare_group`, `bom_compare_custom` | `frontend/src/features/bom-compare/BomCompareTool.tsx` | `bom_compare/runtime.py` | `bom_compare/bom_compare_logic.py`, `custom_compare.py` |
 | Failure Rate | `failure_rate_link` | `frontend/src/features/failure-rate/FailureRateTool.tsx` | `failure_rate/runtime.py` | `failure_rate/failure_rate_logic.py` |
 | RefDes Extractor | `refdes_extract` | `frontend/src/features/refdes-extractor/RefDesExtractorTool.tsx` | `refdes_extractor/runtime.py` | `refdes_test/refdes_test_logic.py` (+ `refdes_extractor/extraction_engine.py`) |
@@ -304,9 +311,13 @@ the protocol's `validations` array.
 
 | Store | File | Persisted | Purpose |
 |-------|------|-----------|---------|
-| `useShellStore` | `frontend/src/stores/shellStore.ts` | no | active tool id, backend status/mode/message, last health-check timestamp |
+| `useShellStore` | `frontend/src/stores/shellStore.ts` | yes (`zustand/middleware.persist`, key `reliability-tools-tauri-shell`) | active tool id, backend status/mode/message, last health-check timestamp, `fmeaOutputDirectory: string \| null` |
 | `useThemeStore` | `frontend/src/stores/themeStore.ts` | yes (`zustand/middleware.persist`, key `reliability-tools-tauri-theme`) | `mode: "system" \| ThemeId` |
 | `useNotificationStore` | `frontend/src/stores/notificationStore.ts` | no | toast list with `push`/`dismiss` |
+
+`shellStore` uses `partialize` to persist only `fmeaOutputDirectory`;
+transient fields (backend status, mode, message) are excluded so they
+do not survive a reload with stale values.
 
 Tool-local state lives inside each `*Tool.tsx` via `useState` and is not
 hoisted into a store. Run lifecycle is owned by `useBackendRunLifecycle`

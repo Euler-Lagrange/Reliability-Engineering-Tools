@@ -87,6 +87,10 @@ All eight commands currently implemented by the sidecar:
     - `inputs`
     - `mappings`
     - `options` — see Run Options below
+    - `outputDirectory` — string | null, optional. Absolute path to the
+      folder where the generated output file should be written. When null or
+      absent, the backend falls back to the input file's parent directory.
+      Currently honored by the FMEA runtime only.
   - result payload:
     - `ok`
     - `reason_code`
@@ -99,6 +103,8 @@ All eight commands currently implemented by the sidecar:
     - `inputs`
     - `mappings`
     - `options` — see Run Options below
+    - `outputDirectory` — string | null, optional. Same semantics as
+      `validate_run` above.
   - immediate response: `ack` (see Streamed Run Events below)
   - terminal result payload (emitted as `result` kind):
     - `status`

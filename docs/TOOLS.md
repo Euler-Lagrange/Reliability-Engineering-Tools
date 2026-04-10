@@ -58,9 +58,13 @@ reviewer.
 
 - **HDA workbook** — Hardware Design Assurance data. When provided, HDA
   fields are merged into the output rows so reviewers can see both sources
-  side by side.
+  side by side. See HDA Source Toggle below for how to supply HDA data.
 - **Existing FMEA workbook** — required only for the Fill Gaps workflow.
   This is the FMEA you want to bring up to date.
+- **CCA Prefix** — required only for the BOM-Only workflow. A short
+  identifier (1–8 characters, matching `^[A-Z0-9][A-Z0-9-]{0,7}$`) used
+  to generate FMEA IDs in the output. The field appears only when the
+  `bom_only` workflow is selected.
 
 ### Workflows
 
@@ -103,6 +107,33 @@ library down to the matching standard.
   new columns are appended at the very end of the sheet. All existing rows,
   data, formatting, fonts, and column widths are preserved. This is the
   default strategy for the Fill Gaps workflow.
+
+### HDA Source Toggle
+
+When the workflow requires HDA data, you can choose between two modes:
+
+- **Inline** — HDA data is embedded in the BOM file itself (the BOM columns
+  include the HDA fields). No separate HDA input is needed.
+- **Separate** — HDA data lives in a dedicated HDA workbook. When this mode
+  is selected, an additional HDA file input slot appears so you can pick the
+  standalone HDA file.
+
+### Output Directory
+
+By default the generated workbook is written to the same folder as the first
+input file. You can override this by clicking the output directory picker,
+which opens the OS folder dialog. The selected directory persists across tab
+switches and app reloads.
+
+### Column Mapping Bulk Actions
+
+The mapping table supports bulk operations alongside per-row dropdowns:
+
+- **Apply all suggestions** — auto-fills every mapping row with the
+  backend's suggested column match from `inspect_input`.
+- **Clear all mappings** — resets all mapping selections to empty.
+- **Per-row help panels** — expand a row to see the column description and
+  the kind of content the backend expects.
 
 ### Merge Column Scope (Fill Gaps only)
 

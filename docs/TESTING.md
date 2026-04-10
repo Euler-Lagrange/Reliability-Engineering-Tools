@@ -7,14 +7,29 @@
 | Backend integration | `backend/tests/test_sidecar_main.py` | 33 | pytest |
 | Backend security audit | `backend/tests/test_security_audit.py` | 17 | pytest |
 | Backend cancel bridge | `backend/tests/test_cancel_bridge.py` | 8 | pytest |
-| Backend FMEA Phase D | `backend/tests/test_fmea_phase_d.py` | 12 | pytest |
-| Frontend shell | `frontend/src/app/App.test.tsx` | 4 | Vitest + RTL |
+| Backend FMEA Phase D | `backend/tests/test_fmea_phase_d.py` | 43 | pytest |
+| **Backend subtotal** | | **101** | |
+| Frontend shell | `frontend/src/app/App.test.tsx` | 10 | Vitest + RTL |
 | Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 1 | Vitest + RTL |
+| Frontend mapping table | `frontend/src/components/MappingTable.test.tsx` | 10 | Vitest + RTL |
+| Frontend run state panel | `frontend/src/components/RunStatePanel.test.tsx` | 5 | Vitest + RTL |
+| Frontend log panel resize | `frontend/src/components/GlobalLogPanel.resize.test.tsx` | 13 | Vitest + RTL |
+| Frontend command palette | `frontend/src/components/primitives/CommandPalette.test.tsx` | 5 | Vitest + RTL |
+| Frontend hold button | `frontend/src/components/primitives/HoldButton.test.tsx` | 5 | Vitest + RTL |
+| Frontend empty state | `frontend/src/components/primitives/EmptyState.test.tsx` | 5 | Vitest + RTL |
 | Frontend run lifecycle | `frontend/src/shared/backend/runLifecycle.test.ts` | 8 | Vitest |
+| Frontend cancel error | `frontend/src/shared/backend/cancelError.test.ts` | 12 | Vitest |
+| Frontend cancel run | `frontend/src/shared/backend/client.cancelRun.test.ts` | 2 | Vitest |
+| Frontend busy reset | `frontend/src/shared/backend/useBackendBusyReset.test.ts` | 9 | Vitest |
 | Frontend theme registry | `frontend/src/shared/theme/themeRegistry.test.ts` | 10 | Vitest |
 | Frontend role-request sequence | `frontend/src/shared/hooks/useRoleRequestSequence.test.ts` | 5 | Vitest |
+| Frontend copy to clipboard | `frontend/src/shared/hooks/useCopyToClipboard.test.ts` | 3 | Vitest |
 | Frontend global log store | `frontend/src/stores/globalLogStore.test.ts` | 6 | Vitest |
-| **Total** | | **104** | |
+| Frontend FMEA tool | `frontend/src/features/fmea/FmeaTool.test.tsx` | 7 | Vitest + RTL |
+| Frontend mapping columns | `frontend/src/features/fmea/mappingColumns.test.ts` | 21 | Vitest |
+| Frontend mapping analysis | `frontend/src/features/fmea/mappingAnalysis.test.ts` | 6 | Vitest |
+| **Frontend subtotal** | | **143** | |
+| **Total** | | **244** | |
 
 ## Backend Tests
 
@@ -152,7 +167,7 @@ new FMEA tests must do the same or validation will reject the request.
 | Single-active-run guard | `test_sidecar_rejects_second_execute_while_run_is_active` |
 | Error recovery | `test_sidecar_execute_emits_backend_error_on_missing_columns`, `test_sidecar_remains_responsive_after_failed_run` |
 | Missing-file validation | `test_sidecar_validate_rejects_missing_required_files` |
-| FMEA Phase D (in-process) | `test_inheritance_creates_bom_addition`, `test_inheritance_writes_bom_additions_sheet`, `test_variant_in_bom_does_not_trigger_inheritance`, `test_variant_base_also_missing_falls_through`, `test_failure_modes_standard_drives_headers`, `test_validate_run_accepts_fill_gaps_with_preserve_formatting`, `test_failure_modes_standard_required_in_validation`, `test_usage_fraction_uses_source_variant_count_not_addition_count`, `test_inherited_variant_does_not_get_false_usage_warning`, `test_legacy_enrichment_payload_is_rejected`, `test_failure_modes_standard_filters_mixed_standard_file`, `test_functional_to_piecepart_preserves_functional_rows` |
+| FMEA Phase D (in-process, 43 tests) | BOM inheritance, variant handling, failure modes standard filtering, fill-gaps validation, usage fraction calculations, legacy enrichment rejection, functional-to-piecepart preservation, CCA prefix handling, output directory configuration, Part Usage (PU) column logic, column override modes, union merge strategies, FMC mapping |
 
 ## Frontend Tests
 
@@ -164,12 +179,25 @@ neither of which exists under jsdom, so the client returns mock data from
 
 | File | Tests |
 |------|-------|
-| `frontend/src/app/App.test.tsx` | 4 — shell render, tool switching, theme application, notification dismissal |
+| `frontend/src/app/App.test.tsx` | 10 — shell render, tool switching, theme application, notification dismissal, workflow switching, CCA visibility, HDA source toggle, output folder, focus management |
 | `frontend/src/components/CustomSelect.test.tsx` | 1 — keyboard navigation |
+| `frontend/src/components/MappingTable.test.tsx` | 10 — column mapping display, selection, validation, sync |
+| `frontend/src/components/RunStatePanel.test.tsx` | 5 — run state display, progress, result, cancel, error |
+| `frontend/src/components/GlobalLogPanel.resize.test.tsx` | 13 — log panel drag-to-resize, collapse, expand, boundary constraints |
+| `frontend/src/components/primitives/CommandPalette.test.tsx` | 5 — command palette open, search, select, keyboard navigation, dismiss |
+| `frontend/src/components/primitives/HoldButton.test.tsx` | 5 — hold-to-confirm interaction, cancel on release, progress feedback |
+| `frontend/src/components/primitives/EmptyState.test.tsx` | 5 — empty state rendering, icon, message, action slot |
 | `frontend/src/shared/backend/runLifecycle.test.ts` | 8 — run lifecycle state transitions (ack, progress, result, cancel, error, reset) |
+| `frontend/src/shared/backend/cancelError.test.ts` | 12 — cancel error detection, wrapping, propagation across error types |
+| `frontend/src/shared/backend/client.cancelRun.test.ts` | 2 — cancel run command dispatch and response handling |
+| `frontend/src/shared/backend/useBackendBusyReset.test.ts` | 9 — busy state recovery after run completion, error, or unmount |
 | `frontend/src/shared/theme/themeRegistry.test.ts` | 10 — theme registry consistency (ids, labels, icons, colorScheme, rail visibility) |
 | `frontend/src/shared/hooks/useRoleRequestSequence.test.ts` | 5 — per-role async request sequencing (stale response suppression) |
+| `frontend/src/shared/hooks/useCopyToClipboard.test.ts` | 3 — clipboard write, success feedback, error handling |
 | `frontend/src/stores/globalLogStore.test.ts` | 6 — global log ring buffer: append, clear, toggle, filter, export format, capacity |
+| `frontend/src/features/fmea/FmeaTool.test.tsx` | 7 — FMEA tool rendering, workflow selection, input validation, run integration |
+| `frontend/src/features/fmea/mappingColumns.test.ts` | 21 — column synonym matching, priority ordering, ambiguity resolution |
+| `frontend/src/features/fmea/mappingAnalysis.test.ts` | 6 — mapping completeness analysis, gap detection, suggestions |
 
 `vitest.setup.ts` is configured in `vite.config.ts`. It registers
 `@testing-library/jest-dom` matchers and shims `matchMedia`, pointer

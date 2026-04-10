@@ -5,6 +5,87 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-04-10 — FMEA Mapping Analysis, Command Palette, Phase D Backend
+
+### Added
+
+- **Command Palette** (`Ctrl+K`): global keyboard-driven command launcher
+  with fuzzy search across tools, themes, and actions. Implemented as a new
+  UI primitive in `components/primitives/CommandPalette.tsx`.
+- **FMEA column mapping analysis** (`mappingColumns.ts`,
+  `mappingAnalysis.ts`): canonical column metadata registry, header
+  normalization (case/whitespace/synonym folding), column deduplication,
+  and source aggregation for automatic mapping suggestions.
+- **MappingTable toolbar:** bulk **Apply all suggestions** and **Clear all
+  mappings** buttons, plus per-row contextual help panels explaining each
+  column's purpose.
+- **Output directory picker:** explicit `outputDirectory` parameter with OS
+  directory dialog via `openDirectory()` API, persisted via Zustand persist
+  middleware in `shellStore`.
+- **CCA prefix validation:** BOM-Only mode now requires a CCA prefix,
+  validated against the format `^[A-Z0-9][A-Z0-9-]{0,7}$`.
+- **Part Usage diagnostics:** mapping mismatch detection between BOM Part
+  Usage and actual instance count, surfaced as validation warnings.
+- **FMD standard templating refactor:** `_build_column_overrides()` and
+  `FRONTEND_TO_BACKEND_MAPPING` bridge frontend canonical names to backend
+  column keys, replacing the ad-hoc translation layer.
+- **8 new UI primitives** (`components/primitives/`): `CommandPalette`,
+  `ToggleChip`, `OptionsField`, `ContextTabs`, `CheckboxField`,
+  `OptionsSection`, `HoldButton`, `EmptyState`.
+- **Cancel error normalization** (`cancelError.ts`): shared utility for
+  Tauri cancel/abort error detection and normalization across all tools.
+- **Backend busy reset hook** (`useBackendBusyReset.ts`): auto-resets shell
+  store backend status on run completion, preventing stuck busy states.
+- **Copy to clipboard hook** (`useCopyToClipboard.ts`): reusable hook for
+  clipboard write with success/error feedback.
+- **3 new themes:** Kraft Paper (warm paper/graphite), Forest Depth (deep
+  pine/moss dark), Graphite Dawn (soft charcoal/ivory).
+- **HDA source toggle** with workflow-aware role handling for conditional
+  file inputs.
+- **GlobalLogPanel resizable:** drag handle for panel height adjustment
+  with `localStorage` persistence.
+- **Tauri file drop handling:** native drag-drop with path notification for
+  file input cards.
+
+### Changed
+
+- **FmeaTool.tsx major refactor:** mapping rows, HDA source toggle,
+  workflow-aware file roles, CCA prefix input, output directory picker,
+  and bulk mapping actions integrated into the tool layout.
+- **MappingTable toolbar** expanded with apply-all, clear-all actions and
+  contextual help panels per mapping row.
+- **Shell store persistence** via Zustand `persist` middleware — FMEA output
+  directory and other shell state survive page reloads.
+- **Column mapping refactor** in `fmea/runtime.py`:
+  `_build_column_overrides()` translates frontend mappings to flat canonical
+  keys and nested per-file-type buckets, replacing the previous direct
+  key passthrough.
+
+### Fixed
+
+- **Backend busy state** no longer sticks after run completion — the
+  `useBackendBusyReset` hook clears the shell store flag on terminal events.
+- **Cancel errors from Tauri dialog dismissals** normalized via
+  `cancelError.ts` instead of surfacing as unhandled exceptions.
+
+### Tests
+
+- **Backend total: 101** (33 sidecar + 17 audit + 8 cancel bridge + 43
+  Phase D).
+- **Backend FMEA Phase D:** expanded from 12 to 43 tests — CCA prefix
+  (A6), output directory (A7), Part Usage diagnostics (A8), column override
+  translation, union merge diagnostics, Failure Mode Causes mapping,
+  invalid output directory fallback.
+- **Frontend total: 143** across 19 test files.
+- **13 new frontend test files** (~101 tests): `FmeaTool` (7),
+  `MappingTable` (10), `RunStatePanel` (5), `GlobalLogPanel.resize` (13),
+  `mappingColumns` (21), `mappingAnalysis` (6), `cancelError` (12),
+  `client.cancelRun` (2), `useBackendBusyReset` (9),
+  `useCopyToClipboard` (3), `HoldButton` (5), `EmptyState` (5),
+  `CommandPalette` (5).
+- **`App.test.tsx`** expanded from 4 to 10 tests.
+- **Grand total: 244 tests** (101 backend + 143 frontend).
+
 ## [0.3.0] - 2026-04-08 — FMEA Workflow Restructure, BOM Inheritance, Global Run Log
 
 ### Added
