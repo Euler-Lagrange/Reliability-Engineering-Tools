@@ -26,3 +26,10 @@ __pycache__/
 Thumbs.db
 
 # Lock files (keep package-lock.json)
+
+# AI tool configuration (user-local)
+.claude/
+.superpowers/
+
+# TypeScript build info
+frontend/tsconfig.tsbuildinfo

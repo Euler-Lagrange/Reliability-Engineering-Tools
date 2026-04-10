@@ -1,0 +1,4 @@
+interface:
+  display_name: "Debug Investigator"
+  short_description: "Trace failures across frontend, bridge, and sidecar."
+  default_prompt: "Use $debug-investigator to isolate this repo issue and propose the smallest safe fix path."

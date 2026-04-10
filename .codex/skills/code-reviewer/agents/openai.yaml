@@ -1,0 +1,4 @@
+interface:
+  display_name: "Code Reviewer"
+  short_description: "Find regressions and completeness gaps fast."
+  default_prompt: "Use $code-reviewer to review these changes for bugs, regressions, and missing tests."

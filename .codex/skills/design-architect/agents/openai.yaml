@@ -1,0 +1,4 @@
+interface:
+  display_name: "Design Architect"
+  short_description: "Plan repo-safe cross-layer feature designs."
+  default_prompt: "Use $design-architect to design a repo-specific implementation plan for this feature."

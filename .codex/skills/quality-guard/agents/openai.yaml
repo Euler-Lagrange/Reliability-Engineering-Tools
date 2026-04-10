@@ -1,0 +1,4 @@
+interface:
+  display_name: "Quality Guard"
+  short_description: "Check readiness, tests, and repo quality bars."
+  default_prompt: "Use $quality-guard to verify this change meets the repo's quality bar and note residual risk."
