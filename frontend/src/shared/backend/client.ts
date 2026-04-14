@@ -183,6 +183,7 @@ export const backendClient: BackendClient = {
         connected: true,
         backend: "browser-preview",
         mode: "browser-mock" as const,
+        session_generation: 0,
       };
     }
     const result = await invoke("backend_session_status");

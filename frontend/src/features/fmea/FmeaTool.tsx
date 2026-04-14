@@ -32,10 +32,13 @@ import {
   buildAggregatedMappingSource,
   buildWorkbookColumnUnion,
   normalizeHeader,
-  resolveSheetInspections,
   shouldShowTargetWorkbook,
 } from "./mappingAnalysis";
-import { backendClient, type RunRequestBody } from "../../shared/backend/client";
+import {
+  backendClient,
+  type InspectInputResult,
+  type RunRequestBody,
+} from "../../shared/backend/client";
 import { buildCancelNotification } from "../../shared/backend/cancelError";
 import { buildRunTimeline, useBackendRunLifecycle } from "../../shared/backend/runLifecycle";
 import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
@@ -261,6 +264,7 @@ function buildFmeaMappingRows(
   fmdStandard: "FMD-91" | "FMD-2016",
   inspectedColumns: string[],
   sourceLabel: string | null,
+  optionLabels: Record<string, string>,
 ): ColumnMappingRow[] {
   const exactMap = new Map(
     inspectedColumns.map((column) => [normalizeHeader(column), column] as const),
@@ -295,12 +299,51 @@ function buildFmeaMappingRows(
         status,
         recommendation,
         options,
+        optionLabels,
         help: meta.help,
         origin: meta.origin,
         required: meta.required,
       };
     },
   );
+}
+
+function buildInspectionCapFragments(scan: {
+  rowsScanned: number;
+  columnsScanned: number;
+  rowCapApplied: boolean;
+  columnCapApplied: boolean;
+}) {
+  const fragments: string[] = [];
+  if (scan.rowCapApplied) {
+    fragments.push(`first ${scan.rowsScanned.toLocaleString()} data rows`);
+  }
+  if (scan.columnCapApplied) {
+    fragments.push(`first ${scan.columnsScanned.toLocaleString()} columns`);
+  }
+  return fragments;
+}
+
+function buildInspectionCapWarning(
+  inspection: InputInspection | null,
+  roleLabel: string | null,
+): ValidationMessage | null {
+  if (!inspection) {
+    return null;
+  }
+
+  const fragments = buildInspectionCapFragments(inspection);
+  if (fragments.length === 0) {
+    return null;
+  }
+
+  return {
+    id: `inspection-cap-${inspection.role}-${inspection.sheet}`,
+    severity: "warning",
+    area: roleLabel ?? inspection.role,
+    title: "Workbook inspection capped",
+    detail: `Mapping suggestions for ${inspection.sheet} were built from the ${fragments.join(" and ")} to keep the desktop bridge responsive.`,
+  };
 }
 
 function buildAnalysisCards(
@@ -314,8 +357,16 @@ function buildAnalysisCards(
       id: `inspection-${inspection.role}`,
       eyebrow: "Input inspection",
       title: `${inspection.sheet} inspected`,
-      detail: `${inspection.columns.length} headers were found in the selected input workbook.`,
-      metrics: [`Header row ${inspection.headerRow}`, `${inspection.rowCount} data rows`],
+      detail:
+        buildInspectionCapFragments(inspection).length > 0
+          ? `${inspection.columns.length} headers were found in the selected input workbook. Inspection was capped to ${buildInspectionCapFragments(inspection).join(" and ")}.`
+          : `${inspection.columns.length} headers were found in the selected input workbook.`,
+      metrics: [
+        `Header row ${inspection.headerRow}`,
+        `${inspection.rowCount} data rows`,
+        ...(inspection.rowCapApplied ? [`Scanned ${inspection.rowsScanned.toLocaleString()} rows`] : []),
+        ...(inspection.columnCapApplied ? [`Scanned ${inspection.columnsScanned} columns`] : []),
+      ],
     });
   }
 
@@ -329,6 +380,7 @@ function buildAnalysisCards(
         `Header row ${template.headerRow}`,
         `${template.mergedRangeCount} merged ranges`,
         template.freezePanes ? `Freeze ${template.freezePanes}` : "No freeze panes",
+        ...(template.columnCapApplied ? [`Scanned ${template.columnsScanned} columns`] : []),
       ],
     });
   }
@@ -475,12 +527,24 @@ export function FmeaTool() {
         failureModesStandard,
         inspectedColumns,
         inspectedSourceLabel,
+        aggregatedMappingSource.optionLabels,
       ),
-    [workflowId, failureModesStandard, inspectedColumns, inspectedSourceLabel],
+    [workflowId, failureModesStandard, inspectedColumns, inspectedSourceLabel, aggregatedMappingSource.optionLabels],
   );
   const analysisCards = useMemo(
     () => buildAnalysisCards(activeInspection, activeTemplateAnalysis),
     [activeInspection, activeTemplateAnalysis],
+  );
+  const activeInspectionRoleLabel =
+    (workflowInputs.find((input) => input.role === activeInspection?.role) ?? outputInputs.find((input) => input.role === activeInspection?.role))
+      ?.label ?? null;
+  const inspectionCapWarning = useMemo(
+    () => buildInspectionCapWarning(activeInspection, activeInspectionRoleLabel),
+    [activeInspection, activeInspectionRoleLabel],
+  );
+  const previewValidations = useMemo(
+    () => (inspectionCapWarning ? [inspectionCapWarning, ...validations] : validations),
+    [inspectionCapWarning, validations],
   );
   const timeline = useMemo(() => buildTimeline(runMode, runIndex, runTemplates), [runIndex, runMode, runTemplates]);
   const progress =
@@ -656,6 +720,66 @@ export function FmeaTool() {
     }
   }, [desktopRunSession, pushNotification, setBackendState]);
 
+  async function indexRemainingWorkbookSheets(
+    role: FileRole,
+    path: string,
+    selectedSheet: string,
+    workbookSheets: string[],
+    token: number,
+  ) {
+    const remainingSheets = workbookSheets.filter((sheetName) => !!sheetName && sheetName !== selectedSheet);
+    if (remainingSheets.length === 0) {
+      return;
+    }
+
+    const successfulInspections: InspectInputResult[] = [];
+    const skippedSheets: string[] = [];
+
+    for (const sheetName of remainingSheets) {
+      try {
+        const inspection = await backendClient.inspectInput(path, sheetName, role);
+        if (!fileRequestSeq.isCurrent(role, token)) {
+          return;
+        }
+        successfulInspections.push(inspection);
+      } catch {
+        if (!fileRequestSeq.isCurrent(role, token)) {
+          return;
+        }
+        skippedSheets.push(sheetName);
+      }
+    }
+
+    if (!fileRequestSeq.isCurrent(role, token) || successfulInspections.length === 0) {
+      return;
+    }
+
+    let nextColumns: string[] = [];
+    setWorkbookColumnsByRole((current) => {
+      nextColumns = buildWorkbookColumnUnion([
+        current[role] ?? [],
+        ...successfulInspections.map((inspection) => inspection.columns),
+      ]);
+      return {
+        ...current,
+        [role]: nextColumns,
+      };
+    });
+
+    const mode = successfulInspections[successfulInspections.length - 1]?.mode ?? "desktop-bridge";
+    const skippedDetail =
+      skippedSheets.length > 0
+        ? ` Skipped ${skippedSheets.length} non-tabular sheet${skippedSheets.length === 1 ? "" : "s"}.`
+        : "";
+
+    setBackendState({
+      backendStatus: "ready",
+      backendMode: mode,
+      backendMessage: `Indexed ${nextColumns.length} unique header${nextColumns.length === 1 ? "" : "s"} across ${successfulInspections.length + 1} readable sheet${successfulInspections.length === 0 ? "" : "s"} for ${role}.${skippedDetail}`,
+      lastBackendCheckAt: new Date().toISOString(),
+    });
+  }
+
   async function inspectRole(role: FileRole, path: string, sheet: string, workbookSheets?: string[]) {
     if (!sheet) {
       return;
@@ -698,6 +822,11 @@ export function FmeaTool() {
             mergedRangeCount: template.merged_range_count,
             freezePanes: template.freeze_panes,
             protectedSheet: template.protected_sheet,
+            rowsScanned: template.rows_scanned,
+            columnsScanned: template.columns_scanned,
+            rowCapApplied: template.row_cap_applied,
+            columnCapApplied: template.column_cap_applied,
+            headerSearchCapApplied: template.header_search_cap_applied,
             mode: template.mode,
           },
         }));
@@ -708,21 +837,9 @@ export function FmeaTool() {
           lastBackendCheckAt: new Date().toISOString(),
         });
       } else {
-        const sheetQueue = Array.from(new Set([sheet, ...(workbookSheets ?? []).filter((name) => !!name)]));
-        const inspectionResults = await Promise.allSettled(
-          sheetQueue.map((sheetName) => backendClient.inspectInput(path, sheetName, role)),
-        );
+        const selectedInspection = await backendClient.inspectInput(path, sheet, role);
         if (!fileRequestSeq.isCurrent(role, token)) return;
-        const { selectedInspection, successfulInspections, skippedSheets } = resolveSheetInspections(
-          sheet,
-          sheetQueue.map((sheetName, index) => ({
-            sheetName,
-            result: inspectionResults[index],
-          })),
-        );
-        const workbookColumns = buildWorkbookColumnUnion(
-          successfulInspections.map((candidate) => candidate.columns),
-        );
+        const workbookColumns = buildWorkbookColumnUnion([selectedInspection.columns]);
         setInputStates((current) =>
           current.map((input) =>
             input.role === role ? { ...input, isAnalyzing: false, tag: "Analyzed" } : input,
@@ -738,6 +855,11 @@ export function FmeaTool() {
             rowCount: selectedInspection.row_count,
             columns: selectedInspection.columns,
             previewRows: selectedInspection.preview_rows,
+            rowsScanned: selectedInspection.rows_scanned,
+            columnsScanned: selectedInspection.columns_scanned,
+            rowCapApplied: selectedInspection.row_cap_applied,
+            columnCapApplied: selectedInspection.column_cap_applied,
+            headerSearchCapApplied: selectedInspection.header_search_cap_applied,
             mode: selectedInspection.mode,
           },
         }));
@@ -745,16 +867,19 @@ export function FmeaTool() {
           ...current,
           [role]: workbookColumns,
         }));
-        const skippedDetail =
-          skippedSheets.length > 0
-            ? ` Skipped ${skippedSheets.length} non-tabular sheet${skippedSheets.length === 1 ? "" : "s"}.`
-            : "";
         setBackendState({
           backendStatus: "ready",
           backendMode: selectedInspection.mode,
-          backendMessage: `Inspected ${selectedInspection.sheet} and indexed ${workbookColumns.length} unique header${workbookColumns.length === 1 ? "" : "s"} across ${successfulInspections.length} readable sheet${successfulInspections.length === 1 ? "" : "s"}.${skippedDetail}`,
+          backendMessage: `Inspected ${selectedInspection.sheet} and indexed ${workbookColumns.length} unique header${workbookColumns.length === 1 ? "" : "s"} from the selected sheet.`,
           lastBackendCheckAt: new Date().toISOString(),
         });
+        void indexRemainingWorkbookSheets(
+          role,
+          path,
+          selectedInspection.sheet,
+          Array.from(new Set(workbookSheets ?? [])),
+          token,
+        );
       }
     } catch (error) {
       if (!fileRequestSeq.isCurrent(role, token)) return;
@@ -1354,7 +1479,7 @@ export function FmeaTool() {
             >
               {contextView === "preview" ? (
                 <ValidationPreview
-                  validations={validations}
+                  validations={previewValidations}
                   previewRows={baseScenario.previewRows}
                   analysisCards={analysisCards}
                 />

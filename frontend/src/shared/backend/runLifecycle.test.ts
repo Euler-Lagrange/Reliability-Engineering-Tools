@@ -1,6 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useRunStore, MAX_LOG_LINES } from "../../stores/runStore";
+import { backendClient } from "./client";
 import { useBackendRunLifecycle } from "./runLifecycle";
 
 // Mock the Tauri-bound subscribe / sessionStatus calls so the hook can mount
@@ -15,6 +16,7 @@ vi.mock("./client", () => {
         connected: true,
         backend: "python-sidecar-session",
         mode: "desktop-bridge" as const,
+        session_generation: 1,
       })),
     },
   };
@@ -49,6 +51,7 @@ describe("useBackendRunLifecycle (runStore-backed)", () => {
       result.current.beginAcceptedRun({
         run_id: "run_persistent_001",
         mode: "desktop-bridge",
+        session_generation: 1,
       });
     });
 
@@ -77,6 +80,7 @@ describe("useBackendRunLifecycle (runStore-backed)", () => {
       toolA.current.beginAcceptedRun({
         run_id: "run_owned_by_fmea",
         mode: "desktop-bridge",
+        session_generation: 1,
       });
     });
     expect(toolA.current.session.runId).toBe("run_owned_by_fmea");
@@ -100,6 +104,7 @@ describe("useBackendRunLifecycle (runStore-backed)", () => {
       toolA.current.beginAcceptedRun({
         run_id: "run_belongs_to_a",
         mode: "desktop-bridge",
+        session_generation: 1,
       });
     });
 
@@ -129,6 +134,7 @@ describe("useBackendRunLifecycle (runStore-backed)", () => {
       result.current.beginAcceptedRun({
         run_id: "run_log_truncation",
         mode: "desktop-bridge",
+        session_generation: 1,
       });
     });
 
@@ -158,6 +164,7 @@ describe("useBackendRunLifecycle (runStore-backed)", () => {
       result.current.beginAcceptedRun({
         run_id: "run_disconnect_test",
         mode: "desktop-bridge",
+        session_generation: 1,
       });
     });
 
@@ -182,6 +189,7 @@ describe("useBackendRunLifecycle (runStore-backed)", () => {
       result.current.beginAcceptedRun({
         run_id: "run_already_succeeded",
         mode: "desktop-bridge",
+        session_generation: 1,
       });
       // Force the run to a terminal state.
       useRunStore.getState().patchActiveRun({ phase: "success", finishedAt: new Date().toISOString() });
@@ -206,6 +214,7 @@ describe("useBackendRunLifecycle (runStore-backed)", () => {
       result.current.beginAcceptedRun({
         run_id: "run_reconnect_test",
         mode: "desktop-bridge",
+        session_generation: 1,
       });
       useRunStore.getState().markDisconnected("Temporary glitch");
     });
@@ -217,5 +226,44 @@ describe("useBackendRunLifecycle (runStore-backed)", () => {
     expect(useRunStore.getState().activeRun?.isDisconnected).toBe(false);
     // Run id and progress preserved through the disconnect/reconnect.
     expect(useRunStore.getState().activeRun?.runId).toBe("run_reconnect_test");
+  });
+
+  it("clears a disconnected run when reconnect lands on a new session generation", async () => {
+    let sessionHandler: ((event: { kind: "connected" | "disconnected"; connected: boolean; backend: string; message: string }) => void) | null = null;
+    vi.mocked(backendClient.subscribeToSessionEvents).mockImplementationOnce(async (handler) => {
+      sessionHandler = handler;
+      return () => {};
+    });
+    vi.mocked(backendClient.sessionStatus).mockResolvedValueOnce({
+      connected: true,
+      backend: "python-sidecar-session",
+      mode: "desktop-bridge",
+      session_generation: 2,
+    });
+
+    const { result } = renderHook(() =>
+      useBackendRunLifecycle("dark_star_fmea", "desktop-bridge", (x) => x),
+    );
+
+    act(() => {
+      result.current.beginAcceptedRun({
+        run_id: "run_stale_after_restart",
+        mode: "desktop-bridge",
+        session_generation: 1,
+      });
+      useRunStore.getState().markDisconnected("Sidecar restarted");
+    });
+
+    await act(async () => {
+      sessionHandler?.({
+        kind: "connected",
+        connected: true,
+        backend: "python-sidecar-session",
+        message: "Sidecar restarted",
+      });
+      await Promise.resolve();
+    });
+
+    expect(useRunStore.getState().activeRun).toBeNull();
   });
 });

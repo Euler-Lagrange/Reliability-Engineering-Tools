@@ -64,14 +64,14 @@ NDJSON over stdio. Commands: `health_check`, `list_sheets`, `inspect_input`, `an
 npm run dev              # Vite dev server (browser preview mode)
 npm run build            # Production build
 npm run typecheck        # TypeScript type checking
-npm test                 # Vitest (143 tests)
+npm test                 # Vitest (148 tests)
 
 # Desktop (requires Rust toolchain)
 npm run tauri:dev        # Dev mode with hot reload
 npm run tauri:build:portable  # Release build → src-tauri/target/.../release/
 
 # Python sidecar (use project venv)
-.venv\Scripts\python.exe -m pytest backend/tests -v    # 101 backend tests (33 sidecar + 17 audit + 8 cancel bridge + 43 FMEA phase D)
+.venv\Scripts\python.exe -m pytest backend/tests -v    # 106 backend tests (37 sidecar + 17 audit + 8 cancel bridge + 44 FMEA phase D)
 .venv\Scripts\python.exe backend/python/sidecar_main.py --self-test
 
 # Full release
@@ -154,11 +154,11 @@ The audit runs:
 
 ## Testing
 
-### Backend Tests (101 total)
-- 33 sidecar integration tests in `test_sidecar_main.py`
+### Backend Tests (106 total)
+- 37 sidecar integration tests in `test_sidecar_main.py`
 - 17 security-audit tests in `test_security_audit.py` (synthetic positives + live tree scan)
 - 8 cancel-bridge tests in `test_cancel_bridge.py`
-- 43 FMEA Phase D tests in `test_fmea_phase_d.py`
+- 44 FMEA Phase D tests in `test_fmea_phase_d.py`
 - Sidecar tests are subprocess-based: spawn sidecar, send NDJSON commands, verify responses
 - `stderr=subprocess.DEVNULL` to avoid Windows pipe buffer deadlock
 - `SIDECAR_HEARTBEAT_INTERVAL=9999` suppresses heartbeats during tests
@@ -167,21 +167,22 @@ The audit runs:
 - `pytest.importorskip("fitz")` for RefDes tests requiring PyMuPDF
 - `backend/tests/conftest.py` installs a `sys.path` shim for in-process unit tests
 
-### Frontend Tests (143 total)
+### Frontend Tests (148 total)
 - Vitest + React Testing Library
 - Browser-mock mode (no Tauri runtime needed)
 - `src/app/App.test.tsx` — 10 tests
 - `src/components/CustomSelect.test.tsx` — 1 test
-- `src/components/MappingTable.test.tsx` — 10 tests
+- `src/components/MappingTable.test.tsx` — 11 tests
 - `src/components/RunStatePanel.test.tsx` — 5 tests
 - `src/components/GlobalLogPanel.resize.test.tsx` — 13 tests
 - `src/components/primitives/CommandPalette.test.tsx` — 5 tests
 - `src/components/primitives/HoldButton.test.tsx` — 5 tests
 - `src/components/primitives/EmptyState.test.tsx` — 5 tests
 - `src/features/fmea/FmeaTool.test.tsx` — 7 tests
+- `src/features/fmea/FmeaTool.inspection.test.tsx` — 2 tests
 - `src/features/fmea/mappingColumns.test.ts` — 21 tests
-- `src/features/fmea/mappingAnalysis.test.ts` — 6 tests
-- `src/shared/backend/runLifecycle.test.ts` — 8 tests
+- `src/features/fmea/mappingAnalysis.test.ts` — 7 tests
+- `src/shared/backend/runLifecycle.test.ts` — 9 tests
 - `src/shared/backend/cancelError.test.ts` — 12 tests
 - `src/shared/backend/client.cancelRun.test.ts` — 2 tests
 - `src/shared/backend/useBackendBusyReset.test.ts` — 9 tests

@@ -2838,6 +2838,81 @@ def test_invalid_output_directory_logs_warning_and_falls_back(tmp_path: Path) ->
     assert warnings, captured_logs
 
 
+def test_unwritable_output_directory_logs_warning_and_falls_back(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Explicit output directories must be writable, not merely present.
+
+    Regression for the unwritable-directory path: if the chosen output
+    folder exists but cannot accept new files, the runtime should warn
+    and fall back to the input-file heuristic instead of failing later
+    during workbook write.
+    """
+    inputs_dir = tmp_path / "inputs"
+    inputs_dir.mkdir(parents=True, exist_ok=True)
+    paths = _write_fixture(
+        inputs_dir,
+        bom_rows=[
+            {
+                "Reference Designator": "R100",
+                "Part Number": "RES-1",
+                "Description": "Resistor",
+                "BAE HDA Commodity I": "Resistor",
+                "BAE HDA Commodity II": "Chip",
+                "Part Usage": "1",
+            }
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "RES-001",
+                "Reference Designator": "R100",
+                "Function Description": "Pull-up",
+                "Schematic Page": "3",
+            }
+        ],
+        fm_rows=[
+            {
+                "FMD-2016 Commodity Type 1": "Resistor",
+                "FMD-2016 Commodity Type 2": "Chip",
+                "Failure Mode": "Open",
+                "Failure Mode Ratio": 1.0,
+            }
+        ],
+    )
+    locked_dir = tmp_path / "locked_output"
+    locked_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr("fmea.runtime._is_writable_directory", lambda path: False)
+
+    body = {
+        "workflowId": "piece_part_generate",
+        "outputStrategyId": "new_workbook_standard",
+        "options": {"failureModesStandard": "FMD-2016"},
+        "outputDirectory": str(locked_dir),
+        "inputs": [
+            _state("grouping", paths["grouping"]),
+            _state("bom", paths["bom"]),
+            _state("failureModes", paths["fm"]),
+        ],
+        "mappings": [],
+    }
+
+    captured_logs: list[str] = []
+
+    def _log_cb(msg: str) -> None:
+        captured_logs.append(msg)
+
+    result = execute_run_request(body, log_callback=_log_cb)
+    assert result["status"] == "success", result
+    out_path = Path(result["output_file"])
+    assert out_path.parent.resolve() == inputs_dir.resolve(), (
+        f"Expected fallback to {inputs_dir}, got {out_path.parent}"
+    )
+    warnings = [m for m in captured_logs if "WARNING" in m and "not writable" in m]
+    assert warnings, captured_logs
+
+
 def test_union_merge_missing_from_bom_emits_placeholder_with_diagnostic(
     tmp_path: Path,
 ) -> None:

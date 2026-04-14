@@ -107,6 +107,12 @@ export interface ColumnMappingRow {
   recommendation: string;
   options: string[];
   /**
+   * Optional display-label overrides keyed by the raw option value.
+   * The backend still receives the raw option string; this only affects
+   * how the dropdown presents provenance to the user.
+   */
+  optionLabels?: Record<string, string>;
+  /**
    * Stylized long-form "About this column" body text. When present, the
    * MappingTable renders an `(i)` info button next to the canonical label
    * that expands an inline accent-bordered help panel. When undefined, the
@@ -160,6 +166,11 @@ export interface InputInspection {
   rowCount: number;
   columns: string[];
   previewRows: Array<Record<string, string>>;
+  rowsScanned: number;
+  columnsScanned: number;
+  rowCapApplied: boolean;
+  columnCapApplied: boolean;
+  headerSearchCapApplied: boolean;
   mode: "browser-mock" | "desktop-bridge";
 }
 
@@ -172,6 +183,11 @@ export interface TemplateAnalysis {
   mergedRangeCount: number;
   freezePanes: string | null;
   protectedSheet: boolean;
+  rowsScanned: number;
+  columnsScanned: number;
+  rowCapApplied: boolean;
+  columnCapApplied: boolean;
+  headerSearchCapApplied: boolean;
   mode: "browser-mock" | "desktop-bridge";
 }
 

@@ -2,6 +2,7 @@ import type { FileRole, InputFileState, OutputStrategyId } from "../../app/types
 
 export interface AggregatedMappingSource {
   columns: string[];
+  optionLabels: Record<string, string>;
   sourceLabels: string[];
   sourceLabelText: string | null;
 }
@@ -68,10 +69,37 @@ export function buildAggregatedMappingSource(
 ): AggregatedMappingSource {
   const sourceInputs = inputs.filter((input) => (columnsByRole[input.role]?.length ?? 0) > 0);
   const sourceLabels = sourceInputs.map((input) => input.label);
+  const columnSources = new Map<string, { value: string; sourceLabels: string[] }>();
+
+  sourceInputs.forEach((input) => {
+    (columnsByRole[input.role] ?? []).forEach((column) => {
+      const normalized = normalizeHeader(column);
+      if (!normalized) {
+        return;
+      }
+
+      const existing = columnSources.get(normalized);
+      if (!existing) {
+        columnSources.set(normalized, {
+          value: column,
+          sourceLabels: [input.label],
+        });
+        return;
+      }
+
+      if (!existing.sourceLabels.includes(input.label)) {
+        existing.sourceLabels.push(input.label);
+      }
+    });
+  });
 
   return {
-    columns: mergeColumnsByNormalizedName(
-      sourceInputs.flatMap((input) => columnsByRole[input.role] ?? []),
+    columns: Array.from(columnSources.values()).map((entry) => entry.value),
+    optionLabels: Object.fromEntries(
+      Array.from(columnSources.values()).map((entry) => [
+        entry.value,
+        `${entry.value} - ${formatInputSourceLabels(entry.sourceLabels) ?? "Unknown source"}`,
+      ]),
     ),
     sourceLabels,
     sourceLabelText: formatInputSourceLabels(sourceLabels),

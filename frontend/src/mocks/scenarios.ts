@@ -194,12 +194,6 @@ export const outputStrategies: OutputStrategy[] = [
     badge: "Clean export",
   },
   {
-    id: "existing_workbook_best_effort",
-    title: "Existing Workbook",
-    summary: "Apply updates into a workbook copy using best-effort openpyxl behaviors. Layout may shift.",
-    badge: "Best effort",
-  },
-  {
     id: "existing_workbook_preserve_formatting",
     title: "Existing Workbook (Preserve Formatting)",
     summary:
@@ -323,7 +317,7 @@ export const demoScenarios: DemoScenario[] = [
     label: "Fill Gaps",
     description: "Delta-oriented scenario that reads an existing FMEA and targets only missing piece-part rows.",
     workflowId: "fill_gaps",
-    outputStrategyId: "existing_workbook_best_effort",
+    outputStrategyId: "existing_workbook_preserve_formatting",
     inputs: allPrototypeInputs,
     mappings: [],
     validations: [
@@ -345,7 +339,7 @@ export const demoScenarios: DemoScenario[] = [
         outputFile: "DarkStar_GapFill_20260403_1035.xlsx",
         primaryMetric: "14 gap rows",
         secondaryMetric: "2 workbook notes",
-        notes: ["Best-effort path shown.", "No file was written."],
+        notes: ["Preserve-formatting path shown.", "No file was written."],
       },
     },
   },

@@ -70,6 +70,18 @@ All eight commands currently implemented by the sidecar:
     - `row_count`
     - `columns`
     - `preview_rows`
+    - `rows_scanned` — number of physical rows the sidecar walked (bounded by
+      the data-row cap); informational only
+    - `columns_scanned` — number of columns inspected (bounded by the column
+      cap)
+    - `row_cap_applied` — `true` when the data-row cap (20 000 rows) was hit
+      and later rows were not examined
+    - `column_cap_applied` — `true` when the column cap (100 columns) was hit
+      and later columns were not examined
+    - `header_search_cap_applied` — `true` when the header-detection phase
+      reached its 1 000-row cap before finding a non-empty header; the
+      command returns an `error` envelope in this case rather than a partial
+      `result`
 - `analyze_template`
   - request body: `{ "path": "...", "sheet": "FMEA Sheet", "role": "targetWorkbook" }`
   - result payload:
@@ -80,6 +92,9 @@ All eight commands currently implemented by the sidecar:
     - `merged_range_count`
     - `freeze_panes`
     - `protected_sheet`
+    - `rows_scanned`, `columns_scanned`, `row_cap_applied`,
+      `column_cap_applied`, `header_search_cap_applied` — same sampling-cap
+      metadata as `inspect_input`; see above
 - `validate_run`
   - request body:
     - `workflowId` — routes to the tool runtime; see Workflow Routing below
@@ -131,6 +146,23 @@ All eight commands currently implemented by the sidecar:
     - `namespaces` — list of namespaces that were inspected
     - `home` — user home directory path
   - This command is read-only: the sidecar never writes or mutates the legacy Flet config files (`~/.{namespace}_config.json`). Recognized namespaces: `bom_compare`, `failure_rate`, `fmea_generator`, `refdes_extractor`, `refdes_extractor_darkstar`, `refdes_test`, `reliability_tools_global`.
+
+## Sampling Caps
+
+`inspect_input` and `analyze_template` scan worksheets eagerly. To bound
+worst-case memory and latency on pathological workbooks, the sidecar enforces
+three caps (introduced in 0.4.1):
+
+| Cap | Limit | Behaviour when hit |
+|-----|-------|--------------------|
+| Header search | First 1 000 rows | `error` envelope — no header was found within the bound |
+| Column scan | First 100 columns | `column_cap_applied = true`; trailing columns are not reported |
+| Data row scan | First 20 000 physical rows | `row_cap_applied = true`; trailing rows are not reported |
+
+The header-search cap is fatal (the command cannot produce a usable header);
+the column and row caps are informational — the command still returns a
+`result` envelope, and the frontend surfaces a "sheet is larger than what
+was scanned" warning to the user.
 
 ## Workflow Routing
 
@@ -224,8 +256,18 @@ command (execute_run)
 
 **`ack`** — emitted immediately when `execute_run` is accepted.
 ```json
-{ "accepted": true, "run_id": "run_abc123", "mode": "desktop-bridge" }
+{ "accepted": true, "run_id": "run_abc123", "mode": "desktop-bridge",
+  "session_generation": 3 }
 ```
+
+`session_generation` (added in 0.4.1) is a monotonically increasing counter
+that the Rust bridge increments every time it spawns a fresh sidecar
+process. The frontend records it alongside the active run and, on
+reconnect, compares the current `session_generation` from
+`backend_session_status` against the one captured at `ack` time. A
+mismatch means the bridge restarted the sidecar mid-flight, so the UI
+discards the stale active run instead of waiting forever for a terminal
+event that the new process will never emit.
 
 **`status`** — phase transition during a run.
 ```json
@@ -320,4 +362,9 @@ attempts automatic reconnection with exponential backoff (2s, 4s, 8s, 15s, 30s).
 - Only one active run is allowed at a time; a second `execute_run` is rejected with an error.
 - Heartbeat supervision is active: sidecar emits every 5s, Rust bridge times out at 15s.
 - On disconnect, the frontend automatically attempts reconnection with backoff.
+- The Rust bridge tracks a `session_generation` counter that increments on
+  every sidecar respawn. The counter is echoed on the `execute_run` ack and
+  on the `backend_session_status` response so the frontend can detect
+  bridge-managed restarts and invalidate any active run that belonged to
+  the previous generation.
 - Crash restart policy and multi-run queueing remain later work.

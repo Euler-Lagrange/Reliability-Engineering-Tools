@@ -526,6 +526,203 @@ def test_sidecar_analyzes_template_metadata(tmp_path: Path) -> None:
         process.kill()
 
 
+def test_sidecar_inspect_input_reports_row_cap_metadata(tmp_path: Path) -> None:
+    workbook_path = tmp_path / "row_cap.xlsx"
+    workbook = Workbook(write_only=True)
+    sheet = workbook.create_sheet("Data")
+    sheet.append(["Part Number"])
+    for index in range(20_005):
+        sheet.append([f"PN-{index:05d}"])
+    workbook.save(workbook_path)
+
+    process = subprocess.Popen(
+        [sys.executable, str(SIDECAR)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        env=SIDECAR_ENV,
+    )
+    try:
+        _read_ready_line(process)
+        process.stdin.write(
+            json.dumps(
+                {
+                    "protocol_version": "0.1.0",
+                    "id": "cmd_row_cap",
+                    "kind": "command",
+                    "request_id": "req_row_cap",
+                    "run_id": None,
+                    "timestamp": "2026-04-03T00:00:00Z",
+                    "payload": {
+                        "command": "inspect_input",
+                        "body": {"path": str(workbook_path), "sheet": "Data"},
+                    },
+                }
+            )
+            + "\n"
+        )
+        process.stdin.flush()
+
+        result = _read_until(process, kind="result")
+        assert result["payload"]["row_count"] == 20_000
+        assert result["payload"]["rows_scanned"] == 20_000
+        assert result["payload"]["row_cap_applied"] is True
+        assert result["payload"]["column_cap_applied"] is False
+        assert result["payload"]["header_search_cap_applied"] is False
+    finally:
+        process.kill()
+
+
+def test_sidecar_inspect_input_reports_column_cap_metadata(tmp_path: Path) -> None:
+    workbook_path = tmp_path / "column_cap.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Wide"
+    headers = [f"Column {index}" for index in range(1, 106)]
+    sheet.append(headers)
+    sheet.append([f"value-{index}" for index in range(1, 106)])
+    workbook.save(workbook_path)
+
+    process = subprocess.Popen(
+        [sys.executable, str(SIDECAR)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        env=SIDECAR_ENV,
+    )
+    try:
+        _read_ready_line(process)
+        process.stdin.write(
+            json.dumps(
+                {
+                    "protocol_version": "0.1.0",
+                    "id": "cmd_col_cap",
+                    "kind": "command",
+                    "request_id": "req_col_cap",
+                    "run_id": None,
+                    "timestamp": "2026-04-03T00:00:00Z",
+                    "payload": {
+                        "command": "inspect_input",
+                        "body": {"path": str(workbook_path), "sheet": "Wide"},
+                    },
+                }
+            )
+            + "\n"
+        )
+        process.stdin.flush()
+
+        result = _read_until(process, kind="result")
+        assert len(result["payload"]["columns"]) == 100
+        assert result["payload"]["columns_scanned"] == 100
+        assert result["payload"]["column_cap_applied"] is True
+        assert result["payload"]["row_cap_applied"] is False
+        assert result["payload"]["header_search_cap_applied"] is False
+    finally:
+        process.kill()
+
+
+def test_sidecar_inspect_input_caps_sparse_sheet_by_physical_rows_scanned(tmp_path: Path) -> None:
+    workbook_path = tmp_path / "sparse_row_cap.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Sparse"
+    sheet.append(["Part Number"])
+    for index in range(20_005):
+        if index < 3 or index == 20_004:
+            sheet.append([f"PN-{index:05d}"])
+        else:
+            sheet.append([""])
+    workbook.save(workbook_path)
+
+    process = subprocess.Popen(
+        [sys.executable, str(SIDECAR)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        env=SIDECAR_ENV,
+    )
+    try:
+        _read_ready_line(process)
+        process.stdin.write(
+            json.dumps(
+                {
+                    "protocol_version": "0.1.0",
+                    "id": "cmd_sparse_row_cap",
+                    "kind": "command",
+                    "request_id": "req_sparse_row_cap",
+                    "run_id": None,
+                    "timestamp": "2026-04-03T00:00:00Z",
+                    "payload": {
+                        "command": "inspect_input",
+                        "body": {"path": str(workbook_path), "sheet": "Sparse"},
+                    },
+                }
+            )
+            + "\n"
+        )
+        process.stdin.flush()
+
+        result = _read_until(process, kind="result")
+        assert result["payload"]["rows_scanned"] == 20_000
+        assert result["payload"]["row_cap_applied"] is True
+        assert result["payload"]["row_count"] == 3
+        assert result["payload"]["preview_rows"] == [
+            {"Part Number": "PN-00000"},
+            {"Part Number": "PN-00001"},
+            {"Part Number": "PN-00002"},
+        ]
+    finally:
+        process.kill()
+
+
+def test_sidecar_inspect_input_fails_when_header_search_cap_is_hit(tmp_path: Path) -> None:
+    workbook_path = tmp_path / "header_cap.xlsx"
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "LateHeader"
+    for _ in range(1_001):
+        sheet.append([" "])
+    sheet.append(["Part Number", "Failure Mode"])
+    workbook.save(workbook_path)
+
+    process = subprocess.Popen(
+        [sys.executable, str(SIDECAR)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        env=SIDECAR_ENV,
+    )
+    try:
+        _read_ready_line(process)
+        process.stdin.write(
+            json.dumps(
+                {
+                    "protocol_version": "0.1.0",
+                    "id": "cmd_header_cap",
+                    "kind": "command",
+                    "request_id": "req_header_cap",
+                    "run_id": None,
+                    "timestamp": "2026-04-03T00:00:00Z",
+                    "payload": {
+                        "command": "inspect_input",
+                        "body": {"path": str(workbook_path), "sheet": "LateHeader"},
+                    },
+                }
+            )
+            + "\n"
+        )
+        process.stdin.flush()
+
+        result = _read_until(process, kind="error")
+        assert "Could not locate a non-empty header row within the first 1000 scanned rows" in result["payload"]["message"]
+    finally:
+        process.kill()
+
+
 def test_sidecar_validates_phase4_standard_run(tmp_path: Path) -> None:
     process = subprocess.Popen(
         [sys.executable, str(SIDECAR)],

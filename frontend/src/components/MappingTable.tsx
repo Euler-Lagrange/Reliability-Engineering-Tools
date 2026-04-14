@@ -196,7 +196,10 @@ export function MappingTable({
                   (option) =>
                     option !== DO_NOT_MAP_VALUE && option !== DO_NOT_MAP_LABEL,
                 )
-                .map((option) => ({ value: option, label: option })),
+                .map((option) => ({
+                  value: option,
+                  label: row.optionLabels?.[option] ?? option,
+                })),
             ];
 
             const isExpanded = expandedHelpRow === row.canonical;

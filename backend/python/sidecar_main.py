@@ -55,6 +55,9 @@ PROTOCOL_VERSION = "0.1.0"
 EMIT_LOCK = threading.Lock()
 ACTIVE_RUN_LOCK = threading.Lock()
 ACTIVE_RUN: "ActiveRun | None" = None
+MAX_INSPECTION_COLUMNS = 100
+MAX_INSPECTION_DATA_ROWS = 20_000
+MAX_HEADER_SEARCH_ROWS = 1_000
 
 
 @dataclass
@@ -117,38 +120,114 @@ def _select_sheet(workbook: Any, requested_sheet: str | None) -> Any:
     return workbook[workbook.sheetnames[0]]
 
 
-def _extract_header_and_rows(worksheet: Any) -> tuple[int, list[str], list[dict[str, str]], int]:
+def _worksheet_column_bound(worksheet: Any) -> tuple[int, bool]:
+    max_column = getattr(worksheet, "max_column", None)
+    if isinstance(max_column, int) and max_column > 0:
+        return min(max_column, MAX_INSPECTION_COLUMNS), max_column > MAX_INSPECTION_COLUMNS
+    return MAX_INSPECTION_COLUMNS, False
+
+
+def _finalize_headers(normalized_row: list[str]) -> list[str]:
+    last_non_empty_index = -1
+    for index, value in enumerate(normalized_row):
+        if value:
+            last_non_empty_index = index
+
+    if last_non_empty_index == -1:
+        return []
+
+    return [
+        value or f"Column {index + 1}"
+        for index, value in enumerate(normalized_row[: last_non_empty_index + 1])
+    ]
+
+
+def _extract_header_details(worksheet: Any) -> tuple[int, list[str], int, int, bool, bool]:
     header_row_index = 0
-    headers: list[str] = []
+    header_rows_scanned = 0
+    inspected_columns, column_cap_applied = _worksheet_column_bound(worksheet)
+
+    for row_index, row in enumerate(
+        worksheet.iter_rows(values_only=True, max_col=MAX_INSPECTION_COLUMNS),
+        start=1,
+    ):
+        header_rows_scanned += 1
+        normalized_row = [_normalize_cell(value) for value in row]
+        headers = _finalize_headers(normalized_row)
+        if headers:
+            return (
+                row_index,
+                headers,
+                header_rows_scanned,
+                min(len(headers), inspected_columns),
+                column_cap_applied,
+                False,
+            )
+        if header_rows_scanned >= MAX_HEADER_SEARCH_ROWS:
+            break
+
+    raise ValueError(
+        "Could not locate a non-empty header row within the first "
+        f"{MAX_HEADER_SEARCH_ROWS} scanned rows of the selected worksheet."
+    )
+
+
+def _extract_header_and_rows(
+    worksheet: Any,
+) -> tuple[int, list[str], list[dict[str, str]], int, dict[str, Any]]:
+    (
+        header_row_index,
+        headers,
+        header_rows_scanned,
+        inspected_columns,
+        column_cap_applied,
+        header_search_cap_applied,
+    ) = _extract_header_details(worksheet)
     preview_rows: list[dict[str, str]] = []
     data_row_count = 0
+    rows_scanned = 0
+    row_cap_applied = False
 
-    for row_index, row in enumerate(worksheet.iter_rows(values_only=True), start=1):
-        normalized_row = [_normalize_cell(value) for value in row]
-        if not any(normalized_row):
-            continue
-
-        if not headers:
-            header_row_index = row_index
-            headers = [value or f"Column {index + 1}" for index, value in enumerate(normalized_row)]
-            continue
-
+    for row in worksheet.iter_rows(
+        values_only=True,
+        min_row=header_row_index + 1,
+        max_col=MAX_INSPECTION_COLUMNS,
+    ):
+        rows_scanned += 1
+        normalized_row = [_normalize_cell(value) for value in row[: len(headers)]]
         row_payload = {
             header: value
             for header, value in zip(headers, normalized_row)
             if header and value
         }
+        if rows_scanned >= MAX_INSPECTION_DATA_ROWS:
+            row_cap_applied = True
+            if not row_payload:
+                break
+
         if not row_payload:
             continue
 
         data_row_count += 1
         if len(preview_rows) < 3:
             preview_rows.append(row_payload)
+        if row_cap_applied:
+            break
 
-    if not headers:
-        raise ValueError("Could not locate a non-empty header row in the selected worksheet.")
-
-    return header_row_index, headers, preview_rows, data_row_count
+    return (
+        header_row_index,
+        headers,
+        preview_rows,
+        data_row_count,
+        {
+            "rows_scanned": rows_scanned,
+            "columns_scanned": inspected_columns,
+            "row_cap_applied": row_cap_applied,
+            "column_cap_applied": column_cap_applied,
+            "header_search_cap_applied": header_search_cap_applied,
+            "header_rows_scanned": header_rows_scanned,
+        },
+    )
 
 
 def inspect_input(path: Path, requested_sheet: str | None) -> dict[str, Any]:
@@ -158,7 +237,9 @@ def inspect_input(path: Path, requested_sheet: str | None) -> dict[str, Any]:
     workbook = load_workbook(path, read_only=True, data_only=True)
     try:
         worksheet = _select_sheet(workbook, requested_sheet)
-        header_row_index, headers, preview_rows, data_row_count = _extract_header_and_rows(worksheet)
+        header_row_index, headers, preview_rows, data_row_count, scan_meta = _extract_header_and_rows(
+            worksheet
+        )
         return {
             "path": str(path),
             "sheet": worksheet.title,
@@ -166,6 +247,11 @@ def inspect_input(path: Path, requested_sheet: str | None) -> dict[str, Any]:
             "row_count": data_row_count,
             "columns": headers,
             "preview_rows": preview_rows,
+            "rows_scanned": scan_meta["rows_scanned"],
+            "columns_scanned": scan_meta["columns_scanned"],
+            "row_cap_applied": scan_meta["row_cap_applied"],
+            "column_cap_applied": scan_meta["column_cap_applied"],
+            "header_search_cap_applied": scan_meta["header_search_cap_applied"],
         }
     finally:
         workbook.close()
@@ -178,7 +264,14 @@ def analyze_template(path: Path, requested_sheet: str | None) -> dict[str, Any]:
     workbook = load_workbook(path, read_only=False, data_only=False)
     try:
         worksheet = _select_sheet(workbook, requested_sheet)
-        header_row_index, headers, _, _ = _extract_header_and_rows(worksheet)
+        (
+            header_row_index,
+            headers,
+            header_rows_scanned,
+            inspected_columns,
+            column_cap_applied,
+            header_search_cap_applied,
+        ) = _extract_header_details(worksheet)
         freeze_panes = worksheet.freeze_panes
         return {
             "path": str(path),
@@ -188,6 +281,12 @@ def analyze_template(path: Path, requested_sheet: str | None) -> dict[str, Any]:
             "merged_range_count": len(worksheet.merged_cells.ranges),
             "freeze_panes": str(freeze_panes) if freeze_panes is not None else None,
             "protected_sheet": bool(getattr(worksheet.protection, "sheet", False)),
+            "rows_scanned": 0,
+            "columns_scanned": inspected_columns,
+            "row_cap_applied": False,
+            "column_cap_applied": column_cap_applied,
+            "header_search_cap_applied": header_search_cap_applied,
+            "header_rows_scanned": header_rows_scanned,
         }
     finally:
         workbook.close()

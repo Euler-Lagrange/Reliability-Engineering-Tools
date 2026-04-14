@@ -64,8 +64,39 @@ describe("mappingAnalysis", () => {
         "Failure Mode",
         "Failure Mode Ratio",
       ],
+      optionLabels: {
+        "FMEA-ID": "FMEA-ID - Grouping workbook",
+        "Failure Mode Causes": "Failure Mode Causes - Grouping workbook",
+        "Component Part Description": "Component Part Description - BOM workbook",
+        "Part Usage": "Part Usage - BOM workbook",
+        "Failure Mode": "Failure Mode - Failure modes workbook",
+        "Failure Mode Ratio": "Failure Mode Ratio - Failure modes workbook",
+      },
       sourceLabels: ["Grouping workbook", "BOM workbook", "Failure modes workbook"],
       sourceLabelText: "Grouping workbook, BOM workbook, and Failure modes workbook",
+    });
+  });
+
+  test("merges source provenance when the same header appears in multiple visible roles", () => {
+    const inputs = [
+      makeInput("bom", "BOM workbook"),
+      makeInput("hda", "HDA workbook"),
+    ];
+
+    expect(
+      buildAggregatedMappingSource(inputs, {
+        bom: ["Part Number", "Part Usage"],
+        hda: ["Part Number", "Commodity Level 1"],
+      }),
+    ).toEqual({
+      columns: ["Part Number", "Part Usage", "Commodity Level 1"],
+      optionLabels: {
+        "Part Number": "Part Number - BOM workbook and HDA workbook",
+        "Part Usage": "Part Usage - BOM workbook",
+        "Commodity Level 1": "Commodity Level 1 - HDA workbook",
+      },
+      sourceLabels: ["BOM workbook", "HDA workbook"],
+      sourceLabelText: "BOM workbook and HDA workbook",
     });
   });
 

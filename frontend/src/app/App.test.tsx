@@ -95,9 +95,6 @@ describe("tauri_build shell", () => {
 
     expect(within(outputsSection).queryByText("Target workbook")).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /best effort/i }));
-    expect(within(outputsSection).queryByText("Target workbook")).not.toBeInTheDocument();
-
     await user.click(screen.getByRole("button", { name: /preserve formatting/i }));
 
     expect(within(outputsSection).getByText("Target workbook")).toBeInTheDocument();

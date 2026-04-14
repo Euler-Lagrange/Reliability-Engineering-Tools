@@ -13,6 +13,7 @@ export const MAX_LOG_LINES = 240;
 export interface ActiveRunState {
   runId: string;
   toolId: ToolId;
+  sessionGeneration: number;
   phase: RunMode;
   progress: number;
   stage: string | null;
@@ -136,10 +137,12 @@ export const useRunStore = create<RunStoreState>((set) => ({
 export function buildActiveRunFromAccepted(args: {
   runId: string;
   toolId: ToolId;
+  sessionGeneration: number;
 }): ActiveRunState {
   return {
     runId: args.runId,
     toolId: args.toolId,
+    sessionGeneration: args.sessionGeneration,
     phase: "starting",
     progress: 1,
     stage: "Run accepted",

@@ -454,6 +454,15 @@ def _selected_sheet(inputs_by_role: dict[str, dict[str, Any]], role: str) -> str
     return value or None
 
 
+def _is_writable_directory(path: Path) -> bool:
+    """Return True when ``path`` can accept a newly created file."""
+    try:
+        with tempfile.TemporaryFile(dir=path):
+            return True
+    except OSError:
+        return False
+
+
 def _resolve_output_directory(
     inputs_by_role: dict[str, dict[str, Any]],
     explicit_directory: str | None = None,
@@ -488,11 +497,17 @@ def _resolve_output_directory(
             try:
                 path = Path(candidate).expanduser().resolve()
                 if path.is_dir():
-                    return path
-                _warn(
-                    f"Explicit outputDirectory '{candidate}' is not a "
-                    f"directory; falling back to input-file heuristic."
-                )
+                    if _is_writable_directory(path):
+                        return path
+                    _warn(
+                        f"Explicit outputDirectory '{candidate}' is not "
+                        f"writable; falling back to input-file heuristic."
+                    )
+                else:
+                    _warn(
+                        f"Explicit outputDirectory '{candidate}' is not a "
+                        f"directory; falling back to input-file heuristic."
+                    )
             except (OSError, ValueError) as exc:
                 _warn(
                     f"Failed to resolve outputDirectory '{candidate}': "

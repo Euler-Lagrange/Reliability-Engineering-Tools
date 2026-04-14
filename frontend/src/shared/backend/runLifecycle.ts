@@ -213,8 +213,9 @@ export function buildRunTimeline<ResultT>(session: ManagedRunSession<ResultT>): 
  *
  * On a backend disconnect, the run is marked disconnected (state preserved
  * so the user can still see what happened). On reconnect, the hook calls
- * ``backendClient.sessionStatus()`` to reconcile: if the sidecar reports no
- * active session, the local active run is cleared.
+ * ``backendClient.sessionStatus()`` to reconcile: if the sidecar reports a
+ * new session generation, the local active run is cleared because the old
+ * run belonged to a different bridge-managed sidecar process.
  */
 export function useBackendRunLifecycle<ResultT>(
   toolId: ToolId,
@@ -261,19 +262,26 @@ export function useBackendRunLifecycle<ResultT>(
       return;
     }
     if (event.kind === "connected") {
-      // Reconcile against the sidecar's actual session state. If the
-      // sidecar lost the run during the disconnect (e.g., crash), clear
-      // the local active run; otherwise just clear the disconnect flag
-      // and let subsequent run events resume the stream.
-      markReconnected();
+      // Reconcile against the sidecar's actual session generation. A
+      // restart spawns a brand-new sidecar, so the previous run handle
+      // is stale even though the bridge may already be "connected" again.
       void backendClient
         .sessionStatus()
         .then((status) => {
-          if (!status.connected) {
-            // Sidecar reports no live session — drop the local active run
-            // so the tool can offer a fresh start.
-            clearActiveRun();
+          const current = useRunStore.getState().activeRun;
+          if (!current || current.toolId !== toolId) {
+            return;
           }
+          if (
+            !status.connected ||
+            current.sessionGeneration !== status.session_generation
+          ) {
+            // Sidecar reports a different managed session — drop the local
+            // active run so the tool can offer a fresh start.
+            clearActiveRun();
+            return;
+          }
+          markReconnected();
         })
         .catch(() => {
           // Reconciliation is best-effort; surface failures via the next
@@ -315,7 +323,13 @@ export function useBackendRunLifecycle<ResultT>(
   return {
     session,
     beginAcceptedRun(accepted: ExecuteRunAcceptedResult) {
-      setActiveRun(buildActiveRunFromAccepted({ runId: accepted.run_id, toolId }));
+      setActiveRun(
+        buildActiveRunFromAccepted({
+          runId: accepted.run_id,
+          toolId,
+          sessionGeneration: accepted.session_generation,
+        }),
+      );
     },
     resetSession() {
       // Only clear the global state if the active run belongs to this tool.

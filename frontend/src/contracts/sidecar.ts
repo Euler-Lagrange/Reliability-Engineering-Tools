@@ -65,6 +65,11 @@ export const inspectionResultSchema = z.object({
   row_count: z.number(),
   columns: z.array(z.string()),
   preview_rows: z.array(z.record(z.string(), z.string())),
+  rows_scanned: z.number(),
+  columns_scanned: z.number(),
+  row_cap_applied: z.boolean(),
+  column_cap_applied: z.boolean(),
+  header_search_cap_applied: z.boolean(),
   mode: backendModeSchema,
 });
 
@@ -76,6 +81,11 @@ export const templateAnalysisResultSchema = z.object({
   merged_range_count: z.number(),
   freeze_panes: z.string().nullable(),
   protected_sheet: z.boolean(),
+  rows_scanned: z.number(),
+  columns_scanned: z.number(),
+  row_cap_applied: z.boolean(),
+  column_cap_applied: z.boolean(),
+  header_search_cap_applied: z.boolean(),
   mode: backendModeSchema,
 });
 
@@ -98,6 +108,7 @@ export const validateRunResultSchema = z.object({
 export const executeRunAcceptedResultSchema = z.object({
   run_id: z.string(),
   mode: backendModeSchema,
+  session_generation: z.number().int().nonnegative(),
 });
 
 export const cancelRunResultSchema = z.object({
@@ -209,6 +220,7 @@ export const backendSessionStatusResultSchema = z.object({
   connected: z.boolean(),
   backend: z.string(),
   mode: backendModeSchema,
+  session_generation: z.number().int().nonnegative(),
 });
 
 export type BackendSessionStatusResult = z.infer<typeof backendSessionStatusResultSchema>;

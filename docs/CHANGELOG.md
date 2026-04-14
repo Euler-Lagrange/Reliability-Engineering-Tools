@@ -5,6 +5,62 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-04-13 — Inspection Caps, Session Generation, Writeability Guard
+
+### Added
+
+- **Worksheet inspection sampling caps:** `inspect_input` and
+  `analyze_template` now bound header detection at 1 000 rows, column
+  scanning at 100 columns, and data-row scanning at 20 000 rows. Results
+  expose `rows_scanned`, `columns_scanned`, `row_cap_applied`,
+  `column_cap_applied`, and `header_search_cap_applied` so the UI can
+  warn on wide / long sheets. The FMEA analysis card surfaces the cap
+  warning inline via `buildInspectionCapFragments()` /
+  `buildInspectionCapWarning()` in `FmeaTool.tsx`.
+- **Session generation tracking:** the Rust bridge now maintains a
+  `session_generation` counter that increments on every sidecar respawn.
+  The counter is echoed on the `execute_run` ack and on
+  `backend_session_status`. The frontend reconciles this on reconnect
+  and clears stale active runs when the bridge restarts the sidecar —
+  previously, bridge-managed restarts left ghost runs in the store.
+- **Output directory writeability pre-check:** FMEA runtime probes the
+  resolved output directory for writeability via a tempfile before
+  starting the workbook write. A read-only directory now falls back to
+  the input-file parent with a warning, instead of failing late inside
+  openpyxl.
+- **Column provenance in mapping dropdowns:** duplicate columns that
+  appear in multiple visible roles (e.g. BOM + HDA) are merged into one
+  option labeled with their source workbooks (e.g. "Part Number - BOM
+  workbook and HDA workbook"), via the new `optionLabels` field on
+  `AggregatedMappingSource` and `ColumnMappingRow`.
+
+### Changed
+
+- **Demo scenarios** no longer reference the removed "Existing Workbook
+  (Best Effort)" output strategy; the `fill_gaps` demo scenario now uses
+  "Existing Workbook (Preserve Formatting)".
+- **Rust session cleanup** consolidated into `kill_managed_session()` /
+  `disconnect_managed_session()` helpers; `ManagedSidecar::kill()` now
+  calls `.wait()` for proper child-process reaping;
+  `handle_disconnect()` resets `last_heartbeat` to avoid stale state
+  after reconnect.
+
+### Tests
+
+- **Backend total: 101 → 106.** New in `test_sidecar_main.py` (33 → 37):
+  row-cap metadata, column-cap metadata, sparse-sheet row cap by
+  physical rows, header-search-cap fatal error. New in
+  `test_fmea_phase_d.py` (43 → 44): unwritable output directory falls
+  back with warning.
+- **Frontend total: 143 → 148 across 20 test files.** New file:
+  `FmeaTool.inspection.test.tsx` (2 tests — sheet-selection
+  interactivity during background aggregation, cap-warning display).
+  `MappingTable.test.tsx` 10 → 11 (source-aware option labels).
+  `mappingAnalysis.test.ts` 6 → 7 (multi-source provenance merging).
+  `runLifecycle.test.ts` 8 → 9 (session-generation reconciliation on
+  reconnect).
+- **Grand total: 244 → 254.**
+
 ## [0.4.0] - 2026-04-10 — FMEA Mapping Analysis, Command Palette, Phase D Backend
 
 ### Added

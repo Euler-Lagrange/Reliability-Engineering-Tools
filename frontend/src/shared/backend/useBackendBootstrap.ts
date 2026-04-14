@@ -44,17 +44,25 @@ export function useBackendBootstrap() {
               lastBackendCheckAt: new Date().toISOString(),
             });
             // Reconcile any active run with the sidecar's actual session.
-            // The sidecar enforces single-active-run, so if it reports
-            // "no live session" the local active run is stale and must
-            // be cleared.
-            markRunReconnected();
+            // A reconnect may have spawned a brand-new sidecar session.
+            // If the active run was accepted under an older session
+            // generation, it cannot resume and must be cleared.
             void backendClient
               .sessionStatus()
               .then((status) => {
                 if (!active) return;
-                if (!status.connected) {
-                  clearActiveRun();
+                const activeRun = useRunStore.getState().activeRun;
+                if (!activeRun) {
+                  return;
                 }
+                if (
+                  !status.connected ||
+                  activeRun.sessionGeneration !== status.session_generation
+                ) {
+                  clearActiveRun();
+                  return;
+                }
+                markRunReconnected();
               })
               .catch(() => {
                 // Best-effort reconciliation; nothing to do on failure.

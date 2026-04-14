@@ -148,6 +148,38 @@ describe("MappingTable — Phase 2 infrastructure", () => {
     expect(options[0]).toHaveTextContent(DO_NOT_MAP_LABEL);
   });
 
+  test("renders source-aware option labels while preserving raw values", async () => {
+    const user = userEvent.setup();
+    render(
+      <MappingTable
+        rows={[
+          rowWithHelp({
+            options: ["Failure Mode", "Mode"],
+            optionLabels: {
+              "Failure Mode": "Failure Mode - Failure modes workbook",
+              Mode: "Mode - Legacy workbook",
+            },
+          }),
+        ]}
+        overrides={{}}
+        onOverride={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("combobox", { name: /failure mode mapping/i }),
+    );
+
+    expect(
+      await screen.findByRole("option", {
+        name: "Failure Mode - Failure modes workbook",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Mode - Legacy workbook" }),
+    ).toBeInTheDocument();
+  });
+
   test("selecting Do Not Map fires onOverride with the sentinel", async () => {
     const user = userEvent.setup();
     const onOverride = vi.fn();

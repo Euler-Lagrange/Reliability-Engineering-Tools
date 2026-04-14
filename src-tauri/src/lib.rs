@@ -41,6 +41,11 @@ struct InputInspectionResponse {
     row_count: u32,
     columns: Vec<String>,
     preview_rows: Vec<std::collections::BTreeMap<String, String>>,
+    rows_scanned: u32,
+    columns_scanned: u32,
+    row_cap_applied: bool,
+    column_cap_applied: bool,
+    header_search_cap_applied: bool,
     mode: String,
 }
 
@@ -53,6 +58,11 @@ struct TemplateAnalysisResponse {
     merged_range_count: u32,
     freeze_panes: Option<String>,
     protected_sheet: bool,
+    rows_scanned: u32,
+    columns_scanned: u32,
+    row_cap_applied: bool,
+    column_cap_applied: bool,
+    header_search_cap_applied: bool,
     mode: String,
 }
 
@@ -61,12 +71,14 @@ struct BackendSessionStatusResponse {
     connected: bool,
     mode: String,
     backend: String,
+    session_generation: u64,
 }
 
 #[derive(Serialize)]
 struct RunAcceptedResponse {
     run_id: String,
     mode: String,
+    session_generation: u64,
 }
 
 #[derive(Serialize)]
@@ -87,9 +99,12 @@ impl ManagedSidecar {
     fn kill(&self) {
         if let Ok(mut child) = self.child.lock() {
             let _ = child.kill();
+            let _ = child.wait();
         }
     }
 }
+
+type SessionSlot = Arc<Mutex<Option<ManagedSidecar>>>;
 
 #[derive(Clone)]
 struct PendingResponse {
@@ -103,6 +118,7 @@ struct SessionShared {
     connected: Mutex<bool>,
     app_handle: Mutex<Option<AppHandle>>,
     last_heartbeat: Mutex<Option<Instant>>,
+    session_generation: Mutex<u64>,
 }
 
 impl SessionShared {
@@ -112,6 +128,7 @@ impl SessionShared {
             connected: Mutex::new(false),
             app_handle: Mutex::new(None),
             last_heartbeat: Mutex::new(None),
+            session_generation: Mutex::new(0),
         }
     }
 
@@ -177,6 +194,22 @@ impl SessionShared {
         }
     }
 
+    fn current_session_generation(&self) -> u64 {
+        self.session_generation
+            .lock()
+            .map(|guard| *guard)
+            .unwrap_or_default()
+    }
+
+    fn advance_session_generation(&self) -> u64 {
+        if let Ok(mut guard) = self.session_generation.lock() {
+            *guard += 1;
+            *guard
+        } else {
+            0
+        }
+    }
+
     fn heartbeat_overdue(&self) -> bool {
         if let Ok(guard) = self.last_heartbeat.lock() {
             match *guard {
@@ -214,6 +247,9 @@ impl SessionShared {
 
     fn handle_disconnect(&self, message: String) {
         let was_connected = self.set_connected(false);
+        if let Ok(mut heartbeat_guard) = self.last_heartbeat.lock() {
+            *heartbeat_guard = None;
+        }
         self.fail_all_pending(&message);
         if was_connected {
             self.emit_session_event("disconnected", &message);
@@ -221,15 +257,28 @@ impl SessionShared {
     }
 }
 
+fn kill_managed_session(session: &SessionSlot) {
+    if let Ok(mut session_guard) = session.lock() {
+        if let Some(active_session) = session_guard.take() {
+            active_session.kill();
+        }
+    }
+}
+
+fn disconnect_managed_session(session: &SessionSlot, shared: &Arc<SessionShared>, message: String) {
+    kill_managed_session(session);
+    shared.handle_disconnect(message);
+}
+
 struct SidecarState {
-    session: Mutex<Option<ManagedSidecar>>,
+    session: SessionSlot,
     shared: Arc<SessionShared>,
 }
 
 impl SidecarState {
     fn new() -> Self {
         Self {
-            session: Mutex::new(None),
+            session: Arc::new(Mutex::new(None)),
             shared: Arc::new(SessionShared::new()),
         }
     }
@@ -250,7 +299,7 @@ impl SidecarState {
                 existing_session.kill();
             }
 
-            let session = spawn_managed_sidecar(self.shared.clone())?;
+            let session = spawn_managed_sidecar(self.session.clone(), self.shared.clone())?;
             *session_guard = Some(session);
         }
 
@@ -337,6 +386,7 @@ impl SidecarState {
                 .and_then(Value::as_str)
                 .unwrap_or("desktop-bridge")
                 .to_string(),
+            session_generation: self.shared.current_session_generation(),
         })
     }
 
@@ -377,26 +427,18 @@ impl SidecarState {
             } else {
                 "python-sidecar-session-not-started".to_string()
             },
+            session_generation: self.shared.current_session_generation(),
         }
     }
 
     fn force_disconnect(&self, message: &str) {
-        if let Ok(mut session_guard) = self.session.lock() {
-            if let Some(session) = session_guard.take() {
-                session.kill();
-            }
-        }
-        self.shared.handle_disconnect(message.to_string());
+        disconnect_managed_session(&self.session, &self.shared, message.to_string());
     }
 
     fn shutdown(&self) {
         self.shared.set_connected(false);
         self.shared.fail_all_pending("Desktop shell is shutting down.");
-        if let Ok(mut session_guard) = self.session.lock() {
-            if let Some(session) = session_guard.take() {
-                session.kill();
-            }
-        }
+        kill_managed_session(&self.session);
     }
 }
 
@@ -420,7 +462,7 @@ fn spawn_stderr_logger(stderr: ChildStderr) {
     });
 }
 
-fn spawn_stdout_reader(stdout: ChildStdout, shared: Arc<SessionShared>) {
+fn spawn_stdout_reader(stdout: ChildStdout, shared: Arc<SessionShared>, session: SessionSlot) {
     thread::spawn(move || {
         let mut reader = BufReader::new(stdout);
         let mut line = String::new();
@@ -429,7 +471,11 @@ fn spawn_stdout_reader(stdout: ChildStdout, shared: Arc<SessionShared>) {
             line.clear();
             match reader.read_line(&mut line) {
                 Ok(0) => {
-                    shared.handle_disconnect("Python sidecar closed stdout.".to_string());
+                    disconnect_managed_session(
+                        &session,
+                        &shared,
+                        "Python sidecar closed stdout.".to_string(),
+                    );
                     break;
                 }
                 Ok(_) => {
@@ -441,9 +487,13 @@ fn spawn_stdout_reader(stdout: ChildStdout, shared: Arc<SessionShared>) {
                     let parsed: Value = match serde_json::from_str(trimmed) {
                         Ok(value) => value,
                         Err(error) => {
-                            shared.handle_disconnect(format!(
+                            disconnect_managed_session(
+                                &session,
+                                &shared,
+                                format!(
                                 "Python sidecar emitted invalid JSON: {error}. Line: {trimmed}"
-                            ));
+                                ),
+                            );
                             break;
                         }
                     };
@@ -498,9 +548,11 @@ fn spawn_stdout_reader(stdout: ChildStdout, shared: Arc<SessionShared>) {
                     }
                 }
                 Err(error) => {
-                    shared.handle_disconnect(format!(
-                        "Failed while waiting for python sidecar output: {error}"
-                    ));
+                    disconnect_managed_session(
+                        &session,
+                        &shared,
+                        format!("Failed while waiting for python sidecar output: {error}"),
+                    );
                     break;
                 }
             }
@@ -508,7 +560,7 @@ fn spawn_stdout_reader(stdout: ChildStdout, shared: Arc<SessionShared>) {
     });
 }
 
-fn spawn_heartbeat_supervisor(shared: Arc<SessionShared>) {
+fn spawn_heartbeat_supervisor(shared: Arc<SessionShared>, session: SessionSlot) {
     thread::spawn(move || {
         loop {
             thread::sleep(HEARTBEAT_CHECK_INTERVAL);
@@ -518,7 +570,9 @@ fn spawn_heartbeat_supervisor(shared: Arc<SessionShared>) {
             }
 
             if shared.heartbeat_overdue() {
-                shared.handle_disconnect(
+                disconnect_managed_session(
+                    &session,
+                    &shared,
                     "Python sidecar heartbeat timed out — backend may have crashed or hung.".to_string(),
                 );
                 break;
@@ -586,7 +640,7 @@ fn resolve_bundled_sidecar() -> Option<PathBuf> {
     find_existing_relative("reliability-tools-sidecar.exe")
 }
 
-fn spawn_managed_sidecar(shared: Arc<SessionShared>) -> Result<ManagedSidecar, String> {
+fn spawn_managed_sidecar(session: SessionSlot, shared: Arc<SessionShared>) -> Result<ManagedSidecar, String> {
     let mut child = if let Some(bundled) = resolve_bundled_sidecar() {
         // Production: bundled PyInstaller sidecar exe
         Command::new(&bundled)
@@ -656,10 +710,15 @@ fn spawn_managed_sidecar(shared: Arc<SessionShared>) -> Result<ManagedSidecar, S
 
     let child = Arc::new(Mutex::new(child));
     let stdout = stdout_reader.into_inner();
+    let session_generation = shared.advance_session_generation();
     shared.set_connected(true);
     shared.record_heartbeat(); // Seed initial heartbeat so supervisor doesn't fire immediately
-    spawn_stdout_reader(stdout, shared.clone());
-    spawn_heartbeat_supervisor(shared);
+    shared.emit_session_event(
+        "connected",
+        &format!("Python sidecar session ready (generation {session_generation})."),
+    );
+    spawn_stdout_reader(stdout, shared.clone(), session.clone());
+    spawn_heartbeat_supervisor(shared, session);
 
     Ok(ManagedSidecar {
         child,
@@ -799,6 +858,26 @@ fn backend_inspect_input(
             .unwrap_or_default() as u32,
         columns,
         preview_rows,
+        rows_scanned: payload
+            .get("rows_scanned")
+            .and_then(Value::as_u64)
+            .unwrap_or_default() as u32,
+        columns_scanned: payload
+            .get("columns_scanned")
+            .and_then(Value::as_u64)
+            .unwrap_or_default() as u32,
+        row_cap_applied: payload
+            .get("row_cap_applied")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        column_cap_applied: payload
+            .get("column_cap_applied")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        header_search_cap_applied: payload
+            .get("header_search_cap_applied")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
         mode: "desktop-bridge".to_string(),
     })
 }
@@ -859,6 +938,26 @@ fn backend_analyze_template(
             .map(ToOwned::to_owned),
         protected_sheet: payload
             .get("protected_sheet")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        rows_scanned: payload
+            .get("rows_scanned")
+            .and_then(Value::as_u64)
+            .unwrap_or_default() as u32,
+        columns_scanned: payload
+            .get("columns_scanned")
+            .and_then(Value::as_u64)
+            .unwrap_or_default() as u32,
+        row_cap_applied: payload
+            .get("row_cap_applied")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        column_cap_applied: payload
+            .get("column_cap_applied")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        header_search_cap_applied: payload
+            .get("header_search_cap_applied")
             .and_then(Value::as_bool)
             .unwrap_or(false),
         mode: "desktop-bridge".to_string(),
