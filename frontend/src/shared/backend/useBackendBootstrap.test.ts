@@ -92,17 +92,15 @@ afterEach(() => {
 });
 
 describe("useBackendBootstrap", () => {
-  it("clears a stale active run when reconnect lands on a new session generation", async () => {
+  it("clears any active run when reconnect succeeds", async () => {
+    // Every reconnect path in the Rust bridge spawns a fresh sidecar
+    // session (advance_session_generation always bumps), so a run that
+    // predates the reconnect cannot resume. The hook now clears the run
+    // unconditionally rather than round-tripping through sessionStatus().
     let onSessionEvent: ((event: BackendSessionEvent) => void) | null = null;
     mockBackendClient.subscribeToSessionEvents.mockImplementation(async (handler: (event: BackendSessionEvent) => void) => {
       onSessionEvent = handler;
       return () => {};
-    });
-    mockBackendClient.sessionStatus.mockResolvedValue({
-      connected: true,
-      backend: "python-sidecar",
-      mode: "desktop-bridge",
-      session_generation: 7,
     });
 
     const { unmount } = renderHook(() => useBackendBootstrap());
@@ -129,7 +127,10 @@ describe("useBackendBootstrap", () => {
       await Promise.resolve();
     });
 
-    expect(mockBackendClient.sessionStatus).toHaveBeenCalledTimes(1);
+    // We no longer call sessionStatus on reconnect — the active run is
+    // cleared unconditionally and health_check is the single source of
+    // truth for the reconnected-backend notification.
+    expect(mockBackendClient.sessionStatus).not.toHaveBeenCalled();
     expect(useRunStore.getState().activeRun).toBeNull();
     expect(useShellStore.getState().backendStatus).toBe("ready");
     expect(
@@ -141,31 +142,15 @@ describe("useBackendBootstrap", () => {
     unmount();
   });
 
-  it("marks the run reconnected when the backend returns on the same session generation", async () => {
+  it("is a no-op on reconnect when no run is active", async () => {
     let onSessionEvent: ((event: BackendSessionEvent) => void) | null = null;
     mockBackendClient.subscribeToSessionEvents.mockImplementation(async (handler: (event: BackendSessionEvent) => void) => {
       onSessionEvent = handler;
       return () => {};
     });
-    mockBackendClient.sessionStatus.mockResolvedValue({
-      connected: true,
-      backend: "python-sidecar",
-      mode: "desktop-bridge",
-      session_generation: 1,
-    });
 
     const { unmount } = renderHook(() => useBackendBootstrap());
     await flushAsyncWork();
-    expect(mockBackendClient.subscribeToSessionEvents).toHaveBeenCalledTimes(1);
-    expect(onSessionEvent).not.toBeNull();
-
-    act(() => {
-      useRunStore.setState({
-        activeRun: makeActiveRun({
-          sessionGeneration: 1,
-        }),
-      });
-    });
 
     act(() => {
       onSessionEvent?.({ kind: "disconnected", message: "Desktop backend dropped." });
@@ -177,10 +162,9 @@ describe("useBackendBootstrap", () => {
       await Promise.resolve();
     });
 
-    expect(mockBackendClient.sessionStatus).toHaveBeenCalledTimes(1);
-    expect(useRunStore.getState().activeRun).not.toBeNull();
-    expect(useRunStore.getState().activeRun?.sessionGeneration).toBe(1);
-    expect(useRunStore.getState().activeRun?.isDisconnected).toBe(false);
+    expect(mockBackendClient.sessionStatus).not.toHaveBeenCalled();
+    expect(useRunStore.getState().activeRun).toBeNull();
+    expect(useShellStore.getState().backendStatus).toBe("ready");
 
     unmount();
   });

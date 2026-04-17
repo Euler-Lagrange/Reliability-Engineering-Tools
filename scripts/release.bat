@@ -43,41 +43,48 @@ echo.
 pushd "%ROOT_DIR%"
 if errorlevel 1 goto :fail
 
-echo [1/10] Checking toolchain...
+echo [1/11] Checking toolchain...
 where node >nul 2>&1 || goto :missing_node
 where npm >nul 2>&1 || goto :missing_npm
 echo [INFO] node and npm detected >> "%LOGFILE%"
 
 if not exist "%BACKEND_PYTHON%" goto :missing_backend_python
 
-echo [2/10] Typechecking frontend...
+echo [2/11] Typechecking frontend...
 call npm run typecheck >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :typecheck_failed
 
-echo [3/10] Running backend security audit...
+echo [3/11] Typechecking Rust bridge (cargo check)...
+pushd "%REPO_ROOT%\src-tauri"
+cargo check --quiet >> "%LOGFILE%" 2>&1
+set "CARGO_CHECK_RC=%ERRORLEVEL%"
+popd
+if not "%CARGO_CHECK_RC%"=="0" goto :cargo_check_failed
+
+echo [4/11] Running backend security audit...
 pushd "%REPO_ROOT%\backend\python"
 "%BACKEND_PYTHON%" -m common.security_audit --strict >> "%LOGFILE%" 2>&1
 set "AUDIT_RC=%ERRORLEVEL%"
 popd
 if not "%AUDIT_RC%"=="0" goto :security_audit_failed
 
-echo [4/10] Running backend tests...
+echo [5/11] Running backend tests...
 "%BACKEND_PYTHON%" -m pytest backend\tests -q >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :backend_tests_failed
 
-echo [5/10] Running frontend tests...
+echo [6/11] Running frontend tests...
 call npm test >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :tests_failed
 
-echo [6/10] Building Python sidecar exe...
+echo [7/11] Building Python sidecar exe...
 "%BACKEND_PYTHON%" scripts\build_sidecar.py >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :sidecar_build_failed
 
-echo [7/10] Building portable desktop exe...
+echo [8/11] Building portable desktop exe...
 call npm run tauri:build:portable >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :build_failed
 
-echo [8/10] Locating packaged executable...
+echo [9/11] Locating packaged executable...
 if exist "%ROOT_DIR%\src-tauri\target\x86_64-pc-windows-msvc\release\%PACKAGED_EXE_NAME%" (
     set "PACKAGED_EXE=%ROOT_DIR%\src-tauri\target\x86_64-pc-windows-msvc\release\%PACKAGED_EXE_NAME%"
 )
@@ -95,11 +102,11 @@ copy /y "%PACKAGED_EXE%" "%OUTPUT_EXE%" >nul
 if errorlevel 1 goto :copy_failed
 echo [INFO] Copied packaged exe to %OUTPUT_EXE% >> "%LOGFILE%"
 
-echo [9/10] Running packaged self-test...
+echo [10/11] Running packaged self-test...
 "%OUTPUT_EXE%" --self-test >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :selftest_failed
 
-echo [10/10] Running packaged backend self-test...
+echo [11/11] Running packaged backend self-test...
 "%OUTPUT_EXE%" --self-test-backend >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :backend_selftest_failed
 
@@ -140,6 +147,12 @@ goto :fail
 echo [ERROR] Frontend typecheck (tsc) reported errors. >> "%LOGFILE%"
 echo.
 echo [FAILED] Frontend typecheck failed. See log for details.
+goto :fail
+
+:cargo_check_failed
+echo [ERROR] Rust bridge `cargo check` reported errors. >> "%LOGFILE%"
+echo.
+echo [FAILED] Rust bridge did not typecheck. See log for details.
 goto :fail
 
 :security_audit_failed

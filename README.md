@@ -59,7 +59,7 @@ npm test                       # Frontend tests (153 tests across 23 test suites
 
 ```powershell
 npm run tauri:build:portable   # Portable .exe (no installer)
-npm run release                # Full 10-step release pipeline (typecheck + audit + tests + build + self-tests)
+npm run release                # Full 11-step release pipeline (typechecks + audit + tests + build + self-tests)
 ```
 
 Release artifact: `local_build\ReliabilityToolsDesktop.exe`

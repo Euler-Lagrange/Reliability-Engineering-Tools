@@ -862,16 +862,16 @@ def execute_run_request(
         )
         tmp_output = atomic_write_path(output_path)
         try:
-            write_template_preserved(
-                wb, template_map, dataframe, processor,
-                str(tmp_output),
-                cancel_token=processor.cancel,
-                log_func=stream_log_callback,
-                failure_modes_standard=failure_modes_standard,
-            )
-        finally:
-            wb.close()
-        try:
+            try:
+                write_template_preserved(
+                    wb, template_map, dataframe, processor,
+                    str(tmp_output),
+                    cancel_token=processor.cancel,
+                    log_func=stream_log_callback,
+                    failure_modes_standard=failure_modes_standard,
+                )
+            finally:
+                wb.close()
             if not verify_excel_readable(tmp_output):
                 raise IOError(
                     f"Post-write verification failed for {tmp_output}; workbook did not open."

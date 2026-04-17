@@ -22,12 +22,48 @@ mod windows_job {
         JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
 
+    // NtResumeProcess is an undocumented but stable-across-versions NT API
+    // (available since NT 4.0). Used to resume a sidecar spawned with
+    // CREATE_SUSPENDED after it has been assigned to the Job Object, so the
+    // child never runs outside the job even for a single scheduler tick.
+    #[link(name = "ntdll")]
+    extern "system" {
+        fn NtResumeProcess(process: HANDLE) -> i32;
+    }
+
+    /// Windows `CREATE_SUSPENDED` flag for `CommandExt::creation_flags`.
+    pub const CREATE_SUSPENDED: u32 = 0x0000_0004;
+
     pub struct WindowsJobObject(HANDLE);
+
+    // SAFETY: a Windows Job Object HANDLE is a kernel handle — the OS
+    // serialises access to its handle table. This type is only shared
+    // through Arc<Mutex<Option<ManagedSidecar>>>, so CloseHandle never
+    // races itself.
+    unsafe impl Send for WindowsJobObject {}
+    unsafe impl Sync for WindowsJobObject {}
+
+    /// Resume every thread of a child process that was spawned with
+    /// `CREATE_SUSPENDED`. Called by the bridge after the child has been
+    /// safely assigned to the Job Object, so there is no window in which the
+    /// child runs outside the job.
+    pub fn resume_child(child: &Child) -> Result<(), String> {
+        let handle = child.as_raw_handle() as HANDLE;
+        // NTSTATUS values >= 0 mean success.
+        let status = unsafe { NtResumeProcess(handle) };
+        if status < 0 {
+            return Err(format!(
+                "Failed to resume sidecar after job-object assignment (NTSTATUS 0x{:08x})",
+                status as u32
+            ));
+        }
+        Ok(())
+    }
 
     impl WindowsJobObject {
         pub fn create() -> Result<Self, String> {
             let handle = unsafe { CreateJobObjectW(ptr::null(), ptr::null()) };
-            if handle == 0 {
+            if handle.is_null() {
                 return Err(format!(
                     "Failed to create Windows Job Object: {}",
                     io::Error::last_os_error()
@@ -73,7 +109,7 @@ mod windows_job {
 
     impl Drop for WindowsJobObject {
         fn drop(&mut self) {
-            if self.0 != 0 {
+            if !self.0.is_null() {
                 unsafe {
                     CloseHandle(self.0);
                 }
@@ -83,7 +119,7 @@ mod windows_job {
 }
 
 #[cfg(target_os = "windows")]
-use windows_job::WindowsJobObject;
+use windows_job::{resume_child, WindowsJobObject, CREATE_SUSPENDED};
 
 const PROTOCOL_VERSION: &str = "0.1.0";
 const BACKEND_RUN_EVENT: &str = "backend://run-event";
@@ -649,9 +685,17 @@ fn spawn_stdout_reader(stdout: ChildStdout, shared: Arc<SessionShared>, session:
                         let line = payload
                             .and_then(|value| value.get("line").or_else(|| value.get("message")))
                             .and_then(Value::as_str);
+                        // Only merge lines that look like a last-gasp crash envelope
+                        // from the Python excepthooks; otherwise a routine error log
+                        // from ten seconds ago would be quoted into the next
+                        // unrelated disconnect message.
                         if level == Some("error") {
                             if let Some(line) = line {
-                                shared.record_fatal_sidecar_detail(line.to_string());
+                                if line.starts_with("Unhandled exception:")
+                                    || line.starts_with("Unhandled thread exception")
+                                {
+                                    shared.record_fatal_sidecar_detail(line.to_string());
+                                }
                             }
                         }
                     }
@@ -774,39 +818,66 @@ fn resolve_bundled_sidecar() -> Option<PathBuf> {
 }
 
 fn spawn_managed_sidecar(session: SessionSlot, shared: Arc<SessionShared>) -> Result<ManagedSidecar, String> {
+    // On Windows, create the Job Object BEFORE spawning the child, then spawn
+    // the child with CREATE_SUSPENDED, assign to the job, and only then resume.
+    // This eliminates two orphan-the-child races:
+    //   (a) WindowsJobObject::create() failing after the child is already live.
+    //   (b) The parent panicking between spawn() and AssignProcessToJobObject.
+    // With CREATE_SUSPENDED the child's primary thread is suspended until after
+    // the job has accepted it, so it can never run outside the job even for a
+    // single scheduler tick.
+    #[cfg(target_os = "windows")]
+    let job = WindowsJobObject::create()?;
+
     let mut child = if let Some(bundled) = resolve_bundled_sidecar() {
         // Production: bundled PyInstaller sidecar exe
-        Command::new(&bundled)
+        let mut command = Command::new(&bundled);
+        command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|error| {
-                format!("Failed to start bundled sidecar '{}': {error}", bundled.display())
-            })?
+            .stderr(Stdio::piped());
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(CREATE_SUSPENDED);
+        }
+        command.spawn().map_err(|error| {
+            format!("Failed to start bundled sidecar '{}': {error}", bundled.display())
+        })?
     } else {
         // Development: python interpreter + script
         let python = resolve_python_interpreter();
         let script = resolve_sidecar_script()?;
-        Command::new(&python)
+        let mut command = Command::new(&python);
+        command
             .arg(&script)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|error| {
-                format!(
-                    "Failed to start python sidecar using '{}' and '{}': {error}",
-                    python.display(),
-                    script.display()
-                )
-            })?
+            .stderr(Stdio::piped());
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(CREATE_SUSPENDED);
+        }
+        command.spawn().map_err(|error| {
+            format!(
+                "Failed to start python sidecar using '{}' and '{}': {error}",
+                python.display(),
+                script.display()
+            )
+        })?
     };
 
     #[cfg(target_os = "windows")]
     let job_object = {
-        let job = WindowsJobObject::create()?;
         if let Err(error) = job.assign_child(&child) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error);
+        }
+        if let Err(error) = resume_child(&child) {
+            // Assign succeeded but resume failed: the suspended child is now
+            // owned by the job, so killing it here is safe and bounded.
             let _ = child.kill();
             let _ = child.wait();
             return Err(error);

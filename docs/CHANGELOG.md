@@ -5,6 +5,106 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-04-17 — v0.4.2 Build Fix + QC Pass
+
+### Fixed
+
+- **Rust build on Windows**: v0.4.2 shipped a `WindowsJobObject` type
+  that failed every Tauri `Send + Sync + 'static` bound and imported a
+  `windows-sys` symbol gated behind a missing feature, producing 83
+  compile errors on the first `scripts/release.bat` run. Fix:
+  - `src-tauri/Cargo.toml` now enables the `Win32_Security` feature on
+    `windows-sys` so `CreateJobObjectW` resolves.
+  - `WindowsJobObject` has explicit `unsafe impl Send + Sync` with a
+    safety comment (kernel HANDLE, only shared through
+    `Arc<Mutex<Option<ManagedSidecar>>>`).
+  - Null-handle checks use `HANDLE::is_null()` instead of comparing a
+    `*mut c_void` to the integer `0`.
+- **FMEA preserve-template temp-file leak** (`backend/python/fmea/runtime.py`):
+  if `write_template_preserved()` raised mid-write, the temp
+  `<stem>.<hex>.part<suffix>` file leaked because the exception
+  propagated past the cleanup try/except. Merged the two blocks so the
+  temp is removed on any failure.
+- **Windows Job Object startup race** (`src-tauri/src/lib.rs`): two
+  orphan-the-sidecar windows in `spawn_managed_sidecar`:
+  - (B2) `WindowsJobObject::create()` failing after `Command::spawn()`
+    had already returned a live child.
+  - (B3) The bridge panicking between `spawn()` and
+    `AssignProcessToJobObject`, leaving the child running outside any
+    job.
+  Fix: create the Job Object BEFORE spawning, spawn the child with
+  `CREATE_SUSPENDED`, assign to the job, then call `NtResumeProcess`
+  (declared via a direct `extern "system"` from `ntdll`) so the child
+  never executes a single scheduler tick outside the job. Failures on
+  `assign_child` or `resume_child` now kill the (still-suspended) child
+  before returning the error.
+- **Stale "sidecar crashed" detail surfacing on unrelated disconnects**
+  (`src-tauri/src/lib.rs`): the bridge was capturing every error-level
+  log envelope into `fatal_sidecar_detail`, so a routine runtime error
+  logged 30 s before an unrelated heartbeat timeout got quoted into the
+  next "sidecar closed stdout" message. Now only the explicit crash
+  envelopes emitted by the Python excepthooks (`Unhandled exception:…` /
+  `Unhandled thread exception…`) are captured.
+- **`useBackendBootstrap` dead branch**
+  (`frontend/src/shared/backend/useBackendBootstrap.ts`): the
+  `markRunReconnected()` path was unreachable because every reconnect
+  spawns a fresh sidecar, which always bumps `session_generation`.
+  Replaced the `sessionStatus()` round-trip with an unconditional
+  `clearActiveRun()` on reconnect — simpler and matches the only path
+  the Rust bridge actually exercises.
+- **`useBackendRunSubscription` dependency-array lint nit**
+  (`frontend/src/shared/backend/useBackendRunSubscription.ts`): removed
+  `handleRunEvent` from the `useEffect` deps (it's a
+  `useEffectEvent` return value, stable by design) with a comment
+  pointing at React's rules-of-hooks guidance.
+
+### Changed
+
+- **Release pipeline hardened to 11 steps**: `scripts/release.bat` now
+  runs `cargo check --quiet` on the Rust bridge as step 3 (right after
+  frontend typecheck) so a broken Rust build fails in ~30 s instead of
+  surviving to the 3-minute `tauri:build:portable` step 8. Includes a
+  dedicated `:cargo_check_failed` error label.
+- **README** now advertises the 11-step release pipeline.
+
+### Known Issues (for follow-up, likely v0.4.4)
+
+Issues surfaced by the post-release debugger + quality-reviewer sweep
+but intentionally deferred to keep v0.4.3 focused on the build break:
+
+- **`reveal_in_file_manager` accepts any path** (`src-tauri/src/lib.rs`):
+  a crafted UNC path (e.g. `\\attacker\bait`) handed to the command
+  would trigger an SMB connection and leak the user's NTLM hash. Needs
+  an absolute-path + UNC-allowlist gate.
+- **Crash dumps have no rate limit or redaction**
+  (`backend/python/common/logger.py`, `src-tauri/src/lib.rs`): a panic
+  loop can fill the disk, and tracebacks may include proprietary BOM /
+  customer part numbers that then end up in `~/.reliability_tools/logs/crashes/`.
+- **Notification store evicts oldest error when five errors visible**
+  (`frontend/src/stores/notificationStore.ts`): burst of five distinct
+  errors + a sixth loses actionable information silently. Coalesce into
+  a "+N more" summary or raise the cap for error tone.
+- **First `status` event can race `ack` response**
+  (`frontend/src/shared/backend/useBackendRunSubscription.ts`): the very
+  first stage/message from a freshly-started run may arrive before
+  `activeRun` is seeded and get dropped. Buffer-and-flush keyed by
+  `run_id`.
+- **`atomic_finalize` on OneDrive placeholders** (`backend/python/common/utils.py`):
+  `os.replace` onto a cloud-only destination can fail mid-sync; consider
+  pre-hydrating the target when OneDrive is detected.
+- **Naive OneDrive path hint** (`common/utils.py`): the
+  `"onedrive" in str(path).lower()` check matches unrelated folder names
+  like `OneDrive_backup`, potentially running `attrib +P` and waiting up
+  to 15 s against a dead network share.
+
+### Tests
+
+- Backend **110 → 110** (unchanged).
+- Frontend **153 → 153** (unchanged — the fixes are either pure
+  refactors or Rust-only).
+- Full 11-step release pipeline is now the authoritative release gate
+  and must pass before any `v0.4.X` tag.
+
 ## [0.4.2] - 2026-04-16 — Hardening, Crash Reporting, CSP, Cross-Tool Output Picker
 
 ### Added

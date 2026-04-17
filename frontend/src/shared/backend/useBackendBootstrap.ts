@@ -10,7 +10,6 @@ export function useBackendBootstrap() {
   const setBackendState = useShellStore((state) => state.setBackendState);
   const pushNotification = useNotificationStore((state) => state.push);
   const markRunDisconnected = useRunStore((state) => state.markDisconnected);
-  const markRunReconnected = useRunStore((state) => state.markReconnected);
   const clearActiveRun = useRunStore((state) => state.clear);
 
   useEffect(() => {
@@ -43,30 +42,14 @@ export function useBackendBootstrap() {
               backendMessage: `Desktop backend reconnected (${result.backend})`,
               lastBackendCheckAt: new Date().toISOString(),
             });
-            // Reconcile any active run with the sidecar's actual session.
-            // A reconnect may have spawned a brand-new sidecar session.
-            // If the active run was accepted under an older session
-            // generation, it cannot resume and must be cleared.
-            void backendClient
-              .sessionStatus()
-              .then((status) => {
-                if (!active) return;
-                const activeRun = useRunStore.getState().activeRun;
-                if (!activeRun) {
-                  return;
-                }
-                if (
-                  !status.connected ||
-                  activeRun.sessionGeneration !== status.session_generation
-                ) {
-                  clearActiveRun();
-                  return;
-                }
-                markRunReconnected();
-              })
-              .catch(() => {
-                // Best-effort reconciliation; nothing to do on failure.
-              });
+            // Any reconnect path in the Rust bridge spawns a fresh sidecar
+            // session — `advance_session_generation` always bumps — so an
+            // active run that predates this reconnect cannot resume. Clear
+            // it unconditionally; per-tool lifecycle hooks will surface the
+            // cancellation to the user.
+            if (useRunStore.getState().activeRun) {
+              clearActiveRun();
+            }
             pushNotification({
               tone: "success",
               title: "Backend reconnected",
@@ -180,7 +163,6 @@ export function useBackendBootstrap() {
     pushNotification,
     setBackendState,
     markRunDisconnected,
-    markRunReconnected,
     clearActiveRun,
   ]);
 }

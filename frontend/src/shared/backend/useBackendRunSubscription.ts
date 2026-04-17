@@ -54,5 +54,8 @@ export function useBackendRunSubscription() {
       disposed = true;
       unlisten?.();
     };
-  }, [handleRunEvent, runtimeMode]);
+    // `handleRunEvent` is a `useEffectEvent` return value (stable across
+    // renders by design); per React's rules-of-hooks it is intentionally
+    // excluded from the dependency array.
+  }, [runtimeMode]);
 }
