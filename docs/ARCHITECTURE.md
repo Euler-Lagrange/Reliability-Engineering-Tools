@@ -56,7 +56,8 @@ request, response, and streamed run event.
 │   └── sidecar-protocol.md     # Wire format reference
 ├── scripts/
 │   ├── build_sidecar.py        # PyInstaller bundling
-│   ├── release.bat             # 8-step release pipeline
+│   ├── release.bat             # 10-step release pipeline (typecheck + security audit + tests + build + self-tests)
+│   ├── bump-version.mjs        # Bump version across package.json / Cargo.toml / tauri.conf.json in lockstep
 │   ├── tauri-msvc.cmd
 │   └── tauri-runner.mjs
 ├── local_build/                # Output: ReliabilityToolsDesktop.exe + sidecar.exe
@@ -78,10 +79,27 @@ that hosts:
 - **Shared services** (`frontend/src/shared/`):
   - `backend/client.ts` — typed wrapper around Tauri `invoke()` plus
     `isTauriRuntime()` browser-mock fallback.
-  - `backend/runLifecycle.ts` — converts streamed run events into a timeline
-    plus `RunMode` state.
-  - `backend/useBackendBootstrap.ts` — hook that performs the initial health
-    check and runs the reconnect backoff chain.
+  - `backend/runLifecycle.ts` — projects streamed run events into a
+    per-tool timeline plus `RunMode` state. As of 0.4.2 the raw
+    subscription to `backend://run-event` no longer lives here — it
+    moved one layer up so a running job survives tool switches.
+  - `backend/useBackendRunSubscription.ts` — shell-level hook (mounted
+    in `App.tsx`) that owns the single subscription to
+    `backend://run-event` and fans every ack / status / progress / log /
+    terminal envelope into the run-lifecycle projector. Replaces the
+    old `useGlobalLogSubscription`.
+  - `backend/useBackendBootstrap.ts` — hook that performs the initial
+    health check, runs the reconnect backoff chain, and reconciles the
+    active run against the sidecar's `session_generation` on every
+    reconnect: if the generation advanced, the stale run is cleared;
+    otherwise the run is marked reconnected and resumes.
+  - `backend/fileManager.ts` — cross-platform path helpers
+    (`parentDirectoryForPath`, `OPEN_FOLDER_LABEL`) used by the
+    `RunStatePanel` Open-folder affordance and the `OutputFolderPicker`.
+  - `hooks/shortcutUtils.ts` — platform-aware shortcut helpers. Keyboard
+    shortcuts use `Cmd` on macOS and `Ctrl` elsewhere, and are
+    suppressed while focus is in an editable element so typing cannot
+    swap tools by accident.
   - `notifications/NotificationCenter.tsx` — toast surface bound to
     `notificationStore`.
   - `theme/ThemeController.tsx` — applies `data-theme` attribute on `<html>`.
@@ -105,10 +123,15 @@ that hosts:
 `src-tauri/src/lib.rs` is one file containing the entire bridge. Key types:
 
 - **`ManagedSidecar`** — `Arc<Mutex<Child>>` plus `Arc<Mutex<ChildStdin>>`.
-  One sidecar process per desktop window. Killed on window destroy.
+  One sidecar process per desktop window. Killed on window destroy. On
+  Windows the struct also owns an `Option<JobObject>` — see *Windows
+  process lifecycle* below.
 - **`SessionShared`** — shared state across reader, supervisor, and command
   threads. Holds the pending-request registry, connection flag, app handle for
-  emitting events, and the last heartbeat timestamp.
+  emitting events, the last heartbeat timestamp, and a small
+  `fatal_sidecar_detail` buffer that records the most recent error-level
+  log line from the sidecar so `handle_disconnect` can merge it into the
+  user-visible disconnect notification (see *Fatal-error detail merge*).
 - **`SidecarState`** — Tauri-managed state. Owns the `ManagedSidecar` mutex
   and an `Arc<SessionShared>`.
 
@@ -148,6 +171,29 @@ If `heartbeat_overdue()` reports `last.elapsed() > HEARTBEAT_TIMEOUT` (15 s),
 the supervisor calls `handle_disconnect`, which kills the child, fails every
 pending request with the same message, and emits a session event.
 
+### Windows process lifecycle (Job Objects)
+
+On Windows the bridge wraps the spawned Python sidecar in a Win32 **Job
+Object** with the `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` flag set (see the
+`windows_job` module at the top of `src-tauri/src/lib.rs`). When the bridge
+process exits — cleanly or via crash — Windows tears down the job, which
+in turn terminates every process assigned to it. That guarantees the
+sidecar is never orphaned, even if a Rust panic bypasses the
+`on_window_event` `Destroyed` handler. macOS/Linux rely on their POSIX
+parent-death signals instead and do not need the extra scaffolding.
+
+### Fatal-error detail merge
+
+When a fatal Python exception escapes the sidecar's top-level catch it
+emits one last `log` envelope at `ERROR` level before the process dies
+(see Crash Reporting below). The Rust bridge captures that line into
+`SessionShared::fatal_sidecar_detail`; on the subsequent `handle_disconnect`
+call it merges the detail into the user-visible message via
+`merge_disconnect_message`, so the frontend sees e.g.
+`Python sidecar closed stdout. Details: Unhandled exception:
+RuntimeError: boom` rather than an opaque "connection lost." Unit tests
+for the helper live alongside it in `lib.rs`.
+
 ### Session events
 
 `backend://session` carries `{ kind, connected, backend, message }`. The
@@ -167,13 +213,22 @@ when `connected` flips false.
 | `backend_execute_run`        | `execute_run`         | `RunAcceptedResponse` (run_id) |
 | `backend_cancel_run`         | `cancel_run`          | `CancelRunResponse` |
 | `backend_read_flet_config`   | `read_flet_config`    | raw JSON |
+| `reveal_in_file_manager`     | (none — local OS call) | `()` |
+
+`reveal_in_file_manager` takes an absolute path string and spawns the
+host OS file manager: `explorer.exe` on Windows, `open` on macOS,
+`xdg-open` on Linux. Used by Settings › Logs "Open in Explorer" and the
+per-tool `OutputFolderPicker`; zero new Cargo dependencies (no need for
+`tauri-plugin-opener`). The command returns `Err` if the path does not
+exist or the OS fails to spawn.
 
 ### Response enrichment
 
 Every typed Tauri command in the table above constructs its response struct
 with `mode: "desktop-bridge".to_string()` set explicitly (see
 `src-tauri/src/lib.rs` — the `mode` field is hard-wired in each
-`backend_*` handler, e.g. lines 690 and 733). The Python sidecar itself
+`backend_*` handler; grep for `"desktop-bridge".to_string()` to find the
+current call sites). The Python sidecar itself
 only sets `mode` on the `execute_run` ack and the `cancel_run` result;
 every other command relies on the Rust layer to add it before the response
 crosses the bridge. The Zod schemas in `frontend/src/contracts/` therefore
@@ -252,7 +307,7 @@ Full payload schemas live in `contracts/sidecar-protocol.md`.
 |-------|----------|
 | Python | `_heartbeat_loop` emits a `heartbeat` envelope every 5 s. |
 | Rust   | Records every heartbeat. Supervisor wakes every 5 s and calls `handle_disconnect` if `last_heartbeat` is older than 15 s. |
-| Frontend | `useBackendBootstrap` listens for `backend://session` disconnects and runs a reconnect backoff: 2 s → 4 s → 8 s → 15 s → 30 s, then surfaces a permanent error notification. |
+| Frontend | `useBackendBootstrap` listens for `backend://session` disconnects and runs a reconnect backoff: 2 s → 4 s → 8 s → 15 s → 30 s, then surfaces a permanent error notification. On every successful reconnect it reconciles the active run against the sidecar's `session_generation` (bumped → clear stale run; match → mark reconnected). |
 
 ## Tool Wiring Matrix
 
@@ -311,17 +366,58 @@ the protocol's `validations` array.
 
 | Store | File | Persisted | Purpose |
 |-------|------|-----------|---------|
-| `useShellStore` | `frontend/src/stores/shellStore.ts` | yes (`zustand/middleware.persist`, key `reliability-tools-tauri-shell`) | active tool id, backend status/mode/message, last health-check timestamp, `fmeaOutputDirectory: string \| null` |
+| `useShellStore` | `frontend/src/stores/shellStore.ts` | yes (`zustand/middleware.persist`, key `reliability-tools-tauri-shell`) | active tool id, backend status/mode/message, last health-check timestamp, and per-tool `{fmea,bomCompare,failureRate,refdesExtractor}OutputDirectory: string \| null` |
 | `useThemeStore` | `frontend/src/stores/themeStore.ts` | yes (`zustand/middleware.persist`, key `reliability-tools-tauri-theme`) | `mode: "system" \| ThemeId` |
-| `useNotificationStore` | `frontend/src/stores/notificationStore.ts` | no | toast list with `push`/`dismiss` |
+| `useNotificationStore` | `frontend/src/stores/notificationStore.ts` | no | toast list with `push` / `dismiss` / `dismissAll` |
 
-`shellStore` uses `partialize` to persist only `fmeaOutputDirectory`;
-transient fields (backend status, mode, message) are excluded so they
-do not survive a reload with stale values.
+`shellStore` uses `partialize` to persist only the four per-tool output
+directories; transient fields (backend status, mode, message) are
+excluded so they do not survive a reload with stale values. The shared
+`OutputFolderPicker` primitive (`frontend/src/components/OutputFolderPicker.tsx`)
+is how every tool exposes the picker — consumers pass the corresponding
+`{tool}OutputDirectory` slice through its `value` / `onChange` props.
 
 Tool-local state lives inside each `*Tool.tsx` via `useState` and is not
 hoisted into a store. Run lifecycle is owned by `useBackendRunLifecycle`
 in `shared/backend/runLifecycle.ts`.
+
+## Security Surface
+
+- **Content Security Policy** (since 0.4.2) — `src-tauri/tauri.conf.json`
+  sets `app.security.csp` to a conservative production policy:
+  `default-src 'self' ipc: http://ipc.localhost; script-src 'self';
+  style-src 'self' 'unsafe-inline'; img-src 'self' asset:
+  http://asset.localhost data: blob:; font-src 'self' data:; connect-src
+  'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'self';
+  frame-ancestors 'none'`. CSP only applies to packaged release builds —
+  Vite serves HTML directly in dev so the Vite HMR pipeline is unaffected.
+  If a new tool needs a different source (external SVG, wasm eval, ...),
+  relax the relevant directive here — do NOT weaken `default-src`.
+- **Subprocess audit** — `common/security_audit.py` AST-walks every
+  sidecar `.py` file, rejecting network/database imports and subprocess
+  calls outside an explicit allowlist (currently just `attrib`). Runs
+  from `sidecar_main.py --self-test`, from `pytest`, and from
+  `release.bat` step 3 via `python -m common.security_audit --strict`.
+- **Offline invariant** — the Python backend has no network stack. Every
+  artifact exchange between frontend and backend goes through file paths
+  on the local disk. Adding a network import will fail the security audit
+  at build time.
+
+## Crash Reporting
+
+Three independent crash-capture paths write into the same
+`<log_dir>/crashes/` directory so a user can zip one folder to share.
+
+| Layer | Hook | Output |
+|-------|------|--------|
+| Python | `sidecar_main._install_crash_hooks()` installs `sys.excepthook` AND `threading.excepthook` (skipping `KeyboardInterrupt` / `SystemExit`) | `crash_sidecar_<ts>.log`, `crash_thread_<ts>.log` |
+| Rust   | `install_rust_panic_hook()` chains after the default printer | `crash_rust_<ts>.log` |
+| Frontend | `shared/errors/installGlobalErrorHandlers.ts` catches `window.error` + `unhandledrejection` | `console.error` + notification toast (no disk file today) |
+
+The Python hook also emits one last-gasp `log` envelope on stdout so the
+Rust bridge can surface a notification before the sidecar process exits.
+Both Python and Rust hooks share the same directory resolution rule
+(`RELIABILITY_TOOLS_LOG_DIR` env var > `~/.reliability_tools/logs`).
 
 ## Design Decisions and Trade-offs
 

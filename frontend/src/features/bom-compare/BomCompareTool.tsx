@@ -9,8 +9,8 @@ import { CheckboxField } from "../../components/primitives/CheckboxField";
 import { ContextTabs } from "../../components/primitives/ContextTabs";
 import { EmptyState } from "../../components/primitives/EmptyState";
 import { OptionsSection } from "../../components/primitives/OptionsSection";
+import { OutputFolderPicker } from "../../components/OutputFolderPicker";
 import { GitDiff } from "@phosphor-icons/react";
-import { executeRunResultSchema } from "../../contracts/sidecar";
 import {
   bomCompareWorkflowOptions,
   bomCompareDemoScenarios,
@@ -30,6 +30,7 @@ import type {
 import { DO_NOT_MAP_VALUE } from "../../app/types";
 import { backendClient, type RunRequestBody } from "../../shared/backend/client";
 import { buildCancelNotification } from "../../shared/backend/cancelError";
+import { parentDirectoryForPath } from "../../shared/backend/fileManager";
 import { buildRunTimeline, useBackendRunLifecycle } from "../../shared/backend/runLifecycle";
 import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
 import { useRoleRequestSequence } from "../../shared/hooks/useRoleRequestSequence";
@@ -85,10 +86,6 @@ function buildTimeline(runMode: RunMode, runIndex: number, templates: RunEventTe
   });
 }
 
-function parseBomCompareRunResult(payload: unknown) {
-  return executeRunResultSchema.parse(payload);
-}
-
 export function BomCompareTool() {
   const baseScenario = bomCompareDemoScenarios[0];
   const [workflowId, setWorkflowId] = useState<WorkflowId>(baseScenario.workflowId);
@@ -115,13 +112,19 @@ export function BomCompareTool() {
   const handledDesktopTerminalRef = useRef<string | null>(null);
   const backendMode = useShellStore((state) => state.backendMode);
   const setBackendState = useShellStore((state) => state.setBackendState);
+  const bomCompareOutputDirectory = useShellStore(
+    (state) => state.bomCompareOutputDirectory,
+  );
+  const setBomCompareOutputDirectory = useShellStore(
+    (state) => state.setBomCompareOutputDirectory,
+  );
   const pushNotification = useNotificationStore((state) => state.push);
 
   const {
     session: desktopRunSession,
     beginAcceptedRun,
     resetSession: resetDesktopRunSession,
-  } = useBackendRunLifecycle("bom_compare", backendClient.runtimeMode, parseBomCompareRunResult);
+  } = useBackendRunLifecycle("bom_compare");
   // Per-role token used to discard stale async listSheets/inspect results.
   const fileRequestSeq = useRoleRequestSequence<FileRole>();
 
@@ -229,6 +232,15 @@ export function BomCompareTool() {
     backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.errorCode : null;
   const panelErrorTraceback =
     backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.errorTraceback : null;
+
+  async function handleRevealOutput(path: string) {
+    try {
+      await backendClient.revealInFileManager(parentDirectoryForPath(path));
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Failed to open output folder";
+      pushNotification({ tone: "error", title: "Open output folder failed", detail });
+    }
+  }
 
   // Pristine = first contact with the tool: still on the default workflow,
   // all visible inputs are example mocks, no run has started. Switching
@@ -339,6 +351,7 @@ export function BomCompareTool() {
         status: mappingOverrides[row.canonical] ? "manual" : row.status,
       })),
       options,
+      outputDirectory: bomCompareOutputDirectory,
     };
   }
 
@@ -794,6 +807,10 @@ export function BomCompareTool() {
                   }
                 />
               ))}
+              <OutputFolderPicker
+                value={bomCompareOutputDirectory}
+                onChange={setBomCompareOutputDirectory}
+              />
             </OptionsSection>
           </div>
 
@@ -833,6 +850,9 @@ export function BomCompareTool() {
                   truncatedLogCount={panelTruncatedLogCount}
                   errorCode={panelErrorCode}
                   errorTraceback={panelErrorTraceback}
+                  onRevealOutput={
+                    backendClient.runtimeMode === "desktop-bridge" ? (path) => void handleRevealOutput(path) : undefined
+                  }
                   startLabel="Compare"
                 />
               )}

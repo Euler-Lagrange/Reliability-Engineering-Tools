@@ -1,8 +1,8 @@
-import { useEffect, useEffectEvent, useMemo } from "react";
+import { useMemo } from "react";
 import type { RunEvent, RunEventTemplate, RunMode } from "../../app/types";
 import type {
-  BackendSessionEvent,
   ExecuteRunAcceptedResult,
+  ExecuteRunResult,
   SidecarRunEvent,
 } from "../../contracts/sidecar";
 import {
@@ -11,8 +11,7 @@ import {
   buildActiveRunFromAccepted,
   useRunStore,
 } from "../../stores/runStore";
-import type { BackendMode, ToolId } from "../../stores/shellStore";
-import { backendClient } from "./client";
+import type { ToolId } from "../../stores/shellStore";
 
 // Re-export so existing import paths keep working.
 export { MAX_LOG_LINES };
@@ -104,7 +103,7 @@ function projectSession<ResultT>(activeRun: ActiveRunState | null): ManagedRunSe
  * computed from the current ``ActiveRunState`` rather than a tool-local
  * ``useState``.
  */
-function patchFromRunEvent(
+export function patchFromRunEvent(
   current: ActiveRunState,
   event: SidecarRunEvent,
   mapResult: (payload: unknown) => unknown,
@@ -205,120 +204,24 @@ export function buildRunTimeline<ResultT>(session: ManagedRunSession<ResultT>): 
  * Hook that exposes the active run for a specific tool, persisted in the
  * global ``runStore`` so it survives tool unmount/remount.
  *
- * The hook subscribes to backend run events while the tool component is
- * mounted, but the underlying state lives in the store and is keyed by the
- * tool that started the run. If the user switches tools and returns, the
- * hook re-attaches to the existing active run as long as the run's
- * ``toolId`` matches.
- *
- * On a backend disconnect, the run is marked disconnected (state preserved
- * so the user can still see what happened). On reconnect, the hook calls
- * ``backendClient.sessionStatus()`` to reconcile: if the sidecar reports a
- * new session generation, the local active run is cleared because the old
- * run belonged to a different bridge-managed sidecar process.
+ * The shell owns backend event subscriptions. This hook only projects the
+ * global active-run store into a tool-local session view and exposes the
+ * imperative helpers each tool needs to start or clear its own run.
  */
-export function useBackendRunLifecycle<ResultT>(
-  toolId: ToolId,
-  runtimeMode: BackendMode,
-  mapResult: (payload: unknown) => ResultT,
-) {
+export function useBackendRunLifecycle(toolId: ToolId) {
   const activeRun = useRunStore((state) => state.activeRun);
   const setActiveRun = useRunStore((state) => state.setActiveRun);
-  const patchActiveRun = useRunStore((state) => state.patchActiveRun);
-  const appendLog = useRunStore((state) => state.appendLog);
-  const markDisconnected = useRunStore((state) => state.markDisconnected);
-  const markReconnected = useRunStore((state) => state.markReconnected);
   const clearActiveRun = useRunStore((state) => state.clear);
 
   // Only project the active run if it belongs to this tool. Other tools'
   // runs are not visible from here, but they ARE preserved in the store.
-  const session = useMemo<ManagedRunSession<ResultT>>(
-    () => projectSession<ResultT>(activeRun && activeRun.toolId === toolId ? activeRun : null),
+  const session = useMemo<ManagedRunSession<ExecuteRunResult>>(
+    () =>
+      projectSession<ExecuteRunResult>(
+        activeRun && activeRun.toolId === toolId ? activeRun : null,
+      ),
     [activeRun, toolId],
   );
-
-  const handleRunEvent = useEffectEvent((event: SidecarRunEvent) => {
-    // Only react to events that belong to MY tool's active run.
-    const current = useRunStore.getState().activeRun;
-    if (!current || current.toolId !== toolId) {
-      return;
-    }
-    if (event.run_id !== current.runId) {
-      return;
-    }
-    if (event.kind === "log") {
-      appendLog(event.payload.line);
-      return;
-    }
-    const patch = patchFromRunEvent(current, event, mapResult);
-    if (patch) {
-      patchActiveRun(patch);
-    }
-  });
-
-  const handleSessionEvent = useEffectEvent((event: BackendSessionEvent) => {
-    if (event.kind === "disconnected") {
-      markDisconnected(event.message);
-      return;
-    }
-    if (event.kind === "connected") {
-      // Reconcile against the sidecar's actual session generation. A
-      // restart spawns a brand-new sidecar, so the previous run handle
-      // is stale even though the bridge may already be "connected" again.
-      void backendClient
-        .sessionStatus()
-        .then((status) => {
-          const current = useRunStore.getState().activeRun;
-          if (!current || current.toolId !== toolId) {
-            return;
-          }
-          if (
-            !status.connected ||
-            current.sessionGeneration !== status.session_generation
-          ) {
-            // Sidecar reports a different managed session — drop the local
-            // active run so the tool can offer a fresh start.
-            clearActiveRun();
-            return;
-          }
-          markReconnected();
-        })
-        .catch(() => {
-          // Reconciliation is best-effort; surface failures via the next
-          // backend event rather than throwing here.
-        });
-    }
-  });
-
-  useEffect(() => {
-    if (runtimeMode !== "desktop-bridge") {
-      return;
-    }
-
-    let disposed = false;
-    let unlistenRun: (() => void) | undefined;
-    let unlistenSession: (() => void) | undefined;
-
-    void Promise.all([
-      backendClient.subscribeToRunEvents(handleRunEvent),
-      backendClient.subscribeToSessionEvents(handleSessionEvent),
-    ]).then(([runUnlisten, sessionUnlisten]) => {
-      if (disposed) {
-        runUnlisten();
-        sessionUnlisten();
-        return;
-      }
-
-      unlistenRun = runUnlisten;
-      unlistenSession = sessionUnlisten;
-    });
-
-    return () => {
-      disposed = true;
-      unlistenRun?.();
-      unlistenSession?.();
-    };
-  }, [handleRunEvent, handleSessionEvent, runtimeMode]);
 
   return {
     session,

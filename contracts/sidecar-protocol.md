@@ -57,10 +57,21 @@ All eight commands currently implemented by the sidecar:
 
 - `health_check`
   - request body: `{ "app": "reliability_tools_desktop" }`
-  - result payload: backend identity and protocol version
+  - result payload:
+    - `backend` — backend identity string (e.g. `"python-sidecar"`)
+    - `protocol_version` — NDJSON protocol version
+    - `mode` — `"desktop-bridge"` (filled in by the Rust layer)
+    - `log_directory` (added in 0.4.2, optional) — absolute path to the
+      sidecar log directory (`~/.reliability_tools/logs/` or the override
+      supplied via `RELIABILITY_TOOLS_LOG_DIR`). Surfaced to the frontend
+      so Settings › Logs can display the real path and reveal the folder
+      via the `reveal_in_file_manager` Tauri command.
 - `list_sheets`
   - request body: `{ "path": "C:\\path\\to\\file.xlsx" }`
   - result payload: workbook path and sheet names
+  - As of 0.4.2 the handler calls `ensure_file_available()` before
+    `openpyxl.load_workbook()`, so OneDrive cloud-only placeholders are
+    hydrated on demand rather than surfacing an opaque I/O error.
 - `inspect_input`
   - request body: `{ "path": "...", "sheet": "Sheet1", "role": "bom" }`
   - result payload:
@@ -74,6 +85,8 @@ All eight commands currently implemented by the sidecar:
       the data-row cap); informational only
     - `columns_scanned` — number of columns inspected (bounded by the column
       cap)
+    - `header_rows_scanned` — number of rows walked during header detection
+      (bounded by the 1 000-row `MAX_HEADER_SEARCH_ROWS` cap); informational
     - `row_cap_applied` — `true` when the data-row cap (20 000 rows) was hit
       and later rows were not examined
     - `column_cap_applied` — `true` when the column cap (100 columns) was hit
@@ -92,9 +105,9 @@ All eight commands currently implemented by the sidecar:
     - `merged_range_count`
     - `freeze_panes`
     - `protected_sheet`
-    - `rows_scanned`, `columns_scanned`, `row_cap_applied`,
-      `column_cap_applied`, `header_search_cap_applied` — same sampling-cap
-      metadata as `inspect_input`; see above
+    - `rows_scanned`, `columns_scanned`, `header_rows_scanned`,
+      `row_cap_applied`, `column_cap_applied`, `header_search_cap_applied` —
+      same sampling-cap metadata as `inspect_input`; see above
 - `validate_run`
   - request body:
     - `workflowId` — routes to the tool runtime; see Workflow Routing below
@@ -105,7 +118,9 @@ All eight commands currently implemented by the sidecar:
     - `outputDirectory` — string | null, optional. Absolute path to the
       folder where the generated output file should be written. When null or
       absent, the backend falls back to the input file's parent directory.
-      Currently honored by the FMEA runtime only.
+      Honored by every runtime (FMEA, BOM Compare, Failure Rate, RefDes
+      Extractor) as of 0.4.2; unwritable or missing directories fall back
+      to the input-parent heuristic with a warning logged via `stream_log`.
   - result payload:
     - `ok`
     - `reason_code`
@@ -227,9 +242,22 @@ can resolve the pending promise.
 {
   "kind": "error",
   "request_id": "req_abc123",
-  "payload": { "message": "openpyxl is not available" }
+  "payload": {
+    "message": "openpyxl is not available",
+    "exception_type": "ImportError"
+  }
 }
 ```
+
+**Payload fields:**
+
+- `message` — required string. Human-readable error summary suitable for
+  surfacing in a toast or dialog.
+- `exception_type` — optional string. Set when the error comes from an
+  unhandled Python exception in the top-level defense-in-depth catch inside
+  `sidecar_main.py`. Contains the Python exception class name (e.g.
+  `ValueError`, `KeyError`, `PermissionError`) for support-ticket triage.
+  Validation errors produced by command routers may omit this field.
 
 Run-scoped failures (raised inside the background thread after `ack`) are
 surfaced as `backend_error` terminal events, not as `error` envelopes. See the

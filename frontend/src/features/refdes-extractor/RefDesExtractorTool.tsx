@@ -9,9 +9,9 @@ import { ContextTabs } from "../../components/primitives/ContextTabs";
 import { EmptyState } from "../../components/primitives/EmptyState";
 import { OptionsField } from "../../components/primitives/OptionsField";
 import { OptionsSection } from "../../components/primitives/OptionsSection";
+import { OutputFolderPicker } from "../../components/OutputFolderPicker";
 import { ToggleChip } from "../../components/primitives/ToggleChip";
 import { MagnifyingGlass } from "@phosphor-icons/react";
-import { executeRunResultSchema } from "../../contracts/sidecar";
 import {
   refdesDemoScenarios,
 } from "../../mocks/scenarios";
@@ -25,6 +25,7 @@ import type {
 } from "../../app/types";
 import { backendClient, type RunRequestBody } from "../../shared/backend/client";
 import { buildCancelNotification } from "../../shared/backend/cancelError";
+import { parentDirectoryForPath } from "../../shared/backend/fileManager";
 import { buildRunTimeline, useBackendRunLifecycle } from "../../shared/backend/runLifecycle";
 import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
 import { useRoleRequestSequence } from "../../shared/hooks/useRoleRequestSequence";
@@ -57,10 +58,6 @@ function buildTimeline(runMode: RunMode, runIndex: number, templates: RunEventTe
 
     return { ...event, status };
   });
-}
-
-function parseRefDesRunResult(payload: unknown) {
-  return executeRunResultSchema.parse(payload);
 }
 
 type ExtractionMode = "functional" | "piece_part";
@@ -101,13 +98,19 @@ export function RefDesExtractorTool() {
   const handledDesktopTerminalRef = useRef<string | null>(null);
   const backendMode = useShellStore((state) => state.backendMode);
   const setBackendState = useShellStore((state) => state.setBackendState);
+  const refdesExtractorOutputDirectory = useShellStore(
+    (state) => state.refdesExtractorOutputDirectory,
+  );
+  const setRefdesExtractorOutputDirectory = useShellStore(
+    (state) => state.setRefdesExtractorOutputDirectory,
+  );
   const pushNotification = useNotificationStore((state) => state.push);
 
   const {
     session: desktopRunSession,
     beginAcceptedRun,
     resetSession: resetDesktopRunSession,
-  } = useBackendRunLifecycle("refdes_extractor", backendClient.runtimeMode, parseRefDesRunResult);
+  } = useBackendRunLifecycle("refdes_extractor");
   // Per-role token used to discard stale async listSheets results.
   const fileRequestSeq = useRoleRequestSequence<FileRole>();
 
@@ -197,6 +200,15 @@ export function RefDesExtractorTool() {
     backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.errorCode : null;
   const panelErrorTraceback =
     backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.errorTraceback : null;
+
+  async function handleRevealOutput(path: string) {
+    try {
+      await backendClient.revealInFileManager(parentDirectoryForPath(path));
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Failed to open output folder";
+      pushNotification({ tone: "error", title: "Open output folder failed", detail });
+    }
+  }
 
   // Pristine = no real input loaded yet AND no run has been started.
   const isPristine =
@@ -294,6 +306,7 @@ export function RefDesExtractorTool() {
         })),
       mappings: [],
       options,
+      outputDirectory: refdesExtractorOutputDirectory,
     };
   }
 
@@ -654,6 +667,11 @@ export function RefDesExtractorTool() {
                   setOptions((prev) => ({ ...prev, adaptive_geometry_enabled: next }))
                 }
               />
+
+              <OutputFolderPicker
+                value={refdesExtractorOutputDirectory}
+                onChange={setRefdesExtractorOutputDirectory}
+              />
             </OptionsSection>
           </div>
 
@@ -693,6 +711,9 @@ export function RefDesExtractorTool() {
                   truncatedLogCount={panelTruncatedLogCount}
                   errorCode={panelErrorCode}
                   errorTraceback={panelErrorTraceback}
+                  onRevealOutput={
+                    backendClient.runtimeMode === "desktop-bridge" ? (path) => void handleRevealOutput(path) : undefined
+                  }
                   startLabel="Extract"
                 />
               )}

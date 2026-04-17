@@ -1,4 +1,5 @@
 import type { RunEvent, RunMode, RunResult } from "../app/types";
+import { OPEN_FOLDER_LABEL } from "../shared/backend/fileManager";
 import { HoldButton } from "./primitives/HoldButton";
 
 interface RunStatePanelProps {
@@ -39,6 +40,8 @@ interface RunStatePanelProps {
   startDisabled?: boolean;
   /** Caption shown below the Start button when {@link startDisabled} is true. */
   startDisabledReason?: string;
+  onRevealOutput?: (path: string) => void;
+  revealOutputLabel?: string;
 }
 
 function formatEta(seconds: number): string {
@@ -76,6 +79,8 @@ export function RunStatePanel({
   stageLabel,
   startDisabled = false,
   startDisabledReason,
+  onRevealOutput,
+  revealOutputLabel = OPEN_FOLDER_LABEL,
 }: RunStatePanelProps) {
   const isBusy = runMode === "starting" || runMode === "running" || runMode === "cancelling";
   const canCancel = runMode === "starting" || runMode === "running";
@@ -249,6 +254,15 @@ export function RunStatePanel({
           <div className="run-result__body">
             <h3>{result.title}</h3>
             <p>{result.summary}</p>
+            {result.outputFile && onRevealOutput ? (
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => onRevealOutput(result.outputFile)}
+              >
+                {revealOutputLabel}
+              </button>
+            ) : null}
           </div>
           <div className="run-result__metrics">
             <div className="run-result__metric">

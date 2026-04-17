@@ -82,6 +82,10 @@ export const templateAnalysisResultSchema = z.object({
   freeze_panes: z.string().nullable(),
   protected_sheet: z.boolean(),
   rows_scanned: z.number(),
+  // Diagnostic: how many rows were scanned while searching for the header row
+  // in `analyze_template` (distinct from `rows_scanned`, which is the body
+  // scan count).
+  header_rows_scanned: z.number().optional(),
   columns_scanned: z.number(),
   row_cap_applied: z.boolean(),
   column_cap_applied: z.boolean(),
@@ -240,12 +244,41 @@ export const executeRunResultSchema = z.object({
   mode: backendModeSchema,
 });
 
+/**
+ * Schema for outbound command envelopes.
+ *
+ * NOTE: The frontend does not currently serialize command envelopes itself
+ * — the Rust bridge builds them — so this schema is retained primarily as
+ * a structural reference that TypeScript consumers can `z.infer<>` for
+ * type safety when writing adapters, tests, or mocks. If a browser-side
+ * sidecar emulator is added later, this schema is the correct gatekeeper.
+ */
 export const sidecarCommandSchema = sidecarEnvelopeSchema.extend({
   kind: z.literal("command"),
   payload: z.object({
     command: commandNameSchema,
     body: z.record(z.string(), z.unknown()),
   }),
+});
+
+// Synchronous command-level error envelope emitted by `sidecar_main.py` on
+// defense-in-depth catches (distinct from `backend_error` run-stream events).
+// The `exception_type` field is set for unhandled exceptions; command-level
+// validation errors may omit it.
+export const sidecarCommandErrorPayloadSchema = z.object({
+  message: z.string(),
+  exception_type: z.string().optional(),
+});
+
+export const fletConfigEntrySchema = z.record(
+  z.string(),
+  z.unknown(),
+);
+
+export const fletConfigResultSchema = z.object({
+  configs: z.record(z.string(), fletConfigEntrySchema),
+  namespaces: z.array(z.string()),
+  home: z.string(),
 });
 
 export type SidecarEnvelope = z.infer<typeof sidecarEnvelopeSchema>;
@@ -259,3 +292,5 @@ export type CancelRunResult = z.infer<typeof cancelRunResultSchema>;
 export type SidecarRunEvent = z.infer<typeof sidecarRunEventSchema>;
 export type BackendSessionEvent = z.infer<typeof backendSessionEventSchema>;
 export type ExecuteRunResult = z.infer<typeof executeRunResultSchema>;
+export type SidecarCommandErrorPayload = z.infer<typeof sidecarCommandErrorPayloadSchema>;
+export type FletConfigResult = z.infer<typeof fletConfigResultSchema>;

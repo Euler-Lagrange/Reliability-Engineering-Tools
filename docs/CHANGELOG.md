@@ -5,6 +5,188 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-04-16 — Hardening, Crash Reporting, CSP, Cross-Tool Output Picker
+
+### Added
+
+- **Content Security Policy** (production builds): `tauri.conf.json`
+  now sets `app.security.csp` to `default-src 'self' ipc:; script-src
+  'self'; style-src 'self' 'unsafe-inline'; object-src 'none';
+  base-uri 'self'; frame-ancestors 'none'` (full directive in
+  `docs/ARCHITECTURE.md › Security Surface`). Dev mode is unaffected —
+  CSP only applies to packaged release builds.
+- **Crash reporting** — three independent capture paths write
+  timestamped files into `~/.reliability_tools/logs/crashes/`:
+  - **Python**: `sidecar_main._install_crash_hooks()` wires
+    `sys.excepthook` AND `threading.excepthook`, skipping
+    `KeyboardInterrupt`/`SystemExit`, and emits a last-gasp `log`
+    envelope so the Rust bridge surfaces a notification before the
+    sidecar exits. Backed by new `common.logger.write_crash_dump()`.
+  - **Rust**: `install_rust_panic_hook()` in `src-tauri/src/lib.rs`
+    chains after the default panic printer. Uses `USERPROFILE`/`HOME`
+    directly — zero new Cargo dependencies.
+  - **Frontend**: `shared/errors/installGlobalErrorHandlers.ts`
+    catches `window.error` and `unhandledrejection` (neither caught by
+    `ErrorBoundary`) and pushes a toast via `useNotificationStore`.
+    Installed in `main.tsx` before the React root mounts.
+- **Cross-tool output-folder picker**: new reusable
+  `OutputFolderPicker` component under
+  `frontend/src/components/`. BOM Compare, Failure Rate, and RefDes
+  Extractor now surface the same picker UI the FMEA tool already had,
+  with per-tool persistence in `shellStore` (`bomCompareOutputDirectory`,
+  `failureRateOutputDirectory`, `refdesExtractorOutputDirectory`).
+- **Backend honors `outputDirectory` for every tool**: the BOM
+  Compare, Failure Rate, and RefDes Extractor runtimes now call the new
+  `common.utils.validate_explicit_output_directory()` helper. Missing
+  or unwritable directories fall back to the input-parent heuristic
+  with a warning streamed via the run log.
+- **`reveal_in_file_manager` Tauri command** (`src-tauri/src/lib.rs`):
+  opens a path in the host OS file manager (`explorer.exe` on Windows,
+  `open` on macOS, `xdg-open` on Linux). Wired into Settings › Logs
+  "Open in Explorer" and `OutputFolderPicker`. Zero new Cargo deps.
+- **`health_check` reports `log_directory`**: the Python sidecar now
+  returns its resolved log directory (`~/.reliability_tools/logs/` or
+  `$RELIABILITY_TOOLS_LOG_DIR`) on every `health_check`. Settings ›
+  Logs swaps the placeholder for the real path on first successful
+  check.
+- **Global notification "Dismiss all" action**: new `dismissAll` on
+  `useNotificationStore` with a matching button in `NotificationCenter`.
+- **`__APP_VERSION__` compile-time constant**: `frontend/vite.config.ts`
+  reads the repo-root `package.json` and defines `__APP_VERSION__` so
+  Settings › About displays the live version instead of a hand-typed
+  string. Declaration lives in `frontend/src/vite-env.d.ts`.
+- **Version bumper** (`scripts/bump-version.mjs`): single-command
+  update across `package.json`, `src-tauri/Cargo.toml`, and
+  `src-tauri/tauri.conf.json`, with `patch | minor | major | x.y.z` or
+  `--check` modes. Exposed as `npm run version:bump` / `npm run
+  version:check`.
+- **Release pipeline hardening** (`scripts/release.bat`): now a
+  10-step pipeline that adds explicit frontend typecheck (step 2) and
+  `python -m common.security_audit --strict` (step 3) before the
+  existing backend/frontend test and build steps, each with its own
+  fast-fail error label.
+- **Windows Job Object sidecar lifecycle** (`src-tauri/src/lib.rs`,
+  new `windows_job` module): the Rust bridge creates a Job Object with
+  `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` and assigns the Python sidecar
+  to it on spawn. If the bridge process is killed (or crashes without
+  clean shutdown), Windows reaps the sidecar automatically instead of
+  leaving an orphaned `python.exe` running. macOS/Linux are unaffected
+  — they already inherit POSIX parent-death cleanup. Zero new Cargo
+  dependencies; the module uses `windows-sys` types already pulled in
+  transitively by Tauri.
+- **"Open folder" affordance on successful runs**
+  (`frontend/src/components/RunStatePanel.tsx`): when a run result
+  includes an `outputFile`, the panel now renders an "Open folder"
+  button that invokes the `reveal_in_file_manager` Tauri command on
+  the containing directory. Wired into every tool via a shared
+  `parentDirectoryForPath` helper in the new
+  `frontend/src/shared/backend/fileManager.ts` module.
+
+### Changed
+
+- **Subprocess allowlist narrowed**: `common/security_audit.py`'s
+  `SUBPROCESS_ALLOWLIST` shrank from `{"attrib", "powershell", "start",
+  "python", "pythonw"}` to just `{"attrib"}` (the only command actually
+  invoked today, in `common/utils.py` for OneDrive hydration). Adding
+  any new subprocess call requires explicitly extending the allowlist
+  and updating `CLAUDE.md` / `docs/ARCHITECTURE.md`.
+- **Settings › About "Shell version"** now tracks `__APP_VERSION__`
+  from `package.json` instead of the stale hand-typed `0.2.2`.
+- **Text contrast**: `--text-faint` tightened across the Default,
+  Signal Slate, and Midnight Blue themes to meet WCAG AA against each
+  theme's surface tokens.
+- **Fatal-sidecar detail merged into disconnect messages**
+  (`src-tauri/src/lib.rs`, new `merge_disconnect_message` helper +
+  `fatal_sidecar_detail` field on `SessionShared`): the bridge now
+  captures the most recent error-level log line emitted by the
+  sidecar and appends it to the user-visible disconnect notification.
+  Users now see `Python sidecar closed stdout. Details: Unhandled
+  exception: RuntimeError: …` instead of an opaque "connection lost."
+- **Platform-aware keyboard shortcuts**
+  (`frontend/src/shared/hooks/shortcutUtils.ts` + `useAppShortcuts.ts`):
+  navigation and command-palette shortcuts use `Cmd` on macOS and
+  `Ctrl` everywhere else, and are suppressed while focus is in a text
+  input, textarea, or `contenteditable` region so typing never
+  accidentally swaps tools. Shortcut labels in the UI follow the
+  same platform convention.
+- **Shell-level run-event subscription**
+  (`frontend/src/shared/backend/useBackendRunSubscription.ts`, new):
+  subscription for `status` / `progress` / `log` / terminal events
+  moved out of per-tool hooks and into the App shell, so a running
+  job now survives switching between tools. `runLifecycle.ts` shrank
+  by ~123 lines; `useGlobalLogSubscription.ts` was deleted
+  (superseded). Per-tool hooks focus only on local session
+  projection.
+- **Notification toast dedup and 5-slot cap**
+  (`frontend/src/stores/notificationStore.ts`): identical toasts
+  (same `tone` / `title` / `detail`) increment a `count` and
+  re-arm the auto-dismiss timer instead of stacking; the visible
+  stack is capped at `MAX_VISIBLE_NOTIFICATIONS = 5` (FIFO eviction
+  of the oldest non-error toast when exceeded). Prevents backend
+  error bursts from burying the rest of the UI.
+
+### Fixed
+
+- **Atomic-write temp file naming** (`common.utils.atomic_write_path`):
+  generated temp paths now preserve the target suffix
+  (`<stem>.<hex>.part<suffix>` instead of `<name>.<hex>.part`), so
+  `openpyxl`'s post-write `verify_excel_readable()` — which sniffs
+  format from the file extension — accepts the temp file during atomic
+  finalize. Before the fix, any FMEA run that exercised the
+  post-write verification failed with `Post-write verification failed
+  for ... .part; workbook did not open.`.
+- **HoldButton double-invocation**: removed redundant
+  `onMouseDown`/`onTouchStart` handlers that could fire alongside
+  `onPointerDown` on platforms that dispatch both; a
+  `gestureActiveRef` guard now prevents a second `beginHold` call
+  inside the same gesture. Also added `aria-modal="true"`, focus
+  capture on open, focus restoration on close, and an `onCancel`
+  handler for Escape on the confirmation dialog.
+- **Error toasts announce as alerts**: `NotificationCenter` now
+  renders `role="alert"` on error-tone `<article>` elements so screen
+  readers pick them up as assertive live regions.
+- **FMEA demo data in desktop mode**: the FMEA tool no longer
+  pre-populates demo inputs when launched in desktop-bridge mode — the
+  demo scenario is scoped to `browser-mock` (`IS_BROWSER_MOCK`) and
+  desktop users start with empty inputs.
+- **ADR-002 terminology** (`docs/DECISIONS.md`): clarified that `id`
+  identifies every envelope uniquely, `request_id` correlates a
+  request/response pair, and `run_id` correlates a long-running run.
+- **`CLAUDE.md` stdin-atomicity wording**: disambiguated between
+  Rust's `Mutex<ChildStdin>` guard and `io::Stdin::lock()` to prevent
+  readers from confusing the two.
+- **`docs/ARCHITECTURE.md` stale line numbers**: replaced hardcoded
+  `src-tauri/src/lib.rs` line references with a grep instruction so
+  the doc survives unrelated refactors.
+- **`list_sheets` now hydrates OneDrive placeholders**
+  (`backend/python/sidecar_main.py`): the handler calls
+  `ensure_file_available()` before `openpyxl.load_workbook()`, so
+  cloud-only OneDrive placeholders are materialised on demand instead
+  of failing with an opaque `openpyxl` I/O error. Matches the
+  behaviour already in place for every run command.
+
+### Tests
+
+- **Backend total: 106 → 110.** Four new tests in `test_cancel_bridge.py`
+  cover the Failure Rate path: `FMEALinkerLogic.cancel` is a
+  `CancellationToken`; `logic.cancel.cancel()` sets the flag; the
+  sidecar's `ActiveRun.bind_processor(logic)` plus `request_cancel()`
+  propagates cancellation; and the race where cancel arrives *before*
+  the processor is bound is latched and replayed on bind.
+- **Frontend total: 148 → 153** across **20 → 23** test files. Three
+  new suites landed with the shell-level subscription / shortcut
+  rework:
+  - `useBackendBootstrap.test.ts` — bootstrap + session-generation
+    reconciliation on reconnect.
+  - `useBackendRunSubscription.test.ts` — shell-level run-event
+    subscription lifecycle.
+  - `useAppShortcuts.test.tsx` — platform-aware shortcut routing
+    and editable-field guards.
+  `RunStatePanel.test.tsx` also grew to cover the new Open-folder
+  affordance. `installGlobalErrorHandlers` is exercised indirectly
+  through the existing notification-store suites.
+- **Grand total: 254 → 263.**
+
 ## [0.4.1] - 2026-04-13 — Inspection Caps, Session Generation, Writeability Guard
 
 ### Added

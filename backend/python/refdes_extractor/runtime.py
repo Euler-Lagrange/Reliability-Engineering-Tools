@@ -16,6 +16,10 @@ from common import (
     CancellationToken,
     CancellationError,
     ConfigManager,
+    atomic_write_path,
+    atomic_finalize,
+    verify_excel_readable,
+    validate_explicit_output_directory,
 )
 from common.exceptions import ValidationError, ProcessingError
 from shared.pre_run_validation import LabeledState, LabeledValue, validate_pre_run_state
@@ -114,7 +118,17 @@ def _is_input_loaded(input_state: dict[str, Any], role: str) -> bool:
     return True
 
 
-def _resolve_output_directory(inputs_by_role: dict[str, dict[str, Any]]) -> Path:
+def _resolve_output_directory(
+    inputs_by_role: dict[str, dict[str, Any]],
+    explicit_directory: str | None = None,
+    log_callback: Callable[[str], None] | None = None,
+) -> Path:
+    resolved = validate_explicit_output_directory(
+        explicit_directory,
+        log_func=log_callback,
+    )
+    if resolved is not None:
+        return resolved
     for role in ("pdf", "bom"):
         candidate = _input_path(inputs_by_role, role)
         if candidate:
@@ -249,10 +263,6 @@ def execute_run_request(
     config = RefDesConfig.from_options(options)
     config_cm = config.to_config_manager()
 
-    output_directory = _resolve_output_directory(inputs_by_role)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = output_directory / f"RefDesExtract_{timestamp}.xlsx"
-
     pdf_path = _input_path(inputs_by_role, "pdf")
     bom_path = _input_path(inputs_by_role, "bom")
     pinlist_path = _input_path(inputs_by_role, "pinlist")
@@ -265,6 +275,14 @@ def execute_run_request(
         logs.append(message)
         if log_callback:
             log_callback(message)
+
+    output_directory = _resolve_output_directory(
+        inputs_by_role,
+        explicit_directory=body.get("outputDirectory"),
+        log_callback=stream_log,
+    )
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_path = output_directory / f"RefDesExtract_{timestamp}.xlsx"
 
     def emit_status(status: str, stage: str, message: str) -> None:
         if status_callback:
@@ -381,25 +399,38 @@ def execute_run_request(
     emit_status("running", "Writing workbook", "Writing extraction results...")
     emit_progress("Writing workbook", "Writing...", 92)
 
-    if results:
-        df = pd.DataFrame(results)
-        from openpyxl import Workbook
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "RefDes Extraction"
-        write_df_to_sheet(ws, df)
-        wb.save(str(output_path))
-        wb.close()
-    else:
-        # Empty results — write a placeholder sheet
-        from openpyxl import Workbook
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "RefDes Extraction"
-        ws.append(["Group", "Failure Mode Causes", "Component Count", "Pages"])
-        ws.append(["(No groups extracted)", "", 0, ""])
-        wb.save(str(output_path))
-        wb.close()
+    tmp_output = atomic_write_path(output_path)
+    try:
+        if results:
+            df = pd.DataFrame(results)
+            from openpyxl import Workbook
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "RefDes Extraction"
+            write_df_to_sheet(ws, df)
+            wb.save(str(tmp_output))
+            wb.close()
+        else:
+            from openpyxl import Workbook
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "RefDes Extraction"
+            ws.append(["Group", "Failure Mode Causes", "Component Count", "Pages"])
+            ws.append(["(No groups extracted)", "", 0, ""])
+            wb.save(str(tmp_output))
+            wb.close()
+        if not verify_excel_readable(tmp_output):
+            raise IOError(
+                f"Post-write verification failed for {tmp_output}; workbook did not open."
+            )
+        atomic_finalize(tmp_output, output_path, log_func=stream_log)
+    except Exception:
+        try:
+            if tmp_output.exists():
+                tmp_output.unlink()
+        except OSError:
+            pass
+        raise
 
     emit_progress("Complete", "Extraction complete.", 100)
 

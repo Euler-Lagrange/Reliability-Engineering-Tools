@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useShellStore, type ToolId } from "../../stores/shellStore";
 import { useThemeStore } from "../../stores/themeStore";
+import { isEditableKeyboardTarget, matchesPrimaryShortcut } from "./shortcutUtils";
 
 const orderedTools: ToolId[] = [
   "dark_star_fmea",
@@ -17,7 +18,13 @@ export function useAppShortcuts() {
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.ctrlKey && !event.shiftKey) {
+      // Guard: do not intercept number/bracket/letter keys while the user is
+      // typing. Without this, Ctrl+1 while focused in a text field would
+      // switch tools instead of inserting "1".
+      if (isEditableKeyboardTarget(event.target)) {
+        return;
+      }
+      if (matchesPrimaryShortcut(event, event.key)) {
         const numericIndex = Number.parseInt(event.key, 10);
         if (!Number.isNaN(numericIndex) && numericIndex >= 1 && numericIndex <= orderedTools.length) {
           event.preventDefault();
@@ -26,27 +33,27 @@ export function useAppShortcuts() {
         }
       }
 
-      if (event.ctrlKey && event.key === "]") {
+      if (matchesPrimaryShortcut(event, "]")) {
         event.preventDefault();
         const currentIndex = orderedTools.indexOf(activeToolId);
         setActiveToolId(orderedTools[(currentIndex + 1) % orderedTools.length]);
         return;
       }
 
-      if (event.ctrlKey && event.key === "[") {
+      if (matchesPrimaryShortcut(event, "[")) {
         event.preventDefault();
         const currentIndex = orderedTools.indexOf(activeToolId);
         setActiveToolId(orderedTools[(currentIndex - 1 + orderedTools.length) % orderedTools.length]);
         return;
       }
 
-      if (event.ctrlKey && event.altKey && event.key.toLowerCase() === "l") {
+      if (matchesPrimaryShortcut(event, "l", { requireAlt: true })) {
         event.preventDefault();
         setThemeMode("light_precision");
         return;
       }
 
-      if (event.ctrlKey && event.altKey && event.key.toLowerCase() === "d") {
+      if (matchesPrimaryShortcut(event, "d", { requireAlt: true })) {
         event.preventDefault();
         setThemeMode("dark_precision");
       }

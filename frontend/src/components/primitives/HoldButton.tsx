@@ -6,6 +6,7 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  type SyntheticEvent,
 } from "react";
 
 /**
@@ -48,7 +49,14 @@ export function HoldButton({
   const [holding, setHolding] = useState(false);
   const timerRef = useRef<number | null>(null);
   const firedRef = useRef(false);
+  // Synchronous guard that prevents a second beginHold() in the same gesture.
+  // React state (`holding`) lags across handlers, so a ref is required: on
+  // Chromium/WebView2 a single press can deliver `pointerdown` and
+  // `mousedown` (or synthesized click events) before the state commits, and
+  // without this guard two overlapping timers could fire.
+  const gestureActiveRef = useRef(false);
   const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   const liveRegionId = useId();
 
   const clearHoldTimer = useCallback(() => {
@@ -62,9 +70,10 @@ export function HoldButton({
     if (disabled) {
       return;
     }
-    if (holding || firedRef.current) {
+    if (gestureActiveRef.current || holding || firedRef.current) {
       return;
     }
+    gestureActiveRef.current = true;
     firedRef.current = false;
     setHolding(true);
     timerRef.current = window.setTimeout(() => {
@@ -72,8 +81,6 @@ export function HoldButton({
       firedRef.current = true;
       setHolding(false);
       onConfirm();
-      // Reset the fired guard on the next tick so the button can be held
-      // again for a follow-up action.
       window.setTimeout(() => {
         firedRef.current = false;
       }, 0);
@@ -83,6 +90,7 @@ export function HoldButton({
   const cancelHold = useCallback(() => {
     clearHoldTimer();
     setHolding(false);
+    gestureActiveRef.current = false;
   }, [clearHoldTimer]);
 
   useEffect(() => {
@@ -96,6 +104,9 @@ export function HoldButton({
     if (!dialog || disabled) {
       return;
     }
+    // Remember where focus was so we can return it on close (WCAG 2.4.3).
+    const active = document.activeElement;
+    returnFocusRef.current = active instanceof HTMLElement ? active : null;
     if (typeof dialog.showModal === "function") {
       try {
         dialog.showModal();
@@ -115,7 +126,24 @@ export function HoldButton({
         /* ignore */
       }
     }
+    const returnTo = returnFocusRef.current;
+    returnFocusRef.current = null;
+    if (returnTo && typeof returnTo.focus === "function") {
+      try {
+        returnTo.focus();
+      } catch {
+        /* ignore */
+      }
+    }
   }, []);
+
+  // Native <dialog> emits `cancel` on Escape; intercept to close cleanly and
+  // restore focus. Without this, Escape would call default `close()` without
+  // triggering our focus-restore path.
+  function handleDialogCancel(event: SyntheticEvent<HTMLDialogElement>) {
+    event.preventDefault();
+    closeDialog();
+  }
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
     if (disabled) {
@@ -171,11 +199,6 @@ export function HoldButton({
         onPointerUp={cancelHold}
         onPointerLeave={cancelHold}
         onPointerCancel={cancelHold}
-        onMouseDown={beginHold}
-        onMouseUp={cancelHold}
-        onMouseLeave={cancelHold}
-        onTouchStart={beginHold}
-        onTouchEnd={cancelHold}
         onKeyDown={handleKeyDown}
       >
         <span className="hold-button__fill" aria-hidden="true" />
@@ -187,8 +210,14 @@ export function HoldButton({
       <dialog
         ref={dialogRef}
         className="hold-button__dialog"
+        aria-modal="true"
+        aria-labelledby={`${liveRegionId}-dialog-title`}
+        onCancel={handleDialogCancel}
       >
-        <p className="hold-button__dialog-body">
+        <p
+          id={`${liveRegionId}-dialog-title`}
+          className="hold-button__dialog-body"
+        >
           {holdingLabel ?? `Confirm "${label}"?`}
         </p>
         <div className="hold-button__dialog-actions">

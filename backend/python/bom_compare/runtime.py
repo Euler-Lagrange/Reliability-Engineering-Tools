@@ -12,6 +12,10 @@ from common import (
     get_tool_logger,
     CancellationToken,
     CancellationError,
+    atomic_write_path,
+    atomic_finalize,
+    verify_excel_readable,
+    validate_explicit_output_directory,
 )
 from common.exceptions import ValidationError
 from shared.pre_run_validation import LabeledState, LabeledValue, validate_pre_run_state
@@ -99,7 +103,17 @@ def _get_mapping(body: dict[str, Any], canonical: str) -> str | None:
     return None
 
 
-def _resolve_output_directory(inputs_by_role: dict[str, dict[str, Any]]) -> Path:
+def _resolve_output_directory(
+    inputs_by_role: dict[str, dict[str, Any]],
+    explicit_directory: str | None = None,
+    log_callback: Callable[[str], None] | None = None,
+) -> Path:
+    resolved = validate_explicit_output_directory(
+        explicit_directory,
+        log_func=log_callback,
+    )
+    if resolved is not None:
+        return resolved
     for role in ("bom", "grouping", "bomA", "bomB"):
         candidate = _input_path(inputs_by_role, role)
         if candidate:
@@ -219,8 +233,6 @@ def execute_run_request(
     workflow_id = str(body.get("workflowId", "")).strip()
     inputs_by_role = _collect_inputs(body)
     options = body.get("options") or {}
-    output_directory = _resolve_output_directory(inputs_by_role)
-    output_path = output_directory / _build_output_name(workflow_id)
 
     logs: list[str] = []
 
@@ -228,6 +240,13 @@ def execute_run_request(
         logs.append(message)
         if log_callback:
             log_callback(message)
+
+    output_directory = _resolve_output_directory(
+        inputs_by_role,
+        explicit_directory=body.get("outputDirectory"),
+        log_callback=stream_log,
+    )
+    output_path = output_directory / _build_output_name(workflow_id)
 
     def emit_status(status: str, stage: str, message: str) -> None:
         if status_callback:
@@ -278,8 +297,21 @@ def _run_group_compare(
     group_sheet = _selected_sheet(inputs_by_role, "grouping")
     bom_sheet = _selected_sheet(inputs_by_role, "bom")
 
-    group_df = try_read_table(group_path, sheet_name=group_sheet, log_func=log)
-    bom_df = try_read_table(bom_path, sheet_name=bom_sheet, log_func=log)
+    # Pass cancel_check so a click on Cancel during a large OneDrive
+    # download / retry loop stops promptly instead of blocking until the
+    # read completes.
+    group_df = try_read_table(
+        group_path,
+        sheet_name=group_sheet,
+        log_func=log,
+        cancel_check=bridge.stop_event.is_set,
+    )
+    bom_df = try_read_table(
+        bom_path,
+        sheet_name=bom_sheet,
+        log_func=log,
+        cancel_check=bridge.stop_event.is_set,
+    )
 
     emit_progress("Reading input files", "Files loaded.", 15)
 
@@ -310,7 +342,24 @@ def _run_group_compare(
 
     emit_status("running", "Writing workbook", "Writing Excel report...")
     emit_progress("Writing workbook", "Writing...", 85)
-    write_excel_report(results, str(output_path))
+    # Atomic write: stage the workbook in a sibling .part file, verify it
+    # opens, then replace the target so a crash mid-write can't leave a
+    # half-written .xlsx in the user's output folder.
+    tmp_output = atomic_write_path(output_path)
+    try:
+        write_excel_report(results, str(tmp_output))
+        if not verify_excel_readable(tmp_output):
+            raise IOError(
+                f"Post-write verification failed for {tmp_output}; workbook did not open."
+            )
+        atomic_finalize(tmp_output, output_path, log_func=log)
+    except Exception:
+        try:
+            if tmp_output.exists():
+                tmp_output.unlink()
+        except OSError:
+            pass
+        raise
     emit_progress("Complete", "BOM comparison complete.", 100)
 
     missing_count = len(results.missing_in_bom)
@@ -351,8 +400,18 @@ def _run_custom_compare(
     sheet_a = _selected_sheet(inputs_by_role, "bomA")
     sheet_b = _selected_sheet(inputs_by_role, "bomB")
 
-    bom_a_df = try_read_table(path_a, sheet_name=sheet_a, log_func=log)
-    bom_b_df = try_read_table(path_b, sheet_name=sheet_b, log_func=log)
+    bom_a_df = try_read_table(
+        path_a,
+        sheet_name=sheet_a,
+        log_func=log,
+        cancel_check=bridge.stop_event.is_set,
+    )
+    bom_b_df = try_read_table(
+        path_b,
+        sheet_name=sheet_b,
+        log_func=log,
+        cancel_check=bridge.stop_event.is_set,
+    )
 
     emit_progress("Reading input files", "Files loaded.", 15)
 
@@ -387,7 +446,21 @@ def _run_custom_compare(
 
     emit_status("running", "Writing workbook", "Writing Excel report...")
     emit_progress("Writing workbook", "Writing...", 85)
-    write_bom_compare_excel(result, str(output_path), bom_a_name=name_a, bom_b_name=name_b)
+    tmp_output = atomic_write_path(output_path)
+    try:
+        write_bom_compare_excel(result, str(tmp_output), bom_a_name=name_a, bom_b_name=name_b)
+        if not verify_excel_readable(tmp_output):
+            raise IOError(
+                f"Post-write verification failed for {tmp_output}; workbook did not open."
+            )
+        atomic_finalize(tmp_output, output_path, log_func=log)
+    except Exception:
+        try:
+            if tmp_output.exists():
+                tmp_output.unlink()
+        except OSError:
+            pass
+        raise
     emit_progress("Complete", "Custom comparison complete.", 100)
 
     only_a = len(result.only_in_a)

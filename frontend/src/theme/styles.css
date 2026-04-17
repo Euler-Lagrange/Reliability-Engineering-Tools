@@ -94,7 +94,10 @@
   --text: #172433;
   --text-secondary: #415268;
   --text-muted: #617289;
-  --text-faint: #8794a8;
+  /* Bumped from #8794a8 (~2.9:1 on --surface) to #5e6d81 (~5.0:1) to meet
+     WCAG 2.1 AA body-text contrast. Used for helper/hint copy; keeping it
+     closer to --text-muted than pure 4.5:1 preserves visual hierarchy. */
+  --text-faint: #5e6d81;
   --text-on-accent: #ffffff;          /* For text rendered on top of --accent (primary buttons) */
   --accent: #235ee7;
   --accent-soft: #edf3ff;
@@ -170,7 +173,8 @@
   --text: #142131;
   --text-secondary: #3b4f63;
   --text-muted: #5f7388;
-  --text-faint: #8091a3;
+  /* Bumped from #8091a3 to #566a7f for WCAG AA contrast on --surface. */
+  --text-faint: #566a7f;
   --accent: #0f766e;
   --accent-soft: rgba(15, 118, 110, 0.12);
   --success: #14815f;
@@ -193,7 +197,8 @@
   --text: #e8f0fa;
   --text-secondary: #b8cce0;
   --text-muted: #8aa3bf;
-  --text-faint: #6680a0;
+  /* Bumped from #6680a0 (~3.9:1) to #8ca2c0 for AA contrast on --surface. */
+  --text-faint: #8ca2c0;
   --accent: #48cae4;
   --accent-soft: rgba(72, 202, 228, 0.16);
   --success: #5fd4a3;
@@ -2852,4 +2857,35 @@ tbody tr:hover {
 :root[data-theme="mission_control"] .input-card:hover {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px rgba(0, 217, 255, 0.15);
+}
+
+/* ============================================================
+   Reduced motion — respects the OS-level "Reduce motion"
+   preference (Windows Settings → Ease of Access → Display;
+   macOS System Settings → Accessibility → Display). Disables
+   non-essential animation / transitions globally. We intentionally
+   keep the dwell-drain bar visually collapsed (scaleX from 1 to 0)
+   but make it instantaneous so dismissal timing is still visible
+   without animation; the same applies to the hold-to-confirm fill.
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* HoldButton fill: keep the fill visible but don't animate the scale. */
+  .hold-button__fill {
+    transition: none !important;
+  }
+
+  /* Notification drain: collapse the progress bar immediately. */
+  .notification-toast__progress {
+    animation: none !important;
+    transform: scaleX(0);
+  }
 }

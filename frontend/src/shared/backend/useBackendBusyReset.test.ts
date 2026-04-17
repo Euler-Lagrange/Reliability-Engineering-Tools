@@ -40,18 +40,22 @@ function makeActiveRun(overrides: Partial<ActiveRunState>): ActiveRunState {
 }
 
 beforeEach(() => {
-  useRunStore.setState({ activeRun: null });
-  useShellStore.setState({
-    activeToolId: "dark_star_fmea",
-    backendStatus: "connecting",
-    backendMode: "unknown",
-    backendMessage: null,
-    lastBackendCheckAt: null,
+  act(() => {
+    useRunStore.setState({ activeRun: null });
+    useShellStore.setState({
+      activeToolId: "dark_star_fmea",
+      backendStatus: "connecting",
+      backendMode: "unknown",
+      backendMessage: null,
+      lastBackendCheckAt: null,
+    });
   });
 });
 
 afterEach(() => {
-  useRunStore.setState({ activeRun: null });
+  act(() => {
+    useRunStore.setState({ activeRun: null });
+  });
 });
 
 describe("useBackendBusyReset", () => {
@@ -94,8 +98,8 @@ describe("useBackendBusyReset", () => {
 
     act(() => {
       useRunStore.setState({ activeRun: null });
+      rerender();
     });
-    rerender();
 
     // Phase now reads idle (activeRun is null). Hook should leave busy alone.
     expect(useShellStore.getState().backendStatus).toBe("busy");
@@ -114,8 +118,8 @@ describe("useBackendBusyReset", () => {
 
     act(() => {
       useRunStore.setState({ activeRun: makeActiveRun({ phase: "cancelled" }) });
+      rerender();
     });
-    rerender();
 
     expect(useShellStore.getState().backendStatus).toBe("ready");
   });
@@ -130,8 +134,8 @@ describe("useBackendBusyReset", () => {
 
     act(() => {
       useRunStore.setState({ activeRun: makeActiveRun({ phase: "success" }) });
+      rerender();
     });
-    rerender();
 
     expect(useShellStore.getState().backendStatus).toBe("ready");
   });
@@ -146,8 +150,8 @@ describe("useBackendBusyReset", () => {
 
     act(() => {
       useRunStore.setState({ activeRun: makeActiveRun({ phase: "failure" }) });
+      rerender();
     });
-    rerender();
 
     expect(useShellStore.getState().backendStatus).toBe("ready");
   });

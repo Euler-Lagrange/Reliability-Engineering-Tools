@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 import { useShellStore } from "../stores/shellStore";
@@ -212,5 +212,19 @@ describe("tauri_build shell", () => {
 
     await user.click(screen.getByRole("button", { name: /piece-part from grouping file/i }));
     expect(within(outputsSection).queryByText("Target workbook")).not.toBeInTheDocument();
+  });
+
+  test("does not open the command palette while focus is inside an input", async () => {
+    renderApp();
+    await waitForFmeaTool();
+
+    const input = document.createElement("input");
+    document.body.appendChild(input);
+    input.focus();
+
+    fireEvent.keyDown(input, { key: "k", ctrlKey: true });
+
+    expect(screen.queryByRole("dialog", { name: /command palette/i })).not.toBeInTheDocument();
+    input.remove();
   });
 });

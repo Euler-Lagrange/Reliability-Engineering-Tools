@@ -29,8 +29,11 @@ corporate Windows images, authentication to prevent drive-by access, and
 graceful port-collision recovery.
 
 **Decision.** Use newline-delimited JSON (NDJSON) over the sidecar's stdin
-and stdout. One JSON object per line, request/response correlated by
-`id`, streaming events emitted as they happen.
+and stdout. One JSON object per line. Every envelope carries a unique
+`id`, while request/response pairs are correlated via `request_id` and
+long-running runs are tracked via `run_id`. Streaming events (`log`,
+`progress`, `status`) carry the `run_id` of their parent run and are
+emitted as they happen.
 
 **Consequences.** No network surface, no firewall dialogs, language-agnostic,
 ordered delivery by construction. The trade-off: stderr had to be routed to

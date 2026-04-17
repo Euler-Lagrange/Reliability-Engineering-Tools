@@ -51,24 +51,33 @@ npm run tauri:dev              # Desktop with hot reload
 
 ```powershell
 npm run typecheck              # TypeScript type checking
-npm test                       # Frontend tests (143 tests across 19 test suites)
-.venv\Scripts\python.exe -m pytest backend\tests -v   # Backend tests (101 tests across sidecar, audit, cancel bridge, FMEA phase D)
+npm test                       # Frontend tests (153 tests across 23 test suites)
+.venv\Scripts\python.exe -m pytest backend\tests -v   # Backend tests (110 tests across sidecar, audit, cancel bridge, FMEA phase D)
 ```
 
 ### Build
 
 ```powershell
 npm run tauri:build:portable   # Portable .exe (no installer)
-npm run release                # Full release pipeline
+npm run release                # Full 10-step release pipeline (typecheck + audit + tests + build + self-tests)
 ```
 
 Release artifact: `local_build\ReliabilityToolsDesktop.exe`
+
+### Version management
+
+```powershell
+npm run version:check          # Verify package.json / Cargo.toml / tauri.conf.json agree
+npm run version:bump -- 0.4.3  # Update all three manifests in lockstep
+```
 
 ## Sidecar Protocol
 
 NDJSON over stdio between Rust and Python. Commands: `health_check`, `list_sheets`, `inspect_input`, `analyze_template`, `validate_run`, `execute_run`, `cancel_run`, `read_flet_config`.
 
 - `execute_run` streams progress/log events with a terminal result
+- `health_check` now reports the sidecar log directory so Settings › Logs can reveal it
+- `validate_run` / `execute_run` accept an optional `outputDirectory` honored by every tool
 - Heartbeat supervision: Python emits every 5s, Rust times out at 15s
 - Automatic frontend reconnection with exponential backoff on disconnect
 - Full spec in `contracts/sidecar-protocol.md`
@@ -80,6 +89,8 @@ NDJSON over stdio between Rust and Python. Commands: `health_check`, `list_sheet
 - **Atomic stdin writes** — payload + newline + flush under a single mutex lock
 - **PyMuPDF** required for RefDes Extractor (PDF processing)
 - **CancellationError** propagates through `InterruptedError → OSError → Exception` chain
+- **Crash dumps** — unhandled Python exceptions (main + worker threads) and Rust panics write timestamped files to `~/.reliability_tools/logs/crashes/`
+- **Content Security Policy** — production builds ship a conservative CSP (`default-src 'self' ipc:`, `script-src 'self'`, `object-src 'none'`, etc.); dev mode is unaffected
 
 ## Project Status
 

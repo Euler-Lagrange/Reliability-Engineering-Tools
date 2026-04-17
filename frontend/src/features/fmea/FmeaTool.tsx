@@ -9,7 +9,6 @@ import { WorkflowSelector } from "../../components/WorkflowSelector";
 import { OptionsField } from "../../components/primitives/OptionsField";
 import { ToggleChip } from "../../components/primitives/ToggleChip";
 import { FolderOpen } from "@phosphor-icons/react";
-import { executeRunResultSchema } from "../../contracts/sidecar";
 import { demoScenarios, outputStrategies, workflowOptions } from "../../mocks/scenarios";
 import type {
   AnalysisContextCard,
@@ -40,6 +39,7 @@ import {
   type RunRequestBody,
 } from "../../shared/backend/client";
 import { buildCancelNotification } from "../../shared/backend/cancelError";
+import { parentDirectoryForPath } from "../../shared/backend/fileManager";
 import { buildRunTimeline, useBackendRunLifecycle } from "../../shared/backend/runLifecycle";
 import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
 import { useRoleRequestSequence } from "../../shared/hooks/useRoleRequestSequence";
@@ -228,10 +228,6 @@ function toFailureResult(detail: string) {
   };
 }
 
-function parseFmeaRunResult(payload: unknown) {
-  return executeRunResultSchema.parse(payload);
-}
-
 function cloneInputs(inputs: InputFileState[]) {
   return inputs.map((input) => ({
     ...input,
@@ -242,6 +238,39 @@ function cloneInputs(inputs: InputFileState[]) {
     resolutionError: input.resolutionError ?? null,
   }));
 }
+
+/**
+ * Produce an empty InputFileState[] suitable for the desktop (real) runtime,
+ * where we must not pre-fill demo file paths. Role/label/helper/tag
+ * semantics are preserved so the InputCards render with the same
+ * scaffolding; only the path, sheet list, and loaded flags are reset.
+ */
+function emptyInputsFromScenario(inputs: InputFileState[]): InputFileState[] {
+  return inputs.map((input) => ({
+    ...input,
+    path: "",
+    sheets: [],
+    selectedSheet: "",
+    isExample: false,
+    source: "desktop-bridge",
+    isResolvingSheets: false,
+    isAnalyzing: false,
+    resolutionError: null,
+  }));
+}
+
+// Evaluate once at module load; `backendClient.runtimeMode` is fixed per
+// session (the bridge cannot switch runtime modes after boot).
+const IS_BROWSER_MOCK = backendClient.runtimeMode === "browser-mock";
+const initialInputs: InputFileState[] = IS_BROWSER_MOCK
+  ? cloneInputs(demoScenarios[0].inputs)
+  : emptyInputsFromScenario(demoScenarios[0].inputs);
+const initialValidations: ValidationMessage[] = IS_BROWSER_MOCK
+  ? demoScenarios[0].validations
+  : [];
+const initialRunTemplates: RunEventTemplate[] = IS_BROWSER_MOCK
+  ? demoScenarios[0].runSequence.events
+  : fmeaRunEvents;
 
 /**
  * Phase 5: Build the FMEA mapping rows from the canonical metadata.
@@ -405,15 +434,20 @@ export function FmeaTool() {
   // persisted so switching modes + coming back doesn't clear it.
   const [ccaPrefix, setCcaPrefix] = useState<string>(() => readStoredCcaPrefix());
   const [ccaPrefixTouched, setCcaPrefixTouched] = useState<boolean>(false);
-  const [inputStates, setInputStates] = useState<InputFileState[]>(() => cloneInputs(baseScenario.inputs));
-  const [validations, setValidations] = useState<ValidationMessage[]>(baseScenario.validations);
+  // In desktop mode we start with empty files, empty validations, and the
+  // real FMEA run-event timeline. In browser-mock mode we seed with the
+  // demo scenario so the preview is populated. See `IS_BROWSER_MOCK`.
+  const [inputStates, setInputStates] = useState<InputFileState[]>(() =>
+    IS_BROWSER_MOCK ? cloneInputs(baseScenario.inputs) : initialInputs,
+  );
+  const [validations, setValidations] = useState<ValidationMessage[]>(initialValidations);
   const [inputInspections, setInputInspections] = useState<Partial<Record<FileRole, InputInspection>>>({});
   const [workbookColumnsByRole, setWorkbookColumnsByRole] = useState<Partial<Record<FileRole, string[]>>>({});
   const [templateAnalyses, setTemplateAnalyses] = useState<Partial<Record<FileRole, TemplateAnalysis>>>({});
   const [mappingOverrides, setMappingOverrides] = useState<Record<string, string>>({});
   const [runMode, setRunMode] = useState<RunMode>("idle");
   const [runIndex, setRunIndex] = useState(-1);
-  const [runTemplates, setRunTemplates] = useState<RunEventTemplate[]>(baseScenario.runSequence.events);
+  const [runTemplates, setRunTemplates] = useState<RunEventTemplate[]>(initialRunTemplates);
   const [runResult, setRunResult] = useState<typeof baseScenario.runSequence.result | null>(null);
   const [runLogLines, setRunLogLines] = useState<string[]>([]);
   const [cancelledNotice, setCancelledNotice] = useState<string | null>(null);
@@ -429,14 +463,14 @@ export function FmeaTool() {
     session: desktopRunSession,
     beginAcceptedRun,
     resetSession: resetDesktopRunSession,
-  } = useBackendRunLifecycle("dark_star_fmea", backendClient.runtimeMode, parseFmeaRunResult);
+  } = useBackendRunLifecycle("dark_star_fmea");
   // Per-role token used to discard stale async sheet/inspect/analyze results
   // when the user changes the input under a still-resolving operation.
   const fileRequestSeq = useRoleRequestSequence<FileRole>();
 
   useEffect(() => {
     startTransition(() => {
-      setValidations(baseScenario.validations);
+      setValidations(initialValidations);
       setMappingOverrides({});
       // Fix B2: inspection / analysis state is keyed by FileRole and is
       // NOT workflow-specific, so the previous
@@ -456,7 +490,7 @@ export function FmeaTool() {
       // stale entry, so no staleness can leak into a run.
       setRunMode("idle");
       setRunIndex(-1);
-      setRunTemplates(baseScenario.runSequence.events);
+      setRunTemplates(initialRunTemplates);
       setRunResult(null);
       setRunLogLines([]);
       setCancelledNotice(null);
@@ -589,6 +623,15 @@ export function FmeaTool() {
     backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.errorCode : null;
   const panelErrorTraceback =
     backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.errorTraceback : null;
+
+  async function handleRevealOutput(path: string) {
+    try {
+      await backendClient.revealInFileManager(parentDirectoryForPath(path));
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Failed to open output folder";
+      pushNotification({ tone: "error", title: "Open output folder failed", detail });
+    }
+  }
 
   const mappingCoverage =
     inspectedColumns.length > 0 && effectiveMappings.length > 0
@@ -1480,7 +1523,7 @@ export function FmeaTool() {
               {contextView === "preview" ? (
                 <ValidationPreview
                   validations={previewValidations}
-                  previewRows={baseScenario.previewRows}
+                  previewRows={IS_BROWSER_MOCK ? baseScenario.previewRows : []}
                   analysisCards={analysisCards}
                 />
               ) : (
@@ -1499,6 +1542,9 @@ export function FmeaTool() {
                   statusMessage={panelStatusMessage}
                   startDisabled={bomOnlyBlockedReason !== null}
                   startDisabledReason={bomOnlyBlockedReason ?? undefined}
+                  onRevealOutput={
+                    backendClient.runtimeMode === "desktop-bridge" ? (path) => void handleRevealOutput(path) : undefined
+                  }
                   onStart={() => {
                     void handleStartRun();
                   }}

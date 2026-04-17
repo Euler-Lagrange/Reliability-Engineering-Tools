@@ -23,15 +23,21 @@ export function ScenarioRail({
         <p>{activeDescription}</p>
       </div>
 
-      <div className="scenario-rail__list" role="tablist" aria-label="Demo scenarios">
+      {/*
+        These pills toggle between fixture scenarios. They are NOT ARIA
+        tabs because no `tabpanel` is rendered — the tablist/tab roles were
+        misleading to assistive tech. Using `aria-pressed` on plain buttons
+        expresses the pressed/unpressed toggle state correctly.
+      */}
+      <div className="scenario-rail__list" role="group" aria-label="Demo scenarios">
         {scenarios.map((scenario, index) => (
           <button
             key={scenario.id}
+            type="button"
             className="scenario-pill"
             data-active={scenario.id === selectedScenarioId}
             onClick={() => onSelect(scenario.id)}
-            role="tab"
-            aria-selected={scenario.id === selectedScenarioId}
+            aria-pressed={scenario.id === selectedScenarioId}
           >
             <span className="scenario-pill__label">{scenario.label}</span>
             <span className="scenario-pill__meta">S{String(index + 1).padStart(2, "0")}</span>

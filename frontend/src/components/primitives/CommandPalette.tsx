@@ -76,6 +76,10 @@ export function CommandPalette({ actions, open, onClose }: CommandPaletteProps) 
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Element that had focus when the palette opened; we restore focus here
+  // on close to preserve keyboard navigation flow (WCAG 2.4.3).
+  const returnFocusRef = useRef<HTMLElement | null>(null);
 
   const filteredActions = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -84,17 +88,33 @@ export function CommandPalette({ actions, open, onClose }: CommandPaletteProps) 
 
   const groupedActions = useMemo(() => groupActions(filteredActions.slice()), [filteredActions]);
 
-  // Reset state when the palette opens.
+  // Reset state when the palette opens / restore focus on close.
   useEffect(() => {
     if (open) {
       setQuery("");
       setActiveIndex(0);
-      // Auto-focus the input on next tick so the textbox is ready when
-      // the browser finishes mounting the dialog.
+      // Capture the element that had focus before we opened, so we can
+      // return it on close. Guard against the palette itself being the
+      // active element in dev double-renders.
+      const active = document.activeElement;
+      returnFocusRef.current =
+        active instanceof HTMLElement && active !== inputRef.current
+          ? active
+          : returnFocusRef.current;
       const handle = window.setTimeout(() => {
         inputRef.current?.focus();
       }, 0);
       return () => window.clearTimeout(handle);
+    }
+    // Closed: restore focus.
+    const returnTo = returnFocusRef.current;
+    returnFocusRef.current = null;
+    if (returnTo && typeof returnTo.focus === "function") {
+      try {
+        returnTo.focus();
+      } catch {
+        /* ignore */
+      }
     }
     return undefined;
   }, [open]);
@@ -119,6 +139,36 @@ export function CommandPalette({ actions, open, onClose }: CommandPaletteProps) 
       if (event.key === "Escape") {
         event.preventDefault();
         onClose();
+        return;
+      }
+      // Focus trap: Tab inside the palette cycles between focusable
+      // descendants without escaping to the shell behind the overlay.
+      if (event.key === "Tab") {
+        const container = dialogRef.current;
+        if (!container) return;
+        const focusables = Array.from(
+          container.querySelectorAll<HTMLElement>(
+            'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])',
+          ),
+        ).filter((el) => !el.hasAttribute("aria-hidden"));
+        if (focusables.length === 0) {
+          event.preventDefault();
+          return;
+        }
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const current = document.activeElement as HTMLElement | null;
+        if (event.shiftKey) {
+          if (current === first || !container.contains(current)) {
+            event.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (current === last || !container.contains(current)) {
+            event.preventDefault();
+            first.focus();
+          }
+        }
         return;
       }
       if (event.key === "ArrowDown") {
@@ -178,6 +228,7 @@ export function CommandPalette({ actions, open, onClose }: CommandPaletteProps) 
       onKeyDown={handleKeyDown}
     >
       <div
+        ref={dialogRef}
         className="command-palette"
         role="dialog"
         aria-modal="true"

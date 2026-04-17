@@ -143,7 +143,14 @@ class FMEALinkerLogic:
             sheet_name: Excel sheet name or index (None = first sheet).
         """
         self.log(f"Loading Prediction: {Path(path).name}")
-        self.prediction_df = try_read_table(path, sheet_name=sheet_name, log_func=self.log)
+        # Pass cancel_check so Cancel interrupts slow OneDrive reads /
+        # retry loops instead of blocking until the read completes.
+        self.prediction_df = try_read_table(
+            path,
+            sheet_name=sheet_name,
+            log_func=self.log,
+            cancel_check=self.cancel.is_cancelled,
+        )
         if self.prediction_df is None or self.prediction_df.empty:
             raise FileAccessError(
                 f"Failed to load prediction data from '{path}' or file is empty",
@@ -160,7 +167,12 @@ class FMEALinkerLogic:
             sheet_name: Excel sheet name or index (None = first sheet).
         """
         self.log(f"Loading FMEA: {Path(path).name}")
-        self.fmea_df = try_read_table(path, sheet_name=sheet_name, log_func=self.log)
+        self.fmea_df = try_read_table(
+            path,
+            sheet_name=sheet_name,
+            log_func=self.log,
+            cancel_check=self.cancel.is_cancelled,
+        )
         if self.fmea_df is None or self.fmea_df.empty:
             raise FileAccessError(
                 f"Failed to load FMEA data from '{path}' or file is empty",

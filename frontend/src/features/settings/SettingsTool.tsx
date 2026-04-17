@@ -1,18 +1,21 @@
 import { useState } from "react";
 import { ArrowClockwise, FolderOpen, Heart } from "@phosphor-icons/react";
 import { SectionCard } from "../../components/SectionCard";
+import { protocolVersion } from "../../contracts/sidecar";
+import { OPEN_FOLDER_LABEL } from "../../shared/backend/fileManager";
 import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
 import { useThemeStore } from "../../stores/themeStore";
 import { useResolvedTheme } from "../../shared/theme/ThemeController";
-import { THEME_REGISTRY, labelForTheme } from "../../shared/theme/themeRegistry";
+import { THEME_REGISTRY } from "../../shared/theme/themeRegistry";
 import { useShellStore } from "../../stores/shellStore";
 import { backendClient } from "../../shared/backend/client";
 import { useNotificationStore } from "../../stores/notificationStore";
 import styles from "./SettingsTool.module.css";
 
-// TODO: replace with a real log directory path once the sidecar exposes
-// its log location via a health/config command. For now this placeholder
-// makes the UI honest about the data we have.
+// Fallback label when the sidecar has not reported its real log directory
+// yet (first paint, browser-mock mode, or older sidecar protocol). Once a
+// successful ``health_check`` returns ``log_directory``, the UI swaps to
+// the real absolute path.
 const LOG_DIRECTORY_PLACEHOLDER = "~/.reliability_tools/logs/";
 
 function classifyLatency(latencyMs: number | null): {
@@ -50,6 +53,10 @@ export function SettingsTool() {
   // Phase 4 Task 8: last-ping latency displayed with a colored dot.
   // Stored locally because the shell store does not track latency today.
   const [lastLatencyMs, setLastLatencyMs] = useState<number | null>(null);
+  // Real sidecar log directory, populated by the most recent successful
+  // health_check. Null until the first check or when in browser-mock.
+  const [logDirectory, setLogDirectory] = useState<string | null>(null);
+  const displayedLogPath = logDirectory ?? LOG_DIRECTORY_PLACEHOLDER;
   const latency = classifyLatency(lastLatencyMs);
 
   async function handleHealthCheck() {
@@ -59,6 +66,9 @@ export function SettingsTool() {
       const result = await backendClient.healthCheck();
       const latencyMs = Math.round(performance.now() - startedAt);
       setLastLatencyMs(latencyMs);
+      if (result.log_directory) {
+        setLogDirectory(result.log_directory);
+      }
       setBackendState({
         backendStatus: "ready",
         backendMode: result.mode,
@@ -85,23 +95,40 @@ export function SettingsTool() {
   }
 
   function handleCopyLogPath() {
-    void navigator.clipboard?.writeText(LOG_DIRECTORY_PLACEHOLDER).catch(() => {});
+    void navigator.clipboard?.writeText(displayedLogPath).catch(() => {});
     pushNotification({
       tone: "info",
       title: "Log path copied",
-      detail: `Path: ${LOG_DIRECTORY_PLACEHOLDER}`,
+      detail: `Path: ${displayedLogPath}`,
     });
   }
 
-  function handleOpenLogDir() {
-    // TODO: wire to a Tauri command (e.g. `shell.open`) once the backend
-    // exposes its real log directory path. For now this is a stub that
-    // surfaces intent via the notification system.
-    pushNotification({
-      tone: "info",
-      title: "Open in Explorer (stub)",
-      detail: "Backend log directory is not yet wired. This button is a placeholder.",
-    });
+  async function handleOpenLogDir() {
+    if (backendClient.runtimeMode !== "desktop-bridge") {
+      pushNotification({
+        tone: "info",
+        title: "Desktop runtime required",
+        detail:
+          "Opening the log folder uses the native OS file manager — run the Tauri desktop shell.",
+      });
+      return;
+    }
+    if (!logDirectory) {
+      pushNotification({
+        tone: "info",
+        title: "Log directory unknown",
+        detail:
+          "Run a health check first so the sidecar can report its real log directory.",
+      });
+      return;
+    }
+    try {
+      await backendClient.revealInFileManager(logDirectory);
+    } catch (error) {
+      const detail =
+        error instanceof Error ? error.message : "Failed to open log folder";
+      pushNotification({ tone: "error", title: "Open log folder failed", detail });
+    }
   }
 
   return (
@@ -144,7 +171,7 @@ export function SettingsTool() {
             <SectionCard title="Logs" eyebrow="Diagnostics">
               <div className={styles.diagnosticStack}>
                 <div className="settings__logs-path">
-                  <code>{LOG_DIRECTORY_PLACEHOLDER}</code>
+                  <code title={displayedLogPath}>{displayedLogPath}</code>
                   <button
                     type="button"
                     className={styles.healthButton}
@@ -155,10 +182,12 @@ export function SettingsTool() {
                   <button
                     type="button"
                     className={styles.healthButton}
-                    onClick={handleOpenLogDir}
+                    onClick={() => {
+                      void handleOpenLogDir();
+                    }}
                   >
                     <FolderOpen size={14} weight="bold" />
-                    Open in Explorer
+                    {OPEN_FOLDER_LABEL}
                   </button>
                 </div>
               </div>
@@ -221,11 +250,11 @@ export function SettingsTool() {
                   </div>
                   <div className={styles.diagnosticField}>
                     <p className={styles.diagnosticLabel}>Shell version</p>
-                    <p className={styles.diagnosticValue}>0.2.2</p>
+                    <p className={styles.diagnosticValue}>{__APP_VERSION__}</p>
                   </div>
                   <div className={styles.diagnosticField}>
                     <p className={styles.diagnosticLabel}>Protocol</p>
-                    <p className={styles.diagnosticValue}>NDJSON v0.1.0</p>
+                    <p className={styles.diagnosticValue}>NDJSON v{protocolVersion}</p>
                   </div>
                 </div>
                 <p className={styles.aboutFooter}>

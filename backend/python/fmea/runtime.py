@@ -8,6 +8,12 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from common.exceptions import ValidationError
+from common import (
+    is_writable_directory,
+    atomic_write_path,
+    atomic_finalize,
+    verify_excel_readable,
+)
 
 from shared.pre_run_validation import LabeledState, LabeledValue, validate_pre_run_state
 from fmea.fmea_generator_logic import FMEAProcessor, write_excel_report
@@ -455,12 +461,8 @@ def _selected_sheet(inputs_by_role: dict[str, dict[str, Any]], role: str) -> str
 
 
 def _is_writable_directory(path: Path) -> bool:
-    """Return True when ``path`` can accept a newly created file."""
-    try:
-        with tempfile.TemporaryFile(dir=path):
-            return True
-    except OSError:
-        return False
+    """Compatibility wrapper around the shared ``is_writable_directory`` helper."""
+    return is_writable_directory(path)
 
 
 def _resolve_output_directory(
@@ -858,18 +860,46 @@ def execute_run_request(
             log_func=stream_log_callback,
             failure_modes_standard=failure_modes_standard,
         )
+        tmp_output = atomic_write_path(output_path)
         try:
             write_template_preserved(
                 wb, template_map, dataframe, processor,
-                str(output_path),
+                str(tmp_output),
                 cancel_token=processor.cancel,
                 log_func=stream_log_callback,
                 failure_modes_standard=failure_modes_standard,
             )
         finally:
             wb.close()
+        try:
+            if not verify_excel_readable(tmp_output):
+                raise IOError(
+                    f"Post-write verification failed for {tmp_output}; workbook did not open."
+                )
+            atomic_finalize(tmp_output, output_path, log_func=stream_log_callback)
+        except Exception:
+            try:
+                if tmp_output.exists():
+                    tmp_output.unlink()
+            except OSError:
+                pass
+            raise
     else:
-        write_excel_report(dataframe, output_path, processor)
+        tmp_output = atomic_write_path(output_path)
+        try:
+            write_excel_report(dataframe, tmp_output, processor)
+            if not verify_excel_readable(tmp_output):
+                raise IOError(
+                    f"Post-write verification failed for {tmp_output}; workbook did not open."
+                )
+            atomic_finalize(tmp_output, output_path, log_func=stream_log_callback)
+        except Exception:
+            try:
+                if tmp_output.exists():
+                    tmp_output.unlink()
+            except OSError:
+                pass
+            raise
 
     _emit_progress(
         progress_callback,

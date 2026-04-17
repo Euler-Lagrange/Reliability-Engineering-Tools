@@ -12,6 +12,79 @@ use std::{
 };
 use tauri::{AppHandle, Emitter, Manager};
 
+#[cfg(target_os = "windows")]
+mod windows_job {
+    use std::{io, os::windows::io::AsRawHandle, process::Child, ptr};
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+
+    pub struct WindowsJobObject(HANDLE);
+
+    impl WindowsJobObject {
+        pub fn create() -> Result<Self, String> {
+            let handle = unsafe { CreateJobObjectW(ptr::null(), ptr::null()) };
+            if handle == 0 {
+                return Err(format!(
+                    "Failed to create Windows Job Object: {}",
+                    io::Error::last_os_error()
+                ));
+            }
+
+            let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = unsafe { std::mem::zeroed() };
+            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+
+            let status = unsafe {
+                SetInformationJobObject(
+                    handle,
+                    JobObjectExtendedLimitInformation,
+                    &mut info as *mut _ as *mut _,
+                    std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                )
+            };
+            if status == 0 {
+                unsafe {
+                    CloseHandle(handle);
+                }
+                return Err(format!(
+                    "Failed to configure Windows Job Object: {}",
+                    io::Error::last_os_error()
+                ));
+            }
+
+            Ok(Self(handle))
+        }
+
+        pub fn assign_child(&self, child: &Child) -> Result<(), String> {
+            let process_handle = child.as_raw_handle() as HANDLE;
+            let status = unsafe { AssignProcessToJobObject(self.0, process_handle) };
+            if status == 0 {
+                return Err(format!(
+                    "Failed to assign sidecar to Windows Job Object: {}",
+                    io::Error::last_os_error()
+                ));
+            }
+            Ok(())
+        }
+    }
+
+    impl Drop for WindowsJobObject {
+        fn drop(&mut self) {
+            if self.0 != 0 {
+                unsafe {
+                    CloseHandle(self.0);
+                }
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+use windows_job::WindowsJobObject;
+
 const PROTOCOL_VERSION: &str = "0.1.0";
 const BACKEND_RUN_EVENT: &str = "backend://run-event";
 const BACKEND_SESSION_EVENT: &str = "backend://session";
@@ -24,6 +97,10 @@ struct BackendHealthResponse {
     backend: String,
     protocol_version: String,
     mode: String,
+    // Absolute path to the sidecar log directory. Surfaced to the frontend
+    // so Settings > Logs can reveal the real path instead of a placeholder.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    log_directory: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -59,6 +136,11 @@ struct TemplateAnalysisResponse {
     freeze_panes: Option<String>,
     protected_sheet: bool,
     rows_scanned: u32,
+    // Diagnostic: how many rows were scanned while searching for the header
+    // row. Emitted by Python `analyze_template`; `None` if the field is
+    // missing from the sidecar payload (older sidecars).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    header_rows_scanned: Option<u32>,
     columns_scanned: u32,
     row_cap_applied: bool,
     column_cap_applied: bool,
@@ -93,6 +175,8 @@ struct CancelRunResponse {
 struct ManagedSidecar {
     child: Arc<Mutex<Child>>,
     stdin: Arc<Mutex<ChildStdin>>,
+    #[cfg(target_os = "windows")]
+    job_object: Arc<WindowsJobObject>,
 }
 
 impl ManagedSidecar {
@@ -119,6 +203,7 @@ struct SessionShared {
     app_handle: Mutex<Option<AppHandle>>,
     last_heartbeat: Mutex<Option<Instant>>,
     session_generation: Mutex<u64>,
+    fatal_sidecar_detail: Mutex<Option<String>>,
 }
 
 impl SessionShared {
@@ -129,6 +214,7 @@ impl SessionShared {
             app_handle: Mutex::new(None),
             last_heartbeat: Mutex::new(None),
             session_generation: Mutex::new(0),
+            fatal_sidecar_detail: Mutex::new(None),
         }
     }
 
@@ -221,6 +307,25 @@ impl SessionShared {
         }
     }
 
+    fn clear_fatal_sidecar_detail(&self) {
+        if let Ok(mut guard) = self.fatal_sidecar_detail.lock() {
+            *guard = None;
+        }
+    }
+
+    fn record_fatal_sidecar_detail(&self, detail: String) {
+        if let Ok(mut guard) = self.fatal_sidecar_detail.lock() {
+            *guard = Some(detail);
+        }
+    }
+
+    fn take_fatal_sidecar_detail(&self) -> Option<String> {
+        self.fatal_sidecar_detail
+            .lock()
+            .ok()
+            .and_then(|mut guard| guard.take())
+    }
+
     fn emit_run_event(&self, envelope: &Value) {
         if let Ok(handle_guard) = self.app_handle.lock() {
             if let Some(app_handle) = handle_guard.as_ref() {
@@ -250,6 +355,7 @@ impl SessionShared {
         if let Ok(mut heartbeat_guard) = self.last_heartbeat.lock() {
             *heartbeat_guard = None;
         }
+        let message = merge_disconnect_message(&message, self.take_fatal_sidecar_detail().as_deref());
         self.fail_all_pending(&message);
         if was_connected {
             self.emit_session_event("disconnected", &message);
@@ -535,6 +641,21 @@ fn spawn_stdout_reader(stdout: ChildStdout, shared: Arc<SessionShared>, session:
                         }
                     }
 
+                    if kind == "log" && run_id.is_none() {
+                        let payload = parsed.get("payload");
+                        let level = payload
+                            .and_then(|value| value.get("level"))
+                            .and_then(Value::as_str);
+                        let line = payload
+                            .and_then(|value| value.get("line").or_else(|| value.get("message")))
+                            .and_then(Value::as_str);
+                        if level == Some("error") {
+                            if let Some(line) = line {
+                                shared.record_fatal_sidecar_detail(line.to_string());
+                            }
+                        }
+                    }
+
                     match kind.as_str() {
                         "heartbeat" => {
                             shared.record_heartbeat();
@@ -587,6 +708,18 @@ fn correlation_id(prefix: &str) -> String {
         .map(|duration| duration.as_nanos())
         .unwrap_or_default();
     format!("{prefix}_{nanos}")
+}
+
+fn merge_disconnect_message(base: &str, detail: Option<&str>) -> String {
+    let base = base.trim();
+    let detail = detail.map(str::trim).filter(|value| !value.is_empty());
+
+    match (base.is_empty(), detail) {
+        (true, Some(detail)) => detail.to_string(),
+        (false, Some(detail)) if base.contains(detail) => base.to_string(),
+        (false, Some(detail)) => format!("{base} Details: {detail}"),
+        _ => base.to_string(),
+    }
 }
 
 fn find_existing_relative(relative: &str) -> Option<PathBuf> {
@@ -670,6 +803,17 @@ fn spawn_managed_sidecar(session: SessionSlot, shared: Arc<SessionShared>) -> Re
             })?
     };
 
+    #[cfg(target_os = "windows")]
+    let job_object = {
+        let job = WindowsJobObject::create()?;
+        if let Err(error) = job.assign_child(&child) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error);
+        }
+        Arc::new(job)
+    };
+
     let stdin = child
         .stdin
         .take()
@@ -712,6 +856,7 @@ fn spawn_managed_sidecar(session: SessionSlot, shared: Arc<SessionShared>) -> Re
     let stdout = stdout_reader.into_inner();
     let session_generation = shared.advance_session_generation();
     shared.set_connected(true);
+    shared.clear_fatal_sidecar_detail();
     shared.record_heartbeat(); // Seed initial heartbeat so supervisor doesn't fire immediately
     shared.emit_session_event(
         "connected",
@@ -723,6 +868,8 @@ fn spawn_managed_sidecar(session: SessionSlot, shared: Arc<SessionShared>) -> Re
     Ok(ManagedSidecar {
         child,
         stdin: Arc::new(Mutex::new(stdin)),
+        #[cfg(target_os = "windows")]
+        job_object,
     })
 }
 
@@ -747,12 +894,60 @@ fn backend_health_check(state: tauri::State<'_, SidecarState>) -> Result<Backend
             .unwrap_or(PROTOCOL_VERSION)
             .to_string(),
         mode: "desktop-bridge".to_string(),
+        log_directory: payload
+            .get("log_directory")
+            .and_then(Value::as_str)
+            .map(str::to_string),
     })
 }
 
 #[tauri::command]
 fn backend_session_status(state: tauri::State<'_, SidecarState>) -> BackendSessionStatusResponse {
     state.session_status()
+}
+
+/// Open ``path`` in the host OS file manager.
+///
+/// Windows: spawns ``explorer.exe`` on the path (opens folders, highlights
+/// files). macOS: ``open``. Linux: ``xdg-open``. Returns ``Err`` if the
+/// path does not exist or the spawn fails — callers should surface the
+/// error via a notification. Intended for small affordances like
+/// "Open log folder" and "Reveal output" and does NOT require adding the
+/// opener plugin to Cargo.toml.
+#[tauri::command]
+fn reveal_in_file_manager(path: String) -> Result<(), String> {
+    let target = Path::new(&path);
+    if !target.exists() {
+        return Err(format!("Path does not exist: {path}"));
+    }
+
+    #[cfg(target_os = "windows")]
+    let spawn_result = if target.is_file() {
+        Command::new("explorer")
+            .arg(format!("/select,{}", target.display()))
+            .spawn()
+    } else {
+        Command::new("explorer").arg(target).spawn()
+    };
+
+    #[cfg(target_os = "macos")]
+    let spawn_result = if target.is_file() {
+        Command::new("open").arg("-R").arg(target).spawn()
+    } else {
+        Command::new("open").arg(target).spawn()
+    };
+
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    let parent = target.parent().unwrap_or(target);
+
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    let spawn_result = Command::new("xdg-open")
+        .arg(if target.is_file() { parent } else { target })
+        .spawn();
+
+    spawn_result
+        .map(|_| ())
+        .map_err(|err| format!("Failed to reveal path: {err}"))
 }
 
 #[tauri::command]
@@ -944,6 +1139,10 @@ fn backend_analyze_template(
             .get("rows_scanned")
             .and_then(Value::as_u64)
             .unwrap_or_default() as u32,
+        header_rows_scanned: payload
+            .get("header_rows_scanned")
+            .and_then(Value::as_u64)
+            .map(|v| v as u32),
         columns_scanned: payload
             .get("columns_scanned")
             .and_then(Value::as_u64)
@@ -1000,8 +1199,76 @@ fn backend_read_flet_config(
     state.send_request_command("read_flet_config", body)
 }
 
+/// Resolve the sidecar log directory using the same precedence as the
+/// Python side (``common/logger.py::get_log_directory``): first
+/// ``RELIABILITY_TOOLS_LOG_DIR``, then ``~/.reliability_tools/logs``. Kept
+/// zero-dependency — we only need ``USERPROFILE`` / ``HOME`` which are
+/// always present on supported platforms.
+fn resolve_log_directory() -> Option<PathBuf> {
+    if let Ok(custom) = env::var("RELIABILITY_TOOLS_LOG_DIR") {
+        if !custom.is_empty() {
+            return Some(PathBuf::from(custom));
+        }
+    }
+    let home = env::var("USERPROFILE")
+        .or_else(|_| env::var("HOME"))
+        .ok()?;
+    if home.is_empty() {
+        return None;
+    }
+    Some(PathBuf::from(home).join(".reliability_tools").join("logs"))
+}
+
+/// Install a panic hook that writes a crash dump alongside the Python
+/// sidecar's crash dumps so a user hitting a Rust-side panic can share a
+/// single folder with us. Best-effort — if the filesystem write fails we
+/// fall back to the default panic printer. We deliberately keep this hook
+/// short to avoid re-entering panics while a panic is in flight.
+fn install_rust_panic_hook() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        if let Some(log_dir) = resolve_log_directory() {
+            let crash_dir = log_dir.join("crashes");
+            let _ = std::fs::create_dir_all(&crash_dir);
+
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or(0);
+            let dump_path = crash_dir.join(format!("crash_rust_{timestamp}.log"));
+
+            let payload = if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+                (*s).to_string()
+            } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+                s.clone()
+            } else {
+                "<non-string panic payload>".to_string()
+            };
+
+            let location = panic_info
+                .location()
+                .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+                .unwrap_or_else(|| "<unknown>".to_string());
+
+            let contents = format!(
+                "Crash dump: rust\nTimestamp:  {ts}ms since epoch\nLocation:   {loc}\nPayload:    {payload}\n",
+                ts = timestamp,
+                loc = location,
+                payload = payload,
+            );
+
+            if let Ok(mut f) = std::fs::File::create(&dump_path) {
+                let _ = f.write_all(contents.as_bytes());
+            }
+        }
+        default_hook(panic_info);
+    }));
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    install_rust_panic_hook();
+
     if env::args().any(|arg| arg == "--self-test") {
         println!("SELF-TEST OK: Reliability Tools Desktop {}", env!("CARGO_PKG_VERSION"));
         return;
@@ -1036,7 +1303,7 @@ pub fn run() {
 
     let sidecar_state = SidecarState::new();
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .manage(sidecar_state)
         .setup(|app| {
             let state = app.state::<SidecarState>();
@@ -1053,7 +1320,8 @@ pub fn run() {
             backend_validate_run,
             backend_execute_run,
             backend_cancel_run,
-            backend_read_flet_config
+            backend_read_flet_config,
+            reveal_in_file_manager
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
@@ -1061,6 +1329,44 @@ pub fn run() {
                 state.inner().shutdown();
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running Reliability Tools Desktop");
+        .build(tauri::generate_context!())
+        .expect("error while building Reliability Tools Desktop");
+
+    app.run(|app_handle, event| {
+        if matches!(event, tauri::RunEvent::Exit) {
+            let state = app_handle.state::<SidecarState>();
+            state.inner().shutdown();
+        }
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::merge_disconnect_message;
+
+    #[test]
+    fn merge_disconnect_message_appends_fatal_detail() {
+        let message = merge_disconnect_message(
+            "Python sidecar closed stdout.",
+            Some("Unhandled exception: RuntimeError: boom"),
+        );
+
+        assert_eq!(
+            message,
+            "Python sidecar closed stdout. Details: Unhandled exception: RuntimeError: boom"
+        );
+    }
+
+    #[test]
+    fn merge_disconnect_message_avoids_duplicate_detail() {
+        let message = merge_disconnect_message(
+            "Python sidecar closed stdout. Details: Unhandled exception: RuntimeError: boom",
+            Some("Unhandled exception: RuntimeError: boom"),
+        );
+
+        assert_eq!(
+            message,
+            "Python sidecar closed stdout. Details: Unhandled exception: RuntimeError: boom"
+        );
+    }
 }

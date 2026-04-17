@@ -91,15 +91,13 @@ FORBIDDEN_DATABASE_MODULES: frozenset[str] = frozenset(
 
 #: Subprocess executables we have vetted as safe to invoke.
 #:
-#: - ``attrib``  — Windows file-attribute query/set, used by
+#: - ``attrib`` — Windows file-attribute query/set, used by
 #:   ``common/utils.py`` to detect and hydrate OneDrive cloud-only files.
-#: - ``powershell``, ``start`` — reserved for shell-level helpers (e.g. opening
-#:   the output folder once a run completes).
-#: - ``python``, ``pythonw`` — used by build / test scaffolding when the
-#:   backend needs to spawn a child Python.
-SUBPROCESS_ALLOWLIST: frozenset[str] = frozenset(
-    {"attrib", "powershell", "start", "python", "pythonw"}
-)
+#:
+#: The backend only shells out to ``attrib`` today. The allowlist is
+#: deliberately minimal so any new subprocess call is an explicit audit
+#: regression that must be justified and added here.
+SUBPROCESS_ALLOWLIST: frozenset[str] = frozenset({"attrib"})
 
 #: Subprocess module functions whose first positional argument should be
 #: inspected against the allowlist.

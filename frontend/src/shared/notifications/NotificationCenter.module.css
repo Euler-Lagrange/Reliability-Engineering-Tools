@@ -62,3 +62,15 @@
   background: transparent;
   color: var(--text-faint);
 }
+
+.dismissAllRow {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--space-1);
+}
+
+.dismissAll {
+  padding-inline: var(--space-3);
+  padding-block: var(--space-1);
+  font-size: var(--text-xs);
+}

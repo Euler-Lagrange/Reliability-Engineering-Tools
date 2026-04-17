@@ -18,6 +18,8 @@ except ImportError:  # pragma: no cover - covered in runtime environments with d
     load_workbook = None
 
 from common.cancellation import CancellationError
+from common.utils import ensure_file_available
+from common.logger import get_log_directory, write_crash_dump
 from fmea.runtime import execute_run_request as fmea_execute, validate_run_request as fmea_validate
 from bom_compare.runtime import execute_run_request as bom_execute, validate_run_request as bom_validate
 from failure_rate.runtime import execute_run_request as fr_execute, validate_run_request as fr_validate
@@ -462,12 +464,17 @@ def handle_command(message: dict[str, Any]) -> None:
     body = payload.get("body", {})
 
     if command == "health_check":
+        try:
+            log_dir_value = str(get_log_directory())
+        except Exception:  # pragma: no cover - defensive
+            log_dir_value = None
         emit(
             "result",
             {
                 "status": "ok",
                 "backend": "python-sidecar",
                 "protocol_version": PROTOCOL_VERSION,
+                "log_directory": log_dir_value,
             },
             request_id=request_id,
         )
@@ -480,12 +487,16 @@ def handle_command(message: dict[str, Any]) -> None:
 
         try:
             path = Path(body["path"])
-            workbook = load_workbook(path, read_only=True, data_only=True)
+            # Parity with inspect_input / analyze_template: hydrate
+            # OneDrive "cloud-only" placeholders before opening so list_sheets
+            # doesn't fail where the real runtime would succeed.
+            resolved = ensure_file_available(path)
+            workbook = load_workbook(resolved, read_only=True, data_only=True)
             try:
                 emit(
                     "result",
                     {
-                        "path": str(path),
+                        "path": str(resolved),
                         "sheets": list(workbook.sheetnames),
                     },
                     request_id=request_id,
@@ -668,7 +679,62 @@ def iter_messages() -> None:
         heartbeat_stop.set()
 
 
+def _install_crash_hooks() -> None:
+    """Install ``sys.excepthook`` and ``threading.excepthook`` so any
+    unhandled exception in the sidecar process (main thread OR background
+    threads) is captured as a crash dump under ``<log_dir>/crashes/``.
+
+    The default Python behaviour is to print the traceback to stderr and
+    exit — that still happens, but users get a shareable file too. We also
+    emit a last-gasp ``log`` event on stdout so the Rust bridge surfaces a
+    notification before the sidecar process dies.
+    """
+
+    def _sidecar_excepthook(exc_type, exc_value, exc_tb) -> None:
+        # Preserve normal behaviour for KeyboardInterrupt so Ctrl+C still
+        # exits cleanly under developer shells.
+        if issubclass(exc_type, KeyboardInterrupt):
+            sys.__excepthook__(exc_type, exc_value, exc_tb)
+            return
+        dump_path = write_crash_dump("sidecar", exc_type, exc_value, exc_tb)
+        try:
+            detail = f"Unhandled exception: {exc_type.__name__}: {exc_value}"
+            if dump_path is not None:
+                detail = f"{detail} (see {dump_path})"
+            emit("log", {"level": "error", "line": detail})
+        except Exception:  # noqa: BLE001 — never fail inside the excepthook
+            pass
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+    def _thread_excepthook(args: threading.ExceptHookArgs) -> None:
+        if issubclass(args.exc_type, SystemExit):
+            return
+        dump_path = write_crash_dump(
+            "thread",
+            args.exc_type,
+            args.exc_value,
+            args.exc_traceback,
+            thread_name=args.thread.name if args.thread else None,
+        )
+        try:
+            detail = (
+                f"Unhandled thread exception in "
+                f"{args.thread.name if args.thread else '<unknown>'}: "
+                f"{args.exc_type.__name__}: {args.exc_value}"
+            )
+            if dump_path is not None:
+                detail = f"{detail} (see {dump_path})"
+            emit("log", {"level": "error", "line": detail})
+        except Exception:  # noqa: BLE001
+            pass
+
+    sys.excepthook = _sidecar_excepthook
+    threading.excepthook = _thread_excepthook
+
+
 def main() -> int:
+    _install_crash_hooks()
+
     if "--self-test" in sys.argv:
         from common.security_audit import audit_tree
 

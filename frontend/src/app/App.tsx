@@ -12,10 +12,16 @@ import { toolDefinitions } from "./toolRegistry";
 import { CommandPalette, type CommandPaletteAction } from "../components/primitives/CommandPalette";
 import { GlobalLogPanel } from "../components/GlobalLogPanel";
 import { ErrorBoundary } from "../shared/errors/ErrorBoundary";
+import { backendClient } from "../shared/backend/client";
 import { useBackendBootstrap } from "../shared/backend/useBackendBootstrap";
 import { useBackendBusyReset } from "../shared/backend/useBackendBusyReset";
-import { useGlobalLogSubscription } from "../shared/backend/useGlobalLogSubscription";
+import { useBackendRunSubscription } from "../shared/backend/useBackendRunSubscription";
 import { useAppShortcuts } from "../shared/hooks/useAppShortcuts";
+import {
+  isEditableKeyboardTarget,
+  matchesPrimaryShortcut,
+  primaryShortcutLabel,
+} from "../shared/hooks/shortcutUtils";
 import { NotificationCenter } from "../shared/notifications/NotificationCenter";
 import { ThemeController, useResolvedTheme } from "../shared/theme/ThemeController";
 import { RAIL_THEMES, THEME_REGISTRY, labelForTheme } from "../shared/theme/themeRegistry";
@@ -49,7 +55,7 @@ const backendModeLabel = {
 export function App() {
   useAppShortcuts();
   useBackendBootstrap();
-  useGlobalLogSubscription();
+  useBackendRunSubscription();
   // Phase B4: shell-level guarantee that reaching any terminal run phase
   // (idle / cancelled / success / failure) releases the "busy" chip.
   // Belt-and-suspenders with the per-tool setBackendState calls — the
@@ -86,7 +92,10 @@ export function App() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+      if (isEditableKeyboardTarget(event.target)) {
+        return;
+      }
+      if (matchesPrimaryShortcut(event, "k")) {
         event.preventDefault();
         setCommandPaletteOpen((prev) => !prev);
       }
@@ -106,7 +115,7 @@ export function App() {
         hint: tool.eyebrow,
         category: "Tools",
         icon: tool.icon,
-        shortcut: index < 9 ? `Ctrl+${index + 1}` : undefined,
+        shortcut: index < 9 ? primaryShortcutLabel(String(index + 1)) : undefined,
         onSelect: () => setActiveToolId(tool.id as ToolId),
       });
     });
@@ -144,20 +153,47 @@ export function App() {
       category: "App",
       icon: Copy,
       onSelect: () => {
-        // TODO: wire to backend once the sidecar exposes its log directory.
-        // For now surface a notification so the user gets feedback instead
-        // of silent failure.
-        void navigator.clipboard?.writeText("~/.reliability_tools/logs/").catch(() => {});
-        pushNotification({
-          tone: "info",
-          title: "Log path copied (placeholder)",
-          detail: "Backend does not yet expose its real log directory. Copied a placeholder path.",
-        });
+        // Since 0.4.2 the sidecar reports its real log directory on
+        // every ``health_check``. We call it on-demand here rather than
+        // caching so a user who switches the ``RELIABILITY_TOOLS_LOG_DIR``
+        // env var between launches always copies the live value. Browser
+        // preview mode has no sidecar, so we fall back to the placeholder
+        // string used in Settings › Logs.
+        if (backendClient.runtimeMode !== "desktop-bridge") {
+          void navigator.clipboard?.writeText("~/.reliability_tools/logs/").catch(() => {});
+          pushNotification({
+            tone: "info",
+            title: "Log path copied (placeholder)",
+            detail: "Desktop runtime required for the real path — copied the default location instead.",
+          });
+          return;
+        }
+        void (async () => {
+          try {
+            const health = await backendClient.healthCheck();
+            const path = health.log_directory ?? "~/.reliability_tools/logs/";
+            await navigator.clipboard?.writeText(path);
+            pushNotification({
+              tone: "success",
+              title: "Log path copied",
+              detail: path,
+            });
+          } catch (error) {
+            const detail = error instanceof Error ? error.message : "Health check failed";
+            pushNotification({
+              tone: "error",
+              title: "Could not fetch log path",
+              detail,
+            });
+          }
+        })();
       },
     });
 
     return actions;
   }, [pushNotification, setActiveToolId, setThemeMode, toggleLogVisible]);
+
+  const navigationShortcutLabel = `${primaryShortcutLabel("[")} / ${primaryShortcutLabel("]")}`;
 
   // Phase 4 Task 9: Tauri native file drop.
   // We lazily import the Tauri webview API so browser-mock dev mode stays
@@ -245,7 +281,7 @@ export function App() {
                     onClick={() => setActiveToolId(tool.id)}
                     aria-current={isActive ? "page" : undefined}
                     aria-label={`${tool.label} (${index + 1})`}
-                    title={`${tool.label} (Ctrl+${index + 1})`}
+                    title={`${tool.label} (${primaryShortcutLabel(String(index + 1))})`}
                   >
                     <Icon size={20} weight={isActive ? "fill" : "regular"} />
                     <span className={styles.toolLabel}>{tool.label}</span>
@@ -314,7 +350,7 @@ export function App() {
                   <div className="topbar__chip-group" aria-label="Keyboard hint">
                     <span className="status-chip status-chip--pending">
                       <Command size={12} weight="bold" />
-                      Ctrl+[ / Ctrl+]
+                      {navigationShortcutLabel}
                     </span>
                     {import.meta.env.DEV && activeTool.status === "placeholder" ? (
                       <span className="status-chip status-chip--warning">

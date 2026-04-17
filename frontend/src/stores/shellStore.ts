@@ -22,14 +22,17 @@ interface ShellState {
    * directory (via its folder picker), the path lives here so it survives
    * tab switches and app reloads. Empty/null = fall back to the backend's
    * "first input file parent" heuristic.
-   *
-   * Phase 3 wires the FMEA tool first. Other tools (BOM Compare, Failure
-   * Rate, RefDes) can adopt this field later by adding their own key.
    */
   fmeaOutputDirectory: string | null;
+  bomCompareOutputDirectory: string | null;
+  failureRateOutputDirectory: string | null;
+  refdesExtractorOutputDirectory: string | null;
   setActiveToolId: (toolId: ToolId) => void;
   setBackendState: (state: Partial<Pick<ShellState, "backendStatus" | "backendMode" | "backendMessage" | "lastBackendCheckAt">>) => void;
   setFmeaOutputDirectory: (path: string | null) => void;
+  setBomCompareOutputDirectory: (path: string | null) => void;
+  setFailureRateOutputDirectory: (path: string | null) => void;
+  setRefdesExtractorOutputDirectory: (path: string | null) => void;
 }
 
 export const useShellStore = create<ShellState>()(
@@ -41,9 +44,15 @@ export const useShellStore = create<ShellState>()(
       backendMessage: "Initializing backend bridge...",
       lastBackendCheckAt: null,
       fmeaOutputDirectory: null,
+      bomCompareOutputDirectory: null,
+      failureRateOutputDirectory: null,
+      refdesExtractorOutputDirectory: null,
       setActiveToolId: (activeToolId) => set({ activeToolId }),
       setBackendState: (state) => set((current) => ({ ...current, ...state })),
       setFmeaOutputDirectory: (path) => set({ fmeaOutputDirectory: path }),
+      setBomCompareOutputDirectory: (path) => set({ bomCompareOutputDirectory: path }),
+      setFailureRateOutputDirectory: (path) => set({ failureRateOutputDirectory: path }),
+      setRefdesExtractorOutputDirectory: (path) => set({ refdesExtractorOutputDirectory: path }),
     }),
     {
       // Only the small subset of ShellState that should survive a reload is
@@ -52,6 +61,9 @@ export const useShellStore = create<ShellState>()(
       name: "reliability-tools-tauri-shell",
       partialize: (state) => ({
         fmeaOutputDirectory: state.fmeaOutputDirectory,
+        bomCompareOutputDirectory: state.bomCompareOutputDirectory,
+        failureRateOutputDirectory: state.failureRateOutputDirectory,
+        refdesExtractorOutputDirectory: state.refdesExtractorOutputDirectory,
       }),
     },
   ),

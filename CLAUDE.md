@@ -71,7 +71,7 @@ npm run tauri:dev        # Dev mode with hot reload
 npm run tauri:build:portable  # Release build → src-tauri/target/.../release/
 
 # Python sidecar (use project venv)
-.venv\Scripts\python.exe -m pytest backend/tests -v    # 106 backend tests (37 sidecar + 17 audit + 8 cancel bridge + 44 FMEA phase D)
+.venv\Scripts\python.exe -m pytest backend/tests -v    # 110 backend tests (37 sidecar + 17 audit + 12 cancel bridge + 44 FMEA phase D)
 .venv\Scripts\python.exe backend/python/sidecar_main.py --self-test
 
 # Full release
@@ -139,10 +139,11 @@ under `backend/python/` and reports:
 3. `subprocess.*` calls whose statically-resolvable command head is not in
    the allowlist below.
 
-**Subprocess allowlist:** `attrib`, `powershell`, `start`, `python`, `pythonw`.
-The only command actually invoked today is `attrib` (in `common/utils.py`,
-for OneDrive cloud-file detection and hydration); the rest are reserved for
-vetted helpers.
+**Subprocess allowlist:** `attrib` (only). The list is intentionally
+minimal — the only command invoked today is `attrib` (in
+`common/utils.py`, for OneDrive cloud-file detection and hydration).
+Extending the allowlist requires adding the command here AND updating
+`SUBPROCESS_ALLOWLIST` in `common/security_audit.py`.
 
 The audit runs:
 
@@ -154,10 +155,10 @@ The audit runs:
 
 ## Testing
 
-### Backend Tests (106 total)
+### Backend Tests (110 total)
 - 37 sidecar integration tests in `test_sidecar_main.py`
 - 17 security-audit tests in `test_security_audit.py` (synthetic positives + live tree scan)
-- 8 cancel-bridge tests in `test_cancel_bridge.py`
+- 12 cancel-bridge tests in `test_cancel_bridge.py` (BOM Compare + RefDes bridges plus Failure Rate `FMEALinkerLogic.cancel` binding through `ActiveRun`)
 - 44 FMEA Phase D tests in `test_fmea_phase_d.py`
 - Sidecar tests are subprocess-based: spawn sidecar, send NDJSON commands, verify responses
 - `stderr=subprocess.DEVNULL` to avoid Windows pipe buffer deadlock
@@ -167,37 +168,67 @@ The audit runs:
 - `pytest.importorskip("fitz")` for RefDes tests requiring PyMuPDF
 - `backend/tests/conftest.py` installs a `sys.path` shim for in-process unit tests
 
-### Frontend Tests (148 total)
+### Frontend Tests (153 total across 23 test files)
 - Vitest + React Testing Library
 - Browser-mock mode (no Tauri runtime needed)
-- `src/app/App.test.tsx` — 10 tests
-- `src/components/CustomSelect.test.tsx` — 1 test
-- `src/components/MappingTable.test.tsx` — 11 tests
-- `src/components/RunStatePanel.test.tsx` — 5 tests
-- `src/components/GlobalLogPanel.resize.test.tsx` — 13 tests
-- `src/components/primitives/CommandPalette.test.tsx` — 5 tests
-- `src/components/primitives/HoldButton.test.tsx` — 5 tests
-- `src/components/primitives/EmptyState.test.tsx` — 5 tests
-- `src/features/fmea/FmeaTool.test.tsx` — 7 tests
-- `src/features/fmea/FmeaTool.inspection.test.tsx` — 2 tests
-- `src/features/fmea/mappingColumns.test.ts` — 21 tests
-- `src/features/fmea/mappingAnalysis.test.ts` — 7 tests
-- `src/shared/backend/runLifecycle.test.ts` — 9 tests
-- `src/shared/backend/cancelError.test.ts` — 12 tests
-- `src/shared/backend/client.cancelRun.test.ts` — 2 tests
-- `src/shared/backend/useBackendBusyReset.test.ts` — 9 tests
-- `src/shared/theme/themeRegistry.test.ts` — 10 tests
-- `src/shared/hooks/useRoleRequestSequence.test.ts` — 5 tests
-- `src/shared/hooks/useCopyToClipboard.test.ts` — 3 tests
-- `src/stores/globalLogStore.test.ts` — 6 tests
+- `src/app/App.test.tsx`
+- `src/components/CustomSelect.test.tsx`
+- `src/components/MappingTable.test.tsx`
+- `src/components/RunStatePanel.test.tsx` (now covers the Open-folder affordance)
+- `src/components/GlobalLogPanel.resize.test.tsx`
+- `src/components/primitives/CommandPalette.test.tsx`
+- `src/components/primitives/HoldButton.test.tsx`
+- `src/components/primitives/EmptyState.test.tsx`
+- `src/features/fmea/FmeaTool.test.tsx`
+- `src/features/fmea/FmeaTool.inspection.test.tsx`
+- `src/features/fmea/mappingColumns.test.ts`
+- `src/features/fmea/mappingAnalysis.test.ts`
+- `src/shared/backend/runLifecycle.test.ts`
+- `src/shared/backend/cancelError.test.ts`
+- `src/shared/backend/client.cancelRun.test.ts`
+- `src/shared/backend/useBackendBusyReset.test.ts`
+- `src/shared/backend/useBackendBootstrap.test.ts` (new in 0.4.2)
+- `src/shared/backend/useBackendRunSubscription.test.ts` (new in 0.4.2)
+- `src/shared/hooks/useAppShortcuts.test.tsx` (new in 0.4.2)
+- `src/shared/hooks/useRoleRequestSequence.test.ts`
+- `src/shared/hooks/useCopyToClipboard.test.ts`
+- `src/shared/theme/themeRegistry.test.ts`
+- `src/stores/globalLogStore.test.ts`
+
+Run `npx vitest run --reporter=default` to see individual counts per file —
+the suite totals 153 tests as of 0.4.2 and changes whenever a suite gains or
+loses cases.
 
 ## Critical Gotchas
 
-- **Stdin write atomicity**: The Rust bridge writes payload+newline+flush under a single `stdin.lock()` — do NOT split into separate locks
+- **Stdin write atomicity**: The Rust bridge writes payload+newline+flush under a single `Mutex<ChildStdin>` guard (one `lock()` call, not three) — do NOT split into separate locks, or NDJSON frames from concurrent commands will interleave
 - **CancellationError inheritance**: `CancellationError → InterruptedError → OSError → Exception` — always re-raise before `except Exception`
 - **Heartbeat**: Python emits every 5s, Rust times out at 15s, frontend auto-reconnects with backoff
 - **NaN guards**: Always `pd.notna(value)` before string operations on DataFrame cells
 - **Single active run**: Only one `execute_run` at a time; second request is rejected
+- **Atomic write temp-path extension**: `common/utils.atomic_write_path()` returns `<stem>.<hex>.part<suffix>` so the temp file keeps its `.xlsx` extension. Do NOT rename to drop the suffix — `openpyxl`'s post-write `verify_excel_readable()` sniffs format from the suffix and will reject extension-less temps.
+- **Windows Job Object owns the sidecar**: on Windows the Rust bridge creates a `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` job and assigns the spawned `python.exe` to it (`windows_job` module in `src-tauri/src/lib.rs`). When the bridge process dies, Windows reaps the sidecar automatically. Do NOT remove the assignment — without it a Rust panic that bypasses `on_window_event` orphans a live sidecar process.
+- **Shell-level run subscription**: `useBackendRunSubscription` is mounted once in `App.tsx` and owns the subscription to `backend://run-event`. Per-tool hooks (`useBackendRunLifecycle`) project events into local state but do NOT subscribe directly. If you need a new stream subscription, add it next to `useBackendRunSubscription` at the shell level — do not subscribe inside a tool component or you will miss events during tool switches.
+
+## Crash Dumps
+
+Unhandled exceptions on either side of the bridge write a timestamped
+file under `~/.reliability_tools/logs/crashes/` (or
+`$RELIABILITY_TOOLS_LOG_DIR/crashes/`):
+
+- **Python** — `sidecar_main._install_crash_hooks()` installs
+  `sys.excepthook` AND `threading.excepthook`, skipping `KeyboardInterrupt`
+  / `SystemExit`. Files are `crash_sidecar_*.log` / `crash_thread_*.log`.
+  The hook also emits one last `log` envelope on stdout so the Rust
+  bridge surfaces a notification before the process dies. See
+  `common/logger.write_crash_dump()`.
+- **Rust** — `install_rust_panic_hook()` in `src-tauri/src/lib.rs` chains
+  on top of the default panic printer and writes `crash_rust_*.log`. Zero
+  new Cargo dependencies (uses `USERPROFILE` / `HOME` directly).
+- **Frontend** — `shared/errors/installGlobalErrorHandlers.ts` catches
+  `window.error` and `unhandledrejection` (neither caught by
+  `ErrorBoundary`), logs to `console.error`, and surfaces an error toast
+  via `useNotificationStore`. Installed in `main.tsx` before React mounts.
 
 ## Delegation Defaults — Use Skills and Agents Proactively
 

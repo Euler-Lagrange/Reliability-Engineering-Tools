@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vitest";
 import { RunStatePanel } from "./RunStatePanel";
 import type { RunEvent } from "../app/types";
@@ -64,5 +65,27 @@ describe("RunStatePanel", () => {
     // not the legacy "Cancel run" / confirm-tap pair.
     expect(cancelButton).toBeInTheDocument();
     expect(cancelButton).not.toBeDisabled();
+  });
+
+  test("renders an output folder action for completed runs", async () => {
+    const user = userEvent.setup();
+    const onRevealOutput = vi.fn();
+
+    renderPanel({
+      result: {
+        status: "success",
+        title: "Workbook written",
+        summary: "Created a new workbook successfully.",
+        outputFile: "C:\\reports\\output.xlsx",
+        primaryMetric: "42 rows",
+        secondaryMetric: "0 warnings",
+        notes: [],
+      },
+      onRevealOutput,
+    });
+
+    await user.click(screen.getByRole("button", { name: "Open folder" }));
+
+    expect(onRevealOutput).toHaveBeenCalledWith("C:\\reports\\output.xlsx");
   });
 });

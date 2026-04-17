@@ -10,8 +10,8 @@ import { ContextTabs } from "../../components/primitives/ContextTabs";
 import { EmptyState } from "../../components/primitives/EmptyState";
 import { OptionsField } from "../../components/primitives/OptionsField";
 import { OptionsSection } from "../../components/primitives/OptionsSection";
+import { OutputFolderPicker } from "../../components/OutputFolderPicker";
 import { ChartLine } from "@phosphor-icons/react";
-import { executeRunResultSchema } from "../../contracts/sidecar";
 import {
   failureRateDemoScenarios,
   failureRateMappings,
@@ -28,6 +28,7 @@ import type {
 import { DO_NOT_MAP_VALUE } from "../../app/types";
 import { backendClient, type RunRequestBody } from "../../shared/backend/client";
 import { buildCancelNotification } from "../../shared/backend/cancelError";
+import { parentDirectoryForPath } from "../../shared/backend/fileManager";
 import { buildRunTimeline, useBackendRunLifecycle } from "../../shared/backend/runLifecycle";
 import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
 import { useRoleRequestSequence } from "../../shared/hooks/useRoleRequestSequence";
@@ -74,10 +75,6 @@ function buildTimeline(runMode: RunMode, runIndex: number, templates: RunEventTe
   });
 }
 
-function parseFailureRateRunResult(payload: unknown) {
-  return executeRunResultSchema.parse(payload);
-}
-
 export function FailureRateTool() {
   const baseScenario = failureRateDemoScenarios[0];
   const [inputStates, setInputStates] = useState<InputFileState[]>(() => cloneInputs(baseScenario.inputs));
@@ -96,13 +93,19 @@ export function FailureRateTool() {
   const handledDesktopTerminalRef = useRef<string | null>(null);
   const backendMode = useShellStore((state) => state.backendMode);
   const setBackendState = useShellStore((state) => state.setBackendState);
+  const failureRateOutputDirectory = useShellStore(
+    (state) => state.failureRateOutputDirectory,
+  );
+  const setFailureRateOutputDirectory = useShellStore(
+    (state) => state.setFailureRateOutputDirectory,
+  );
   const pushNotification = useNotificationStore((state) => state.push);
 
   const {
     session: desktopRunSession,
     beginAcceptedRun,
     resetSession: resetDesktopRunSession,
-  } = useBackendRunLifecycle("failure_rate", backendClient.runtimeMode, parseFailureRateRunResult);
+  } = useBackendRunLifecycle("failure_rate");
   // Per-role token used to discard stale async listSheets/inspect results.
   const fileRequestSeq = useRoleRequestSequence<FileRole>();
 
@@ -179,6 +182,15 @@ export function FailureRateTool() {
     backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.errorCode : null;
   const panelErrorTraceback =
     backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.errorTraceback : null;
+
+  async function handleRevealOutput(path: string) {
+    try {
+      await backendClient.revealInFileManager(parentDirectoryForPath(path));
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : "Failed to open output folder";
+      pushNotification({ tone: "error", title: "Open output folder failed", detail });
+    }
+  }
 
   // Pristine = no real input loaded yet AND no run has been started.
   const isPristine =
@@ -278,6 +290,7 @@ export function FailureRateTool() {
         status: mappingOverrides[row.canonical] ? "manual" : row.status,
       })),
       options: { unit_mode: options.unitMode, validate_fmr: options.validateFmr },
+      outputDirectory: failureRateOutputDirectory,
     };
   }
 
@@ -728,6 +741,10 @@ export function FailureRateTool() {
                 checked={options.validateFmr}
                 onChange={(next) => setOptions((prev) => ({ ...prev, validateFmr: next }))}
               />
+              <OutputFolderPicker
+                value={failureRateOutputDirectory}
+                onChange={setFailureRateOutputDirectory}
+              />
             </OptionsSection>
           </div>
 
@@ -767,6 +784,9 @@ export function FailureRateTool() {
                   truncatedLogCount={panelTruncatedLogCount}
                   errorCode={panelErrorCode}
                   errorTraceback={panelErrorTraceback}
+                  onRevealOutput={
+                    backendClient.runtimeMode === "desktop-bridge" ? (path) => void handleRevealOutput(path) : undefined
+                  }
                   startLabel="Link Rates"
                 />
               )}

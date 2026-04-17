@@ -1,7 +1,7 @@
 {
   "name": "reliability-tools-tauri",
   "private": true,
-  "version": "0.4.1",
+  "version": "0.4.2",
   "type": "module",
   "scripts": {
     "dev": "vite --config frontend/vite.config.ts",
@@ -11,6 +11,8 @@
     "test:watch": "vitest --config frontend/vite.config.ts",
     "typecheck": "tsc -b frontend/tsconfig.json",
     "release": "scripts\\release.bat",
+    "version:check": "node ./scripts/bump-version.mjs --check",
+    "version:bump": "node ./scripts/bump-version.mjs",
     "tauri:readiness": "node ./scripts/tauri-readiness.mjs",
     "tauri:dev": "node ./scripts/tauri-runner.mjs dev",
     "tauri:build": "node ./scripts/tauri-runner.mjs build",

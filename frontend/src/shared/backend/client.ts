@@ -8,6 +8,7 @@ import {
   backendSessionStatusResultSchema,
   cancelRunResultSchema,
   executeRunAcceptedResultSchema,
+  fletConfigResultSchema,
   inspectionResultSchema,
   protocolVersion,
   sidecarRunEventSchema,
@@ -19,6 +20,7 @@ import type {
   BackendSessionStatusResult,
   CancelRunResult,
   ExecuteRunAcceptedResult,
+  FletConfigResult,
   SidecarRunEvent,
 } from "../../contracts/sidecar";
 import type { BackendMode } from "../../stores/shellStore";
@@ -26,11 +28,19 @@ import type { BackendMode } from "../../stores/shellStore";
 const BACKEND_RUN_EVENT = "backend://run-event";
 const BACKEND_SESSION_EVENT = "backend://session";
 
+// Tracks in-flight cancelRun requests keyed by runId so double-dispatch
+// (e.g. rapid user clicks, redundant tool paths) share a single promise.
+const inflightCancels = new Map<string, Promise<CancelRunResult>>();
+
 const backendHealthResultSchema = z.object({
   status: z.literal("ok"),
   backend: z.string(),
   protocol_version: z.string(),
   mode: backendModeSchema,
+  // Absolute path to the sidecar log directory. Optional because older
+  // sidecars did not emit this field; Settings > Logs falls back to the
+  // placeholder when it is missing.
+  log_directory: z.string().nullish(),
 });
 
 const listSheetsResultSchema = z.object({
@@ -143,11 +153,7 @@ function ensureDesktopRuntime(action: string): asserts action is string {
   }
 }
 
-export interface FletConfigResult {
-  configs: Record<string, Record<string, unknown> | null>;
-  namespaces: string[];
-  home: string;
-}
+export type { FletConfigResult };
 
 export interface BackendClient {
   runtimeMode: BackendMode;
@@ -165,6 +171,13 @@ export interface BackendClient {
   openExcelFile: () => Promise<string | null>;
   openPdfFile: () => Promise<string | null>;
   openDirectory: (defaultPath?: string) => Promise<string | null>;
+  /**
+   * Open ``path`` in the host OS file manager (Explorer / Finder / xdg-open).
+   * Rejects with an ``Error`` when the path does not exist or the spawn
+   * fails. In browser-mock mode this throws so callers can surface the
+   * "desktop required" notification themselves.
+   */
+  revealInFileManager: (path: string) => Promise<void>;
 }
 
 export const backendClient: BackendClient = {
@@ -175,7 +188,20 @@ export const backendClient: BackendClient = {
     }
 
     const result = await invoke("backend_health_check");
-    return backendHealthResultSchema.parse(result);
+    const parsed = backendHealthResultSchema.parse(result);
+    // Protocol-version handshake: log a warning when the sidecar speaks a
+    // different version than the frontend expects. We don't hard-fail
+    // because the current protocol evolves additively (new optional
+    // fields), but mismatches frequently explain "why does schema X not
+    // parse?" bug reports.
+    if (parsed.protocol_version !== protocolVersion) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[backend] Protocol version mismatch: frontend=${protocolVersion}, sidecar=${parsed.protocol_version}. ` +
+          `Continuing, but some fields may be missing or unexpected.`,
+      );
+    }
+    return parsed;
   },
   async sessionStatus() {
     if (!isTauriRuntime()) {
@@ -217,13 +243,28 @@ export const backendClient: BackendClient = {
   },
   async cancelRun(runId) {
     ensureDesktopRuntime("cancel_run");
-    const result = await invoke("backend_cancel_run", { runId });
-    return cancelRunResultSchema.parse(result);
+    // Dedup concurrent cancel dispatches for the same runId. Without this
+    // a user double-clicking the HoldButton (or a tool calling cancel
+    // from multiple paths) could queue duplicate cancels, stacking
+    // notifications and confusing the UI. The first in-flight promise
+    // wins and subsequent callers share its result.
+    const existing = inflightCancels.get(runId);
+    if (existing) return existing;
+    const promise = (async () => {
+      try {
+        const result = await invoke("backend_cancel_run", { runId });
+        return cancelRunResultSchema.parse(result);
+      } finally {
+        inflightCancels.delete(runId);
+      }
+    })();
+    inflightCancels.set(runId, promise);
+    return promise;
   },
   async readFletConfig(namespace?) {
     ensureDesktopRuntime("read_flet_config");
     const result = await invoke("backend_read_flet_config", { namespace: namespace ?? null });
-    return result as FletConfigResult;
+    return fletConfigResultSchema.parse(result);
   },
   async subscribeToRunEvents(handler) {
     ensureDesktopRuntime("subscribe_run_events");
@@ -257,5 +298,13 @@ export const backendClient: BackendClient = {
     }
 
     return openDirectoryInDesktop(defaultPath);
+  },
+  async revealInFileManager(path) {
+    if (!isTauriRuntime()) {
+      throw new Error(
+        "Revealing a path in the OS file manager requires the Tauri desktop shell.",
+      );
+    }
+    await invoke("reveal_in_file_manager", { path });
   },
 };

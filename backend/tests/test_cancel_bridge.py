@@ -92,3 +92,65 @@ def test_refdes_bridge_setting_stop_event_directly_also_cancels_token() -> None:
     bridge = RefDesCancelBridge()
     bridge.stop_event.set()
     assert bridge.cancel.is_cancelled()
+
+
+# ---------------------------------------------------------------------------
+# Failure Rate — different shape: the ``FMEALinkerLogic`` instance IS the
+# "processor" the sidecar binds, so cancellation goes through
+# ``logic.cancel`` directly (no ``_CancelBridge`` wrapper). These tests
+# codify that contract so the sidecar's ``ActiveRun.bind_processor`` path
+# keeps working.
+# ---------------------------------------------------------------------------
+
+
+def test_failure_rate_logic_exposes_cancellation_token() -> None:
+    from failure_rate.failure_rate_logic import FMEALinkerLogic  # noqa: E402
+    from common.cancellation import CancellationToken  # noqa: E402
+
+    logic = FMEALinkerLogic()
+    assert isinstance(logic.cancel, CancellationToken)
+    assert not logic.cancel.is_cancelled()
+
+
+def test_failure_rate_logic_cancel_flag_flips_on_request() -> None:
+    from failure_rate.failure_rate_logic import FMEALinkerLogic  # noqa: E402
+
+    logic = FMEALinkerLogic()
+    logic.cancel.cancel()
+    assert logic.cancel.is_cancelled()
+
+
+def test_sidecar_active_run_cancels_failure_rate_logic_after_bind() -> None:
+    """Simulate the sidecar's ``ActiveRun`` lifecycle: the frontend asks for
+    cancellation AFTER ``processor_ready_callback(logic)`` has run, so the
+    stored ``processor.cancel.cancel()`` call must flip the logic's token.
+    """
+    from failure_rate.failure_rate_logic import FMEALinkerLogic  # noqa: E402
+    from sidecar_main import ActiveRun  # noqa: E402
+
+    run = ActiveRun(run_id="run-fr-1", request_id="req-1")
+    logic = FMEALinkerLogic()
+    run.bind_processor(logic)
+    assert not logic.cancel.is_cancelled()
+
+    run.request_cancel()
+    assert logic.cancel.is_cancelled()
+
+
+def test_sidecar_active_run_cancel_before_bind_still_propagates() -> None:
+    """Race case: cancellation arrives BEFORE the processor is bound. The
+    cancel_requested flag is latched, and ``bind_processor`` replays it onto
+    the freshly-created logic. This protects users who hit Stop immediately
+    after clicking Run, before the long-running loader has created its
+    ``CancellationToken``.
+    """
+    from failure_rate.failure_rate_logic import FMEALinkerLogic  # noqa: E402
+    from sidecar_main import ActiveRun  # noqa: E402
+
+    run = ActiveRun(run_id="run-fr-2", request_id="req-2")
+    run.request_cancel()
+
+    logic = FMEALinkerLogic()
+    assert not logic.cancel.is_cancelled()  # logic not bound yet
+    run.bind_processor(logic)
+    assert logic.cancel.is_cancelled()

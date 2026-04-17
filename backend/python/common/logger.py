@@ -235,3 +235,59 @@ def log_error(tool_name: str, error: Exception, context: Optional[str] = None) -
     if context:
         logger.error(f"Error during {context}: {error}")
     logger.exception("Full traceback:")
+
+
+# =============================================================================
+# Crash dumps
+# =============================================================================
+def write_crash_dump(
+    source: str,
+    exc_type: type,
+    exc_value: BaseException,
+    exc_traceback,
+    *,
+    thread_name: Optional[str] = None,
+) -> Optional[Path]:
+    """Write a timestamped crash dump to the logs directory.
+
+    Best-effort: used from ``sys.excepthook`` / ``threading.excepthook`` and
+    the Rust panic hook (via a separate path) so that users can share a
+    single file when they hit an unhandled exception. Never raises — if the
+    dump itself fails we return ``None`` and let the caller continue its
+    normal shutdown path.
+
+    Args:
+        source: Short tag (``"sidecar"``, ``"thread"``, ``"rust"``).
+        exc_type: Exception class.
+        exc_value: Exception instance.
+        exc_traceback: Traceback object (may be ``None``).
+        thread_name: Optional thread name for ``threading.excepthook``.
+
+    Returns:
+        Path to the written crash dump, or ``None`` on failure.
+    """
+    import traceback as _traceback
+
+    try:
+        log_dir = get_log_directory()
+        crash_dir = log_dir / "crashes"
+        crash_dir.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        dump_path = crash_dir / f"crash_{source}_{timestamp}.log"
+
+        with dump_path.open("w", encoding="utf-8") as fh:
+            fh.write(f"Crash dump: {source}\n")
+            fh.write(f"Timestamp:  {datetime.now().isoformat()}\n")
+            fh.write(f"Python:     {sys.version.splitlines()[0]}\n")
+            fh.write(f"Platform:   {sys.platform}\n")
+            fh.write(f"Frozen:     {getattr(sys, 'frozen', False)}\n")
+            if thread_name:
+                fh.write(f"Thread:     {thread_name}\n")
+            fh.write(f"Exception:  {exc_type.__name__}: {exc_value}\n")
+            fh.write("-" * 60 + "\n")
+            _traceback.print_exception(exc_type, exc_value, exc_traceback, file=fh)
+
+        return dump_path
+    except Exception:  # noqa: BLE001 — last-resort writer must not raise
+        return None

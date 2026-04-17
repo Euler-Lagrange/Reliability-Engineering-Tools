@@ -943,4 +943,135 @@ def canonical_pn(pn: str) -> str:
     return re.sub(r'[^A-Z0-9]', '', s)
 
 
+# =============================================================================
+# Output File Utilities
+# =============================================================================
+
+def is_writable_directory(path: Path) -> bool:
+    """Return True when ``path`` can accept a newly created file.
+
+    Probes by creating a short-lived temporary file inside ``path``. Catches
+    ``OSError`` which covers permission errors, read-only drives, exhausted
+    disk, OneDrive read-only placeholders, and network hiccups.
+    """
+    try:
+        with tempfile.TemporaryFile(dir=str(path)):
+            return True
+    except OSError:
+        return False
+
+
+def atomic_write_path(target: Path) -> Path:
+    """Compute a sibling temporary path for atomic writes.
+
+    Returns a path in the same directory as ``target`` (so ``os.replace``
+    stays on the same filesystem) with a random infix. Callers should
+    write to the returned path and then ``os.replace(tmp, target)`` on
+    success.
+
+    The returned path PRESERVES ``target``'s extension (e.g. ``.xlsx``) so
+    writers that sniff format from the suffix (openpyxl in particular —
+    see ``_validate_archive``) keep working on the temp file. This is why
+    the layout is ``.<stem>.<hex>.part<suffix>`` instead of
+    ``.<name>.<hex>.part``.
+    """
+    target = Path(target)
+    suffix = target.suffix
+    stem = target.stem
+    return target.with_name(f".{stem}.{secrets.token_hex(4)}.part{suffix}")
+
+
+def atomic_finalize(tmp_path: Path, target: Path, log_func=None) -> None:
+    """Atomically promote ``tmp_path`` to ``target``.
+
+    If ``target`` already exists it is overwritten atomically (via
+    ``os.replace``). On any failure the temp file is removed and the
+    exception propagates to the caller.
+    """
+    tmp_path = Path(tmp_path)
+    target = Path(target)
+    try:
+        os.replace(str(tmp_path), str(target))
+    except OSError:
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except OSError:
+            pass
+        if log_func is not None:
+            try:
+                log_func(f"Failed to finalize output file to {target}")
+            except Exception:  # pragma: no cover - defensive
+                pass
+        raise
+
+
+def validate_explicit_output_directory(
+    explicit_directory,
+    log_func=None,
+) -> Optional[Path]:
+    """Validate a user-supplied output directory.
+
+    Returns the resolved ``Path`` when ``explicit_directory`` is a real,
+    writable directory. Returns ``None`` when ``explicit_directory`` is
+    empty / missing / not a directory / not writable, emitting a WARNING
+    via ``log_func`` and the module logger so the run log surfaces the
+    fallback reason. Callers should fall back to their tool-specific
+    "first input file parent" heuristic on ``None``.
+    """
+    def _warn(message: str) -> None:
+        _ensure_logger().warning(message)
+        if log_func is not None:
+            try:
+                log_func(f"WARNING: {message}")
+            except Exception:  # pragma: no cover - defensive
+                pass
+
+    if not explicit_directory:
+        return None
+    candidate = str(explicit_directory).strip()
+    if not candidate:
+        return None
+    try:
+        path = Path(candidate).expanduser().resolve()
+    except (OSError, ValueError) as exc:
+        _warn(
+            f"Failed to resolve outputDirectory '{candidate}': "
+            f"{exc}. Falling back to input-file heuristic."
+        )
+        return None
+    if not path.is_dir():
+        _warn(
+            f"Explicit outputDirectory '{candidate}' is not a directory; "
+            f"falling back to input-file heuristic."
+        )
+        return None
+    if not is_writable_directory(path):
+        _warn(
+            f"Explicit outputDirectory '{candidate}' is not writable; "
+            f"falling back to input-file heuristic."
+        )
+        return None
+    return path
+
+
+def verify_excel_readable(path: Path) -> bool:
+    """Smoke-verify that ``path`` is a loadable Excel workbook.
+
+    Opens the workbook read-only via openpyxl without reading cell values.
+    Returns True on success, False on any exception. Intended as a
+    post-write sanity check after an atomic finalize.
+    """
+    try:
+        from openpyxl import load_workbook  # local import to keep start-up lazy
+        wb = load_workbook(str(path), read_only=True, data_only=True)
+        try:
+            wb.sheetnames  # touching the metadata is enough
+        finally:
+            wb.close()
+        return True
+    except Exception:
+        return False
+
+
 

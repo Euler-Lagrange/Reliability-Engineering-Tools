@@ -6,7 +6,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from common import get_tool_logger, CancellationToken
+from common import (
+    get_tool_logger,
+    CancellationToken,
+    atomic_write_path,
+    atomic_finalize,
+    verify_excel_readable,
+    validate_explicit_output_directory,
+)
 from common.exceptions import ValidationError
 from shared.pre_run_validation import LabeledState, LabeledValue, validate_pre_run_state
 
@@ -78,7 +85,17 @@ def _get_mapping(body: dict[str, Any], canonical: str) -> str | None:
     return None
 
 
-def _resolve_output_directory(inputs_by_role: dict[str, dict[str, Any]]) -> Path:
+def _resolve_output_directory(
+    inputs_by_role: dict[str, dict[str, Any]],
+    explicit_directory: str | None = None,
+    log_callback: Callable[[str], None] | None = None,
+) -> Path:
+    resolved = validate_explicit_output_directory(
+        explicit_directory,
+        log_func=log_callback,
+    )
+    if resolved is not None:
+        return resolved
     for role in ("fmea", "prediction"):
         candidate = _input_path(inputs_by_role, role)
         if candidate:
@@ -168,9 +185,6 @@ def execute_run_request(
 
     inputs_by_role = _collect_inputs(body)
     options = body.get("options") or {}
-    output_directory = _resolve_output_directory(inputs_by_role)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = output_directory / f"FailureRate_Link_{timestamp}.xlsx"
 
     logs: list[str] = []
 
@@ -178,6 +192,14 @@ def execute_run_request(
         logs.append(message)
         if log_callback:
             log_callback(message)
+
+    output_directory = _resolve_output_directory(
+        inputs_by_role,
+        explicit_directory=body.get("outputDirectory"),
+        log_callback=stream_log,
+    )
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_path = output_directory / f"FailureRate_Link_{timestamp}.xlsx"
 
     def emit_status(status: str, stage: str, message: str) -> None:
         if status_callback:
@@ -232,7 +254,21 @@ def execute_run_request(
 
     emit_status("running", "Writing workbook", "Writing Excel report...")
     emit_progress("Writing workbook", "Writing...", 90)
-    logic.save_results(str(output_path))
+    tmp_output = atomic_write_path(output_path)
+    try:
+        logic.save_results(str(tmp_output))
+        if not verify_excel_readable(tmp_output):
+            raise IOError(
+                f"Post-write verification failed for {tmp_output}; workbook did not open."
+            )
+        atomic_finalize(tmp_output, output_path, log_func=stream_log)
+    except Exception:
+        try:
+            if tmp_output.exists():
+                tmp_output.unlink()
+        except OSError:
+            pass
+        raise
     emit_progress("Complete", "Failure rate linking complete.", 100)
 
     # Count warnings from Validation_Notes column
