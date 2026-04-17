@@ -1,7 +1,7 @@
 {
   "name": "reliability-tools-tauri",
   "private": true,
-  "version": "0.4.3",
+  "version": "0.4.4",
   "type": "module",
   "scripts": {
     "dev": "vite --config frontend/vite.config.ts",
@@ -16,7 +16,8 @@
     "tauri:readiness": "node ./scripts/tauri-readiness.mjs",
     "tauri:dev": "node ./scripts/tauri-runner.mjs dev",
     "tauri:build": "node ./scripts/tauri-runner.mjs build",
-    "tauri:build:portable": "node ./scripts/tauri-runner.mjs build --no-bundle"
+    "tauri:build:portable": "node ./scripts/tauri-runner.mjs build --no-bundle",
+    "cargo:check": "node ./scripts/cargo-runner.mjs check --manifest-path src-tauri/Cargo.toml --quiet"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",

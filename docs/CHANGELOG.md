@@ -5,6 +5,29 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2026-04-17 — release.bat cargo-check MSVC env
+
+### Fixed
+
+- **`scripts/release.bat` step 3 (`cargo check`) now finds `link.exe`**
+  (`scripts/cargo-runner.mjs`, `scripts/cargo-msvc.cmd` — both new). The
+  0.4.3 hardening added a bare `cargo check --quiet` call that assumed
+  MSVC was on the parent shell's `PATH`. On a fresh shell (the exact
+  environment `release.bat` spawns itself into) it isn't, so the step
+  died with `error: linker 'link.exe' not found` before reaching the
+  full Tauri build. The fix mirrors the existing `tauri-runner.mjs` /
+  `tauri-msvc.cmd` pair: `cargo-runner.mjs` resolves `vswhere` (with a
+  hardcoded VS 2022 BuildTools fallback when `vswhere` can't be spawned)
+  and delegates to `cargo-msvc.cmd`, which calls `vcvars64.bat` /
+  `VsDevCmd.bat` before invoking `cargo`. Step 3 now routes through
+  `npm run cargo:check`.
+
+### Added
+
+- **`npm run cargo:check`** — run Rust typecheck with the MSVC
+  environment set up. Equivalent to `cargo check --manifest-path
+  src-tauri/Cargo.toml --quiet` but works on a cold shell.
+
 ## [0.4.3] - 2026-04-17 — v0.4.2 Build Fix + QC Pass
 
 ### Fixed

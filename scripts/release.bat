@@ -55,11 +55,8 @@ call npm run typecheck >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :typecheck_failed
 
 echo [3/11] Typechecking Rust bridge (cargo check)...
-pushd "%REPO_ROOT%\src-tauri"
-cargo check --quiet >> "%LOGFILE%" 2>&1
-set "CARGO_CHECK_RC=%ERRORLEVEL%"
-popd
-if not "%CARGO_CHECK_RC%"=="0" goto :cargo_check_failed
+call npm run cargo:check >> "%LOGFILE%" 2>&1
+if errorlevel 1 goto :cargo_check_failed
 
 echo [4/11] Running backend security audit...
 pushd "%REPO_ROOT%\backend\python"
