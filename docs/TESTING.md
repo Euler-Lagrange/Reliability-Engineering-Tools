@@ -4,24 +4,28 @@
 
 | Suite | Path | Count | Framework |
 |-------|------|-------|-----------|
-| Backend integration | `backend/tests/test_sidecar_main.py` | 37 | pytest |
+| Backend integration | `backend/tests/test_sidecar_main.py` | 42 | pytest |
 | Backend security audit | `backend/tests/test_security_audit.py` | 17 | pytest |
-| Backend cancel bridge | `backend/tests/test_cancel_bridge.py` | 8 | pytest |
+| Backend cancel bridge | `backend/tests/test_cancel_bridge.py` | 12 | pytest |
 | Backend FMEA Phase D | `backend/tests/test_fmea_phase_d.py` | 44 | pytest |
-| **Backend subtotal** | | **106** | |
-| Frontend shell | `frontend/src/app/App.test.tsx` | 10 | Vitest + RTL |
+| **Backend subtotal** | | **115** | |
+| Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
+| Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 4 | Vitest + RTL |
 | Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 1 | Vitest + RTL |
 | Frontend mapping table | `frontend/src/components/MappingTable.test.tsx` | 11 | Vitest + RTL |
-| Frontend run state panel | `frontend/src/components/RunStatePanel.test.tsx` | 5 | Vitest + RTL |
+| Frontend run state panel | `frontend/src/components/RunStatePanel.test.tsx` | 6 | Vitest + RTL |
 | Frontend log panel resize | `frontend/src/components/GlobalLogPanel.resize.test.tsx` | 13 | Vitest + RTL |
 | Frontend command palette | `frontend/src/components/primitives/CommandPalette.test.tsx` | 5 | Vitest + RTL |
 | Frontend hold button | `frontend/src/components/primitives/HoldButton.test.tsx` | 5 | Vitest + RTL |
 | Frontend empty state | `frontend/src/components/primitives/EmptyState.test.tsx` | 5 | Vitest + RTL |
-| Frontend run lifecycle | `frontend/src/shared/backend/runLifecycle.test.ts` | 9 | Vitest |
+| Frontend run lifecycle | `frontend/src/shared/backend/runLifecycle.test.ts` | 6 | Vitest |
 | Frontend cancel error | `frontend/src/shared/backend/cancelError.test.ts` | 12 | Vitest |
 | Frontend cancel run | `frontend/src/shared/backend/client.cancelRun.test.ts` | 2 | Vitest |
 | Frontend busy reset | `frontend/src/shared/backend/useBackendBusyReset.test.ts` | 9 | Vitest |
+| Frontend backend bootstrap | `frontend/src/shared/backend/useBackendBootstrap.test.ts` | 2 | Vitest |
+| Frontend run subscription | `frontend/src/shared/backend/useBackendRunSubscription.test.ts` | 2 | Vitest |
 | Frontend theme registry | `frontend/src/shared/theme/themeRegistry.test.ts` | 10 | Vitest |
+| Frontend app shortcuts | `frontend/src/shared/hooks/useAppShortcuts.test.tsx` | 4 | Vitest + RTL |
 | Frontend role-request sequence | `frontend/src/shared/hooks/useRoleRequestSequence.test.ts` | 5 | Vitest |
 | Frontend copy to clipboard | `frontend/src/shared/hooks/useCopyToClipboard.test.ts` | 3 | Vitest |
 | Frontend global log store | `frontend/src/stores/globalLogStore.test.ts` | 6 | Vitest |
@@ -29,8 +33,8 @@
 | Frontend FMEA inspection | `frontend/src/features/fmea/FmeaTool.inspection.test.tsx` | 2 | Vitest + RTL |
 | Frontend mapping columns | `frontend/src/features/fmea/mappingColumns.test.ts` | 21 | Vitest |
 | Frontend mapping analysis | `frontend/src/features/fmea/mappingAnalysis.test.ts` | 7 | Vitest |
-| **Frontend subtotal** | | **148** | |
-| **Total** | | **254** | |
+| **Frontend subtotal** | | **159** | |
+| **Total** | | **274** | |
 
 ## Backend Tests
 

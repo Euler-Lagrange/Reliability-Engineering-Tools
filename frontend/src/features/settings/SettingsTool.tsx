@@ -150,7 +150,13 @@ export function SettingsTool() {
                     ? `${styles.themeOption} ${styles.themeOptionSelected}`
                     : styles.themeOption;
                   return (
-                    <button key={option.id} type="button" className={classes} onClick={() => setThemeMode(option.id)}>
+                    <button
+                      key={option.id}
+                      type="button"
+                      className={classes}
+                      data-selected={isSelected || undefined}
+                      onClick={() => setThemeMode(option.id)}
+                    >
                       <Icon
                         size={20}
                         weight={isSelected ? "fill" : "regular"}

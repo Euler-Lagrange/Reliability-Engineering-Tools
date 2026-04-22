@@ -33,3 +33,6 @@ Thumbs.db
 
 # TypeScript build info
 frontend/tsconfig.tsbuildinfo
+
+# Design-tool handoff bundles (reference-only, not shipped)
+design_handoff_reliability_tools/

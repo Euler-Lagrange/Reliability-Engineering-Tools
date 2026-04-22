@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { SectionCard } from "../SectionCard";
+import { SectionCard, type SectionCardVariant } from "../SectionCard";
 
 /**
  * OptionsSection — thin composition of `SectionCard` + a vertical grid for
@@ -12,6 +12,7 @@ export interface OptionsSectionProps {
   description?: string;
   eyebrow?: string;
   actions?: ReactNode;
+  variant?: SectionCardVariant;
   children: ReactNode;
 }
 
@@ -20,6 +21,7 @@ export function OptionsSection({
   description,
   eyebrow,
   actions,
+  variant,
   children,
 }: OptionsSectionProps) {
   return (
@@ -28,6 +30,7 @@ export function OptionsSection({
       eyebrow={eyebrow}
       description={description}
       actions={actions}
+      variant={variant}
     >
       <div className="options-section__grid">{children}</div>
     </SectionCard>

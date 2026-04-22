@@ -134,6 +134,32 @@
   /* Motion */
   --ease: cubic-bezier(0.25, 1, 0.5, 1);
   --border-subtle: var(--line);
+
+  /* ============================================================
+     Section surface hierarchy — SectionCard variant backgrounds.
+     Deliberately prefixed `--section-*` to avoid colliding with
+     the theme-aware `--surface` / `--surface-muted` / `--surface-soft`
+     palette above. Primary = visible card surface, muted = divider-
+     only supporting section, decoration = preview / diagnostic panel. */
+  --section-surface-primary: var(--surface);
+  --section-surface-muted: transparent;
+  --section-surface-decoration: var(--surface-soft);
+
+  /* Named gap roles — semantic aliases over --space-*. Reach for these
+     where the gap has a meaning (inline / grouped / section / page),
+     not just a size. Raw --space-N is still fine for one-off rules. */
+  --gap-inline: var(--space-2);    /*  8px — within a control */
+  --gap-group: var(--space-4);     /* 16px — within a related group */
+  --gap-section: var(--space-7);   /* 32px — between major sections */
+  --gap-page: var(--space-8);      /* 48px — major page regions */
+
+  /* Extended type scale. --text-xxl is the handoff-prescribed H1
+     size (28px); added as a new token rather than bumping --text-2xl
+     so existing 24px consumers are unaffected. --text-3xl is reserved
+     for at-most-one hero metric per tool (designator count, diff count).
+     Off-grid by design — matches the dense-UI rationale above. */
+  --text-xxl: 28px;
+  --text-3xl: 32px;
 }
 
 :root[data-theme="dark_precision"] {
@@ -506,6 +532,207 @@ button:disabled {
   text-transform: uppercase;
 }
 
+/* ============================================================
+   Unified selection rule — per design handoff principle F.
+   One pattern applies everywhere a user has picked one of N:
+   choice cards, strategy cards, workflow cards, theme tiles,
+   radio chips. Existing `data-active="true"` selectors remain
+   for backwards-compatibility while call sites migrate.
+   ============================================================ */
+[data-selected="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+[data-selected="true"] .eyebrow,
+[data-selected="true"] .section-card__eyebrow,
+[data-selected="true"] .choice-card__eyebrow {
+  color: var(--accent);
+}
+
+/* Hero metric — oversized numeral for the single KPI per tool
+   (designator count, diff count, FR rollup total). Pair with
+   tabular-nums so successive digit widths align. */
+.hero-metric {
+  font-size: var(--text-3xl);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  line-height: 1.1;
+}
+
+/* ============================================================
+   ContextDrawer — right-anchored Review drawer (design handoff
+   principle D). Overlay only, not a grid column; slides in from
+   the edge when `data-open="true"`. No backdrop — the drawer is
+   informational, not modal, and must not steal pointer events
+   from the main workspace.
+   ============================================================ */
+.context-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 40;
+  width: min(360px, 100vw);
+  height: 100vh;
+  padding: var(--space-5);
+  /* 1px seam on the left blends with --line so the drawer feels part
+     of the chrome rather than a floating tile. Shadow carries depth
+     without fighting the rail's borders-only language. */
+  border-left: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-popover);
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: var(--space-4);
+  overflow-y: auto;
+  transform: translateX(100%);
+  transition: transform 220ms var(--ease);
+  pointer-events: none;
+}
+
+.context-drawer[data-open="true"] {
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+.context-drawer__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.context-drawer__title {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  line-height: 1.15;
+  color: var(--text);
+}
+
+.context-drawer__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    border-color 160ms var(--ease),
+    color 160ms var(--ease);
+}
+
+.context-drawer__close:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.context-drawer__close:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
+}
+
+.context-drawer__section {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.context-drawer__section .eyebrow {
+  /* eyebrow spec defined globally; override only what the drawer needs. */
+  color: var(--text-muted);
+}
+
+.context-drawer__summary {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.context-drawer__summary dt {
+  color: var(--text-muted);
+  font-weight: var(--weight-medium);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-uppercase);
+  font-size: var(--text-2xs);
+  align-self: center;
+}
+
+.context-drawer__summary dd {
+  margin: 0;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.context-drawer__progress {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+
+.context-drawer__progress-unit {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.context-drawer__empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.context-drawer__preview-caption {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.context-drawer__preview-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--section-surface-decoration);
+}
+
+.context-drawer__preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.context-drawer__preview-table th,
+.context-drawer__preview-table td {
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.context-drawer__preview-table th {
+  color: var(--text-muted);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-uppercase);
+  font-size: var(--text-2xs);
+  background: var(--section-surface-decoration);
+  position: sticky;
+  top: 0;
+}
+
+.context-drawer__preview-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
 .hero__subtitle,
 .section-card__description,
 .section-card__microcopy,
@@ -632,6 +859,32 @@ button:disabled {
   padding: var(--space-4);
 }
 
+/* ============================================================
+   SectionCard variants (design handoff principle B).
+   The base `.section-card` already sets border + --surface bg
+   via the shared rule above; .section-card--outlined is an
+   explicit no-op that exists for symmetry with the overrides.
+   ============================================================ */
+.section-card--outlined {
+  border: 1px solid var(--line);
+  background: var(--section-surface-primary);
+}
+
+.section-card--divided {
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--section-surface-muted);
+  padding-inline: 0;
+}
+
+.section-card--bare {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding-inline: 0;
+}
+
 .section-card__header {
   display: flex;
   justify-content: space-between;
@@ -742,8 +995,24 @@ button:disabled {
   gap: var(--space-2);
 }
 
+/* ============================================================
+   Pill vocabulary (design handoff principle E).
+   Three distinct treatments by role — pick the right one by
+   semantics, don't mix them:
+
+   - .badge-state   — filled semantic color (LOADED, VALIDATED, ERROR).
+                      Signals a run-time state with meaningful color.
+   - .tag-category  — outlined neutral (FUNCTIONAL, PIECE-PART).
+                      Signals a classification without urgency.
+   - .kbd-shortcut  — text-only monospace (⌘K, CTRL+L).
+                      Signals a keyboard hint, unboxed.
+
+   .status-chip is kept as a legacy alias of .badge-state so the
+   migration can proceed call-site by call-site without churn.
+   ============================================================ */
 .choice-card__badge,
-.status-chip {
+.status-chip,
+.badge-state {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -760,7 +1029,8 @@ button:disabled {
 
 .choice-card__badge,
 .status-chip--pending,
-.status-chip--info {
+.status-chip--info,
+.badge-state--idle {
   color: var(--accent);
   background: var(--accent-soft);
   border-color: rgba(35, 94, 231, 0.12);
@@ -769,7 +1039,8 @@ button:disabled {
 .status-chip--ready,
 .status-chip--mapped,
 .status-chip--success,
-.status-chip--completed {
+.status-chip--completed,
+.badge-state--good {
   color: var(--success);
   background: var(--success-soft);
   border-color: rgba(27, 135, 88, 0.12);
@@ -779,17 +1050,52 @@ button:disabled {
 .status-chip--warning,
 .status-chip--active,
 .status-chip--manual,
-.status-chip--optional {
+.status-chip--optional,
+.badge-state--warn {
   color: var(--warning);
   background: var(--warning-soft);
   border-color: rgba(148, 97, 0, 0.12);
 }
 
 .status-chip--error,
-.status-chip--failure {
+.status-chip--failure,
+.badge-state--bad {
   color: var(--danger);
   background: var(--danger-soft);
   border-color: rgba(177, 68, 51, 0.12);
+}
+
+.tag-category {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px; /* match badge-state height */
+  padding: 0 var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.kbd-shortcut {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--space-1);
+  background: transparent;
+  border: 0;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-uppercase);
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .toggle-row {
@@ -887,6 +1193,62 @@ button:disabled {
   display: grid;
   gap: var(--space-2);
   padding: var(--space-3);
+  transition:
+    background 160ms var(--ease),
+    border-color 160ms var(--ease),
+    opacity 160ms var(--ease);
+}
+
+/* ============================================================
+   Stepper states — design handoff principle J. Every control
+   stays in the DOM so tests keep passing; the CSS just subdues
+   pending cards and compresses loaded ones so the user's eye
+   lands on the single "active" step. */
+.input-card[data-state="pending"] {
+  opacity: 0.62;
+  background: var(--section-surface-decoration);
+}
+
+.input-card[data-state="pending"]:hover,
+.input-card[data-state="pending"]:focus-within {
+  opacity: 1;
+}
+
+.input-card[data-state="active"] {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.input-card[data-state="loaded"] {
+  background: var(--section-surface-decoration);
+}
+
+.input-card__step-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-right: var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  vertical-align: -4px; /* off-grid: visual baseline alignment next to the label */
+}
+
+.input-card[data-state="active"] .input-card__step-indicator {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.input-card[data-state="loaded"] .input-card__step-indicator {
+  border-color: var(--success);
+  background: var(--success-soft);
+  color: var(--success);
 }
 
 .input-card__label {
@@ -1264,12 +1626,51 @@ tbody tr:hover {
   color: var(--text);
 }
 
+/* Status dot next to the Run Log title — design handoff principle I.
+   Derived live from runStore: idle (muted), active (accent, pulsing),
+   good (success), warn (warning), bad (danger). Decorative only —
+   aria-hidden on the element, meaning is carried by text in the
+   log body itself. */
+.run-log-panel__status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-pill);
+  background: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.run-log-panel__status-dot[data-status="active"] {
+  background: var(--accent);
+  animation: run-log-panel__status-pulse 1.6s var(--ease) infinite;
+}
+
+.run-log-panel__status-dot[data-status="good"] {
+  background: var(--success);
+}
+
+.run-log-panel__status-dot[data-status="warn"] {
+  background: var(--warning);
+}
+
+.run-log-panel__status-dot[data-status="bad"] {
+  background: var(--danger);
+}
+
+@keyframes run-log-panel__status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
 .run-log-panel__count {
-  color: var(--text-faint);
+  /* Bumped per design handoff principle I: raise legibility on the
+     collapsed strip from --text-2xs/--text-faint to --text-sm/--text-
+     secondary so the run-count reads as real data, not decorative. */
+  color: var(--text-secondary);
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-normal);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
   letter-spacing: 0.04em; /* off-grid: tighter than uppercase tracking for compact metric display */
 }
 
@@ -1397,7 +1798,11 @@ tbody tr:hover {
 .run-log-panel__resize-handle {
   display: block;
   width: 100%;
-  height: 6px; /* off-grid: minimal grab target height */
+  /* Bumped from 6px to 10px per design handoff principle I: the old
+     6-pixel strip was a needle-thin target that users regularly missed.
+     The hover/focus band scales with the new height so the visual
+     affordance matches the hit area. */
+  height: 10px;
   cursor: ns-resize;
   background: transparent;
   border: none;
@@ -2392,6 +2797,48 @@ tbody tr:hover {
 
 .topbar__chip-spacer {
   flex: 1;
+}
+
+/* Review drawer toggle — topbar-embedded button that opens the right-
+   anchored ContextDrawer (design handoff principle D). Matches the
+   chip heights for visual rhythm but is clearly clickable.  */
+.topbar__review-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 28px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition:
+    border-color 160ms var(--ease),
+    background 160ms var(--ease),
+    color 160ms var(--ease);
+}
+
+.topbar__review-toggle:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.topbar__review-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
+}
+
+.topbar__review-toggle[data-active="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.topbar__review-toggle .kbd-shortcut {
+  margin-left: var(--space-1);
 }
 
 /* ---- Toast dwell tuning (Task 5) -------------------------------- */

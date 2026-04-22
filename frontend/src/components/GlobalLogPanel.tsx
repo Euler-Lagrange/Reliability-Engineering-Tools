@@ -7,7 +7,29 @@ import {
   type GlobalLogEntry,
   type GlobalLogFilterMode,
 } from "../stores/globalLogStore";
+import { useRunStore } from "../stores/runStore";
 import { useShellStore, type ToolId } from "../stores/shellStore";
+
+/**
+ * Map the active-run phase (plus idle / disconnected state) onto one of
+ * four semantic dot colors rendered next to the "Run Log" title.
+ * Stays in sync with the RunMode union in app/types — if a new phase is
+ * added there, classify it here.
+ */
+type LogStatusDot = "idle" | "active" | "good" | "warn" | "bad";
+
+function deriveLogStatusDot(
+  phase: string | null | undefined,
+  hasDisconnect: boolean,
+  hasError: boolean,
+): LogStatusDot {
+  if (hasDisconnect) return "warn";
+  if (hasError || phase === "failure") return "bad";
+  if (phase === "cancelled") return "warn";
+  if (phase === "success") return "good";
+  if (phase === "starting" || phase === "running" || phase === "cancelling") return "active";
+  return "idle";
+}
 
 const TOOL_LABELS: Record<ToolId, string> = toolDefinitions.reduce(
   (acc, tool) => {
@@ -143,6 +165,12 @@ export function GlobalLogPanel() {
   const setFilterMode = useGlobalLogStore((state) => state.setFilterMode);
   const clear = useGlobalLogStore((state) => state.clear);
   const activeToolId = useShellStore((state) => state.activeToolId);
+  const activeRun = useRunStore((state) => state.activeRun);
+  const statusDot = deriveLogStatusDot(
+    activeRun?.phase,
+    !!activeRun?.isDisconnected,
+    !!activeRun?.errorMessage,
+  );
 
   const visibleEntries = useMemo(() => {
     if (filterMode === "active") {
@@ -350,6 +378,11 @@ export function GlobalLogPanel() {
           title={isVisible ? "Hide run log" : "Show run log"}
         >
           {isVisible ? <CaretDown size={14} weight="bold" /> : <CaretUp size={14} weight="bold" />}
+          <span
+            className="run-log-panel__status-dot"
+            data-status={statusDot}
+            aria-hidden="true"
+          />
           <span className="run-log-panel__title">Run Log</span>
           <span className="run-log-panel__count">{totalLabel}</span>
           {truncatedCount > 0 ? (

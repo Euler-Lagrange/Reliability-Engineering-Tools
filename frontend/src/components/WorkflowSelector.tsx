@@ -20,6 +20,7 @@ export function WorkflowSelector({
             key={workflow.id}
             className="choice-card"
             data-active={workflow.id === selectedWorkflowId}
+            data-selected={workflow.id === selectedWorkflowId}
             data-disabled={isDisabled || undefined}
             onClick={() => {
               if (!isDisabled) {

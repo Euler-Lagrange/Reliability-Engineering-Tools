@@ -101,11 +101,27 @@ export const validationMessageSchema = z.object({
   detail: z.string(),
 });
 
+/**
+ * Output preview (added 0.4.5) — optional payload on `validate_run` that
+ * shows a best-effort sample of source/input rows mapped into review-
+ * friendly columns so the Review drawer can confirm what data a tool is
+ * about to process. Omitted by the backend whenever preview generation
+ * isn't viable (validation failed, mappings incomplete, adapter raised).
+ * Cap of 20 rows is enforced server-side.
+ */
+export const outputPreviewSchema = z.object({
+  columns: z.array(z.string()),
+  rows: z.array(z.array(z.string())),
+  truncated: z.boolean(),
+  total_estimated: z.number().int().nonnegative().nullable().optional(),
+});
+
 export const validateRunResultSchema = z.object({
   ok: z.boolean(),
   reason_code: z.string(),
   toast_text: z.string(),
   validations: z.array(validationMessageSchema),
+  output_preview: outputPreviewSchema.nullable().optional(),
   mode: backendModeSchema,
 });
 
@@ -286,6 +302,7 @@ export type SidecarCommand = z.infer<typeof sidecarCommandSchema>;
 export type InspectionResult = z.infer<typeof inspectionResultSchema>;
 export type TemplateAnalysisResult = z.infer<typeof templateAnalysisResultSchema>;
 export type ValidationMessageResult = z.infer<typeof validationMessageSchema>;
+export type OutputPreview = z.infer<typeof outputPreviewSchema>;
 export type ValidateRunResult = z.infer<typeof validateRunResultSchema>;
 export type ExecuteRunAcceptedResult = z.infer<typeof executeRunAcceptedResultSchema>;
 export type CancelRunResult = z.infer<typeof cancelRunResultSchema>;

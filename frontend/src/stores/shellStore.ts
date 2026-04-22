@@ -27,12 +27,21 @@ interface ShellState {
   bomCompareOutputDirectory: string | null;
   failureRateOutputDirectory: string | null;
   refdesExtractorOutputDirectory: string | null;
+  /**
+   * Review drawer visibility — design handoff principle D. The drawer
+   * slides in from the right and displays the active tool's run summary
+   * and `output_preview` from the last validate_run. Persisted so the
+   * drawer state survives navigation but defaults closed on first load.
+   */
+  contextOpen: boolean;
   setActiveToolId: (toolId: ToolId) => void;
   setBackendState: (state: Partial<Pick<ShellState, "backendStatus" | "backendMode" | "backendMessage" | "lastBackendCheckAt">>) => void;
   setFmeaOutputDirectory: (path: string | null) => void;
   setBomCompareOutputDirectory: (path: string | null) => void;
   setFailureRateOutputDirectory: (path: string | null) => void;
   setRefdesExtractorOutputDirectory: (path: string | null) => void;
+  setContextOpen: (open: boolean) => void;
+  toggleContext: () => void;
 }
 
 export const useShellStore = create<ShellState>()(
@@ -47,12 +56,15 @@ export const useShellStore = create<ShellState>()(
       bomCompareOutputDirectory: null,
       failureRateOutputDirectory: null,
       refdesExtractorOutputDirectory: null,
+      contextOpen: false,
       setActiveToolId: (activeToolId) => set({ activeToolId }),
       setBackendState: (state) => set((current) => ({ ...current, ...state })),
       setFmeaOutputDirectory: (path) => set({ fmeaOutputDirectory: path }),
       setBomCompareOutputDirectory: (path) => set({ bomCompareOutputDirectory: path }),
       setFailureRateOutputDirectory: (path) => set({ failureRateOutputDirectory: path }),
       setRefdesExtractorOutputDirectory: (path) => set({ refdesExtractorOutputDirectory: path }),
+      setContextOpen: (contextOpen) => set({ contextOpen }),
+      toggleContext: () => set((state) => ({ contextOpen: !state.contextOpen })),
     }),
     {
       // Only the small subset of ShellState that should survive a reload is
@@ -64,6 +76,7 @@ export const useShellStore = create<ShellState>()(
         bomCompareOutputDirectory: state.bomCompareOutputDirectory,
         failureRateOutputDirectory: state.failureRateOutputDirectory,
         refdesExtractorOutputDirectory: state.refdesExtractorOutputDirectory,
+        contextOpen: state.contextOpen,
       }),
     },
   ),

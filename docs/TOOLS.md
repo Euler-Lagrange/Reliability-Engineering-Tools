@@ -168,6 +168,15 @@ mapped column from the BOM, HDA, and failure-modes library carried through.
 The execution log records the row count, how many parts matched a failure
 mode, and how many parts had no match.
 
+### Review drawer (⌘R / Ctrl+R)
+
+After running Validate, open the Review drawer from the topbar (or press
+⌘R / Ctrl+R) to see a sample of the source rows this tool will process.
+For FMEA that's the first 20 rows of the BOM workbook (or the functional
+FMEA when the workflow is Merge Functional → Piece-Part), mapped to
+`RefDes / Part Number / Description` columns. Previews are capped at
+20 rows and are skipped for source files larger than 10 MB.
+
 ### Limitations
 
 - Fill Gaps does not rewrite or re-score existing rows; it only adds new ones.
@@ -244,6 +253,14 @@ row content supports it, the comparison switches on a few extra checks:
   RefDes plus FMEA ID plus Failure Mode, so the same RefDes with different
   failure modes does not trip a false duplicate.
 
+### Review drawer (⌘R / Ctrl+R)
+
+After running Validate, open the Review drawer from the topbar (or press
+⌘R / Ctrl+R) to see a sample of the primary BOM's first 20 rows mapped to
+`RefDes / Part Number / Description` columns. It's a quick sanity check
+that the tool parsed the workbook you expected. Previews are capped at
+20 rows and skipped for files larger than 10 MB.
+
 ### Limitations
 
 - Comparisons are cell-value based. Formatting and formulas are ignored.
@@ -318,6 +335,14 @@ Mode_FR column (the failure rate for that specific failure mode, computed as
 prediction failure rate times Failure Mode Ratio times Part Usage). If the
 Failure Mode Ratio validator is on, a warnings sheet lists any instances
 where the sums are out of tolerance.
+
+### Review drawer (⌘R / Ctrl+R)
+
+After running Validate, open the Review drawer from the topbar (or press
+⌘R / Ctrl+R) to see a sample of the prediction workbook's first 20 rows
+mapped to `RefDes / Failure Rate / Description` columns. The sample
+previews the FR values about to be merged into the FMEA. Previews are
+capped at 20 rows and skipped for files larger than 10 MB.
 
 ### Limitations
 
@@ -404,6 +429,16 @@ An Excel workbook containing:
   for pasting into the FMEA as a failure-mode cause.
 - **Component counts** — per-group and total RefDes counts.
 - **Page index** — which PDF page each group was extracted from.
+
+### Review drawer (⌘R / Ctrl+R)
+
+After running Validate, open the Review drawer from the topbar (or press
+⌘R / Ctrl+R) to see a sample of the optional BOM workbook — the first 20
+rows mapped to `RefDes / Part Number / Description` columns. This helps
+confirm the extractor will be validated against the expected designators.
+No preview is shown when no BOM is provided (previewing the PDF itself
+would require running the extractor). Previews are capped at 20 rows and
+skipped for files larger than 10 MB.
 
 ### Limitations
 

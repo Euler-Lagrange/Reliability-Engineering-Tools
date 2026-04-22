@@ -12,6 +12,7 @@ function renderApp() {
     backendMode: "unknown",
     backendMessage: "Initializing backend bridge...",
     lastBackendCheckAt: null,
+    contextOpen: false,
   });
   useThemeStore.setState({
     mode: "system",
@@ -55,7 +56,7 @@ describe("tauri_build shell", () => {
     await waitForFmeaTool();
 
     const generationHeading = screen.getByRole("heading", {
-      name: /piece-part fmea generation options/i,
+      name: /^generation options$/i,
       level: 2,
     });
     const outputsHeading = screen.getByRole("heading", {

@@ -23,6 +23,7 @@ from common import (
 )
 from common.exceptions import ValidationError, ProcessingError
 from shared.pre_run_validation import LabeledState, LabeledValue, validate_pre_run_state
+from shared.output_preview import build_preview_from_file
 
 _logger = get_tool_logger("refdes_extractor_runtime")
 
@@ -231,13 +232,44 @@ def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
             "detail": result.toast_text or "Resolve the highlighted setup issues before running.",
         })
 
-    return {
+    response: dict[str, Any] = {
         "ok": result.ok,
         "reason_code": result.reason_code,
         "toast_text": result.toast_text,
         "validations": messages,
         "mode": "desktop-bridge",
     }
+    if result.ok:
+        preview = _build_refdes_output_preview(inputs_by_role)
+        if preview is not None:
+            response["output_preview"] = preview
+    return response
+
+
+def _build_refdes_output_preview(
+    inputs_by_role: dict[str, dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Sample the optional BOM workbook so the Review drawer can show the
+    reference designators that the extracted PDF results will be
+    validated against. No preview is emitted when the user hasn't
+    provided a BOM — the PDF itself isn't cheap to preview via
+    ``try_read_table``, and the extracted-designator head is only
+    meaningful after the real extraction runs.
+    """
+    bom_state = inputs_by_role.get("bom") or {}
+    path = str(bom_state.get("path", "")).strip() or None
+    sheet = str(bom_state.get("selectedSheet", "")).strip() or None
+    if not path:
+        return None
+    return build_preview_from_file(
+        path,
+        sheet,
+        [
+            ("RefDes", ("Reference Designator", "RefDes", "Ref Des", "Reference")),
+            ("Part Number", ("Part Number", "Manufacturer Part Number", "PartNumber", "Mfg PN", "MPN")),
+            ("Description", ("Description", "Component Description", "Part Description")),
+        ],
+    )
 
 
 # ---------------------------------------------------------------------------

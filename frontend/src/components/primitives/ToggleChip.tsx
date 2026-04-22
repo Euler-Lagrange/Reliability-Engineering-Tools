@@ -89,6 +89,7 @@ export function ToggleChip<T extends string = string>({
             role={itemRole}
             aria-checked={selected}
             data-active={selected}
+            data-selected={selected}
             data-value={option.value}
             disabled={optionDisabled}
             name={name}

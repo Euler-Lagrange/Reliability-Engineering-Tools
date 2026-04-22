@@ -16,6 +16,7 @@ from common import (
 )
 from common.exceptions import ValidationError
 from shared.pre_run_validation import LabeledState, LabeledValue, validate_pre_run_state
+from shared.output_preview import build_preview_from_file
 
 from failure_rate.failure_rate_logic import FMEALinkerLogic
 
@@ -162,13 +163,40 @@ def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
             "detail": result.toast_text or "Resolve the highlighted setup issues before running.",
         })
 
-    return {
+    response: dict[str, Any] = {
         "ok": result.ok,
         "reason_code": result.reason_code,
         "toast_text": result.toast_text,
         "validations": messages,
         "mode": "desktop-bridge",
     }
+    if result.ok:
+        preview = _build_failure_rate_output_preview(inputs_by_role)
+        if preview is not None:
+            response["output_preview"] = preview
+    return response
+
+
+def _build_failure_rate_output_preview(
+    inputs_by_role: dict[str, dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Sample the prediction workbook so the Review drawer can show the
+    source failure-rate rows about to be merged into the FMEA.
+    """
+    input_state = inputs_by_role.get("prediction") or {}
+    path = str(input_state.get("path", "")).strip() or None
+    sheet = str(input_state.get("selectedSheet", "")).strip() or None
+    if not path:
+        return None
+    return build_preview_from_file(
+        path,
+        sheet,
+        [
+            ("RefDes", ("Reference Designator", "RefDes", "Ref Des", "Reference")),
+            ("Failure Rate", ("Failure Rate", "FIT", "FR", "Lambda", "Failure Rate (FIT)")),
+            ("Description", ("Description", "Component Description", "Part Description")),
+        ],
+    )
 
 
 def execute_run_request(

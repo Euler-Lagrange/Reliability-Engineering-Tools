@@ -2,6 +2,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   Command,
   Copy,
+  Eye,
   Faders,
   Sparkle,
   Terminal,
@@ -10,6 +11,7 @@ import {
 import styles from "./AppShell.module.css";
 import { toolDefinitions } from "./toolRegistry";
 import { CommandPalette, type CommandPaletteAction } from "../components/primitives/CommandPalette";
+import { ContextDrawer } from "../components/ContextDrawer";
 import { GlobalLogPanel } from "../components/GlobalLogPanel";
 import { ErrorBoundary } from "../shared/errors/ErrorBoundary";
 import { backendClient } from "../shared/backend/client";
@@ -65,6 +67,8 @@ export function App() {
 
   const activeToolId = useShellStore((state) => state.activeToolId);
   const setActiveToolId = useShellStore((state) => state.setActiveToolId);
+  const contextOpen = useShellStore((state) => state.contextOpen);
+  const toggleContext = useShellStore((state) => state.toggleContext);
   const backendStatus = useShellStore((state) => state.backendStatus);
   const backendMode = useShellStore((state) => state.backendMode);
   const backendMessage = useShellStore((state) => state.backendMessage);
@@ -359,6 +363,22 @@ export function App() {
                       </span>
                     ) : null}
                   </div>
+                  <span className="topbar__chip-divider" aria-hidden="true" />
+                  <div className="topbar__chip-group" aria-label="Review drawer">
+                    <button
+                      type="button"
+                      className="topbar__review-toggle"
+                      data-active={contextOpen}
+                      onClick={toggleContext}
+                      aria-pressed={contextOpen}
+                      aria-label={contextOpen ? "Close Review drawer" : "Open Review drawer"}
+                      title={`Review drawer (${primaryShortcutLabel("R")})`}
+                    >
+                      <Eye size={14} weight={contextOpen ? "fill" : "regular"} />
+                      <span>Review</span>
+                      <span className="kbd-shortcut">{primaryShortcutLabel("R")}</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </header>
@@ -394,6 +414,7 @@ export function App() {
           </div>
         </div>
       </ErrorBoundary>
+      <ContextDrawer />
       <NotificationCenter />
       <CommandPalette
         actions={commandPaletteActions}

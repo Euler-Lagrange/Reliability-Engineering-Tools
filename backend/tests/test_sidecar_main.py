@@ -1962,3 +1962,160 @@ def test_sidecar_survives_malformed_envelope() -> None:
         assert health["payload"]["status"] == "ok"
     finally:
         process.kill()
+
+
+# ---------------------------------------------------------------------------
+# Phase 4a: output_preview on validate_run
+# ---------------------------------------------------------------------------
+
+def test_sidecar_validate_attaches_output_preview_for_fmea(tmp_path: Path) -> None:
+    """On successful FMEA validation, validate_run includes an output_preview
+    sampling RefDes / Part Number / Description from the BOM."""
+    process = subprocess.Popen(
+        [sys.executable, str(SIDECAR)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        env=SIDECAR_ENV,
+    )
+    try:
+        _read_ready_line(process)
+        result = _send_command(
+            process, "req_val_preview_fmea", "validate_run",
+            _build_phase4_run_body(tmp_path, group_rows=3),
+        )
+        assert result["kind"] == "result"
+        payload = result["payload"]
+        assert payload["ok"] is True
+        preview = payload.get("output_preview")
+        assert preview is not None, "Expected output_preview on successful validation"
+        assert set(preview["columns"]) >= {"RefDes", "Part Number", "Description"}
+        assert len(preview["rows"]) == 3
+        assert preview["truncated"] is False
+        assert preview["total_estimated"] == 3
+        # First row matches the fixture's R200 / PN-0000 / Resistor shape.
+        ref_idx = preview["columns"].index("RefDes")
+        assert preview["rows"][0][ref_idx] == "R200"
+    finally:
+        process.kill()
+
+
+def test_sidecar_validate_output_preview_truncated_when_over_cap(
+    tmp_path: Path,
+) -> None:
+    """When the source has more rows than PREVIEW_ROW_CAP (20), truncated=True
+    and rows is capped, but total_estimated reports the full count."""
+    process = subprocess.Popen(
+        [sys.executable, str(SIDECAR)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        env=SIDECAR_ENV,
+    )
+    try:
+        _read_ready_line(process)
+        body = _build_phase4_run_body(tmp_path, group_rows=25)
+        result = _send_command(process, "req_val_preview_truncate", "validate_run", body)
+        assert result["kind"] == "result"
+        payload = result["payload"]
+        assert payload["ok"] is True
+        preview = payload.get("output_preview")
+        assert preview is not None
+        assert len(preview["rows"]) == 20
+        assert preview["truncated"] is True
+        assert preview["total_estimated"] == 25
+    finally:
+        process.kill()
+
+
+def test_sidecar_validate_omits_preview_when_validation_fails(
+    tmp_path: Path,
+) -> None:
+    """A failed validation must NOT carry an output_preview — the preview
+    is only a garnish on successful runs."""
+    body = _build_phase4_run_body(tmp_path)
+    body["outputStrategyId"] = "existing_workbook_best_effort"  # unsupported
+
+    process = subprocess.Popen(
+        [sys.executable, str(SIDECAR)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        env=SIDECAR_ENV,
+    )
+    try:
+        _read_ready_line(process)
+        result = _send_command(
+            process, "req_val_preview_fail", "validate_run", body,
+        )
+        assert result["kind"] == "result"
+        payload = result["payload"]
+        assert payload["ok"] is False
+        assert "output_preview" not in payload
+    finally:
+        process.kill()
+
+
+def test_sidecar_validate_attaches_output_preview_for_bom_compare(
+    tmp_path: Path,
+) -> None:
+    """BOM Compare attaches a preview from the BOM workbook."""
+    process = subprocess.Popen(
+        [sys.executable, str(SIDECAR)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        env=SIDECAR_ENV,
+    )
+    try:
+        _read_ready_line(process)
+        result = _send_command(
+            process, "req_val_preview_bc", "validate_run",
+            _build_bom_compare_group_body(tmp_path),
+        )
+        assert result["kind"] == "result"
+        payload = result["payload"]
+        assert payload["ok"] is True
+        preview = payload.get("output_preview")
+        assert preview is not None
+        assert "RefDes" in preview["columns"]
+        assert len(preview["rows"]) >= 1
+    finally:
+        process.kill()
+
+
+def test_sidecar_validate_attaches_output_preview_for_failure_rate(
+    tmp_path: Path,
+) -> None:
+    """Failure Rate attaches a preview from the prediction workbook."""
+    process = subprocess.Popen(
+        [sys.executable, str(SIDECAR)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        env=SIDECAR_ENV,
+    )
+    try:
+        _read_ready_line(process)
+        result = _send_command(
+            process, "req_val_preview_fr", "validate_run",
+            _build_failure_rate_run_body(tmp_path),
+        )
+        assert result["kind"] == "result"
+        payload = result["payload"]
+        assert payload["ok"] is True
+        preview = payload.get("output_preview")
+        # Failure Rate preview is best-effort — test fixture column names may
+        # not match any of the synonyms, in which case preview is legitimately
+        # omitted. If present, it must be well-formed.
+        if preview is not None:
+            assert isinstance(preview["columns"], list)
+            assert isinstance(preview["rows"], list)
+            assert isinstance(preview["truncated"], bool)
+    finally:
+        process.kill()

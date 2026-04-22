@@ -16,6 +16,7 @@ from common import (
 )
 
 from shared.pre_run_validation import LabeledState, LabeledValue, validate_pre_run_state
+from shared.output_preview import build_preview_from_file
 from fmea.fmea_generator_logic import FMEAProcessor, write_excel_report
 
 _logger = logging.getLogger(__name__)
@@ -444,7 +445,7 @@ def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
                 affected_labels=result.affected_labels,
             )
 
-    return {
+    response: dict[str, Any] = {
         "ok": result.ok,
         "reason_code": result.reason_code,
         "toast_text": result.toast_text,
@@ -453,6 +454,45 @@ def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
         ),
         "mode": "desktop-bridge",
     }
+    # Attach output_preview on success only (design handoff principle D /
+    # phase 4a). Preview failures never fail validation — the helper
+    # swallows exceptions and returns None.
+    if result.ok:
+        preview = _build_fmea_output_preview(workflow_id, inputs_by_role)
+        if preview is not None:
+            response["output_preview"] = preview
+    return response
+
+
+def _build_fmea_output_preview(
+    workflow_id: str, inputs_by_role: dict[str, dict[str, Any]]
+) -> dict[str, Any] | None:
+    """Sample the primary BOM / functional FMEA so the Review drawer can show
+    the source rows that will feed the generated workbook.
+
+    The preview is a head of the user's input mapped to the canonical
+    columns most users care about (RefDes, Part Number, Description) —
+    not a faithful simulation of the eventual FMEA row expansion, which
+    would require running the processor. It still answers the question
+    "did the tool see my parts?".
+    """
+    # functional_to_piecepart reads from the functional FMEA first; every
+    # other workflow anchors on the BOM.
+    primary_role = "functionalFmea" if workflow_id == "functional_to_piecepart" else "bom"
+    input_state = inputs_by_role.get(primary_role) or {}
+    path = str(input_state.get("path", "")).strip() or None
+    sheet = str(input_state.get("selectedSheet", "")).strip() or None
+    if not path:
+        return None
+    return build_preview_from_file(
+        path,
+        sheet,
+        [
+            ("RefDes", ("Reference Designator", "RefDes", "Ref Des", "Reference")),
+            ("Part Number", ("Part Number", "Manufacturer Part Number", "PartNumber", "Mfg PN", "MPN")),
+            ("Description", ("Description", "Component Description", "Part Description")),
+        ],
+    )
 
 
 def _selected_sheet(inputs_by_role: dict[str, dict[str, Any]], role: str) -> str | None:

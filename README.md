@@ -51,8 +51,8 @@ npm run tauri:dev              # Desktop with hot reload
 
 ```powershell
 npm run typecheck              # TypeScript type checking
-npm test                       # Frontend tests (153 tests across 23 test suites)
-.venv\Scripts\python.exe -m pytest backend\tests -v   # Backend tests (110 tests across sidecar, audit, cancel bridge, FMEA phase D)
+npm test                       # Frontend tests (159 tests across 24 test suites)
+.venv\Scripts\python.exe -m pytest backend\tests -v   # Backend tests (115 tests across sidecar, audit, cancel bridge, FMEA phase D)
 ```
 
 ### Build
@@ -78,6 +78,7 @@ NDJSON over stdio between Rust and Python. Commands: `health_check`, `list_sheet
 - `execute_run` streams progress/log events with a terminal result
 - `health_check` now reports the sidecar log directory so Settings › Logs can reveal it
 - `validate_run` / `execute_run` accept an optional `outputDirectory` honored by every tool
+- `validate_run` may return an optional `output_preview` sample surfaced in the shell's Review drawer (⌘R / Ctrl+R)
 - Heartbeat supervision: Python emits every 5s, Rust times out at 15s
 - Automatic frontend reconnection with exponential backoff on disconnect
 - Full spec in `contracts/sidecar-protocol.md`

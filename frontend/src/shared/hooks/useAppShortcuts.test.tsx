@@ -20,6 +20,7 @@ beforeEach(() => {
     backendMode: "browser-mock",
     backendMessage: null,
     lastBackendCheckAt: null,
+    contextOpen: false,
   });
   useThemeStore.setState({ mode: "system" });
 });
@@ -66,5 +67,50 @@ describe("useAppShortcuts", () => {
 
     expect(useShellStore.getState().activeToolId).toBe("dark_star_fmea");
     input.remove();
+  });
+
+  it("toggles the Review drawer with Ctrl+R on Windows", () => {
+    setNavigatorPlatform("Win32");
+    useShellStore.setState({ contextOpen: false });
+    renderHook(() => useAppShortcuts());
+
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "r",
+          ctrlKey: true,
+          bubbles: true,
+        }),
+      );
+    });
+    expect(useShellStore.getState().contextOpen).toBe(true);
+
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "r",
+          ctrlKey: true,
+          bubbles: true,
+        }),
+      );
+    });
+    expect(useShellStore.getState().contextOpen).toBe(false);
+  });
+
+  it("toggles the Review drawer with Cmd+R on macOS", () => {
+    setNavigatorPlatform("MacIntel");
+    useShellStore.setState({ contextOpen: false });
+    renderHook(() => useAppShortcuts());
+
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "r",
+          metaKey: true,
+          bubbles: true,
+        }),
+      );
+    });
+    expect(useShellStore.getState().contextOpen).toBe(true);
   });
 });

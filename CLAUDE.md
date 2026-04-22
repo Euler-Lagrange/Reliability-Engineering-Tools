@@ -64,14 +64,14 @@ NDJSON over stdio. Commands: `health_check`, `list_sheets`, `inspect_input`, `an
 npm run dev              # Vite dev server (browser preview mode)
 npm run build            # Production build
 npm run typecheck        # TypeScript type checking
-npm test                 # Vitest (148 tests)
+npm test                 # Vitest (159 tests)
 
 # Desktop (requires Rust toolchain)
 npm run tauri:dev        # Dev mode with hot reload
 npm run tauri:build:portable  # Release build → src-tauri/target/.../release/
 
 # Python sidecar (use project venv)
-.venv\Scripts\python.exe -m pytest backend/tests -v    # 110 backend tests (37 sidecar + 17 audit + 12 cancel bridge + 44 FMEA phase D)
+.venv\Scripts\python.exe -m pytest backend/tests -v    # 115 backend tests (42 sidecar + 17 audit + 12 cancel bridge + 44 FMEA phase D)
 .venv\Scripts\python.exe backend/python/sidecar_main.py --self-test
 
 # Full release
@@ -155,8 +155,8 @@ The audit runs:
 
 ## Testing
 
-### Backend Tests (110 total)
-- 37 sidecar integration tests in `test_sidecar_main.py`
+### Backend Tests (115 total)
+- 42 sidecar integration tests in `test_sidecar_main.py`
 - 17 security-audit tests in `test_security_audit.py` (synthetic positives + live tree scan)
 - 12 cancel-bridge tests in `test_cancel_bridge.py` (BOM Compare + RefDes bridges plus Failure Rate `FMEALinkerLogic.cancel` binding through `ActiveRun`)
 - 44 FMEA Phase D tests in `test_fmea_phase_d.py`
@@ -168,10 +168,11 @@ The audit runs:
 - `pytest.importorskip("fitz")` for RefDes tests requiring PyMuPDF
 - `backend/tests/conftest.py` installs a `sys.path` shim for in-process unit tests
 
-### Frontend Tests (153 total across 23 test files)
+### Frontend Tests (159 total across 24 test files)
 - Vitest + React Testing Library
 - Browser-mock mode (no Tauri runtime needed)
 - `src/app/App.test.tsx`
+- `src/components/ContextDrawer.test.tsx` (new in 0.4.5)
 - `src/components/CustomSelect.test.tsx`
 - `src/components/MappingTable.test.tsx`
 - `src/components/RunStatePanel.test.tsx` (now covers the Open-folder affordance)
@@ -196,7 +197,7 @@ The audit runs:
 - `src/stores/globalLogStore.test.ts`
 
 Run `npx vitest run --reporter=default` to see individual counts per file —
-the suite totals 153 tests as of 0.4.2 and changes whenever a suite gains or
+the suite totals 159 tests as of 0.4.5 and changes whenever a suite gains or
 loses cases.
 
 ## Critical Gotchas

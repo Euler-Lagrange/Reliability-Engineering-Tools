@@ -19,6 +19,7 @@ from common import (
 )
 from common.exceptions import ValidationError
 from shared.pre_run_validation import LabeledState, LabeledValue, validate_pre_run_state
+from shared.output_preview import build_preview_from_file
 
 from bom_compare.bom_compare_logic import (
     ColumnMapping,
@@ -186,13 +187,44 @@ def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
             "detail": result.toast_text or "Resolve the highlighted setup issues before running.",
         })
 
-    return {
+    response: dict[str, Any] = {
         "ok": result.ok,
         "reason_code": result.reason_code,
         "toast_text": result.toast_text,
         "validations": messages,
         "mode": "desktop-bridge",
     }
+    if result.ok:
+        preview = _build_bom_compare_output_preview(workflow_id, inputs_by_role)
+        if preview is not None:
+            response["output_preview"] = preview
+    return response
+
+
+def _build_bom_compare_output_preview(
+    workflow_id: str,
+    inputs_by_role: dict[str, dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Sample the primary BOM so the Review drawer can show the source rows
+    that will be compared. The eventual diff output is richer (matched /
+    missing / extra annotations), but previewing it requires running the
+    full compare — this sample answers "these are the parts I'm comparing".
+    """
+    primary_role = "bomA" if workflow_id == "bom_compare_custom" else "bom"
+    input_state = inputs_by_role.get(primary_role) or {}
+    path = str(input_state.get("path", "")).strip() or None
+    sheet = str(input_state.get("selectedSheet", "")).strip() or None
+    if not path:
+        return None
+    return build_preview_from_file(
+        path,
+        sheet,
+        [
+            ("RefDes", ("Reference Designator", "RefDes", "Ref Des", "Reference")),
+            ("Part Number", ("Part Number", "Manufacturer Part Number", "PartNumber", "Mfg PN", "MPN")),
+            ("Description", ("Description", "Component Description", "Part Description")),
+        ],
+    )
 
 
 class _CancelBridge:

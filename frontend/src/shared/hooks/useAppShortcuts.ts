@@ -14,6 +14,7 @@ const orderedTools: ToolId[] = [
 export function useAppShortcuts() {
   const activeToolId = useShellStore((state) => state.activeToolId);
   const setActiveToolId = useShellStore((state) => state.setActiveToolId);
+  const toggleContext = useShellStore((state) => state.toggleContext);
   const setThemeMode = useThemeStore((state) => state.setMode);
 
   useEffect(() => {
@@ -47,6 +48,16 @@ export function useAppShortcuts() {
         return;
       }
 
+      // Design handoff principle D: ⌘R / Ctrl+R toggles the Review drawer.
+      // Uppercase "R" matches regardless of the Shift state since browsers
+      // report it differently across platforms; the helper already strips
+      // Shift via its caseless compare.
+      if (matchesPrimaryShortcut(event, "r")) {
+        event.preventDefault();
+        toggleContext();
+        return;
+      }
+
       if (matchesPrimaryShortcut(event, "l", { requireAlt: true })) {
         event.preventDefault();
         setThemeMode("light_precision");
@@ -61,5 +72,5 @@ export function useAppShortcuts() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeToolId, setActiveToolId, setThemeMode]);
+  }, [activeToolId, setActiveToolId, setThemeMode, toggleContext]);
 }

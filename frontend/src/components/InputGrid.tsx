@@ -17,24 +17,71 @@ interface InputGridProps {
   getDisabledSheetReason?: (input: InputFileState) => string | undefined;
 }
 
+type InputCardState = "pending" | "active" | "loaded";
+
+/**
+ * Design handoff principle J (stepper) — classify each input card so CSS can
+ * collapse unstarted and completed rows while the single actionable card
+ * stays fully expanded. The first card without a path is the "active" step;
+ * later unstarted cards read as "pending" and fully-loaded cards read as
+ * "loaded". Tests continue to query these cards by role/label, so every
+ * control stays in the DOM regardless of state.
+ */
+function classifyInputStates(inputs: InputFileState[]): InputCardState[] {
+  let activeClaimed = false;
+  return inputs.map((input) => {
+    const hasPath = !!input.path;
+    const ready =
+      hasPath &&
+      input.status === "ready" &&
+      !input.isResolvingSheets &&
+      !input.isAnalyzing;
+    if (ready) return "loaded";
+    if (!hasPath && !activeClaimed) {
+      activeClaimed = true;
+      return "active";
+    }
+    if (!hasPath) return "pending";
+    // Has a path but is resolving / attention / optional — treat as the
+    // active card if nothing has claimed it yet; otherwise leave pending.
+    if (!activeClaimed) {
+      activeClaimed = true;
+      return "active";
+    }
+    return "pending";
+  });
+}
+
 export function InputGrid({ inputs, onBrowse, onSheetChange, getDisabledSheetReason }: InputGridProps) {
   const { copy, copied } = useCopyToClipboard();
+  const states = classifyInputStates(inputs);
 
   return (
     <div className="input-grid">
-      {inputs.map((input) => {
+      {inputs.map((input, index) => {
         const showExampleStyling =
           !!input.isExample && input.source !== "desktop-bridge" && !!input.path;
         const displayPath = showExampleStyling ? `Example: ${input.path}` : input.path;
         const sheetDisabled = !onSheetChange || input.isResolvingSheets || input.sheets.length === 0;
         const sheetDisabledReason = sheetDisabled ? getDisabledSheetReason?.(input) : undefined;
         const canCopyPath = !!input.path;
+        const state = states[index];
 
         return (
-          <article key={input.role} className="input-card">
+          <article
+            key={input.role}
+            className="input-card"
+            data-state={state}
+            data-step={index + 1}
+          >
             <div className="input-card__header">
               <div className="input-card__header-text">
-                <p className="input-card__label">{input.label}</p>
+                <p className="input-card__label">
+                  <span className="input-card__step-indicator" aria-hidden="true">
+                    {state === "loaded" ? "✓" : index + 1}
+                  </span>
+                  {input.label}
+                </p>
                 <div className="input-card__path-wrap">
                   <span
                     className={`input-card__path${showExampleStyling ? " input-card__path--example" : ""}`}

@@ -44,6 +44,7 @@ import { buildRunTimeline, useBackendRunLifecycle } from "../../shared/backend/r
 import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
 import { useRoleRequestSequence } from "../../shared/hooks/useRoleRequestSequence";
 import { useNotificationStore } from "../../stores/notificationStore";
+import { usePreviewStore } from "../../stores/previewStore";
 import { useShellStore } from "../../stores/shellStore";
 
 const baseScenario = demoScenarios[0];
@@ -459,6 +460,7 @@ export function FmeaTool() {
   const fmeaOutputDirectory = useShellStore((state) => state.fmeaOutputDirectory);
   const setFmeaOutputDirectory = useShellStore((state) => state.setFmeaOutputDirectory);
   const pushNotification = useNotificationStore((state) => state.push);
+  const setPreview = usePreviewStore((state) => state.setPreview);
   const {
     session: desktopRunSession,
     beginAcceptedRun,
@@ -1147,6 +1149,10 @@ export function FmeaTool() {
     try {
       const validation = await backendClient.validateRun(runRequest);
       setValidations(validation.validations);
+      // Phase 4: publish output_preview to the shared store so the
+      // Review drawer can render the sampled rows. Clearing on failure
+      // prevents a stale preview from lingering after an input change.
+      setPreview("dark_star_fmea", validation.output_preview ?? null);
 
       if (!validation.ok) {
         setRunMode("idle");
@@ -1225,7 +1231,7 @@ export function FmeaTool() {
         <div className="workspace-grid__main">
           <SectionCard
             className="section-card--compact"
-            title="Piece-Part FMEA Generation Options"
+            title="Generation Options"
             eyebrow="Configuration"
             description="Choose the generation path, confirm the standards in play, and load the source workbooks this mode needs."
             actions={
@@ -1481,6 +1487,7 @@ export function FmeaTool() {
         <aside className="workspace-grid__side workspace-grid__side--sticky">
           <SectionCard
             className="section-card--compact"
+            variant="divided"
             title="Review Panel"
             eyebrow="Context"
             description={

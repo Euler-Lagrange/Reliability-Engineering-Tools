@@ -40,6 +40,19 @@ where the accent color demands it — the High Contrast theme sets
 `.primary-button` now reference `var(--text-on-accent)` instead of hardcoding
 `color: #ffffff`.
 
+### Section surface tokens (added 0.4.5)
+
+A namespaced set of tokens that drives `SectionCard` variants without
+colliding with the existing theme-aware `--surface-muted` palette color
+above. Prefer these when you need the "surface of a section container"
+rather than the "theme's muted background".
+
+| Token | Default value | Intended use |
+|-------|---------------|--------------|
+| `--section-surface-primary` | `var(--surface)` | Default outlined card (SectionCard `variant="outlined"`) |
+| `--section-surface-muted` | `transparent` | Supporting section (SectionCard `variant="divided"`) |
+| `--section-surface-decoration` | `var(--surface-soft)` | Preview / diagnostic inset (e.g., Review drawer preview table) |
+
 ## Typography Tokens
 
 ### Font families
@@ -88,7 +101,9 @@ Both fonts are OFL-licensed; the license text travels in
 | `--text-md`  | 16 px | Section card titles |
 | `--text-lg`  | 18 px | Subsection headlines |
 | `--text-xl`  | 20 px | Tool banner title |
-| `--text-2xl` | 24 px | Topbar `<h1>` |
+| `--text-2xl` | 24 px | Legacy headline size; retained for unchanged consumers |
+| `--text-xxl` | 28 px | Topbar `<h1>` (bumped in 0.4.5) |
+| `--text-3xl` | 32 px | Hero metric utility (opt-in, see below) |
 
 ### Weights
 
@@ -143,6 +158,21 @@ and `min-height`.
 min-height in component CSS — always reach for one of the tokens above.
 Off-grid values are allowed only with an inline comment explaining the
 deviation (e.g., negative-margin hit-area expansion on an icon button).
+
+### Semantic gap aliases (added 0.4.5)
+
+Named aliases over `--space-*` that say what the gap *means*, not just how
+big it is. Existing `var(--space-N)` usage still works; reach for these
+when the intent is clearer than the pixel value.
+
+| Token | Maps to | Intended use |
+|-------|---------|--------------|
+| `--gap-inline` | `var(--space-2)` (8 px) | Within a single control (icon + label, chip + count) |
+| `--gap-group` | `var(--space-4)` (16 px) | Between related controls inside a form row |
+| `--gap-section` | `var(--space-7)` (32 px) | Between SectionCards or other major regions |
+| `--gap-page` | `var(--space-8)` (48 px) | Major page-level regions |
+
+Adoption is opportunistic — no call-site migration shipped in 0.4.5.
 
 ## Border Radius Tokens
 
@@ -264,6 +294,18 @@ Its styling choices:
 - **Collapse.** A chevron button in the header toggles the body.
 - **Top edge.** The 1 px accent gradient described in **Signature Topbar
   Accent Gradient** — same stop positions, same opacity.
+- **Status dot (added 0.4.5).** A 10 px circle next to the "Run Log"
+  title reflects the current `runStore.activeRun.phase`:
+  idle = `var(--text-faint)`, active = `var(--accent)` with a 1.6 s
+  pulse, good = `var(--success)`, warn = `var(--warning)`,
+  bad = `var(--danger)`. Decorative only (`aria-hidden`); meaning is
+  carried by the log body text itself.
+- **Collapsed count legibility (0.4.5).** The truncation/entry-count
+  text bumped from `var(--text-2xs)` / `var(--text-faint)` to
+  `var(--text-sm)` / `var(--text-secondary)` so the summary reads as
+  data, not decoration.
+- **Resize handle (0.4.5).** Hit area widened 6 px → 10 px; the hover
+  band still activates on the same rule, just over a larger grab zone.
 
 ## Mission Control Theme Exception
 
@@ -397,12 +439,13 @@ tool's `*Tool.tsx`.
 
 | Component | File | Purpose |
 |-----------|------|---------|
-| `SectionCard` | `SectionCard.tsx` | Bordered card with eyebrow, title, description, and an actions slot |
-| `InputGrid` | `InputGrid.tsx` | Grid of input file cards with status chips and sheet pickers |
+| `SectionCard` | `SectionCard.tsx` | Bordered card with eyebrow, title, description, and an actions slot. `variant="outlined" \| "divided" \| "bare"` (default `"outlined"`) added in 0.4.5 |
+| `ContextDrawer` | `ContextDrawer.tsx` | Right-anchored overlay "Review" drawer toggled by ⌘R / Ctrl+R (new in 0.4.5). Renders run summary + `output_preview` table; informational, not modal |
+| `InputGrid` | `InputGrid.tsx` | Grid of input file cards with status chips and sheet pickers. Each card carries `data-state="pending\|active\|loaded"` driving the stepper CSS added in 0.4.5 |
 | `MappingTable` | `MappingTable.tsx` | Column-mapping table for canonical → mapped pairs |
 | `RunStatePanel` | `RunStatePanel.tsx` | Sticky run-state panel: button, progress, timeline, result |
-| `WorkflowSelector` | `WorkflowSelector.tsx` | Workflow choice cards |
-| `StrategySelector` | `StrategySelector.tsx` | Output strategy cards |
+| `WorkflowSelector` | `WorkflowSelector.tsx` | Workflow choice cards (emits both `data-active` and `data-selected`) |
+| `StrategySelector` | `StrategySelector.tsx` | Output strategy cards (emits both `data-active` and `data-selected`) |
 | `CustomSelect` | `CustomSelect.tsx` | Accessible dropdown with keyboard navigation |
 | `ValidationPreview` | `ValidationPreview.tsx` | Pre-run validation message list |
 | `ScenarioRail` | `ScenarioRail.tsx` | Demo scenario picker (browser preview only) |
@@ -454,3 +497,114 @@ intent to theme the surface differently from the rest of the app.
 - **Status chips use the `--{tone}` / `--{tone}-soft` pair.** Pair every
   status chip with the matching foreground/background tone token so high
   contrast and color-blind palettes stay coherent.
+
+## Pill, Chip, Badge Vocabulary (0.4.5)
+
+`.status-chip` was previously used for three different jobs — runtime
+state, classification, and keyboard hints — all rendered as filled pills.
+The 0.4.5 design pass split the vocabulary so each job has one
+treatment. `.status-chip` is retained as a legacy alias of `.badge-state`
+so existing call sites keep working; call-site migration is
+opportunistic.
+
+| Class | Treatment | Role | Examples |
+|-------|-----------|------|----------|
+| `.badge-state` (+ `--good` / `--warn` / `--bad` / `--idle`) | Filled, semantic color | Runtime state a user needs to notice | `LOADED`, `VALIDATED`, `ERROR`, `MAPPED` |
+| `.tag-category` | Outlined neutral | Classification without urgency | `FUNCTIONAL`, `PIECE-PART`, `LEAN`, `BALANCED` |
+| `.kbd-shortcut` | Text-only monospace, no box | Keyboard hint | `⌘K`, `⌘R`, `CTRL+[` |
+
+Mixing treatments is a smell — a card full of filled pills trains the eye
+to ignore color. Pick the one that matches the role.
+
+## Selection State (0.4.5)
+
+A single global rule handles every "you picked this one" UI affordance so
+choice cards, theme tiles, radio chips, and workflow cards look the same
+when selected:
+
+```css
+[data-selected="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+[data-selected="true"] .eyebrow,
+[data-selected="true"] .section-card__eyebrow,
+[data-selected="true"] .choice-card__eyebrow {
+  color: var(--accent);
+}
+```
+
+`StrategySelector`, `WorkflowSelector`, `ToggleChip`, and the Settings
+theme tiles emit both `data-selected={isSelected}` and the pre-existing
+`data-active={isSelected}`. The two attributes coexist during the
+migration — component CSS still keys off `data-active` where it already
+does; new surfaces should prefer `data-selected`.
+
+## Hero Metric Utility (0.4.5)
+
+A standalone class for the one prominent numeric KPI per tool
+(designator count, diff count, FR rollup total). Available for opt-in;
+no call site adopts it in 0.4.5.
+
+```css
+.hero-metric {
+  font-size: var(--text-3xl);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  line-height: 1.1;
+}
+```
+
+## SectionCard Variants (0.4.5)
+
+```ts
+type SectionCardVariant = "outlined" | "divided" | "bare";
+```
+
+| Variant | Treatment | When to use |
+|---------|-----------|-------------|
+| `"outlined"` (default) | 1 px border, `var(--section-surface-primary)` background | Primary cards (choice, inputs, mapping, run panel) |
+| `"divided"` | `border-top` only, `var(--section-surface-muted)` (transparent) background, `padding-inline: 0` | Supporting sections like the Review Panel — quieter than primary |
+| `"bare"` | No border, no background, no inline padding | Free-flow content that just needs the title block |
+
+The FMEA, BOM Compare, Failure Rate, and RefDes Extractor tools all use
+`variant="divided"` on their Review Panel SectionCards. Every other
+call site relies on the `"outlined"` default.
+
+## InputGrid Progressive Disclosure (0.4.5)
+
+Each `.input-card` now carries a `data-state` attribute computed from
+the input's loaded/pending/active status and a step-indicator span
+showing the step number or `✓`:
+
+| `data-state` | Condition | Visual treatment |
+|--------------|-----------|-------------------|
+| `"pending"` | No path picked yet AND a different card is already `"active"` | Dimmed (`opacity: 0.62`), decoration-tinted background; hover/focus restores full opacity |
+| `"active"` | First card missing a path, OR a card that's resolving sheets | Outlined in `var(--accent)`; full legibility |
+| `"loaded"` | Path set, status `"ready"`, sheets resolved | Decoration-tinted background; indicator flips to ✓ with success tint |
+
+Every control stays in the DOM regardless of state so existing tests
+still query cards by role/label.
+
+## Keyboard Shortcuts
+
+The shell-level hook `useAppShortcuts` (`frontend/src/shared/hooks/`)
+binds every global shortcut. Design-system consumers should prefer
+adding bindings there rather than installing ad-hoc listeners.
+
+| Shortcut | Action |
+|----------|--------|
+| ⌘K / Ctrl+K | Toggle Command Palette |
+| ⌘1 … ⌘5 / Ctrl+1 … Ctrl+5 | Jump to tool by index |
+| ⌘[ / Ctrl+[ | Previous tool |
+| ⌘] / Ctrl+] | Next tool |
+| ⌘R / Ctrl+R | Toggle Review drawer (0.4.5) |
+| ⌥L / Alt+L | Switch to Light Precision theme |
+| ⌥D / Alt+D | Switch to Dark Precision theme |
+
+Bindings respect `isEditableKeyboardTarget` so typing inside an input
+never hijacks a shortcut.

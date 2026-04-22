@@ -117,6 +117,12 @@ that hosts:
   `OptionsSection`, `HoldButton`, `EmptyState`. The Command Palette
   (Ctrl+K) is mounted at the `AppShell` level and provides cross-tool
   navigation and action dispatch.
+- **Review drawer** (`frontend/src/components/ContextDrawer.tsx`) — a
+  shell-level right-anchored overlay toggled by Ctrl/Cmd+R
+  (macOS-aware). It surfaces the active tool's run summary and last
+  `output_preview` sample without stealing focus — the drawer is `inert`
+  when closed, Escape dismisses, and there is no backdrop so the
+  underlying tool stays keyboard-reachable.
 
 ## Rust Bridge Layer
 
@@ -299,6 +305,13 @@ The `ack` envelope is the only message correlated by both `request_id` and
 `run_id`. After it lands the Rust bridge resolves the pending request and
 forwards every subsequent run-tagged envelope as a Tauri event.
 
+`validate_run` responses may optionally include an `output_preview` field
+(since 0.4.5) — up to 20 rows of source/input data mapped into
+review-friendly columns, skipped for inputs over 10 MB and omitted when
+validation fails or a workflow has no natural preview source. The
+shell-level `ContextDrawer` is the sole consumer; `previewStore` (see
+*State Management*) caches the latest sample per tool.
+
 Full payload schemas live in `contracts/sidecar-protocol.md`.
 
 ## Heartbeat Supervision
@@ -366,9 +379,10 @@ the protocol's `validations` array.
 
 | Store | File | Persisted | Purpose |
 |-------|------|-----------|---------|
-| `useShellStore` | `frontend/src/stores/shellStore.ts` | yes (`zustand/middleware.persist`, key `reliability-tools-tauri-shell`) | active tool id, backend status/mode/message, last health-check timestamp, and per-tool `{fmea,bomCompare,failureRate,refdesExtractor}OutputDirectory: string \| null` |
+| `useShellStore` | `frontend/src/stores/shellStore.ts` | yes (`zustand/middleware.persist`, key `reliability-tools-tauri-shell`) | active tool id, backend status/mode/message, last health-check timestamp, per-tool `{fmea,bomCompare,failureRate,refdesExtractor}OutputDirectory: string \| null`, and the `contextOpen` flag consumed by the `ContextDrawer` toggle |
 | `useThemeStore` | `frontend/src/stores/themeStore.ts` | yes (`zustand/middleware.persist`, key `reliability-tools-tauri-theme`) | `mode: "system" \| ThemeId` |
 | `useNotificationStore` | `frontend/src/stores/notificationStore.ts` | no | toast list with `push` / `dismiss` / `dismissAll` |
+| `usePreviewStore` | `frontend/src/stores/previewStore.ts` | no | last `output_preview` sample per tool, keyed by `ToolId`. Each tool's validate-run handler writes into it, and the shell-level `ContextDrawer` reads from it so a preview can be rendered independent of which tool is active. |
 
 `shellStore` uses `partialize` to persist only the four per-tool output
 directories; transient fields (backend status, mode, message) are

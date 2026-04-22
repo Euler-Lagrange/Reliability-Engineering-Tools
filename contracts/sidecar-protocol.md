@@ -126,6 +126,26 @@ All eight commands currently implemented by the sidecar:
     - `reason_code`
     - `toast_text`
     - `validations`
+    - `output_preview` — object, optional. Added in 0.4.5. A lightweight,
+      best-effort sample of source/input rows mapped into review-friendly
+      columns so the frontend's Review drawer can show what data the tool
+      is about to work from. Omitted when validation fails, inputs are
+      incomplete, or preview generation raises — preview errors never fail
+      validation. Shape:
+      - `columns` — string[]. Ordered column headers for the preview table.
+      - `rows` — string[][]. Up to `PREVIEW_ROW_CAP` (20) rows, each a list
+        of string cell values aligned with `columns`. Empty cells are
+        rendered as `""`.
+      - `truncated` — boolean. `true` when the full output would have more
+        than `PREVIEW_ROW_CAP` rows.
+      - `total_estimated` — integer. Best-effort count of the total source
+        rows available for preview; used by the UI to render "showing 20 of
+        1,942". `null` if the adapter cannot cheaply estimate it.
+      Each runtime decides which source rows are most useful to review for
+      its workflow:
+      FMEA samples the BOM or functional FMEA input, BOM Compare samples the
+      primary BOM, Failure Rate samples the prediction workbook, and RefDes
+      Extractor samples the optional BOM workbook when provided.
 - `execute_run`
   - request body:
     - `workflowId`

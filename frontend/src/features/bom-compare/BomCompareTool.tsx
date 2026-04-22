@@ -35,6 +35,7 @@ import { buildRunTimeline, useBackendRunLifecycle } from "../../shared/backend/r
 import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
 import { useRoleRequestSequence } from "../../shared/hooks/useRoleRequestSequence";
 import { useNotificationStore } from "../../stores/notificationStore";
+import { usePreviewStore } from "../../stores/previewStore";
 import { useShellStore } from "../../stores/shellStore";
 
 const workflowInputRoles: Partial<Record<WorkflowId, FileRole[]>> = {
@@ -119,6 +120,7 @@ export function BomCompareTool() {
     (state) => state.setBomCompareOutputDirectory,
   );
   const pushNotification = useNotificationStore((state) => state.push);
+  const setPreview = usePreviewStore((state) => state.setPreview);
 
   const {
     session: desktopRunSession,
@@ -577,6 +579,7 @@ export function BomCompareTool() {
     try {
       const validation = await backendClient.validateRun(runRequest);
       setValidations(validation.validations);
+      setPreview("bom_compare", validation.output_preview ?? null);
 
       if (!validation.ok) {
         setRunMode("idle");
@@ -816,6 +819,7 @@ export function BomCompareTool() {
 
           <aside className="workspace-grid__side workspace-grid__side--sticky">
             <SectionCard
+              variant="divided"
               title={contextView === "preview" ? "Review" : "Execution"}
               eyebrow="Context Panel"
               actions={

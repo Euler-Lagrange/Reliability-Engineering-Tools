@@ -33,6 +33,7 @@ import { buildRunTimeline, useBackendRunLifecycle } from "../../shared/backend/r
 import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
 import { useRoleRequestSequence } from "../../shared/hooks/useRoleRequestSequence";
 import { useNotificationStore } from "../../stores/notificationStore";
+import { usePreviewStore } from "../../stores/previewStore";
 import { useShellStore } from "../../stores/shellStore";
 
 function cloneInputs(inputs: InputFileState[]) {
@@ -100,6 +101,7 @@ export function FailureRateTool() {
     (state) => state.setFailureRateOutputDirectory,
   );
   const pushNotification = useNotificationStore((state) => state.push);
+  const setPreview = usePreviewStore((state) => state.setPreview);
 
   const {
     session: desktopRunSession,
@@ -516,6 +518,7 @@ export function FailureRateTool() {
     try {
       const validation = await backendClient.validateRun(runRequest);
       setValidations(validation.validations);
+      setPreview("failure_rate", validation.output_preview ?? null);
 
       if (!validation.ok) {
         setRunMode("idle");
@@ -750,6 +753,7 @@ export function FailureRateTool() {
 
           <aside className="workspace-grid__side workspace-grid__side--sticky">
             <SectionCard
+              variant="divided"
               title={contextView === "preview" ? "Review" : "Execution"}
               eyebrow="Context Panel"
               actions={

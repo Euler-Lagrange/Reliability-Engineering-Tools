@@ -5,6 +5,134 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2026-04-22 — Design Handoff: Review Drawer + Preview Protocol
+
+Additive refresh distilled from the `design_handoff_reliability_tools/`
+package — no tokens renamed, no components replaced, no breaking protocol
+changes. Introduces an optional `output_preview` field on `validate_run`
+and a shell-level review surface that consumes it.
+
+### Added
+
+- **`output_preview` field on `validate_run` response** — a best-effort
+  sample of **source/input rows mapped into review-friendly columns** (not
+  a simulation of the eventual output workbook). Capped at 20 rows; inputs
+  larger than 10 MB are skipped; emitted only after successful validation.
+  Documented in `contracts/sidecar-protocol.md`.
+- **Shared preview helper** (`backend/python/shared/output_preview.py`,
+  new): `build_preview_from_file`, `build_preview_from_dataframe`, and the
+  `PREVIEW_ROW_CAP = 20` / `PREVIEW_FILE_SIZE_LIMIT_BYTES = 10 MB`
+  constants. All four runtime adapters import from here — one preview
+  shape across the whole suite.
+- **Runtime adapters attach `output_preview` on success**:
+  - `backend/python/fmea/runtime.py` — samples the BOM, or the functional
+    FMEA for `functional_to_piecepart`.
+  - `backend/python/bom_compare/runtime.py` — samples the primary BOM.
+  - `backend/python/failure_rate/runtime.py` — samples the prediction
+    workbook.
+  - `backend/python/refdes_extractor/runtime.py` — samples the optional
+    BOM workbook when one is provided; no preview is emitted when the run
+    is PDF-only.
+- **Review drawer** (`frontend/src/components/ContextDrawer.tsx`, new): a
+  right-anchored overlay toggled by `Ctrl/Cmd+R` that shows the active
+  tool's run summary (phase / stage / progress / timestamps) above the
+  `output_preview` table. Not modal — no backdrop, no focus steal, and
+  `inert` when closed so the underlying tool stays keyboard-reachable.
+  Escape dismisses. A matching `Review` button in the topbar toggles
+  `shellStore.contextOpen` via `toggleContext`.
+- **`previewStore`** (`frontend/src/stores/previewStore.ts`, new): Zustand
+  store keyed by `ToolId` that holds the last `output_preview` per tool.
+  Every tool's `validate_run` handler writes into it, which is how the
+  shell-level `ContextDrawer` renders the active tool's preview without
+  owning the active tool.
+- **`Ctrl/Cmd+R` drawer binding**
+  (`frontend/src/shared/hooks/useAppShortcuts.ts`): new platform-aware
+  binding wired next to the existing Command Palette (`Ctrl+K`) shortcut.
+- **`SectionCard` `variant` prop**: accepts `"outlined" | "divided" |
+  "bare"` and defaults to `"outlined"`. Every existing call site remains
+  unchanged unless it explicitly opts in.
+- **`[data-selected="true"]` selector** added globally alongside the
+  existing `data-active` selector. `StrategySelector`, `WorkflowSelector`,
+  `ToggleChip`, and the Settings theme tiles now emit both attributes so
+  selection styling works through either naming convention.
+- **New CSS tokens** in `frontend/src/theme/styles.css`:
+  `--section-surface-primary`, `--section-surface-muted`,
+  `--section-surface-decoration`; the gap scale `--gap-inline` /
+  `--gap-group` / `--gap-section` / `--gap-page`; and two larger type
+  steps `--text-xxl: 28px` / `--text-3xl: 32px`.
+- **Pill vocabulary split**: three distinct utility classes —
+  `.badge-state` (with `good` / `warn` / `bad` / `idle` variants),
+  `.tag-category`, and `.kbd-shortcut` — each with semantics for a
+  different use (status vs. classification vs. keyboard hint). The old
+  `.status-chip` is retained as a legacy alias so the 12 existing call
+  sites keep working without migration.
+- **`InputGrid` step indicators**: every `.input-card` now emits
+  `data-state="pending|active|loaded"` with an accompanying step-number
+  or checkmark badge. Pure CSS progressive disclosure — every control
+  stays in the DOM, only the badge and card styling change.
+- **6 new frontend tests**: 4 in a new `ContextDrawer.test.tsx` covering
+  open/close, focus behavior, and preview rendering; 2 new drawer-shortcut
+  cases added to `useAppShortcuts.test.tsx`.
+
+### Changed
+
+- **App rail widened 144px → 244px** with an icon-next-to-label layout
+  (`frontend/src/app/AppShell.module.css`). The responsive fallback
+  breakpoint bumped 1180px → 1280px: below 1280px the rail reverts to
+  the previous 144px stacked layout, so narrow windows are unaffected.
+- **FMEA / BOM Compare / Failure Rate / RefDes "Review Panel"
+  SectionCards** now use `variant="divided"`, matching the new visual
+  vocabulary for secondary review surfaces.
+- **FMEA first SectionCard renamed**: "Piece-Part FMEA Generation
+  Options" → "Generation Options". Principle C — the card heading was
+  shadowing the topbar H1 and repeating the tool's name.
+- **Topbar H1** moved from `--text-2xl` (24px) to the new
+  `--text-xxl` (28px), giving the tool title more presence against the
+  widened rail.
+- **`GlobalLogPanel` status dot** is now derived from
+  `runStore.activeRun.phase` — idle / pulsing accent / green / amber /
+  red — so the dot reflects actual run state instead of a static color.
+  The collapsed-panel count text contrast was bumped, and the drag-handle
+  hit area grew from 6px to 10px so it is easier to grab.
+
+### Protocol
+
+- **`validate_run` response** gains one optional field,
+  `output_preview`, alongside the existing `ok` / `reason_code` /
+  `toast_text` / `validations` / `mode`. The field is omitted when
+  validation fails, when the input exceeds `PREVIEW_FILE_SIZE_LIMIT_BYTES`
+  (10 MB), or when a workflow has no natural preview source (e.g.
+  RefDes Extractor with no BOM). Row count is capped at
+  `PREVIEW_ROW_CAP` (20). Full schema in `contracts/sidecar-protocol.md`.
+
+### Known Limitations
+
+Documented here so they are visible, not hidden:
+
+- **No `.status-chip` migration** across the 12 existing call sites —
+  the new pill vocabulary is additive; the legacy class is still live.
+- **No `--gap-*` call-site migration** — the new gap tokens are defined
+  as aliases and are ready for adoption, but no existing spacing has been
+  swapped over yet.
+- **Hero-metric utility is unused** — the class is available, but no
+  surface applies it today.
+- **No topbar redesign** beyond the new `Review` button.
+- **RefDes Extractor emits no preview** when the user runs PDF-only
+  (no BOM workbook provided). This is intentional — a RefDes-extraction
+  run without a BOM has no tabular source to sample.
+
+### Tests
+
+- **Backend 110 → 115 (+5).** Five new preview tests in
+  `backend/tests/test_sidecar_main.py` cover the preview shape, row cap,
+  file-size skip, per-workflow runtime attachment, and the optional-field
+  contract. Sidecar self-test and security audit still clean.
+- **Frontend 153 → 159 (+6) across 23 → 24 test files.** New file:
+  `ContextDrawer.test.tsx` (4 tests — open/close, focus behavior,
+  preview table render). `useAppShortcuts.test.tsx` grew +2 for the
+  drawer binding.
+- **Grand total: 263 → 274.**
+
 ## [0.4.4] - 2026-04-17 — release.bat cargo-check MSVC env
 
 ### Fixed
