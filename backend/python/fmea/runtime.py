@@ -695,11 +695,6 @@ def execute_run_request(
     # Phase 4 / A6: set CCA prefix BEFORE process*() runs so _format_fmea_id
     # sees it. _reset_state() deliberately preserves this field.
     processor.cca_prefix = cca_prefix
-    # Phase 4 / A7: explicit output directory override (used by
-    # _resolve_output_directory-style callers inside the processor if any;
-    # today the runtime owns output path resolution directly but we plumb
-    # the override so processor-internal helpers can see it too).
-    processor.output_directory_override = str(output_directory) if explicit_output_directory else None
     if processor_ready_callback:
         processor_ready_callback(processor)
 

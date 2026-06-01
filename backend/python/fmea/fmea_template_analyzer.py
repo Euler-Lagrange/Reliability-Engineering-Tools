@@ -31,7 +31,6 @@ from common.refdes_utils import canonicalize_refdes
 from common.fmea_utils import classify_fmea_rows, RowClassification
 from fmea.fmea_generator_logic import (
     normalize_func_base_id,
-    OUTPUT_HEADERS,
     output_headers_for,
 )
 

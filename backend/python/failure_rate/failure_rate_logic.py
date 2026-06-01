@@ -41,7 +41,6 @@ from common import (
     try_read_table,
     ensure_columns_exist,
     sha256_of_path,
-    get_cache_dir,
     write_snapshot,
     get_tool_logger,
     style_worksheet,
@@ -61,46 +60,6 @@ from common.refdes_utils import (
 _logger = get_tool_logger("failure_rate")
 
 
-# ==================== CACHING FUNCTIONS ====================
-
-def _cache_root() -> Path:
-    """Get the cache directory for failure rate tool."""
-    return get_cache_dir("fr_cache")
-
-
-def load_cached_result(cache_key: str) -> Optional[pd.DataFrame]:
-    """Load a cached DataFrame by key.
-
-    C3 fix: Uses JSON instead of pickle to prevent arbitrary code execution
-    during deserialization. JSON is safe and human-readable.
-    """
-    cache_file = _cache_root() / f"{cache_key}.json"
-    if cache_file.exists():
-        try:
-            return pd.read_json(cache_file, orient='records', dtype=str)
-        except (ValueError, FileNotFoundError, OSError) as e:
-            _logger.warning(f"Cache load failed for {cache_key}: {e}")
-            cache_file.unlink(missing_ok=True)
-    # Also clean up any old pickle files (migration)
-    old_pickle = _cache_root() / f"{cache_key}.pkl"
-    if old_pickle.exists():
-        old_pickle.unlink(missing_ok=True)
-    return None
-
-
-def save_cached_result(cache_key: str, df: pd.DataFrame) -> Optional[Path]:
-    """Save a DataFrame to cache.
-
-    C3 fix: Uses JSON instead of pickle for security.
-    """
-    cache_file = _cache_root() / f"{cache_key}.json"
-    try:
-        df.to_json(cache_file, orient='records', indent=2)
-        return cache_file
-    except (OSError, IOError, PermissionError) as e:
-        _logger.warning(f"Cache save failed for {cache_key}: {e}")
-        return None
-
 # ==================== LOGIC CLASS ====================
 
 class FMEALinkerLogic:
@@ -118,12 +77,6 @@ class FMEALinkerLogic:
         self.merged_df: Optional[pd.DataFrame] = None
         # Cancellation token for user-initiated stop requests
         self.cancel: CancellationToken = CancellationToken()
-        # NOTE: RefDes patterns are now centralized in common.refdes_utils
-        # The following patterns are kept for backward compatibility with tests
-        # but the actual extraction is done via extract_base_refdes() and extract_instance_refdes()
-        import re
-        self.base_refdes_pattern = re.compile(r"\b([A-Z]{1,4}\d{1,5}[A-Z]?)\b", re.I)
-        self.instance_refdes_pattern = re.compile(r"\b([A-Z0-9]+(?:-[A-Z0-9]+)+)\b|\b([A-Z]{1,4}\d{1,5}[A-Z]?)\b", re.I)
 
     def log(self, msg: str) -> None:
         """Log a message to both the GUI callback and the module logger."""

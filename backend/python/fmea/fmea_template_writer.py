@@ -31,7 +31,6 @@ from common.exceptions import FileAccessError, ProcessingError
 from common.logger import get_tool_logger
 from common.refdes_utils import canonicalize_refdes
 from fmea.fmea_generator_logic import (
-    OUTPUT_HEADERS,
     ROW_TYPE_COL,
     normalize_func_base_id,
     output_headers_for,

@@ -829,60 +829,6 @@ def validate_output_path(folder: str, filename: str) -> str:
 
 
 # =============================================================================
-# Recent Files Management
-# =============================================================================
-
-def add_recent_file(config_manager, key: str, file_path: str, max_recent: int = 5):
-    """
-    Add a file path to the recent files list for a given key.
-
-    Args:
-        config_manager: ConfigManager instance
-        key: Key name for storing recent files (e.g., 'recent_bom', 'recent_grouping')
-        file_path: Path to add
-        max_recent: Maximum number of recent files to keep
-    """
-    if not file_path or not os.path.exists(file_path):
-        return
-
-    recent = config_manager.get(key, [])
-    if not isinstance(recent, list):
-        recent = []
-
-    # Remove if already exists (we'll add to front)
-    file_path_norm = os.path.normpath(file_path)
-    recent = [f for f in recent if os.path.normpath(f) != file_path_norm]
-
-    # Add to front
-    recent.insert(0, file_path)
-
-    # Trim to max
-    recent = recent[:max_recent]
-
-    config_manager.set(key, recent)
-    config_manager.save()
-
-
-def get_recent_files(config_manager, key: str) -> List[str]:
-    """
-    Get list of recent files for a given key, filtering out non-existent files.
-
-    Args:
-        config_manager: ConfigManager instance
-        key: Key name for recent files
-
-    Returns:
-        List of existing file paths
-    """
-    recent = config_manager.get(key, [])
-    if not isinstance(recent, list):
-        return []
-
-    # Filter to only existing files
-    return [f for f in recent if f and os.path.exists(f)]
-
-
-# =============================================================================
 # String Cleaning Utilities
 # =============================================================================
 

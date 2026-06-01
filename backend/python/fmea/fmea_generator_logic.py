@@ -125,11 +125,6 @@ def output_headers_for(standard: str) -> List[str]:
     return [h.format(FMD_STD=standard) for h in OUTPUT_HEADERS_TEMPLATE]
 
 
-# Default backwards-compatible header list (FMD-2016). Existing analyzer/
-# writer modules import OUTPUT_HEADERS at module load; keeping the default
-# preserves their behavior when no standard is set.
-OUTPUT_HEADERS = output_headers_for("FMD-2016")
-
 ROW_TYPE_COL = '_row_type'
 ALPHABET_LENGTH = 26  # Length of uppercase alphabet for suffix generation
 INDEX_CANCEL_CHECK_INTERVAL = 50  # Rows between cancellation checks during index build
@@ -272,10 +267,6 @@ class FMEAProcessor:
         # FMEA-ID so output IDs look like "PSU-C200-A" instead of "BOM-C200-A".
         # None in all other modes (group label comes from the grouping row).
         self.cca_prefix: Optional[str] = None
-        # Phase 4 / A7: explicit output directory from the frontend run body.
-        # When set, _resolve_output_directory() returns this instead of the
-        # "first input file parent" heuristic.
-        self.output_directory_override: Optional[str] = None
         # Phase 4 / A8: Part Usage discrepancy entries — mapped-vs-computed
         # mismatches that show up in the "Part Usage Diagnostics" output
         # sheet and drive yellow row fill on affected piece-part rows.
@@ -330,12 +321,11 @@ class FMEAProcessor:
         self.bom_additions = []
         self.failure_modes_standard = "FMD-2016"
         self.variant_counts_by_base = defaultdict(int)
-        # Phase 4 / A6: cca_prefix and A7: output_directory_override are
-        # both set by the runtime BEFORE process*() is called. They must
-        # NOT be cleared here — clearing them would erase the value the
-        # runtime adapter just wrote. They're per-run configuration, not
-        # accumulated-state that needs resetting between retries.
-        # (cca_prefix / output_directory_override deliberately preserved)
+        # Phase 4 / A6: cca_prefix is set by the runtime BEFORE process*() is
+        # called. It must NOT be cleared here — clearing it would erase the
+        # value the runtime adapter just wrote. It's per-run configuration,
+        # not accumulated-state that needs resetting between retries.
+        # (cca_prefix deliberately preserved)
         self.part_usage_discrepancies = []
         # Fix R3-M2: reset the suspicious-count aggregator between runs
         # so we don't roll a count forward from a previous invocation.

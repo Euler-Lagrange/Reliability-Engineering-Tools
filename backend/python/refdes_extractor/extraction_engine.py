@@ -611,49 +611,6 @@ def _format_hybrid_results(
     return sorted(rows, key=sort_key)
 
 
-def _extract_base_refdes(component: str) -> Optional[str]:
-    """
-    Extract base RefDes from a component identifier for BOM verification.
-
-    Examples:
-        "J1-1" -> "J1"
-        "U308-C17" -> "U308"
-        "R400" -> "R400"
-        "PIN-1" -> None (not verifiable)
-
-    Args:
-        component: Component string (may include pin suffix)
-
-    Returns:
-        Base RefDes string, or None if not extractable
-    """
-    component = component.strip()
-    if not component:
-        return None
-
-    # Skip uncertain markers
-    if component.endswith("[?]"):
-        component = component[:-3].strip()
-
-    # Handle PIN-X format (not verifiable)
-    if component.upper().startswith("PIN-"):
-        return None
-
-    # Handle qualified pins: RefDes-Pin format (e.g., J1-1, U308-C17)
-    if "-" in component:
-        base = component.split("-")[0]
-        # Verify it looks like a RefDes pattern
-        if REFDES_RE and REFDES_RE.fullmatch(base):
-            return base.upper()
-        return None
-
-    # Handle plain RefDes (e.g., R400, C123)
-    if REFDES_RE and REFDES_RE.fullmatch(component):
-        return component.upper()
-
-    return None
-
-
 # =============================================================================
 # HARVEST FUNCTIONS
 # =============================================================================

@@ -17,7 +17,7 @@ import threading
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Callable, Dict
+from typing import Optional, Dict
 
 # =============================================================================
 # Configuration Constants
@@ -138,88 +138,6 @@ def get_tool_logger(tool_name: str) -> logging.Logger:
         Configured logger for the tool
     """
     return get_logger(f"reliability_tools.{tool_name}")
-
-
-# =============================================================================
-# GUI Integration Helper
-# =============================================================================
-class GUILogHandler(logging.Handler):
-    """
-    Custom handler that bridges logging to Flet UI components.
-
-    Usage:
-        logger = get_tool_logger("my_tool")
-        gui_handler = GUILogHandler(update_callback=my_log_display_func)
-        logger.addHandler(gui_handler)
-    """
-
-    def __init__(self, update_callback: Callable[[str], None]):
-        """
-        Initialize with a callback function for UI updates.
-
-        Args:
-            update_callback: Function that receives log messages for display
-        """
-        super().__init__()
-        self.update_callback = update_callback
-        self.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
-
-    def emit(self, record: logging.LogRecord):
-        try:
-            msg = self.format(record)
-            self.update_callback(msg)
-        except Exception:
-            self.handleError(record)
-
-
-# =============================================================================
-# Session Logging
-# =============================================================================
-def log_session_start(tool_name: str) -> None:
-    """
-    Log the start of a tool session with system info.
-
-    Args:
-        tool_name: Name of the tool being started
-    """
-    logger = get_tool_logger(tool_name)
-    logger.info("=" * 60)
-    logger.info(f"Session Start: {tool_name}")
-    logger.info(f"Timestamp: {datetime.now().isoformat()}")
-    logger.info(f"Python: {sys.version.split()[0]}")
-    logger.info(f"Platform: {sys.platform}")
-    logger.info(f"Frozen (EXE): {getattr(sys, 'frozen', False)}")
-    logger.info("=" * 60)
-
-
-def log_session_end(tool_name: str, success: bool = True) -> None:
-    """
-    Log the end of a tool session.
-
-    Args:
-        tool_name: Name of the tool
-        success: Whether the session ended successfully
-    """
-    logger = get_tool_logger(tool_name)
-    status = "SUCCESS" if success else "FAILED"
-    logger.info(f"Session End: {status}")
-    logger.info("=" * 60)
-
-
-def log_operation(tool_name: str, operation: str, details: Optional[str] = None) -> None:
-    """
-    Log a specific operation within a tool.
-
-    Args:
-        tool_name: Name of the tool
-        operation: Description of the operation
-        details: Optional additional details
-    """
-    logger = get_tool_logger(tool_name)
-    if details:
-        logger.info(f"{operation}: {details}")
-    else:
-        logger.info(operation)
 
 
 def log_error(tool_name: str, error: Exception, context: Optional[str] = None) -> None:

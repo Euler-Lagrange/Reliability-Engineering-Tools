@@ -109,10 +109,6 @@ from .logger import (
     get_logger,
     get_tool_logger,
     get_log_directory,
-    GUILogHandler,
-    log_session_start,
-    log_session_end,
-    log_operation,
     log_error,
 )
 
