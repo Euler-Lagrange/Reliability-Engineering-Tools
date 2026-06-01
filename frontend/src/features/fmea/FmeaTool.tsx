@@ -217,18 +217,6 @@ function readStoredCcaPrefix(): string {
   }
 }
 
-function toFailureResult(detail: string) {
-  return {
-    status: "failure" as const,
-    title: "Run failed",
-    summary: detail,
-    outputFile: "",
-    primaryMetric: "No workbook written",
-    secondaryMetric: "Review backend diagnostics",
-    notes: ["The backend returned a failure. Review the execution log for details."],
-  };
-}
-
 function cloneInputs(inputs: InputFileState[]) {
   return inputs.map((input) => ({
     ...input,

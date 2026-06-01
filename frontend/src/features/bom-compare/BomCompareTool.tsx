@@ -54,22 +54,6 @@ function cloneInputs(inputs: InputFileState[]) {
   }));
 }
 
-function toFailureResult(detail: string) {
-  return {
-    status: "failure" as const,
-    title: "Run failed",
-    summary: detail,
-    outputFile: "",
-    primaryMetric: "No report written",
-    secondaryMetric: "Review backend diagnostics",
-    notes: ["The backend returned a failure before comparison could complete."],
-  };
-}
-
-function normalizeHeader(value: string) {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ");
-}
-
 function buildTimeline(runMode: RunMode, runIndex: number, templates: RunEventTemplate[]): RunEvent[] {
   return templates.map((event, index) => {
     let status: RunEvent["status"] = "pending";

@@ -448,7 +448,6 @@ tool's `*Tool.tsx`.
 | `StrategySelector` | `StrategySelector.tsx` | Output strategy cards (emits both `data-active` and `data-selected`) |
 | `CustomSelect` | `CustomSelect.tsx` | Accessible dropdown with keyboard navigation |
 | `ValidationPreview` | `ValidationPreview.tsx` | Pre-run validation message list |
-| `ScenarioRail` | `ScenarioRail.tsx` | Demo scenario picker (browser preview only) |
 
 ### Primitives (`components/primitives/`)
 

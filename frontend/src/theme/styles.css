@@ -509,7 +509,6 @@ button:disabled {
 
 .topbar h1,
 .section-card h2,
-.scenario-rail__header h2,
 .choice-card h3,
 .run-result h3 {
   margin: 0;
@@ -740,8 +739,7 @@ button:disabled {
 .input-card__helper,
 .validation-card p,
 .timeline__detail,
-.run-result p,
-.scenario-rail__header p {
+.run-result p {
   margin: 0;
   color: var(--text-muted);
   font-size: var(--text-base);
@@ -752,75 +750,6 @@ button:disabled {
   display: flex;
   gap: var(--space-2);
   flex-wrap: wrap;
-}
-
-.scenario-rail {
-  display: grid;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-}
-
-.scenario-rail__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: end;
-  gap: var(--space-4);
-}
-
-.scenario-rail__header p {
-  max-width: 560px;
-}
-
-.scenario-rail__list {
-  display: flex;
-  gap: var(--space-2);
-  overflow-x: auto;
-  padding-bottom: 2px; /* off-grid: scrollbar gutter compensation */
-}
-
-.scenario-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 32px; /* off-grid 32px control height — sits between space-7 (32) and space-6 (24); intentional */
-  padding: 0 10px; /* off-grid 10px horizontal: tighter than space-3 (12) for pill compactness */
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--text-secondary);
-  white-space: nowrap;
-  transition:
-    border-color 160ms var(--ease),
-    background 160ms var(--ease),
-    color 160ms var(--ease);
-}
-
-.scenario-pill:focus-visible {
-  outline: none;
-  box-shadow: var(--shadow-focus-ring);
-  border-color: var(--accent);
-}
-
-.scenario-pill[data-active="true"] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.scenario-pill__label {
-  font-size: var(--text-base);
-  font-weight: var(--weight-semibold);
-}
-
-.scenario-pill__meta {
-  color: var(--text-faint);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
-  letter-spacing: var(--tracking-uppercase);
-  text-transform: uppercase;
 }
 
 .workspace-grid {
@@ -2039,7 +1968,6 @@ tbody tr:hover {
 
   .tool-banner,
   .topbar,
-  .scenario-rail__header,
   .input-card__footer {
     flex-direction: column;
     align-items: stretch;
