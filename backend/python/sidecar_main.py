@@ -236,6 +236,9 @@ def inspect_input(path: Path, requested_sheet: str | None) -> dict[str, Any]:
     if load_workbook is None:
         raise RuntimeError("openpyxl is not available")
 
+    # Parity with list_sheets: hydrate OneDrive "cloud-only" placeholders before
+    # opening, so inspection doesn't fail where the real run would hydrate-and-read.
+    path = ensure_file_available(path)
     workbook = load_workbook(path, read_only=True, data_only=True)
     try:
         worksheet = _select_sheet(workbook, requested_sheet)
@@ -264,6 +267,9 @@ def analyze_template(path: Path, requested_sheet: str | None) -> dict[str, Any]:
     if load_workbook is None:
         raise RuntimeError("openpyxl is not available")
 
+    # Parity with list_sheets: hydrate OneDrive "cloud-only" placeholders before
+    # opening, so template analysis doesn't fail where the real run would.
+    path = ensure_file_available(path)
     workbook = load_workbook(path, read_only=False, data_only=False)
     try:
         worksheet = _select_sheet(workbook, requested_sheet)

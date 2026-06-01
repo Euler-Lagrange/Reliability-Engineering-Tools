@@ -672,7 +672,10 @@ def compare_two_boms(
     if check_part_usage:
         def check_usage_for_df(df, refdes_col, source_label, scope_meta):
             """Check part usage (and FMR×PU product when FMR is available)."""
-            usage_col = detect_column(df.columns, get_synonyms('part_usage'))
+            # substring_match=True to match group_analysis: catches compound
+            # headers like "Part Usage / Quantity". Was inconsistent with group
+            # mode, which detected usage columns the custom path silently missed.
+            usage_col = detect_column(df.columns, get_synonyms('part_usage'), substring_match=True)
             if not usage_col:
                 return []
 
