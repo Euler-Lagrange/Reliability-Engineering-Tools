@@ -33,6 +33,15 @@ Thumbs.db
 
 # TypeScript build info
 frontend/tsconfig.tsbuildinfo
+frontend/tsconfig.node.tsbuildinfo
+
+# tsc -b emit artifacts from the composite tsconfig.node.json (the vite/vitest
+# configs compiled to JS + d.ts). Never loaded at runtime — every npm script
+# passes `--config frontend/vite.config.ts` explicitly — so keep them untracked.
+frontend/vite.config.js
+frontend/vite.config.d.ts
+frontend/vitest.setup.js
+frontend/vitest.setup.d.ts
 
 # Design-tool handoff bundles (reference-only, not shipped)
 design_handoff_reliability_tools/

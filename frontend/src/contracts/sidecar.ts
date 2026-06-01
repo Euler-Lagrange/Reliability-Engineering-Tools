@@ -126,6 +126,11 @@ export const validateRunResultSchema = z.object({
   mode: backendModeSchema,
 });
 
+// ``session_generation`` is mandatory here but is NOT emitted by the Python
+// sidecar's ack (sidecar_main only sends accepted/run_id/mode). The Rust bridge
+// injects it onto every ack payload in ``enrich_run_event_for_frontend``
+// (src-tauri/src/lib.rs). A future browser-mock sidecar emulator must populate
+// it too, or this schema's parse of the ack will fail.
 export const executeRunAcceptedResultSchema = z.object({
   run_id: z.string(),
   mode: backendModeSchema,

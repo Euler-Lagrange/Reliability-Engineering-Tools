@@ -459,9 +459,9 @@ does not produce files or run any analysis.
 
 ### Sections
 
-- **Theme selection** — choose from 10 themes. Each theme has a distinct
-  visual personality (light and dark variants, plus a few color accents).
-  Your selection persists between sessions.
+- **Theme selection** — choose from 10 visual themes (light and dark
+  variants, plus a few color accents), plus a **System** option that follows
+  your OS preference. Your selection persists between sessions.
 - **Backend health check** — click the health-check button to ping the
   Python backend and confirm it responds. The result shows the backend
   version and the protocol version.
