@@ -459,7 +459,7 @@ does not produce files or run any analysis.
 
 ### Sections
 
-- **Theme selection** — choose from seven themes. Each theme has a distinct
+- **Theme selection** — choose from 10 themes. Each theme has a distinct
   visual personality (light and dark variants, plus a few color accents).
   Your selection persists between sessions.
 - **Backend health check** — click the health-check button to ping the

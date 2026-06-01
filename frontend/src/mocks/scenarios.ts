@@ -226,6 +226,18 @@ const previewRows = [
   },
 ];
 
+const demoOutputPreview = {
+  columns: ["RefDes", "Failure Mode", "Local Effect", "Next Higher Effect"],
+  rows: previewRows.map((row) => [
+    row.refdes,
+    row.failureMode,
+    row.localEffect,
+    row.nextHigherEffect,
+  ]),
+  truncated: false,
+  total_estimated: previewRows.length,
+};
+
 const successEvents = [
   {
     id: "event-1",
@@ -299,6 +311,7 @@ export const demoScenarios: DemoScenario[] = [
       },
     ],
     previewRows,
+    outputPreview: demoOutputPreview,
     runSequence: {
       events: successEvents,
       result: {

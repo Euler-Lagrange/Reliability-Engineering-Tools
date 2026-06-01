@@ -24,7 +24,7 @@ describe("useCopyToClipboard", () => {
       value: originalClipboard,
     });
     if (!originalExecCommand) {
-      delete (document as Document & { execCommand?: typeof document.execCommand }).execCommand;
+      Reflect.deleteProperty(document, "execCommand");
     }
   });
 

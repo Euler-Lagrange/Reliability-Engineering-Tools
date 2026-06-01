@@ -56,7 +56,7 @@ request, response, and streamed run event.
 │   └── sidecar-protocol.md     # Wire format reference
 ├── scripts/
 │   ├── build_sidecar.py        # PyInstaller bundling
-│   ├── release.bat             # 10-step release pipeline (typecheck + security audit + tests + build + self-tests)
+│   ├── release.bat             # 12-step release pipeline (typechecks + security audit + tests + build + self-tests)
 │   ├── bump-version.mjs        # Bump version across package.json / Cargo.toml / tauri.conf.json in lockstep
 │   ├── tauri-msvc.cmd
 │   └── tauri-runner.mjs
@@ -89,10 +89,10 @@ that hosts:
     terminal envelope into the run-lifecycle projector. Replaces the
     old `useGlobalLogSubscription`.
   - `backend/useBackendBootstrap.ts` — hook that performs the initial
-    health check, runs the reconnect backoff chain, and reconciles the
-    active run against the sidecar's `session_generation` on every
-    reconnect: if the generation advanced, the stale run is cleared;
-    otherwise the run is marked reconnected and resumes.
+    health check, runs the reconnect backoff chain, and clears any active
+    run on successful reconnect. Every reconnect path spawns a fresh
+    sidecar session, so the prior run cannot resume even though
+    `session_generation` remains recorded for diagnostics.
   - `backend/fileManager.ts` — cross-platform path helpers
     (`parentDirectoryForPath`, `OPEN_FOLDER_LABEL`) used by the
     `RunStatePanel` Open-folder affordance and the `OutputFolderPicker`.
@@ -302,8 +302,12 @@ frontend ← run-event ← Rust ← ack{request_id, run_id} ← Python (register
 ```
 
 The `ack` envelope is the only message correlated by both `request_id` and
-`run_id`. After it lands the Rust bridge resolves the pending request and
-forwards every subsequent run-tagged envelope as a Tauri event.
+`run_id`. After it lands the Rust bridge resolves the pending request,
+enriches the streamed `ack` event with the Rust-owned
+`session_generation`, and forwards the lifecycle stream as Tauri events.
+Request-correlated command responses after the ack, such as the
+`cancel_run` acknowledgement, are consumed by the invoke caller and are not
+replayed as run events.
 
 `validate_run` responses may optionally include an `output_preview` field
 (since 0.4.5) — up to 20 rows of source/input data mapped into
@@ -320,7 +324,7 @@ Full payload schemas live in `contracts/sidecar-protocol.md`.
 |-------|----------|
 | Python | `_heartbeat_loop` emits a `heartbeat` envelope every 5 s. |
 | Rust   | Records every heartbeat. Supervisor wakes every 5 s and calls `handle_disconnect` if `last_heartbeat` is older than 15 s. |
-| Frontend | `useBackendBootstrap` listens for `backend://session` disconnects and runs a reconnect backoff: 2 s → 4 s → 8 s → 15 s → 30 s, then surfaces a permanent error notification. On every successful reconnect it reconciles the active run against the sidecar's `session_generation` (bumped → clear stale run; match → mark reconnected). |
+| Frontend | `useBackendBootstrap` listens for `backend://session` disconnects and runs a reconnect backoff: 2 s → 4 s → 8 s → 15 s → 30 s, then surfaces a permanent error notification. On every successful reconnect it clears any active run because the bridge always spawned a fresh sidecar session. |
 
 ## Tool Wiring Matrix
 
@@ -385,8 +389,8 @@ the protocol's `validations` array.
 | `usePreviewStore` | `frontend/src/stores/previewStore.ts` | no | last `output_preview` sample per tool, keyed by `ToolId`. Each tool's validate-run handler writes into it, and the shell-level `ContextDrawer` reads from it so a preview can be rendered independent of which tool is active. |
 
 `shellStore` uses `partialize` to persist only the four per-tool output
-directories; transient fields (backend status, mode, message) are
-excluded so they do not survive a reload with stale values. The shared
+directories plus `contextOpen`; transient fields (backend status, mode,
+message) are excluded so they do not survive a reload with stale values. The shared
 `OutputFolderPicker` primitive (`frontend/src/components/OutputFolderPicker.tsx`)
 is how every tool exposes the picker — consumers pass the corresponding
 `{tool}OutputDirectory` slice through its `value` / `onChange` props.

@@ -91,10 +91,10 @@ All eight commands currently implemented by the sidecar:
       and later rows were not examined
     - `column_cap_applied` — `true` when the column cap (100 columns) was hit
       and later columns were not examined
-    - `header_search_cap_applied` — `true` when the header-detection phase
-      reached its 1 000-row cap before finding a non-empty header; the
-      command returns an `error` envelope in this case rather than a partial
-      `result`
+    - `header_search_cap_applied` — `false` on successful `result`
+      envelopes. If header detection reaches the 1 000-row cap before
+      finding a non-empty header, the command returns an `error` envelope
+      instead of a partial `result`.
 - `analyze_template`
   - request body: `{ "path": "...", "sheet": "FMEA Sheet", "role": "targetWorkbook" }`
   - result payload:
@@ -310,12 +310,12 @@ command (execute_run)
 
 `session_generation` (added in 0.4.1) is a monotonically increasing counter
 that the Rust bridge increments every time it spawns a fresh sidecar
-process. The frontend records it alongside the active run and, on
-reconnect, compares the current `session_generation` from
-`backend_session_status` against the one captured at `ack` time. A
-mismatch means the bridge restarted the sidecar mid-flight, so the UI
-discards the stale active run instead of waiting forever for a terminal
-event that the new process will never emit.
+process. The Rust bridge owns this field: Python emits the raw `ack`, and
+Rust enriches the streamed run event before forwarding it to the frontend.
+The frontend records the value with the active run for diagnostics. On
+reconnect, the frontend clears any active run because every reconnect path
+spawns a fresh sidecar session and no terminal event can arrive from the
+previous process.
 
 **`status`** — phase transition during a run.
 ```json
@@ -370,7 +370,9 @@ expand the error block.
 ### Cancellation flow
 
 1. Frontend sends `cancel_run` with the active `run_id`.
-2. Sidecar responds with `result` (status `cancelling`) and sets the cancel flag.
+2. Sidecar responds to the command with `result` (status `cancelling`) and
+   sets the cancel flag. The Rust bridge returns this acknowledgement to the
+   invoke caller; it is not forwarded as a streamed run-event `result`.
 3. The processor checks the cancellation token at regular intervals.
 4. When the processor raises `CancellationError`, the sidecar emits
    `status` (cancelled) followed by a `cancelled` terminal event.
@@ -412,7 +414,7 @@ attempts automatic reconnection with exponential backoff (2s, 4s, 8s, 15s, 30s).
 - On disconnect, the frontend automatically attempts reconnection with backoff.
 - The Rust bridge tracks a `session_generation` counter that increments on
   every sidecar respawn. The counter is echoed on the `execute_run` ack and
-  on the `backend_session_status` response so the frontend can detect
-  bridge-managed restarts and invalidate any active run that belonged to
-  the previous generation.
+  on the `backend_session_status` response. Since every reconnect spawns a
+  fresh sidecar session, the frontend clears any active run after a
+  successful reconnect.
 - Crash restart policy and multi-run queueing remain later work.

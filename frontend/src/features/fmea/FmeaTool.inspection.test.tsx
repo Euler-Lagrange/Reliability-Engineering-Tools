@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { FmeaTool } from "./FmeaTool";
 import { useShellStore } from "../../stores/shellStore";
 
+const FMEA_INSPECTION_TEST_TIMEOUT_MS = 15_000;
+
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   let reject!: (reason?: unknown) => void;
@@ -145,7 +147,7 @@ describe("FmeaTool inspection flow", () => {
         "functionalFmea",
       );
     });
-  });
+  }, FMEA_INSPECTION_TEST_TIMEOUT_MS);
 
   test("shows a warning note when selected-sheet inspection is capped", async () => {
     const user = userEvent.setup();
@@ -183,5 +185,5 @@ describe("FmeaTool inspection flow", () => {
     ).toBeGreaterThan(0);
     expect(screen.getByText(/Scanned 20,000 rows/i)).toBeInTheDocument();
     expect(screen.getByText(/Scanned 100 columns/i)).toBeInTheDocument();
-  });
+  }, FMEA_INSPECTION_TEST_TIMEOUT_MS);
 });

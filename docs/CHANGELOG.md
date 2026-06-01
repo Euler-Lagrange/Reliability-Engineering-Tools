@@ -5,6 +5,29 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+- Synced the streamed `execute_run` ack contract: Rust now enriches the
+  run-event ack with `session_generation`, matching the frontend Zod
+  schema and protocol docs.
+- Aligned `inspect_input.header_rows_scanned` across Python, Rust,
+  frontend schemas/types, tests, and protocol docs.
+- Updated `read_flet_config` frontend schema to accept `null` namespace
+  entries, matching Python and the protocol contract.
+- Removed stale frontend output strategy and reconnect helper surfaces.
+
+### Changed
+
+- Release pipeline is now 12 steps with separate production and test
+  TypeScript checks, locked Cargo checking, backend audit/tests, frontend
+  tests, builds, and packaged self-tests.
+- `npm run version:check` now includes lockfile package versions, so stale
+  `package-lock.json` / `Cargo.lock` metadata cannot pass unnoticed.
+- Browser-preview mock data now seeds a real `output_preview` sample for
+  the Review drawer.
+
 ## [0.4.5] - 2026-04-22 — Design Handoff: Review Drawer + Preview Protocol
 
 Additive refresh distilled from the `design_handoff_reliability_tools/`
@@ -198,7 +221,7 @@ Documented here so they are visible, not hidden:
   `Unhandled thread exception…`) are captured.
 - **`useBackendBootstrap` dead branch**
   (`frontend/src/shared/backend/useBackendBootstrap.ts`): the
-  `markRunReconnected()` path was unreachable because every reconnect
+  old reconnect-resume branch was unreachable because every reconnect
   spawns a fresh sidecar, which always bumps `session_generation`.
   Replaced the `sessionStatus()` round-trip with an unconditional
   `clearActiveRun()` on reconnect — simpler and matches the only path
@@ -211,12 +234,12 @@ Documented here so they are visible, not hidden:
 
 ### Changed
 
-- **Release pipeline hardened to 11 steps**: `scripts/release.bat` now
+- **Release pipeline hardened to 12 steps**: `scripts/release.bat` now
   runs `cargo check --quiet` on the Rust bridge as step 3 (right after
   frontend typecheck) so a broken Rust build fails in ~30 s instead of
   surviving to the 3-minute `tauri:build:portable` step 8. Includes a
   dedicated `:cargo_check_failed` error label.
-- **README** now advertises the 11-step release pipeline.
+- **README** now advertises the 12-step release pipeline.
 
 ### Known Issues (for follow-up, likely v0.4.4)
 
@@ -251,9 +274,9 @@ but intentionally deferred to keep v0.4.3 focused on the build break:
 ### Tests
 
 - Backend **110 → 110** (unchanged).
-- Frontend **153 → 153** (unchanged — the fixes are either pure
+- Frontend **168 → 168** (unchanged — the fixes are either pure
   refactors or Rust-only).
-- Full 11-step release pipeline is now the authoritative release gate
+- Full 12-step release pipeline is now the authoritative release gate
   and must pass before any `v0.4.X` tag.
 
 ## [0.4.2] - 2026-04-16 — Hardening, Crash Reporting, CSP, Cross-Tool Output Picker
@@ -312,7 +335,7 @@ but intentionally deferred to keep v0.4.3 focused on the build break:
   `--check` modes. Exposed as `npm run version:bump` / `npm run
   version:check`.
 - **Release pipeline hardening** (`scripts/release.bat`): now a
-  10-step pipeline that adds explicit frontend typecheck (step 2) and
+  12-step pipeline that adds explicit frontend typecheck (step 2) and
   `python -m common.security_audit --strict` (step 3) before the
   existing backend/frontend test and build steps, each with its own
   fast-fail error label.
@@ -490,8 +513,8 @@ but intentionally deferred to keep v0.4.3 focused on the build break:
   interactivity during background aggregation, cap-warning display).
   `MappingTable.test.tsx` 10 → 11 (source-aware option labels).
   `mappingAnalysis.test.ts` 6 → 7 (multi-source provenance merging).
-  `runLifecycle.test.ts` 8 → 9 (session-generation reconciliation on
-  reconnect).
+  `runLifecycle.test.ts` 8 → 9 (disconnect and reconnect-clearing
+  coverage).
 - **Grand total: 244 → 254.**
 
 ## [0.4.0] - 2026-04-10 — FMEA Mapping Analysis, Command Palette, Phase D Backend

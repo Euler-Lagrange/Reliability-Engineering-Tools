@@ -42,7 +42,7 @@ Consult these docs before making or reviewing non-trivial changes:
 ## Testing Expectations
 
 - Validate every touched layer, not just the file you edited.
-- Frontend changes should normally include `npm run typecheck` and relevant Vitest coverage.
+- Frontend changes should normally include `npm run typecheck`, `npm run typecheck:tests`, and relevant Vitest coverage.
 - Backend or protocol changes should normally include targeted `pytest backend/tests` coverage, especially subprocess tests in `backend/tests/test_sidecar_main.py`.
 - Contract changes must be checked across Python payload shape, Rust enrichment, and frontend schema validation.
 - If validation is incomplete, say exactly what was not run and what risk remains.

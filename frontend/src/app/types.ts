@@ -1,3 +1,5 @@
+import type { OutputPreview } from "../contracts/sidecar";
+
 export type WorkflowId =
   | "piece_part_generate"
   | "bom_only"
@@ -24,7 +26,6 @@ export type FileRole =
 export type FileStatus = "ready" | "attention" | "optional";
 export type OutputStrategyId =
   | "new_workbook_standard"
-  | "existing_workbook_best_effort"
   | "existing_workbook_preserve_formatting";
 export type MappingStatus = "mapped" | "manual" | "attention" | "derived" | "not_mapped";
 export type MappingOrigin = "mapped" | "derived" | "merge_only";
@@ -168,6 +169,7 @@ export interface InputInspection {
   previewRows: Array<Record<string, string>>;
   rowsScanned: number;
   columnsScanned: number;
+  headerRowsScanned?: number;
   rowCapApplied: boolean;
   columnCapApplied: boolean;
   headerSearchCapApplied: boolean;
@@ -184,6 +186,7 @@ export interface TemplateAnalysis {
   freezePanes: string | null;
   protectedSheet: boolean;
   rowsScanned: number;
+  headerRowsScanned?: number;
   columnsScanned: number;
   rowCapApplied: boolean;
   columnCapApplied: boolean;
@@ -222,6 +225,7 @@ export interface DemoScenario {
   mappings: ColumnMappingRow[];
   validations: ValidationMessage[];
   previewRows: PreviewRow[];
+  outputPreview?: OutputPreview;
   runSequence: {
     events: RunEventTemplate[];
     result: RunResult;

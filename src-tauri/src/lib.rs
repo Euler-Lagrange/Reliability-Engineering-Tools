@@ -156,6 +156,8 @@ struct InputInspectionResponse {
     preview_rows: Vec<std::collections::BTreeMap<String, String>>,
     rows_scanned: u32,
     columns_scanned: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    header_rows_scanned: Option<u32>,
     row_cap_applied: bool,
     column_cap_applied: bool,
     header_search_cap_applied: bool,
@@ -212,6 +214,8 @@ struct ManagedSidecar {
     child: Arc<Mutex<Child>>,
     stdin: Arc<Mutex<ChildStdin>>,
     #[cfg(target_os = "windows")]
+    // Held for RAII: closing the job object reaps the sidecar process tree.
+    #[allow(dead_code)]
     job_object: Arc<WindowsJobObject>,
 }
 
@@ -626,7 +630,7 @@ fn spawn_stdout_reader(stdout: ChildStdout, shared: Arc<SessionShared>, session:
                         continue;
                     }
 
-                    let parsed: Value = match serde_json::from_str(trimmed) {
+                    let mut parsed: Value = match serde_json::from_str(trimmed) {
                         Ok(value) => value,
                         Err(error) => {
                             disconnect_managed_session(
@@ -650,6 +654,8 @@ fn spawn_stdout_reader(stdout: ChildStdout, shared: Arc<SessionShared>, session:
                         .get("run_id")
                         .and_then(Value::as_str)
                         .map(ToOwned::to_owned);
+                    let has_request_id = request_id.is_some();
+                    let has_run_id = run_id.is_some();
 
                     if let Some(request_id) = request_id {
                         match kind.as_str() {
@@ -705,7 +711,11 @@ fn spawn_stdout_reader(stdout: ChildStdout, shared: Arc<SessionShared>, session:
                             shared.record_heartbeat();
                         }
                         "ack" | "status" | "progress" | "log" | "result" | "backend_error" | "cancelled" => {
-                            if run_id.is_some() {
+                            if should_forward_run_event(&kind, has_request_id, has_run_id) {
+                                enrich_run_event_for_frontend(
+                                    &mut parsed,
+                                    shared.current_session_generation(),
+                                );
                                 shared.emit_run_event(&parsed);
                             }
                         }
@@ -744,6 +754,47 @@ fn spawn_heartbeat_supervisor(shared: Arc<SessionShared>, session: SessionSlot) 
             }
         }
     });
+}
+
+fn should_forward_run_event(kind: &str, has_request_id: bool, has_run_id: bool) -> bool {
+    if !has_run_id {
+        return false;
+    }
+
+    match kind {
+        // The execute_run ack is both a command response and the first
+        // lifecycle event; the frontend expects to see it after enrichment.
+        "ack" => true,
+        // Other request-correlated messages are command responses, such as
+        // cancel_run's `result { status: "cancelling" }`, and must not be
+        // replayed as streamed run events.
+        "status" | "progress" | "log" | "result" | "backend_error" | "cancelled" => {
+            !has_request_id
+        }
+        _ => false,
+    }
+}
+
+fn enrich_run_event_for_frontend(event: &mut Value, session_generation: u64) {
+    if event.get("kind").and_then(Value::as_str) != Some("ack") {
+        return;
+    }
+
+    let Some(envelope) = event.as_object_mut() else {
+        return;
+    };
+
+    let payload = envelope.entry("payload").or_insert_with(|| json!({}));
+    if !payload.is_object() {
+        *payload = json!({});
+    }
+
+    if let Some(payload) = payload.as_object_mut() {
+        payload
+            .entry("mode".to_string())
+            .or_insert_with(|| json!("desktop-bridge"));
+        payload.insert("session_generation".to_string(), json!(session_generation));
+    }
 }
 
 fn correlation_id(prefix: &str) -> String {
@@ -1132,6 +1183,10 @@ fn backend_inspect_input(
             .get("columns_scanned")
             .and_then(Value::as_u64)
             .unwrap_or_default() as u32,
+        header_rows_scanned: payload
+            .get("header_rows_scanned")
+            .and_then(Value::as_u64)
+            .map(|value| value as u32),
         row_cap_applied: payload
             .get("row_cap_applied")
             .and_then(Value::as_bool)
@@ -1413,7 +1468,10 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::merge_disconnect_message;
+    use super::{
+        enrich_run_event_for_frontend, merge_disconnect_message, should_forward_run_event,
+    };
+    use serde_json::json;
 
     #[test]
     fn merge_disconnect_message_appends_fatal_detail() {
@@ -1439,5 +1497,49 @@ mod tests {
             message,
             "Python sidecar closed stdout. Details: Unhandled exception: RuntimeError: boom"
         );
+    }
+
+    #[test]
+    fn enrich_run_event_adds_ack_session_generation() {
+        let mut event = json!({
+            "kind": "ack",
+            "run_id": "run_001",
+            "payload": {
+                "accepted": true,
+                "run_id": "run_001"
+            }
+        });
+
+        enrich_run_event_for_frontend(&mut event, 7);
+
+        assert_eq!(event["payload"]["session_generation"], json!(7));
+        assert_eq!(event["payload"]["mode"], json!("desktop-bridge"));
+    }
+
+    #[test]
+    fn enrich_run_event_leaves_non_ack_payloads_alone() {
+        let mut event = json!({
+            "kind": "progress",
+            "run_id": "run_001",
+            "payload": {
+                "stage": "Working"
+            }
+        });
+
+        enrich_run_event_for_frontend(&mut event, 7);
+
+        assert!(event["payload"].get("session_generation").is_none());
+        assert_eq!(event["payload"], json!({ "stage": "Working" }));
+    }
+
+    #[test]
+    fn run_event_forwarding_filters_command_result_responses() {
+        assert!(should_forward_run_event("ack", true, true));
+        assert!(should_forward_run_event("result", false, true));
+        assert!(should_forward_run_event("status", false, true));
+
+        assert!(!should_forward_run_event("result", true, true));
+        assert!(!should_forward_run_event("status", true, true));
+        assert!(!should_forward_run_event("result", false, false));
     }
 }

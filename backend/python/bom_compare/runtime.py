@@ -457,8 +457,8 @@ def _run_custom_compare(
         if isinstance(entry, dict) and entry.get("col_a") and entry.get("col_b")
     ]
 
-    name_a = options.get("display_name_a") or Path(path_a).stem if path_a else "File 1"
-    name_b = options.get("display_name_b") or Path(path_b).stem if path_b else "File 2"
+    name_a = options.get("display_name_a") or (Path(path_a).stem if path_a else "File 1")
+    name_b = options.get("display_name_b") or (Path(path_b).stem if path_b else "File 2")
 
     emit_status("running", "Comparing entries", "Comparing entries between files...")
     emit_progress("Comparing entries", "Comparing...", 30)

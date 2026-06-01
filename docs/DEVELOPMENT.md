@@ -73,9 +73,9 @@ command envelopes into stdin.
 ## Running Tests
 
 ```bash
-# Frontend
-cd frontend
-npm run typecheck         # tsc --noEmit
+# Frontend (from repo root)
+npm run typecheck         # production TS project
+npm run typecheck:tests   # Vitest files
 npm test                  # vitest run
 
 # Backend
@@ -119,17 +119,21 @@ ancestor directory tree.
 scripts/release.bat
 ```
 
-The script runs the following steps and stops on the first failure (logs
-go to `logs/release_<timestamp>.log`):
+The script runs the following 12 steps and stops on the first failure
+(logs go to `logs/release_<timestamp>.log`):
 
 1. Toolchain check (node, npm, backend Python)
-2. Backend tests (`pytest backend/tests -q`)
-3. Frontend tests (`npm test`)
-4. Sidecar build (`scripts/build_sidecar.py`)
-5. Portable desktop build (`npm run tauri:build:portable`)
-6. Locate the packaged exe under `src-tauri/target/...`
-7. Packaged self-test (`ReliabilityToolsDesktop.exe --self-test`)
-8. Packaged backend self-test (`ReliabilityToolsDesktop.exe --self-test-backend`)
+2. Frontend production typecheck (`npm run typecheck`)
+3. Frontend test typecheck (`npm run typecheck:tests`)
+4. Rust bridge check (`npm run cargo:check`)
+5. Backend security audit (`python -m common.security_audit --strict` from `backend/python`)
+6. Backend tests (`pytest backend/tests -q`)
+7. Frontend tests (`npm test`)
+8. Sidecar build (`scripts/build_sidecar.py`)
+9. Portable desktop build (`npm run tauri:build:portable`)
+10. Locate the packaged exe under `src-tauri/target/...`
+11. Packaged self-test (`ReliabilityToolsDesktop.exe --self-test`)
+12. Packaged backend self-test (`ReliabilityToolsDesktop.exe --self-test-backend`)
 
 The output is `local_build/ReliabilityToolsDesktop.exe`.
 

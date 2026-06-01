@@ -57,12 +57,6 @@ interface RunStoreState {
    * happened before the disconnect.
    */
   markDisconnected: (message: string) => void;
-
-  /**
-   * Clear the disconnected flag after a reconnect. The caller should
-   * subsequently invoke ``backendClient.sessionStatus`` to reconcile.
-   */
-  markReconnected: () => void;
 }
 
 export const useRunStore = create<RunStoreState>((set) => ({
@@ -113,19 +107,6 @@ export const useRunStore = create<RunStoreState>((set) => ({
           statusMessage: message,
           errorMessage: message,
           isDisconnected: true,
-        },
-      };
-    }),
-
-  markReconnected: () =>
-    set((state) => {
-      if (!state.activeRun || !state.activeRun.isDisconnected) {
-        return state;
-      }
-      return {
-        activeRun: {
-          ...state.activeRun,
-          isDisconnected: false,
         },
       };
     }),

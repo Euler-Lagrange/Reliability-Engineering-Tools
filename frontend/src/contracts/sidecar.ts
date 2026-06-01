@@ -67,6 +67,7 @@ export const inspectionResultSchema = z.object({
   preview_rows: z.array(z.record(z.string(), z.string())),
   rows_scanned: z.number(),
   columns_scanned: z.number(),
+  header_rows_scanned: z.number().optional(),
   row_cap_applied: z.boolean(),
   column_cap_applied: z.boolean(),
   header_search_cap_applied: z.boolean(),
@@ -292,7 +293,7 @@ export const fletConfigEntrySchema = z.record(
 );
 
 export const fletConfigResultSchema = z.object({
-  configs: z.record(z.string(), fletConfigEntrySchema),
+  configs: z.record(z.string(), fletConfigEntrySchema.nullable()),
   namespaces: z.array(z.string()),
   home: z.string(),
 });

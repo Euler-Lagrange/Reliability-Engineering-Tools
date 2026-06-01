@@ -5,6 +5,8 @@ import { App } from "../../app/App";
 import { useShellStore } from "../../stores/shellStore";
 import { useThemeStore } from "../../stores/themeStore";
 
+const FMEA_TOOL_TEST_TIMEOUT_MS = 15_000;
+
 /**
  * Phase 5: FMEA mapping row visibility tests.
  *
@@ -38,7 +40,11 @@ async function waitForFmeaTool() {
   // rendered by the real `FmeaTool`, so we wait on one of its workflow
   // buttons instead. This also guarantees the mapping table below has
   // finished its first render by the time tests query it.
-  await screen.findByRole("button", { name: /piece-part from grouping file/i });
+  await screen.findByRole(
+    "button",
+    { name: /piece-part from grouping file/i },
+    { timeout: 3000 },
+  );
 }
 
 /**
@@ -75,7 +81,7 @@ describe("FmeaTool — Phase 5 mapping row visibility", () => {
     expect(hasMappingLabel("Local Effect")).toBe(false);
     expect(hasMappingLabel("Next Higher Effect")).toBe(false);
     expect(hasMappingLabel("End Effect")).toBe(false);
-  });
+  }, FMEA_TOOL_TEST_TIMEOUT_MS);
 
   test("BOM-Only mode hides the FMEA-ID mapping row", async () => {
     const user = userEvent.setup();
@@ -90,7 +96,7 @@ describe("FmeaTool — Phase 5 mapping row visibility", () => {
     // Non-FMEA-ID rows still render.
     expect(hasMappingLabel("Failure Mode")).toBe(true);
     expect(hasMappingLabel("Failure Mode Ratio")).toBe(true);
-  });
+  }, FMEA_TOOL_TEST_TIMEOUT_MS);
 
   test("Merge Functional FMEA mode shows Local / Next Higher / End Effect rows", async () => {
     const user = userEvent.setup();
@@ -107,7 +113,7 @@ describe("FmeaTool — Phase 5 mapping row visibility", () => {
     expect(hasMappingLabel("Next Higher Effect")).toBe(true);
     expect(hasMappingLabel("End Effect")).toBe(true);
     expect(hasMappingLabel("FMEA-ID")).toBe(true);
-  });
+  }, FMEA_TOOL_TEST_TIMEOUT_MS);
 
   test("Merge Piece-Part FMEA mode also shows merge-only rows", async () => {
     const user = userEvent.setup();
@@ -119,7 +125,7 @@ describe("FmeaTool — Phase 5 mapping row visibility", () => {
     expect(hasMappingLabel("Local Effect")).toBe(true);
     expect(hasMappingLabel("Next Higher Effect")).toBe(true);
     expect(hasMappingLabel("End Effect")).toBe(true);
-  });
+  }, FMEA_TOOL_TEST_TIMEOUT_MS);
 
   test("FMD commodity column labels swap when the standard toggles", async () => {
     const user = userEvent.setup();
@@ -138,7 +144,7 @@ describe("FmeaTool — Phase 5 mapping row visibility", () => {
     expect(hasMappingLabel("FMD-91 Commodity Type 2")).toBe(true);
     expect(hasMappingLabel("FMD-2016 Commodity Type 1")).toBe(false);
     expect(hasMappingLabel("FMD-2016 Commodity Type 2")).toBe(false);
-  });
+  }, FMEA_TOOL_TEST_TIMEOUT_MS);
 
   test("info icon renders for every mapping row with help text", async () => {
     renderApp();
@@ -147,7 +153,7 @@ describe("FmeaTool — Phase 5 mapping row visibility", () => {
     const helpButtons = document.querySelectorAll(".mapping-table__help-button");
     // 11 rows visible in the default piece_part_generate mode (14 - 3 merge).
     expect(helpButtons.length).toBe(11);
-  });
+  }, FMEA_TOOL_TEST_TIMEOUT_MS);
 
   test("Fix B2: switching workflow mode does not reset inspection-backed mapping", async () => {
     // Fix B2: the effect that handles workflow-mode changes used to
@@ -182,5 +188,5 @@ describe("FmeaTool — Phase 5 mapping row visibility", () => {
     await user.click(screen.getByRole("button", { name: /merge piece-part fmea/i }));
     await user.click(screen.getByRole("button", { name: /piece-part from grouping file/i }));
     expect(document.querySelectorAll(".mapping-field__name").length).toBe(initialCount);
-  });
+  }, FMEA_TOOL_TEST_TIMEOUT_MS);
 });

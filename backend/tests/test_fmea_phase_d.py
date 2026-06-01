@@ -2883,7 +2883,7 @@ def test_unwritable_output_directory_logs_warning_and_falls_back(
     locked_dir = tmp_path / "locked_output"
     locked_dir.mkdir(parents=True, exist_ok=True)
 
-    monkeypatch.setattr("fmea.runtime._is_writable_directory", lambda path: False)
+    monkeypatch.setattr("common.utils.is_writable_directory", lambda path: False)
 
     body = {
         "workflowId": "piece_part_generate",

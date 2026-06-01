@@ -10,6 +10,7 @@
     "test": "vitest run --config frontend/vite.config.ts --coverage",
     "test:watch": "vitest --config frontend/vite.config.ts",
     "typecheck": "tsc -b frontend/tsconfig.json",
+    "typecheck:tests": "tsc -p frontend/tsconfig.test.json",
     "release": "scripts\\release.bat",
     "version:check": "node ./scripts/bump-version.mjs --check",
     "version:bump": "node ./scripts/bump-version.mjs",
@@ -17,7 +18,8 @@
     "tauri:dev": "node ./scripts/tauri-runner.mjs dev",
     "tauri:build": "node ./scripts/tauri-runner.mjs build",
     "tauri:build:portable": "node ./scripts/tauri-runner.mjs build --no-bundle",
-    "cargo:check": "node ./scripts/cargo-runner.mjs check --manifest-path src-tauri/Cargo.toml --quiet"
+    "cargo:check": "node ./scripts/cargo-runner.mjs check --manifest-path src-tauri/Cargo.toml --locked --quiet",
+    "cargo:test": "node ./scripts/cargo-runner.mjs test --manifest-path src-tauri/Cargo.toml --locked"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
@@ -27,9 +29,6 @@
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-toast": "^1.2.15",
     "@tauri-apps/plugin-dialog": "^2.4.0",
-    "@tauri-apps/plugin-log": "^2.7.0",
-    "@tauri-apps/plugin-shell": "^2.3.1",
-    "@tauri-apps/plugin-store": "^2.4.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "zod": "^3.25.76",
@@ -45,7 +44,6 @@
     "@types/react-dom": "^19.1.2",
     "@vitejs/plugin-react": "^5.0.4",
     "jsdom": "^26.1.0",
-    "playwright": "^1.55.0",
     "typescript": "^5.8.3",
     "vite": "^7.1.9",
     "vitest": "^3.2.4",

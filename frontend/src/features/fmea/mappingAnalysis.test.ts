@@ -102,7 +102,6 @@ describe("mappingAnalysis", () => {
 
   test("shows target workbook only for preserve-formatting strategy", () => {
     expect(shouldShowTargetWorkbook("new_workbook_standard")).toBe(false);
-    expect(shouldShowTargetWorkbook("existing_workbook_best_effort")).toBe(false);
     expect(shouldShowTargetWorkbook("existing_workbook_preserve_formatting")).toBe(true);
   });
 

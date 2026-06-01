@@ -9,9 +9,9 @@ from typing import Any, Callable, Mapping
 
 from common.exceptions import ValidationError
 from common import (
-    is_writable_directory,
     atomic_write_path,
     atomic_finalize,
+    validate_explicit_output_directory,
     verify_excel_readable,
 )
 
@@ -500,11 +500,6 @@ def _selected_sheet(inputs_by_role: dict[str, dict[str, Any]], role: str) -> str
     return value or None
 
 
-def _is_writable_directory(path: Path) -> bool:
-    """Compatibility wrapper around the shared ``is_writable_directory`` helper."""
-    return is_writable_directory(path)
-
-
 def _resolve_output_directory(
     inputs_by_role: dict[str, dict[str, Any]],
     explicit_directory: str | None = None,
@@ -522,39 +517,12 @@ def _resolve_output_directory(
     why. We now emit a WARNING log on every fallback path so the run
     log surfaces the reason.
     """
-    def _warn(message: str) -> None:
-        # Fix R2-L2: always log to the module logger as a secondary sink
-        # so warnings are preserved even when no log_callback is wired
-        # (e.g., direct-call integration tests or programmatic callers).
-        _logger.warning(message)
-        if log_callback is not None:
-            try:
-                log_callback(f"WARNING: {message}")
-            except Exception:  # pragma: no cover - defensive
-                pass
-
-    if explicit_directory:
-        candidate = str(explicit_directory).strip()
-        if candidate:
-            try:
-                path = Path(candidate).expanduser().resolve()
-                if path.is_dir():
-                    if _is_writable_directory(path):
-                        return path
-                    _warn(
-                        f"Explicit outputDirectory '{candidate}' is not "
-                        f"writable; falling back to input-file heuristic."
-                    )
-                else:
-                    _warn(
-                        f"Explicit outputDirectory '{candidate}' is not a "
-                        f"directory; falling back to input-file heuristic."
-                    )
-            except (OSError, ValueError) as exc:
-                _warn(
-                    f"Failed to resolve outputDirectory '{candidate}': "
-                    f"{exc}. Falling back to input-file heuristic."
-                )
+    resolved = validate_explicit_output_directory(
+        explicit_directory,
+        log_func=log_callback,
+    )
+    if resolved is not None:
+        return resolved
     for role in ("targetWorkbook", "bom", "grouping", "existingFmea"):
         candidate = str((inputs_by_role.get(role) or {}).get("path", "")).strip()
         if candidate:

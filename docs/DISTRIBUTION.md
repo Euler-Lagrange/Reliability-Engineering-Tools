@@ -30,22 +30,27 @@ is written to `logs/release_YYYYMMDD_HHMMSS.log`. On success, the script prints
 
 ## What the Pipeline Does
 
-`release.bat` runs eight steps. Any failure aborts the build and prints
+`release.bat` runs 12 steps. Any failure aborts the build and prints
 `STATUS: FAILED` along with the log path.
 
 1. **Toolchain check** — verifies `node`, `npm`, and the backend Python
    interpreter at `.venv\Scripts\python.exe`.
-2. **Backend tests** — `pytest backend\tests -q` against the Python sidecar.
-3. **Frontend tests** — `npm test` against the React frontend.
-4. **Sidecar build** — `python scripts\build_sidecar.py` runs PyInstaller and
+2. **Frontend production typecheck** — `npm run typecheck`.
+3. **Frontend test typecheck** — `npm run typecheck:tests`.
+4. **Rust bridge check** — `npm run cargo:check`.
+5. **Backend security audit** — `python -m common.security_audit --strict`
+   from `backend\python`.
+6. **Backend tests** — `pytest backend\tests -q` against the Python sidecar.
+7. **Frontend tests** — `npm test` against the React frontend.
+8. **Sidecar build** — `python scripts\build_sidecar.py` runs PyInstaller and
    produces `reliability-tools-sidecar.exe`.
-5. **Tauri build** — `npm run tauri:build:portable` produces the portable
+9. **Tauri build** — `npm run tauri:build:portable` produces the portable
    desktop exe under `src-tauri\target\...\release\`.
-6. **Locate exe** — finds the packaged exe and copies it to
+10. **Locate exe** — finds the packaged exe and copies it to
    `local_build\ReliabilityToolsDesktop.exe`.
-7. **Shell self-test** — launches the portable exe with `--self-test` to
+11. **Shell self-test** — launches the portable exe with `--self-test` to
    verify the Tauri binary starts.
-8. **Backend self-test** — launches with `--self-test-backend` to verify the
+12. **Backend self-test** — launches with `--self-test-backend` to verify the
    shell can spawn the sidecar and exchange a `health_check`.
 
 ## Output Artifacts

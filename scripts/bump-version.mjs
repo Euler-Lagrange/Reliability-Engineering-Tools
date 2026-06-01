@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 // Single-source version bumper for the Reliability Tools desktop app.
 //
-// The version number lives in THREE files today and must stay in lockstep:
+// The source version number lives in THREE files today and must stay in lockstep:
 //   1. package.json                  -> "version"
 //   2. src-tauri/Cargo.toml          -> version = "..."
 //   3. src-tauri/tauri.conf.json     -> "version"
 //
-// ``package-lock.json`` and ``src-tauri/Cargo.lock`` are auto-rewritten by
-// the next ``npm install`` / ``cargo build`` and are intentionally NOT
-// edited here — doing so manually invites subtle checksum/hash drift.
+// ``package-lock.json`` and ``src-tauri/Cargo.lock`` are not edited by the
+// bumper, but ``--check`` verifies their local package versions too so a
+// release gate cannot pass with stale lockfile metadata.
 //
 // Usage:
 //   node scripts/bump-version.mjs 0.4.2
@@ -43,6 +43,21 @@ const TARGETS = [
   {
     path: resolve(ROOT, "src-tauri/tauri.conf.json"),
     pattern: /("version"\s*:\s*")([^"]+)(")/,
+  },
+];
+
+const CHECK_ONLY_TARGETS = [
+  {
+    path: resolve(ROOT, "package-lock.json"),
+    pattern: /("version"\s*:\s*")([^"]+)(")/,
+  },
+  {
+    path: resolve(ROOT, "package-lock.json"),
+    pattern: /(""\s*:\s*\{\s*"name"\s*:\s*"reliability-tools-tauri",\s*"version"\s*:\s*")([^"]+)(")/,
+  },
+  {
+    path: resolve(ROOT, "src-tauri/Cargo.lock"),
+    pattern: /(\[\[package\]\]\s*name = "reliability-tools-desktop"\s*version = ")([^"]+)(")/,
   },
 ];
 
@@ -94,7 +109,8 @@ function main(argv) {
     process.exit(2);
   }
 
-  const readings = TARGETS.map((t) => ({ target: t, reading: readCurrent(t) }));
+  const targets = arg === "--check" ? [...TARGETS, ...CHECK_ONLY_TARGETS] : TARGETS;
+  const readings = targets.map((t) => ({ target: t, reading: readCurrent(t) }));
   const currents = readings.map((r) => r.reading.current);
 
   if (arg === "--check") {

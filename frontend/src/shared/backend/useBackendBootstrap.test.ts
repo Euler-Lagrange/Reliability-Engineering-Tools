@@ -115,7 +115,12 @@ describe("useBackendBootstrap", () => {
     });
 
     act(() => {
-      onSessionEvent?.({ kind: "disconnected", message: "Desktop backend dropped." });
+      onSessionEvent?.({
+        kind: "disconnected",
+        connected: false,
+        backend: "python-sidecar",
+        message: "Desktop backend dropped.",
+      });
     });
 
     expect(useRunStore.getState().activeRun?.phase).toBe("disconnected");
@@ -153,7 +158,12 @@ describe("useBackendBootstrap", () => {
     await flushAsyncWork();
 
     act(() => {
-      onSessionEvent?.({ kind: "disconnected", message: "Desktop backend dropped." });
+      onSessionEvent?.({
+        kind: "disconnected",
+        connected: false,
+        backend: "python-sidecar",
+        message: "Desktop backend dropped.",
+      });
     });
 
     await act(async () => {

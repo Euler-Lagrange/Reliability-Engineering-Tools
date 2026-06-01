@@ -471,6 +471,12 @@ export function FmeaTool() {
   const fileRequestSeq = useRoleRequestSequence<FileRole>();
 
   useEffect(() => {
+    if (IS_BROWSER_MOCK) {
+      setPreview("dark_star_fmea", baseScenario.outputPreview ?? null);
+    }
+  }, [setPreview]);
+
+  useEffect(() => {
     startTransition(() => {
       setValidations(initialValidations);
       setMappingOverrides({});
@@ -868,6 +874,7 @@ export function FmeaTool() {
             freezePanes: template.freeze_panes,
             protectedSheet: template.protected_sheet,
             rowsScanned: template.rows_scanned,
+            headerRowsScanned: template.header_rows_scanned,
             columnsScanned: template.columns_scanned,
             rowCapApplied: template.row_cap_applied,
             columnCapApplied: template.column_cap_applied,
@@ -901,6 +908,7 @@ export function FmeaTool() {
             columns: selectedInspection.columns,
             previewRows: selectedInspection.preview_rows,
             rowsScanned: selectedInspection.rows_scanned,
+            headerRowsScanned: selectedInspection.header_rows_scanned,
             columnsScanned: selectedInspection.columns_scanned,
             rowCapApplied: selectedInspection.row_cap_applied,
             columnCapApplied: selectedInspection.column_cap_applied,

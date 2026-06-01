@@ -21,6 +21,7 @@ function makeActiveRun(overrides: Partial<ActiveRunState>): ActiveRunState {
   return {
     runId: "run_test_001",
     toolId: "dark_star_fmea" as ToolId,
+    sessionGeneration: 1,
     phase: "running",
     progress: 0,
     stage: null,

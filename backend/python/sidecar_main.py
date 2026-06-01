@@ -251,6 +251,7 @@ def inspect_input(path: Path, requested_sheet: str | None) -> dict[str, Any]:
             "preview_rows": preview_rows,
             "rows_scanned": scan_meta["rows_scanned"],
             "columns_scanned": scan_meta["columns_scanned"],
+            "header_rows_scanned": scan_meta["header_rows_scanned"],
             "row_cap_applied": scan_meta["row_cap_applied"],
             "column_cap_applied": scan_meta["column_cap_applied"],
             "header_search_cap_applied": scan_meta["header_search_cap_applied"],

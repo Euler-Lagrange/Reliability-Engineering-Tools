@@ -4,11 +4,12 @@
 
 | Suite | Path | Count | Framework |
 |-------|------|-------|-----------|
-| Backend integration | `backend/tests/test_sidecar_main.py` | 42 | pytest |
+| Backend integration | `backend/tests/test_sidecar_main.py` | 43 | pytest |
 | Backend security audit | `backend/tests/test_security_audit.py` | 17 | pytest |
 | Backend cancel bridge | `backend/tests/test_cancel_bridge.py` | 12 | pytest |
+| Backend output-directory helpers | `backend/tests/test_output_directory_helpers.py` | 4 | pytest |
 | Backend FMEA Phase D | `backend/tests/test_fmea_phase_d.py` | 44 | pytest |
-| **Backend subtotal** | | **115** | |
+| **Backend subtotal** | | **120** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 4 | Vitest + RTL |
 | Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 1 | Vitest + RTL |
@@ -21,6 +22,8 @@
 | Frontend run lifecycle | `frontend/src/shared/backend/runLifecycle.test.ts` | 6 | Vitest |
 | Frontend cancel error | `frontend/src/shared/backend/cancelError.test.ts` | 12 | Vitest |
 | Frontend cancel run | `frontend/src/shared/backend/client.cancelRun.test.ts` | 2 | Vitest |
+| Frontend run event client | `frontend/src/shared/backend/client.runEvents.test.ts` | 2 | Vitest |
+| Frontend contract schemas | `frontend/src/contracts/sidecar.test.ts` | 4 | Vitest |
 | Frontend busy reset | `frontend/src/shared/backend/useBackendBusyReset.test.ts` | 9 | Vitest |
 | Frontend backend bootstrap | `frontend/src/shared/backend/useBackendBootstrap.test.ts` | 2 | Vitest |
 | Frontend run subscription | `frontend/src/shared/backend/useBackendRunSubscription.test.ts` | 2 | Vitest |
@@ -33,8 +36,10 @@
 | Frontend FMEA inspection | `frontend/src/features/fmea/FmeaTool.inspection.test.tsx` | 2 | Vitest + RTL |
 | Frontend mapping columns | `frontend/src/features/fmea/mappingColumns.test.ts` | 21 | Vitest |
 | Frontend mapping analysis | `frontend/src/features/fmea/mappingAnalysis.test.ts` | 7 | Vitest |
-| **Frontend subtotal** | | **159** | |
-| **Total** | | **274** | |
+| Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 3 | Vitest + RTL |
+| **Frontend subtotal** | | **168** | |
+| Rust bridge unit | `src-tauri/src/lib.rs` | 5 | cargo test |
+| **Total** | | **293** | |
 
 ## Backend Tests
 
@@ -185,24 +190,29 @@ neither of which exists under jsdom, so the client returns mock data from
 
 | File | Tests |
 |------|-------|
-| `frontend/src/app/App.test.tsx` | 10 — shell render, tool switching, theme application, notification dismissal, workflow switching, CCA visibility, HDA source toggle, output folder, focus management |
+| `frontend/src/app/App.test.tsx` | 11 — shell render, tool switching, theme application, notification dismissal, workflow switching, CCA visibility, HDA source toggle, output folder, focus management |
+| `frontend/src/contracts/sidecar.test.ts` | 4 — protocol schema gates for run ack, inspect metadata, and nullable Flet config |
 | `frontend/src/components/CustomSelect.test.tsx` | 1 — keyboard navigation |
 | `frontend/src/components/MappingTable.test.tsx` | 11 — column mapping display, selection, validation, sync, source-aware option labels |
-| `frontend/src/components/RunStatePanel.test.tsx` | 5 — run state display, progress, result, cancel, error |
+| `frontend/src/components/RunStatePanel.test.tsx` | 6 — run state display, progress, result, cancel, error |
 | `frontend/src/components/GlobalLogPanel.resize.test.tsx` | 13 — log panel drag-to-resize, collapse, expand, boundary constraints |
 | `frontend/src/components/primitives/CommandPalette.test.tsx` | 5 — command palette open, search, select, keyboard navigation, dismiss |
 | `frontend/src/components/primitives/HoldButton.test.tsx` | 5 — hold-to-confirm interaction, cancel on release, progress feedback |
 | `frontend/src/components/primitives/EmptyState.test.tsx` | 5 — empty state rendering, icon, message, action slot |
-| `frontend/src/shared/backend/runLifecycle.test.ts` | 9 — run lifecycle state transitions (ack, progress, result, cancel, error, reset) + session-generation reconciliation on reconnect |
+| `frontend/src/shared/backend/runLifecycle.test.ts` | 6 — run lifecycle state transitions (ack, progress, result, cancel, error, reset) |
 | `frontend/src/shared/backend/cancelError.test.ts` | 12 — cancel error detection, wrapping, propagation across error types |
 | `frontend/src/shared/backend/client.cancelRun.test.ts` | 2 — cancel run command dispatch and response handling |
+| `frontend/src/shared/backend/client.runEvents.test.ts` | 2 — production run-event subscription schema parsing |
 | `frontend/src/shared/backend/useBackendBusyReset.test.ts` | 9 — busy state recovery after run completion, error, or unmount |
+| `frontend/src/shared/backend/useBackendBootstrap.test.ts` | 2 — reconnect backoff and active-run clearing |
+| `frontend/src/shared/backend/useBackendRunSubscription.test.ts` | 2 — shell-level run-event fanout and global log capture |
 | `frontend/src/shared/theme/themeRegistry.test.ts` | 10 — theme registry consistency (ids, labels, icons, colorScheme, rail visibility) |
 | `frontend/src/shared/hooks/useRoleRequestSequence.test.ts` | 5 — per-role async request sequencing (stale response suppression) |
 | `frontend/src/shared/hooks/useCopyToClipboard.test.ts` | 3 — clipboard write, success feedback, error handling |
 | `frontend/src/stores/globalLogStore.test.ts` | 6 — global log ring buffer: append, clear, toggle, filter, export format, capacity |
 | `frontend/src/features/fmea/FmeaTool.test.tsx` | 7 — FMEA tool rendering, workflow selection, input validation, run integration |
 | `frontend/src/features/fmea/FmeaTool.inspection.test.tsx` | 2 — sheet selection interactivity during background aggregation, inspection cap warning display |
+| `frontend/src/features/toolRunDispatch.test.tsx` | 3 — BOM Compare, Failure Rate, and RefDes workflow dispatch from React tools |
 | `frontend/src/features/fmea/mappingColumns.test.ts` | 21 — column synonym matching, priority ordering, ambiguity resolution |
 | `frontend/src/features/fmea/mappingAnalysis.test.ts` | 7 — mapping completeness analysis, gap detection, suggestions, multi-source provenance merging |
 
@@ -224,13 +234,18 @@ file directly.
 .venv/Scripts/python.exe -m pytest backend/tests/test_sidecar_main.py::test_sidecar_health_check_round_trip -v
 
 # Frontend
-cd frontend
-npm test
 npm run typecheck
+npm run typecheck:tests
+npm test
+
+# Rust bridge
+npm run cargo:test
 ```
 
-The release pipeline (`scripts/release.bat`) runs `pytest backend/tests -q`
-followed by `npm test` before the sidecar and desktop builds.
+The release pipeline (`scripts/release.bat`) runs frontend production
+typecheck, frontend test typecheck, Rust `cargo:check`, backend security
+audit, backend tests, and frontend tests before the sidecar and desktop
+builds.
 
 ## Writing New Backend Tests
 

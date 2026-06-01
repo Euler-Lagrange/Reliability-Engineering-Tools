@@ -567,6 +567,7 @@ def test_sidecar_inspect_input_reports_row_cap_metadata(tmp_path: Path) -> None:
         result = _read_until(process, kind="result")
         assert result["payload"]["row_count"] == 20_000
         assert result["payload"]["rows_scanned"] == 20_000
+        assert result["payload"]["header_rows_scanned"] == 1
         assert result["payload"]["row_cap_applied"] is True
         assert result["payload"]["column_cap_applied"] is False
         assert result["payload"]["header_search_cap_applied"] is False
@@ -616,6 +617,7 @@ def test_sidecar_inspect_input_reports_column_cap_metadata(tmp_path: Path) -> No
         result = _read_until(process, kind="result")
         assert len(result["payload"]["columns"]) == 100
         assert result["payload"]["columns_scanned"] == 100
+        assert result["payload"]["header_rows_scanned"] == 1
         assert result["payload"]["column_cap_applied"] is True
         assert result["payload"]["row_cap_applied"] is False
         assert result["payload"]["header_search_cap_applied"] is False
@@ -2117,5 +2119,37 @@ def test_sidecar_validate_attaches_output_preview_for_failure_rate(
             assert isinstance(preview["columns"], list)
             assert isinstance(preview["rows"], list)
             assert isinstance(preview["truncated"], bool)
+    finally:
+        process.kill()
+
+
+def test_sidecar_validate_attaches_output_preview_for_refdes(
+    tmp_path: Path,
+) -> None:
+    """RefDes Extractor attaches a preview from the optional BOM workbook."""
+    process = subprocess.Popen(
+        [sys.executable, str(SIDECAR)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        env=SIDECAR_ENV,
+    )
+    try:
+        _read_ready_line(process)
+        result = _send_command(
+            process,
+            "req_val_preview_rd",
+            "validate_run",
+            _build_refdes_extract_run_body(tmp_path),
+        )
+        assert result["kind"] == "result"
+        payload = result["payload"]
+        assert payload["ok"] is True
+        preview = payload.get("output_preview")
+        assert preview is not None
+        assert "RefDes" in preview["columns"]
+        assert len(preview["rows"]) == 2
+        assert preview["truncated"] is False
     finally:
         process.kill()
