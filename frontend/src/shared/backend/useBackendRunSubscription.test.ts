@@ -123,4 +123,41 @@ describe("useBackendRunSubscription", () => {
       line: "Normalizing failure-rate workbook",
     });
   });
+
+  it("drives the run to failure when a result payload fails schema validation", () => {
+    renderHook(() => useBackendRunSubscription());
+    const { result } = renderHook(() => useBackendRunLifecycle("dark_star_fmea"));
+
+    act(() => {
+      result.current.beginAcceptedRun({
+        run_id: "run_bad_result",
+        mode: "desktop-bridge",
+        session_generation: 7,
+      });
+    });
+
+    // A result envelope missing required fields (mode, log_lines, row_count, ...)
+    // must NOT throw out of the listener and strand the run; it must drive a
+    // terminal failure with the validation error surfaced. (Finding H-B.)
+    act(() => {
+      runHandler?.({
+        kind: "result",
+        run_id: "run_bad_result",
+        payload: {
+          status: "success",
+          title: "Run complete",
+          summary: "Report generated",
+        },
+      });
+    });
+
+    const active = useRunStore.getState().activeRun;
+    expect(active?.phase).toBe("failure");
+    expect(active?.errorCode).toBe("RESULT_SCHEMA_MISMATCH");
+    expect(
+      useGlobalLogStore.getState().entries.some((entry) =>
+        entry.line.includes("failed validation"),
+      ),
+    ).toBe(true);
+  });
 });

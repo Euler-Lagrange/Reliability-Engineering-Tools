@@ -144,14 +144,22 @@ export function useBackendBootstrap() {
           detail: event.message,
         });
         attemptReconnect();
-      }).then((dispose) => {
-        if (!active) {
-          dispose();
-          return;
-        }
+      })
+        .then((dispose) => {
+          if (!active) {
+            dispose();
+            return;
+          }
 
-        unlistenSession = dispose;
-      });
+          unlistenSession = dispose;
+        })
+        .catch((error) => {
+          // A rejected listen() would otherwise be an unhandled rejection that
+          // silently disables disconnect detection. Surface it for diagnostics;
+          // healthCheck independently owns backendStatus, so the UI is not
+          // stranded on "connecting". (Holistic-review finding H-B follow-up.)
+          console.error("Failed to subscribe to backend session events:", error);
+        });
     }
 
     return () => {
