@@ -126,7 +126,6 @@ def output_headers_for(standard: str) -> List[str]:
 
 
 ROW_TYPE_COL = '_row_type'
-ALPHABET_LENGTH = 26  # Length of uppercase alphabet for suffix generation
 INDEX_CANCEL_CHECK_INTERVAL = 50  # Rows between cancellation checks during index build
 
 # Phase 4 / A9: the internal key for the variant-inheritance summary remains
@@ -2175,10 +2174,9 @@ class FMEAProcessor:
             rows.append(row)
         else:
             self.successful_matches.append((ref_des, pn))
-            letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
             for idx, m in enumerate(matches):
                 row = base_row.copy()
-                suffix = letters[idx] if idx < ALPHABET_LENGTH else f"Z{idx}"
+                suffix = _index_to_suffix(idx)
                 row['FMEA-ID'] = self._format_fmea_id(group_label, ref_des, suffix, mode)
                 row['Failure Mode'] = m.get('failure_mode')
                 row['Failure Mode Ratio'] = m.get('ratio')

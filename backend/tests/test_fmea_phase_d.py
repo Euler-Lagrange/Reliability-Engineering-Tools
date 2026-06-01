@@ -22,8 +22,26 @@ import pandas as pd
 import pytest
 
 from common.exceptions import ValidationError
-from fmea.fmea_generator_logic import FMEAProcessor, write_excel_report
+from fmea.fmea_generator_logic import FMEAProcessor, _index_to_suffix, write_excel_report
 from fmea.runtime import execute_run_request, validate_run_request
+
+
+def test_index_to_suffix_is_bijective_and_unique():
+    """FMEA-ID overflow suffixes must stay unique past 26 failure modes.
+
+    The previous inline scheme (``letters[idx] if idx < 26 else f"Z{idx}"``) was
+    not bijective; ``_index_to_suffix`` uses base-26 bijective numeration
+    (A..Z, AA..AZ, BA..) so every index maps to a distinct suffix.
+    """
+    assert _index_to_suffix(0) == "A"
+    assert _index_to_suffix(25) == "Z"
+    assert _index_to_suffix(26) == "AA"
+    assert _index_to_suffix(27) == "AB"
+    assert _index_to_suffix(51) == "AZ"
+    assert _index_to_suffix(52) == "BA"
+    # No collisions across a wide range (the old ``Z{idx}`` scheme reused "Z").
+    suffixes = [_index_to_suffix(i) for i in range(1000)]
+    assert len(set(suffixes)) == 1000
 
 
 # ----- helpers ----------------------------------------------------------------
