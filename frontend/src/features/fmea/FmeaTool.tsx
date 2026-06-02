@@ -18,7 +18,6 @@ import type {
   InputFileState,
   MappingStatus,
   OutputStrategyId,
-  RunEvent,
   RunEventTemplate,
   RunMode,
   TemplateAnalysis,
@@ -38,9 +37,12 @@ import {
   type InspectInputResult,
   type RunRequestBody,
 } from "../../shared/backend/client";
-import { buildCancelNotification } from "../../shared/backend/cancelError";
 import { parentDirectoryForPath } from "../../shared/backend/fileManager";
-import { buildRunTimeline, useBackendRunLifecycle } from "../../shared/backend/runLifecycle";
+import {
+  buildTimeline,
+  cloneInputs,
+  useDesktopRunController,
+} from "../../shared/backend/useDesktopRunController";
 import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
 import { useRoleRequestSequence } from "../../shared/hooks/useRoleRequestSequence";
 import { useNotificationStore } from "../../stores/notificationStore";
@@ -124,23 +126,6 @@ function buildOutputInputs(inputs: InputFileState[], outputStrategyId: OutputStr
   return targetWorkbook ? [targetWorkbook] : [];
 }
 
-function buildTimeline(runMode: RunMode, runIndex: number, templates: RunEventTemplate[]): RunEvent[] {
-  return templates.map((event, index) => {
-    let status: RunEvent["status"] = "pending";
-
-    if (runMode === "running") {
-      if (index < runIndex) status = "completed";
-      if (index === runIndex) status = "active";
-    }
-
-    if (runMode === "success" || runMode === "failure") {
-      status = "completed";
-    }
-
-    return { ...event, status };
-  });
-}
-
 function buildRunRequest(
   workflowId: WorkflowId,
   outputStrategyId: OutputStrategyId,
@@ -215,17 +200,6 @@ function readStoredCcaPrefix(): string {
   } catch {
     return "";
   }
-}
-
-function cloneInputs(inputs: InputFileState[]) {
-  return inputs.map((input) => ({
-    ...input,
-    sheets: input.sheets.map((sheet) => ({ ...sheet })),
-    source: input.source ?? "mock",
-    isResolvingSheets: input.isResolvingSheets ?? false,
-    isAnalyzing: input.isAnalyzing ?? false,
-    resolutionError: input.resolutionError ?? null,
-  }));
 }
 
 /**
@@ -442,18 +416,49 @@ export function FmeaTool() {
   const [cancelledNotice, setCancelledNotice] = useState<string | null>(null);
   const [contextView, setContextView] = useState<"preview" | "run">("preview");
   const contextHeadingRef = useRef<HTMLHeadingElement | null>(null);
-  const handledDesktopTerminalRef = useRef<string | null>(null);
   const backendMode = useShellStore((state) => state.backendMode);
   const setBackendState = useShellStore((state) => state.setBackendState);
   const fmeaOutputDirectory = useShellStore((state) => state.fmeaOutputDirectory);
   const setFmeaOutputDirectory = useShellStore((state) => state.setFmeaOutputDirectory);
   const pushNotification = useNotificationStore((state) => state.push);
   const setPreview = usePreviewStore((state) => state.setPreview);
+
+  const timeline = useMemo(() => buildTimeline(runMode, runIndex, runTemplates), [runIndex, runMode, runTemplates]);
+  const progress =
+    runMode === "running" && runIndex >= 0
+      ? runTemplates[runIndex]?.progress ?? 0
+      : runResult
+        ? 100
+        : 0;
+
   const {
-    session: desktopRunSession,
     beginAcceptedRun,
     resetSession: resetDesktopRunSession,
-  } = useBackendRunLifecycle("dark_star_fmea");
+    armTerminalHandler,
+    cancel: cancelDesktopRun,
+    panelRunMode,
+    panelTimeline,
+    panelProgress,
+    panelRunResult,
+    panelLogLines,
+    panelCancelledNotice,
+    panelRunId,
+    panelStatusMessage,
+    panelTruncatedLogCount,
+    panelErrorCode,
+    panelErrorTraceback,
+  } = useDesktopRunController("dark_star_fmea", {
+    successMessage: (outputFile) => `Generated workbook at ${outputFile}.`,
+    successTitle: "FMEA generated",
+    failureTitle: "FMEA run failed",
+    cancelledTitle: "FMEA run cancelled",
+    mockRunMode: runMode,
+    mockTimeline: timeline,
+    mockProgress: progress,
+    mockRunResult: runResult,
+    mockLogLines: runLogLines,
+    mockCancelledNotice: cancelledNotice,
+  });
   // Per-role token used to discard stale async sheet/inspect/analyze results
   // when the user changes the input under a still-resolving operation.
   const fileRequestSeq = useRoleRequestSequence<FileRole>();
@@ -491,7 +496,7 @@ export function FmeaTool() {
       setRunLogLines([]);
       setCancelledNotice(null);
       setContextView("preview");
-      handledDesktopTerminalRef.current = null;
+      armTerminalHandler();
       resetDesktopRunSession();
     });
   }, [workflowId, outputStrategyId]);
@@ -576,49 +581,6 @@ export function FmeaTool() {
     () => (inspectionCapWarning ? [inspectionCapWarning, ...validations] : validations),
     [inspectionCapWarning, validations],
   );
-  const timeline = useMemo(() => buildTimeline(runMode, runIndex, runTemplates), [runIndex, runMode, runTemplates]);
-  const progress =
-    runMode === "running" && runIndex >= 0
-      ? runTemplates[runIndex]?.progress ?? 0
-      : runResult
-        ? 100
-        : 0;
-  const desktopTimeline = useMemo(() => buildRunTimeline(desktopRunSession), [desktopRunSession]);
-  const desktopRunResult = useMemo(
-    () =>
-      desktopRunSession.result
-        ? {
-            status: desktopRunSession.result.status,
-            title: desktopRunSession.result.title,
-            summary: desktopRunSession.result.summary,
-            outputFile: desktopRunSession.result.output_file,
-            primaryMetric: desktopRunSession.result.primary_metric,
-            secondaryMetric: desktopRunSession.result.secondary_metric,
-            notes: desktopRunSession.result.notes,
-          }
-        : null,
-    [desktopRunSession.result],
-  );
-  const panelRunMode = backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.phase : runMode;
-  const panelTimeline = backendClient.runtimeMode === "desktop-bridge" ? desktopTimeline : timeline;
-  const panelProgress = backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.progress : progress;
-  const panelRunResult = backendClient.runtimeMode === "desktop-bridge" ? desktopRunResult : runResult;
-  const panelLogLines = backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.logs : runLogLines;
-  const panelCancelledNotice =
-    backendClient.runtimeMode === "desktop-bridge"
-      ? panelRunMode === "cancelled" || panelRunMode === "disconnected"
-        ? desktopRunSession.statusMessage
-        : null
-      : cancelledNotice;
-  const panelRunId = backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.runId : null;
-  const panelStatusMessage =
-    backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.statusMessage : null;
-  const panelTruncatedLogCount =
-    backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.truncatedLogCount : 0;
-  const panelErrorCode =
-    backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.errorCode : null;
-  const panelErrorTraceback =
-    backendClient.runtimeMode === "desktop-bridge" ? desktopRunSession.errorTraceback : null;
 
   async function handleRevealOutput(path: string) {
     try {
@@ -697,67 +659,6 @@ export function FmeaTool() {
   const handleClearOutputDirectory = () => {
     setFmeaOutputDirectory(null);
   };
-
-  useEffect(() => {
-    if (backendClient.runtimeMode !== "desktop-bridge" || !desktopRunSession.runId) {
-      return;
-    }
-
-    const phase = desktopRunSession.phase;
-    if (!["success", "failure", "cancelled", "disconnected"].includes(phase)) {
-      return;
-    }
-
-    const terminalKey = `${desktopRunSession.runId}:${phase}`;
-    if (handledDesktopTerminalRef.current === terminalKey) {
-      return;
-    }
-    handledDesktopTerminalRef.current = terminalKey;
-
-    if (phase === "success" && desktopRunSession.result) {
-      setBackendState({
-        backendStatus: "ready",
-        backendMode: desktopRunSession.result.mode,
-        backendMessage: `Generated workbook at ${desktopRunSession.result.output_file}.`,
-        lastBackendCheckAt: new Date().toISOString(),
-      });
-      pushNotification({
-        tone: "success",
-        title: "FMEA generated",
-        detail: desktopRunSession.result.output_file,
-      });
-      return;
-    }
-
-    if (phase === "failure") {
-      setBackendState({
-        backendStatus: "error",
-        backendMode: "desktop-bridge",
-        backendMessage: desktopRunSession.statusMessage,
-        lastBackendCheckAt: new Date().toISOString(),
-      });
-      pushNotification({
-        tone: "error",
-        title: "FMEA run failed",
-        detail: desktopRunSession.statusMessage ?? "Unknown backend execution failure",
-      });
-      return;
-    }
-
-    if (phase === "cancelled") {
-      setBackendState({
-        backendStatus: "ready",
-        backendMode: "desktop-bridge",
-        backendMessage: desktopRunSession.statusMessage,
-        lastBackendCheckAt: new Date().toISOString(),
-      });
-      pushNotification({
-        tone: "warning",
-        title: "FMEA run cancelled",
-        detail: desktopRunSession.statusMessage ?? "The active backend run was cancelled.",
-      });
-    }
-  }, [desktopRunSession, pushNotification, setBackendState]);
 
   async function indexRemainingWorkbookSheets(
     role: FileRole,
@@ -1177,7 +1078,7 @@ export function FmeaTool() {
         backendMessage: "Generating FMEA workbook...",
       });
 
-      handledDesktopTerminalRef.current = null;
+      armTerminalHandler();
       beginAcceptedRun(await backendClient.executeRun(runRequest));
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Unknown backend execution failure";
@@ -1552,46 +1453,10 @@ export function FmeaTool() {
                     void handleStartRun();
                   }}
                   onCancel={() => {
-                    if (backendClient.runtimeMode === "desktop-bridge") {
-                      // Phase B3: require a concrete running/cancelling run
-                      // ID before even attempting a cancel. The previous
-                      // guard also accepted "idle" briefly during phase
-                      // transitions which let the request reach the
-                      // sidecar with a stale run id.
-                      //
-                      // Fix E3: explicitly only fire the cancel on
-                      // ``starting`` / ``running`` phases. A previous
-                      // helper (since removed in R2-L3) also matched
-                      // ``cancelling``, so a user double-clicking Cancel
-                      // while the first cancel was in flight triggered
-                      // a second ``cancel_run`` request. If the first
-                      // one already completed the sidecar would reply
-                      // with "No active run matches" and surface a
-                      // confusing post-cancel notification.
-                      if (
-                        !desktopRunSession.runId ||
-                        (desktopRunSession.phase !== "starting" &&
-                          desktopRunSession.phase !== "running")
-                      ) {
-                        return;
-                      }
-
-                      void backendClient
-                        .cancelRun(desktopRunSession.runId)
-                        .then((result) => {
-                          setBackendState({
-                            backendStatus: "busy",
-                            backendMode: result.mode,
-                            backendMessage: "Cancelling active backend run...",
-                            lastBackendCheckAt: new Date().toISOString(),
-                          });
-                        })
-                        .catch((error: unknown) => {
-                          // Phase B3: forward the sidecar's actual error
-                          // message through the Tauri bridge rejection
-                          // (which is a raw string, not an Error).
-                          pushNotification(buildCancelNotification(error));
-                        });
+                    // Desktop-bridge cancel is owned by the shared controller
+                    // (guarded on ``starting``/``running`` to avoid stale-id
+                    // and double-click second-cancels reaching the sidecar).
+                    if (cancelDesktopRun()) {
                       return;
                     }
 
