@@ -31,13 +31,16 @@ export function CustomSelect({
   compact = false,
   disabledReason,
 }: CustomSelectProps) {
-  const selected = options.find((option) => option.value === value) ?? options[0];
+  // If `value` is not among `options`, show the raw value rather than silently
+  // masquerading it as options[0] (which also desynced Radix's displayed value
+  // from the parent's controlled value).
+  const selected = options.find((option) => option.value === value);
   const reasonId = useId();
   const showReason = disabled && !!disabledReason;
 
   return (
     <div className="custom-select">
-      <Select.Root value={selected?.value ?? value} onValueChange={onChange} disabled={disabled}>
+      <Select.Root value={value} onValueChange={onChange} disabled={disabled}>
         <Select.Trigger
           className={`custom-select__trigger${compact ? " custom-select__trigger--compact" : ""}`}
           aria-label={label}
