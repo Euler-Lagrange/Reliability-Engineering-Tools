@@ -8,8 +8,11 @@
 | Backend security audit | `backend/tests/test_security_audit.py` | 17 | pytest |
 | Backend cancel bridge | `backend/tests/test_cancel_bridge.py` | 12 | pytest |
 | Backend output-directory helpers | `backend/tests/test_output_directory_helpers.py` | 4 | pytest |
-| Backend FMEA Phase D | `backend/tests/test_fmea_phase_d.py` | 44 | pytest |
-| **Backend subtotal** | | **120** | |
+| Backend FMEA Phase D | `backend/tests/test_fmea_phase_d.py` | 45 | pytest |
+| Backend Failure-Rate logic | `backend/tests/test_failure_rate_logic.py` | 12 | pytest |
+| Backend RefDes extraction-engine | `backend/tests/test_extraction_engine.py` | 6 | pytest |
+| Backend BOM-compare logic | `backend/tests/test_bom_compare_logic.py` | 12 | pytest |
+| **Backend subtotal** | | **151** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 4 | Vitest + RTL |
 | Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 1 | Vitest + RTL |
@@ -37,9 +40,9 @@
 | Frontend mapping columns | `frontend/src/features/fmea/mappingColumns.test.ts` | 21 | Vitest |
 | Frontend mapping analysis | `frontend/src/features/fmea/mappingAnalysis.test.ts` | 7 | Vitest |
 | Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 3 | Vitest + RTL |
-| **Frontend subtotal** | | **168** | |
+| **Frontend subtotal** | | **170** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 5 | cargo test |
-| **Total** | | **293** | |
+| **Total** | | **326** | |
 
 ## Backend Tests
 
@@ -47,9 +50,11 @@
 real subprocess. Every test in that file starts a fresh
 `python sidecar_main.py` and talks to it over stdin/stdout.
 
-In-process unit tests (`test_cancel_bridge.py`, `test_fmea_phase_d.py`)
-import backend modules directly; see **In-process tests** below for the
-`conftest.py` shim that makes those imports resolve.
+In-process unit tests (`test_cancel_bridge.py`, `test_fmea_phase_d.py`,
+`test_failure_rate_logic.py`, `test_extraction_engine.py`,
+`test_bom_compare_logic.py`) import backend modules directly; see
+**In-process tests** below for the `conftest.py` shim that makes those
+imports resolve.
 
 ### Subprocess pattern
 
@@ -177,8 +182,11 @@ new FMEA tests must do the same or validation will reject the request.
 | Single-active-run guard | `test_sidecar_rejects_second_execute_while_run_is_active` |
 | Error recovery | `test_sidecar_execute_emits_backend_error_on_missing_columns`, `test_sidecar_remains_responsive_after_failed_run` |
 | Missing-file validation | `test_sidecar_validate_rejects_missing_required_files` |
-| FMEA Phase D (in-process, 44 tests) | BOM inheritance, variant handling, failure modes standard filtering, fill-gaps validation, usage fraction calculations, legacy enrichment rejection, functional-to-piecepart preservation, CCA prefix handling, output directory configuration (including unwritable-directory fallback), Part Usage (PU) column logic, column override modes, union merge strategies, FMC mapping |
+| FMEA Phase D (in-process, 45 tests) | BOM inheritance, variant handling, failure modes standard filtering, fill-gaps validation, usage fraction calculations, legacy enrichment rejection, functional-to-piecepart preservation, CCA prefix handling, output directory configuration (including unwritable-directory fallback), Part Usage (PU) column logic, column override modes, union merge strategies, FMC mapping, bijective FMEA-ID suffix |
 | Inspection caps (subprocess, 4 tests) | `inspect_input` row cap at 20 000 rows, column cap at 100 columns, sparse-sheet row cap by physical rows scanned, header-search cap failure within 1 000 rows |
+| Failure-Rate logic (in-process, 12 tests) | Failure Rate (FR) linker math driven through `FMEALinkerLogic.process`: per-mode `Mode_FR = Part_FR * Usage * Corrected_Ratio` arithmetic, unit-mode scaling to per-hour space, RefDes lookup normalization — asserts exact computed numbers |
+| RefDes extraction-engine (in-process, 6 tests) | NextGen `_disambiguate_pin_mapping` pin-label collision resolution across the three-tier priority (body center inside group rect → body overlaps rect → nearest body by distance) when multiple components share a pin label |
+| BOM-compare logic (in-process, 12 tests) | BOM Compare range/set math: opt-in RefDes range expansion (`R200-R205` → R200..R205) while the `analyze` orchestrator never expands by default (hyphens denote pins, e.g. `U200-1` reduces to base `U200`), zero-pad preservation, and `analyze` set math (Missing in BOM / BOM Not in Groups, both directions) |
 
 ## Frontend Tests
 

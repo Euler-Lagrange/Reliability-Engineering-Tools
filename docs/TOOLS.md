@@ -396,7 +396,8 @@ The tool has two internal extraction engines: NextGen (the newer engine with
 adaptive geometry analysis) and Legacy (the original rule-based engine).
 Choose:
 
-- **Auto** — the default. The tool picks the best engine based on the PDF.
+- **Auto** — the default. Runs NextGen first; Legacy is used only as an
+  exception fallback if NextGen fails.
 - **NextGen only** — force the newer engine. Use this if you hit an edge
   case where Legacy returns noisy results.
 - **Legacy only** — force the older engine. Use this for documents that

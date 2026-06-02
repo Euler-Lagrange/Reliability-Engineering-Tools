@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Holistic review cleanup
+
+- **Dead code removed (~470 verified lines)** — deleted the unused
+  `PlaceholderTool` and `ScenarioRail` React components and their CSS,
+  the Flet-era Python helpers (`add_recent_file` / `get_recent_files`,
+  `GUILogHandler` / `log_session_*`), and unreferenced FMEA / failure-rate
+  symbols. No runtime behavior changed.
+- **Shared desktop run controller** — extracted
+  `frontend/src/shared/backend/useDesktopRunController.ts`; the FMEA, BOM
+  Compare, Failure Rate, and RefDes Extractor tools now share one
+  run-lifecycle hook instead of four near-identical copies (−527 lines of
+  duplication).
+- **Defensive run-result parse guard** — `execute_run` result parsing now
+  guards malformed/partial terminal payloads instead of assuming a
+  well-formed shape.
+- **RefDes pin-label collision fix** — `_disambiguate_pin_mapping` now
+  resolves the multi-candidate path (body-center-in-rect → overlap →
+  nearest-body), which was previously unreachable because an exact
+  `(page, label)` dict let the last-written mapping win.
+- **FMEA-ID bijective suffix** — FMEA row IDs use a bijective overflow suffix
+  (A..Z, AA..AZ, ...) so suffixes past 26 failure modes are consistent, replacing
+  the old inconsistent `Z{idx}` scheme.
+- **BOM / OneDrive parity** — BOM Compare and the OneDrive cloud-file
+  hydration path were brought back into parity with the other tools.
+- **Tests** — +31 backend tests (now **151**: adds
+  `test_failure_rate_logic.py` ×12, `test_extraction_engine.py` ×6,
+  `test_bom_compare_logic.py` ×12, and one more FMEA Phase D case) and +2
+  frontend tests inside existing suites (now **170** across 27 files).
+- **Doc fixes** — corrected the NextGen extraction-engine docstrings
+  (the `refdes_test` engine is the default production backend, not a
+  test-only / experimental path), `docs/DEVELOPMENT.md`, `release.bat`,
+  and a stale `vite.config` comment. tsc-emitted `vite.config.js/.d.ts`
+  and `vitest.setup.js/.d.ts` artifacts are now gitignored.
+
 ### Fixed
 
 - Synced the streamed `execute_run` ack contract: Rust now enriches the

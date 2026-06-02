@@ -49,7 +49,7 @@ request, response, and streamed run event.
 │   │   ├── bom_compare/        # BOM Compare tool
 │   │   ├── failure_rate/       # Failure Rate linker
 │   │   ├── refdes_extractor/   # RefDes extractor (with bom_loader, geometry)
-│   │   └── refdes_test/        # Dark Star next-gen extraction engine
+│   │   └── refdes_test/        # NextGen extraction engine (default production backend; legacy is exception-only fallback)
 │   └── tests/
 │       └── test_sidecar_main.py
 ├── contracts/
