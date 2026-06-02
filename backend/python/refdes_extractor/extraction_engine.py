@@ -1077,12 +1077,13 @@ def harvest_hybrid(
             else:
                 grouped_data[name] = {"tokens": set(), "pages": set(), "mode": mode}
 
-    pin_lookup_exact = {}
+    # Collect ALL mappings for each (page, pin-label) so that when multiple
+    # components share a pin label on a page we disambiguate geometrically
+    # (_disambiguate_pin_mapping) instead of letting the last-written one win.
     pin_lookup_by_label = defaultdict(list)
     for pid, mapping in pin_map.items():
         page_idx = mapping.page_num
         label = mapping.pin_label
-        pin_lookup_exact[(page_idx, label)] = mapping
         pin_lookup_by_label[(page_idx, label)].append(mapping)
 
     debug_shapes = []
@@ -1442,12 +1443,15 @@ def harvest_hybrid(
                                 # Used when pinlist clustering is not available or didn't
                                 # process this token
                                 mapping = None
-                                exact_key = (page_idx, text)
+                                lookup_key = (page_idx, text)
 
-                                if exact_key in pin_lookup_exact:
-                                    mapping = pin_lookup_exact[exact_key]
-                                elif exact_key in pin_lookup_by_label:
-                                    candidates = pin_lookup_by_label[exact_key]
+                                # An "exact" dict keyed by (page, label) used to
+                                # shadow this path and let the last-written mapping
+                                # win when two components shared a pin label on a
+                                # page; always resolve through the full candidate
+                                # list so the geometric disambiguation runs.
+                                if lookup_key in pin_lookup_by_label:
+                                    candidates = pin_lookup_by_label[lookup_key]
                                     if len(candidates) == 1:
                                         mapping = candidates[0]
                                     else:
