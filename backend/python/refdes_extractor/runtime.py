@@ -467,10 +467,24 @@ def execute_run_request(
     emit_progress("Complete", "Extraction complete.", 100)
 
     # --- Compute statistics ---
-    total_groups = len(results)
-    total_refdes = sum(r.get("component count", 0) for r in results)
-    verified = sum(1 for r in results if "(Verified)" in str(r.get("group", "")))
+    # A group with a BOM is emitted as TWO rows ("X (Verified)" + "X (Unverified)"),
+    # and "GROUP NOT DETECTED" / _is_gap rows are placeholders for expected-but-missing
+    # groups. Count DISTINCT logical groups so the metrics aren't inflated by the split
+    # or by gap placeholders, and so verified/unverified don't overlap. A logical group
+    # counts as "verified" if any of its rows is a (Verified) row.
+    _group_verified = {}
+    for r in results:
+        _g = str(r.get("group", ""))
+        if r.get("_is_gap") or "GROUP NOT DETECTED" in _g:
+            continue
+        _base = _g.replace(" (Verified)", "").replace(" (Unverified)", "")
+        _group_verified[_base] = _group_verified.get(_base, False) or ("(Verified)" in _g)
+    total_groups = len(_group_verified)
+    verified = sum(1 for v in _group_verified.values() if v)
     unverified = total_groups - verified
+    # Each component appears in exactly one row (verified xor unverified set), so
+    # summing all rows still counts every extracted component once.
+    total_refdes = sum(r.get("component count", 0) for r in results)
 
     backend_used = details.get("backend_used", "unknown")
     notes = [
