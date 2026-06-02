@@ -6,7 +6,10 @@ use std::{
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio},
-    sync::{mpsc, Arc, Mutex},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        mpsc, Arc, Mutex,
+    },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -736,11 +739,20 @@ fn spawn_stdout_reader(stdout: ChildStdout, shared: Arc<SessionShared>, session:
 }
 
 fn spawn_heartbeat_supervisor(shared: Arc<SessionShared>, session: SessionSlot) {
+    // Pin this supervisor to the generation it was spawned for. A reconnect
+    // advances the session generation and spawns a fresh supervisor; the stale
+    // one must self-retire instead of lingering and double-supervising the new
+    // session (which could disconnect a healthy live session on a shared timer).
+    let my_generation = shared.current_session_generation();
     thread::spawn(move || {
         loop {
             thread::sleep(HEARTBEAT_CHECK_INTERVAL);
 
             if !shared.is_connected() {
+                break;
+            }
+
+            if shared.current_session_generation() != my_generation {
                 break;
             }
 
@@ -797,12 +809,18 @@ fn enrich_run_event_for_frontend(event: &mut Value, session_generation: u64) {
     }
 }
 
+// Monotonic counter appended to correlation IDs so two commands issued within
+// the same nanosecond tick (coarse clock granularity, esp. on Windows) cannot
+// produce the same id and overwrite each other's sender in the pending-request map.
+static CORRELATION_SEQ: AtomicU64 = AtomicU64::new(0);
+
 fn correlation_id(prefix: &str) -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_nanos())
         .unwrap_or_default();
-    format!("{prefix}_{nanos}")
+    let seq = CORRELATION_SEQ.fetch_add(1, Ordering::Relaxed);
+    format!("{prefix}_{nanos}_{seq}")
 }
 
 fn merge_disconnect_message(base: &str, detail: Option<&str>) -> String {
@@ -1469,7 +1487,8 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        enrich_run_event_for_frontend, merge_disconnect_message, should_forward_run_event,
+        correlation_id, enrich_run_event_for_frontend, merge_disconnect_message,
+        should_forward_run_event,
     };
     use serde_json::json;
 
@@ -1514,6 +1533,20 @@ mod tests {
 
         assert_eq!(event["payload"]["session_generation"], json!(7));
         assert_eq!(event["payload"]["mode"], json!("desktop-bridge"));
+    }
+
+    #[test]
+    fn correlation_id_is_unique_within_same_tick() {
+        // The monotonic sequence suffix guarantees uniqueness even when two ids
+        // are minted in the same nanosecond tick (coarse clocks, esp. on Windows).
+        let a = correlation_id("cmd");
+        let b = correlation_id("cmd");
+        assert_ne!(a, b);
+        assert!(a.starts_with("cmd_"));
+
+        let ids: std::collections::HashSet<String> =
+            (0..1000).map(|_| correlation_id("c")).collect();
+        assert_eq!(ids.len(), 1000);
     }
 
     #[test]
