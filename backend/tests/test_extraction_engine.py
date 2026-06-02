@@ -77,9 +77,9 @@ def test_priority2_overlap_only_wins_when_no_center_inside() -> None:
     candidates = [cand_far, cand_overlap]
 
     body_rects = {
-        # U10 body straddles the group boundary: overlaps (50..150 x 50..150)
-        # but its CENTER (100,100) is on the corner — point_in_rect treats the
-        # boundary as inside, so nudge the center clearly outside via offset.
+        # U10 body (80..180 x 80..180): overlaps the (0..100) group rect, but its
+        # CENTER (130,130) is OUTSIDE the group rect — so tier 1 (center-inside) is
+        # skipped and tier 2 (overlap) is what selects U10.
         (PAGE_IDX, "U10"): fitz.Rect(80, 80, 180, 180),
         # U20 body far away: no overlap, no center-inside.
         (PAGE_IDX, "U20"): fitz.Rect(400, 400, 450, 450),

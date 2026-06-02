@@ -213,14 +213,14 @@ neither of which exists under jsdom, so the client returns mock data from
 | `frontend/src/shared/backend/client.runEvents.test.ts` | 2 — production run-event subscription schema parsing |
 | `frontend/src/shared/backend/useBackendBusyReset.test.ts` | 9 — busy state recovery after run completion, error, or unmount |
 | `frontend/src/shared/backend/useBackendBootstrap.test.ts` | 2 — reconnect backoff and active-run clearing |
-| `frontend/src/shared/backend/useBackendRunSubscription.test.ts` | 2 — shell-level run-event fanout and global log capture |
+| `frontend/src/shared/backend/useBackendRunSubscription.test.ts` | 3 — shell-level run-event fanout, global log capture, and result-schema validation-failure → terminal failure |
 | `frontend/src/shared/theme/themeRegistry.test.ts` | 10 — theme registry consistency (ids, labels, icons, colorScheme, rail visibility) |
 | `frontend/src/shared/hooks/useRoleRequestSequence.test.ts` | 5 — per-role async request sequencing (stale response suppression) |
 | `frontend/src/shared/hooks/useCopyToClipboard.test.ts` | 3 — clipboard write, success feedback, error handling |
 | `frontend/src/stores/globalLogStore.test.ts` | 6 — global log ring buffer: append, clear, toggle, filter, export format, capacity |
 | `frontend/src/features/fmea/FmeaTool.test.tsx` | 7 — FMEA tool rendering, workflow selection, input validation, run integration |
 | `frontend/src/features/fmea/FmeaTool.inspection.test.tsx` | 2 — sheet selection interactivity during background aggregation, inspection cap warning display |
-| `frontend/src/features/toolRunDispatch.test.tsx` | 3 — BOM Compare, Failure Rate, and RefDes workflow dispatch from React tools |
+| `frontend/src/features/toolRunDispatch.test.tsx` | 4 — BOM Compare, Failure Rate, and RefDes workflow dispatch from React tools, plus validation-failure (execute_run skipped) |
 | `frontend/src/features/fmea/mappingColumns.test.ts` | 21 — column synonym matching, priority ordering, ambiguity resolution |
 | `frontend/src/features/fmea/mappingAnalysis.test.ts` | 7 — mapping completeness analysis, gap detection, suggestions, multi-source provenance merging |
 

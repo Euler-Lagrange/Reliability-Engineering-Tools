@@ -268,12 +268,12 @@ Documented here so they are visible, not hidden:
 
 ### Changed
 
-- **Release pipeline hardened to 12 steps**: `scripts/release.bat` now
+- **Release pipeline hardened to 11 steps**: `scripts/release.bat` now
   runs `cargo check --quiet` on the Rust bridge as step 3 (right after
   frontend typecheck) so a broken Rust build fails in ~30 s instead of
   surviving to the 3-minute `tauri:build:portable` step 8. Includes a
   dedicated `:cargo_check_failed` error label.
-- **README** now advertises the 12-step release pipeline.
+- **README** now advertises the 11-step release pipeline.
 
 ### Known Issues (for follow-up, likely v0.4.4)
 
@@ -308,9 +308,9 @@ but intentionally deferred to keep v0.4.3 focused on the build break:
 ### Tests
 
 - Backend **110 → 110** (unchanged).
-- Frontend **168 → 168** (unchanged — the fixes are either pure
+- Frontend **153 → 153** (unchanged — the fixes are either pure
   refactors or Rust-only).
-- Full 12-step release pipeline is now the authoritative release gate
+- Full 11-step release pipeline is now the authoritative release gate
   and must pass before any `v0.4.X` tag.
 
 ## [0.4.2] - 2026-04-16 — Hardening, Crash Reporting, CSP, Cross-Tool Output Picker
@@ -369,7 +369,7 @@ but intentionally deferred to keep v0.4.3 focused on the build break:
   `--check` modes. Exposed as `npm run version:bump` / `npm run
   version:check`.
 - **Release pipeline hardening** (`scripts/release.bat`): now a
-  12-step pipeline that adds explicit frontend typecheck (step 2) and
+  10-step pipeline that adds explicit frontend typecheck (step 2) and
   `python -m common.security_audit --strict` (step 3) before the
   existing backend/frontend test and build steps, each with its own
   fast-fail error label.
