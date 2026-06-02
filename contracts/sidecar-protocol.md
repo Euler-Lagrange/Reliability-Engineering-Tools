@@ -58,6 +58,7 @@ All eight commands currently implemented by the sidecar:
 - `health_check`
   - request body: `{ "app": "reliability_tools_desktop" }`
   - result payload:
+    - `status` — always `"ok"` when the sidecar is healthy (required by the frontend schema)
     - `backend` — backend identity string (e.g. `"python-sidecar"`)
     - `protocol_version` — NDJSON protocol version
     - `mode` — `"desktop-bridge"` (filled in by the Rust layer)
@@ -171,9 +172,10 @@ All eight commands currently implemented by the sidecar:
     - `row_count`
     - `warning_count`
     - `no_match_count`
+    - `mode` — `"desktop-bridge"` (the runtime mode; required by the frontend schema)
 - `cancel_run`
   - request body: `{ "run_id": "run_..." }`
-  - result payload: `{ "accepted": true, "run_id": "...", "status": "cancelling" }`
+  - result payload: `{ "accepted": true, "run_id": "...", "status": "cancelling", "mode": "desktop-bridge" }`
 - `read_flet_config`
   - request body: `{ "namespace": "bom_compare" }` — optional; when omitted, all known namespaces are read
   - result payload:
