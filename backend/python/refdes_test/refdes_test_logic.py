@@ -1,9 +1,13 @@
 """
-RefDes Test Logic Wrapper.
+RefDes backend router (NextGen + legacy).
 
-This module is intentionally isolated from the production RefDes Extractor logic.
-It provides backend routing for experimentation while preserving the legacy
-extractor as a safe fallback.
+Despite the ``refdes_test`` package name, this module is on the PRODUCTION path:
+the shipping RefDes Extractor (``refdes_extract``) calls
+``extract_with_geometry_analysis_detailed`` here, and with the default
+``backend_mode="auto"`` it runs the NextGen engine FIRST, falling back to the
+legacy refdes_extractor_logic engine only on an exception. Do NOT treat NextGen
+or this router as dead/experimental — deleting them breaks the default extraction
+path. ``backend_mode="legacy"`` forces the old engine.
 """
 from __future__ import annotations
 

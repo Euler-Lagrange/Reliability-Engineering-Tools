@@ -43,7 +43,7 @@ echo.
 pushd "%ROOT_DIR%"
 if errorlevel 1 goto :fail
 
-echo [1/11] Checking toolchain...
+echo [1/12] Checking toolchain...
 where node >nul 2>&1 || goto :missing_node
 where npm >nul 2>&1 || goto :missing_npm
 echo [INFO] node and npm detected >> "%LOGFILE%"

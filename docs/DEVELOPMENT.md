@@ -17,10 +17,8 @@ the desktop target is Windows-only.
 # 1. Clone and enter the repo
 cd C:/Reliability_Eng_Tools
 
-# 2. Frontend dependencies
-cd frontend
+# 2. Frontend dependencies (npm uses the repo-root package.json — run from root)
 npm install
-cd ..
 
 # 3. Python virtual environment
 python -m venv .venv
@@ -37,7 +35,6 @@ python -m venv .venv
 ### Browser preview (no backend)
 
 ```bash
-cd frontend
 npm run dev
 ```
 
@@ -104,7 +101,6 @@ script self-tests the resulting binary with `--self-test` before exiting.
 ### Portable desktop exe (frontend + Rust only)
 
 ```bash
-cd frontend
 npm run tauri:build:portable
 ```
 

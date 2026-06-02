@@ -8,8 +8,9 @@ const frontendRoot = fileURLToPath(new URL(".", import.meta.url));
 // Expose the repo-root ``package.json`` version to the React bundle as
 // ``__APP_VERSION__``. Keeps Settings › About honest — previously the
 // version number was hand-typed in ``SettingsTool.tsx`` and drifted. The
-// single source of truth is now ``scripts/bump-version.mjs`` which the
-// release gate verifies via ``npm run version:check``.
+// single source of truth is ``package.json``; ``scripts/bump-version.mjs``
+// syncs it with Cargo.toml / tauri.conf.json. Run ``npm run version:check`` to
+// verify they agree (not currently wired into release.bat).
 const pkg = JSON.parse(
   readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"),
 );

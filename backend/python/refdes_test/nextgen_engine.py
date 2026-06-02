@@ -1,10 +1,15 @@
 """
-RefDes Test NextGen Engine.
+RefDes NextGen extraction engine.
 
-Isolated extraction path used only by the RefDes Test app.
-This implementation intentionally does not modify production extractor modules.
+This is the DEFAULT production backend for the shipping RefDes Extractor tool
+(the ``refdes_extract`` workflow). refdes_extractor/runtime.py defaults
+``backend_mode="auto"``, and refdes_test_logic.extract_with_geometry_analysis_detailed
+runs NextGen FIRST under "auto", falling back to the legacy
+refdes_extractor_logic engine only on an exception. Despite the ``refdes_test``
+package name, this is NOT experimental / test-only code — deleting it breaks the
+default extraction path. It routes around the legacy extractor without modifying it.
 
-Key difference vs legacy harvest_hybrid:
+Key difference vs the legacy harvest_hybrid path:
 - Pin label mappings are resolved from candidate lists only.
 - No page-level (page,label) exact-map overwrite path that can leak J1-1
   into unrelated groups when labels like "1" are duplicated.
