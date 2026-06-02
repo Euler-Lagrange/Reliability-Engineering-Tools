@@ -206,7 +206,7 @@ The audit runs:
 - `src/stores/globalLogStore.test.ts`
 
 Run `npx vitest run --config frontend/vite.config.ts --reporter=default` to
-see individual counts per file — the suite totals 170 tests as of 0.4.5 and
+see individual counts per file — the suite totals 170 tests as of 0.4.6 and
 changes whenever a suite gains or loses cases.
 
 ## Critical Gotchas
