@@ -2112,13 +2112,20 @@ def test_sidecar_validate_attaches_output_preview_for_failure_rate(
         payload = result["payload"]
         assert payload["ok"] is True
         preview = payload.get("output_preview")
-        # Failure Rate preview is best-effort — test fixture column names may
-        # not match any of the synonyms, in which case preview is legitimately
-        # omitted. If present, it must be well-formed.
-        if preview is not None:
-            assert isinstance(preview["columns"], list)
-            assert isinstance(preview["rows"], list)
-            assert isinstance(preview["truncated"], bool)
+        # The fixture's prediction workbook uses "Reference Designator" and
+        # "Failure Rate" headers, both of which match the synonym lists in
+        # failure_rate.runtime._build_failure_rate_output_preview. The preview
+        # is therefore NOT best-effort-omitted here — it must be present and
+        # well-formed, with the mapped display columns and both source rows.
+        assert preview is not None, "Failure Rate preview should be attached for this fixture"
+        assert isinstance(preview["columns"], list)
+        assert "RefDes" in preview["columns"]
+        assert "Failure Rate" in preview["columns"]
+        assert isinstance(preview["rows"], list)
+        # Prediction fixture has exactly two rows (R1, C2); none truncated.
+        assert len(preview["rows"]) == 2
+        assert isinstance(preview["truncated"], bool)
+        assert preview["truncated"] is False
     finally:
         process.kill()
 

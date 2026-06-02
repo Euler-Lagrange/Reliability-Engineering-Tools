@@ -6,6 +6,7 @@ import { FailureRateTool } from "./failure-rate/FailureRateTool";
 import { RefDesExtractorTool } from "./refdes-extractor/RefDesExtractorTool";
 import { useRunStore } from "../stores/runStore";
 import { useShellStore } from "../stores/shellStore";
+import { useNotificationStore } from "../stores/notificationStore";
 
 const backendMocks = vi.hoisted(() => ({
   validateRun: vi.fn(),
@@ -40,6 +41,7 @@ function resetStores() {
     refdesExtractorOutputDirectory: null,
     contextOpen: false,
   });
+  useNotificationStore.setState({ notifications: [] });
 }
 
 async function runTool(startLabel: string) {
@@ -98,5 +100,43 @@ describe("tool run dispatch", () => {
     expect(backendMocks.executeRun.mock.calls[0][0]).toMatchObject({
       workflowId: "refdes_extract",
     });
+  });
+
+  it("blocks the run and skips execute_run when validation fails", async () => {
+    // validateRun reports the run is NOT runnable. The tool must surface a
+    // 'Run blocked' notification and must NOT proceed to execute_run.
+    backendMocks.validateRun.mockResolvedValue({
+      ok: false,
+      reason_code: "blocked",
+      toast_text: "Resolve the highlighted setup issues before running.",
+      validations: [
+        {
+          id: "v1",
+          severity: "error",
+          area: "Run State",
+          title: "Run is blocked",
+          detail: "Map the prediction RefDes column before running.",
+        },
+      ],
+      output_preview: null,
+      mode: "desktop-bridge",
+    });
+
+    render(<FailureRateTool />);
+    await runTool("Link Rates");
+
+    // validateRun was consulted...
+    await waitFor(() => expect(backendMocks.validateRun).toHaveBeenCalledTimes(1));
+    // ...and a 'Run blocked' warning was raised.
+    await waitFor(() => {
+      const notifications = useNotificationStore.getState().notifications;
+      expect(
+        notifications.some(
+          (n) => n.title === "Run blocked" && n.tone === "warning",
+        ),
+      ).toBe(true);
+    });
+    // The failing validation must short-circuit before execute_run.
+    expect(backendMocks.executeRun).not.toHaveBeenCalled();
   });
 });
