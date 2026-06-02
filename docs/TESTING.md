@@ -29,7 +29,7 @@
 | Frontend contract schemas | `frontend/src/contracts/sidecar.test.ts` | 4 | Vitest |
 | Frontend busy reset | `frontend/src/shared/backend/useBackendBusyReset.test.ts` | 9 | Vitest |
 | Frontend backend bootstrap | `frontend/src/shared/backend/useBackendBootstrap.test.ts` | 2 | Vitest |
-| Frontend run subscription | `frontend/src/shared/backend/useBackendRunSubscription.test.ts` | 2 | Vitest |
+| Frontend run subscription | `frontend/src/shared/backend/useBackendRunSubscription.test.ts` | 3 | Vitest |
 | Frontend theme registry | `frontend/src/shared/theme/themeRegistry.test.ts` | 10 | Vitest |
 | Frontend app shortcuts | `frontend/src/shared/hooks/useAppShortcuts.test.tsx` | 4 | Vitest + RTL |
 | Frontend role-request sequence | `frontend/src/shared/hooks/useRoleRequestSequence.test.ts` | 5 | Vitest |
@@ -39,10 +39,10 @@
 | Frontend FMEA inspection | `frontend/src/features/fmea/FmeaTool.inspection.test.tsx` | 2 | Vitest + RTL |
 | Frontend mapping columns | `frontend/src/features/fmea/mappingColumns.test.ts` | 21 | Vitest |
 | Frontend mapping analysis | `frontend/src/features/fmea/mappingAnalysis.test.ts` | 7 | Vitest |
-| Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 3 | Vitest + RTL |
+| Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 4 | Vitest + RTL |
 | **Frontend subtotal** | | **170** | |
-| Rust bridge unit | `src-tauri/src/lib.rs` | 5 | cargo test |
-| **Total** | | **326** | |
+| Rust bridge unit | `src-tauri/src/lib.rs` | 6 | cargo test |
+| **Total** | | **327** | |
 
 ## Backend Tests
 
