@@ -243,3 +243,36 @@ def test_normalize_refdes_strips_leading_zeros_and_handles_nan() -> None:
     assert normalize_refdes_for_lookup("R10") == "R10"  # no spurious stripping
     assert normalize_refdes_for_lookup(float("nan")) == ""
     assert normalize_refdes_for_lookup(None) == ""
+
+
+def test_fmr_validation_groups_by_instance_not_base() -> None:
+    """FMR (ratio) validation sums to 1.0 PER instance/pin designator (U200-1),
+    NOT per base component.
+
+    Domain rule: each instance carries its own open/short failure modes whose
+    ratios sum to 1.0; component-level roll-up is handled by the Part Usage
+    column, not by collapsing instances to a base RefDes. Here U200-1's ratios
+    sum to 1.0 (valid) and U200-2's to 0.8 (broken). Instance grouping flags
+    ONLY U200-2. If validation were (wrongly) grouped by base U200, the combined
+    sum would be 1.8 and U200-1's rows would be falsely flagged too -- this test
+    guards against that regression.
+    """
+    pred = pd.DataFrame([{"Reference Designator": "U200", "Failure Rate": 0.001}])
+    fmea = pd.DataFrame(
+        [
+            {"Failure Mode Causes": "U200-1", "Failure Mode Ratio": 0.6, "Part Usage": 0.5},
+            {"Failure Mode Causes": "U200-1", "Failure Mode Ratio": 0.4, "Part Usage": 0.5},
+            {"Failure Mode Causes": "U200-2", "Failure Mode Ratio": 0.5, "Part Usage": 0.5},
+            {"Failure Mode Causes": "U200-2", "Failure Mode Ratio": 0.3, "Part Usage": 0.5},
+        ]
+    )
+
+    result = _make_logic(pred, fmea).process(COL_MAP, check_fmr=True)
+    notes = result["Validation_Notes"].astype(str)
+
+    # Grouping is by the instance designator extracted from the cause text.
+    assert set(result["Validation_RefDes"]) == {"U200-1", "U200-2"}
+    # U200-1 ratios sum to 1.0 -> no FMR warning.
+    assert all("FMR Sum" not in n for n in notes[result["Validation_RefDes"] == "U200-1"])
+    # U200-2 ratios sum to 0.8 -> FMR warning on its rows.
+    assert all("FMR Sum" in n for n in notes[result["Validation_RefDes"] == "U200-2"])

@@ -256,7 +256,16 @@ class FMEALinkerLogic:
                 part_fr = 0.0
             part_fr_list.append(part_fr)
 
-            # 2. Extract Instance RefDes for Validation (e.g. U200-1)
+            # 2. Extract Instance RefDes for Validation (e.g. U200-1).
+            # FMR (Failure Mode Ratio) validation deliberately groups by the
+            # INSTANCE / pin designator, NOT the base component: each instance
+            # (U200-1, U200-2) carries its own failure modes (open/short/...)
+            # whose ratios must sum to 1.0. Component-level failure-rate roll-up
+            # is handled separately by the Part Usage column, which fractionally
+            # allocates (e.g. 1/2 each) so Mode_FR sums back to the base part's
+            # rate. Collapsing instances to a base RefDes HERE would wrongly sum
+            # multiple instances' ratios to > 1.0 and emit false FMR warnings.
+            # Do NOT "fix" this to group by base RefDes.
             if check_fmr:
                 inst_ref = extract_instance_refdes(cause_text)
                 validation_refdes_list.append(inst_ref if inst_ref else (refdes or ""))

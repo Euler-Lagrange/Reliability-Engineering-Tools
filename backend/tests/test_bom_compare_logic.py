@@ -3,11 +3,11 @@
 Two concerns are covered:
 
 1. RefDes range expansion (``expand_refdes_range`` / ``split_refdes_list``).
-   The group-vs-BOM ``analyze`` orchestrator in this tool does NOT expand
-   ranges by default — see ``test_analyze_does_not_expand_ranges_by_default``,
-   which documents that behavior — so these tests pin the *opt-in* expansion
-   helper directly: "R200-R205" -> R200..R205, while instance/pin notation
-   (U3-7, J1-4) is preserved.
+   By project convention hyphens denote PINS (U200-1), never ranges, so the
+   group-vs-BOM ``analyze`` orchestrator intentionally does NOT expand ranges
+   (see ``test_analyze_does_not_expand_ranges_by_default``). These tests pin the
+   *opt-in* expansion helper directly: "R200-R205" -> R200..R205, while
+   instance/pin notation (U3-7, J1-4) is preserved.
 
 2. The ``analyze`` orchestrator's set math on a tiny discrete fixture:
    exact matches produce no missing/extra rows, a grouping-only RefDes shows
@@ -152,27 +152,31 @@ def test_analyze_reports_both_directions_simultaneously() -> None:
 
 
 def test_analyze_does_not_expand_ranges_by_default() -> None:
-    """FINDING GUARD: a grouping cell 'R1-R3' is NOT range-expanded.
+    """INTENDED behavior: the group analyzer never range-expands hyphenated tokens.
 
-    The group analysis path calls ``split_refdes_list`` WITHOUT
-    ``expand_ranges``, so 'R1-R3' stays a single token whose base
-    (``get_base_refdes('R1-R3')``) is 'R1'. Consequences against a BOM that
-    lists R1/R2/R3 discretely:
-
-      * Nothing is "Missing in BOM": base 'R1' is covered, so the grouping
-        token is considered satisfied.
-      * R2 and R3 appear as "BOM Not in Groups" extras — the range never
-        covered them.
-
-    This documents (and locks in) the real production behavior: the BOM
-    Compare group analyzer never range-expands grouping cells, so an author
-    who writes 'R1-R3' expecting all three to be covered silently loses
-    R2/R3 coverage. If expansion is ever added, this test must be updated
-    deliberately.
+    Per the project's RefDes convention, hyphens denote PINS (U200-1 = pin 1 of
+    component U200), never numeric ranges — authors do not write 'R1-R3' to mean
+    R1/R2/R3 (an 'R1-R3' token would be its own component). So ``analyze`` calls
+    ``split_refdes_list`` WITHOUT ``expand_ranges`` and reduces each token to its
+    base RefDes. This pins the no-expansion contract: a synthetic 'R1-R3' token
+    reduces to base 'R1' and is NOT exploded into R1/R2/R3. Range expansion stays
+    opt-in (and unused by this tool).
     """
     results = _run_analyze(["R1-R3"], ["R1", "R2", "R3"])
 
-    # Base 'R1' is covered, so the grouping token is not flagged missing.
+    # 'R1-R3' is treated as a single token (base 'R1'), not expanded.
     assert results.missing_in_bom.empty
-    # R2 and R3 are unmatched BOM extras (the range did not cover them).
     assert set(results.bom_not_in_groups["Base"]) == {"R2", "R3"}
+
+
+def test_analyze_matches_hyphenated_pin_to_base_component() -> None:
+    """A hyphenated PIN designator reduces to its base component for matching.
+
+    Real-world case (hyphens are pins): a grouping cell 'U200-1' (pin 1 of U200)
+    is treated as component U200, so it matches a BOM that lists 'U200'. No
+    missing, no extra.
+    """
+    results = _run_analyze(["U200-1"], ["U200"])
+
+    assert results.missing_in_bom.empty
+    assert results.bom_not_in_groups.empty
