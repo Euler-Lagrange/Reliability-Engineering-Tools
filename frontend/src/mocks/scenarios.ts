@@ -614,6 +614,41 @@ export const bomCompareDemoScenarios: DemoScenario[] = [
       },
     },
   },
+  {
+    id: "bom-compare-custom",
+    label: "BOM Compare - Custom Compare",
+    description: "Direct two-BOM delta by RefDes key.",
+    workflowId: "bom_compare_custom",
+    outputStrategyId: "new_workbook_standard",
+    inputs: [bomCompareInputs.bomA, bomCompareInputs.bomB],
+    mappings: bomCompareCustomMappings,
+    validations: [
+      {
+        id: "ready",
+        severity: "info",
+        area: "Run State",
+        title: "Ready to run",
+        detail: "Both BOMs loaded and RefDes columns mapped.",
+      },
+    ],
+    previewRows: [],
+    runSequence: {
+      events: [
+        { id: "bcc-1", title: "Read input files", detail: "Loading both BOM workbooks.", progress: 15 },
+        { id: "bcc-2", title: "Run comparison", detail: "Diffing RefDes keys between File 1 and File 2.", progress: 60 },
+        { id: "bcc-3", title: "Write report", detail: "Writing Excel comparison report.", progress: 100 },
+      ],
+      result: {
+        status: "success",
+        title: "BOM comparison complete",
+        summary: "5 only in File 1, 2 only in File 2.",
+        outputFile: "DRIVE\\outputs\\BomCompare_Custom_20260406.xlsx",
+        primaryMetric: "7 differences",
+        secondaryMetric: "0 warnings",
+        notes: ["Custom mode: compared two BOMs directly by RefDes key."],
+      },
+    },
+  },
 ];
 
 export const failureRateInputs: Record<string, InputFileState> = {
@@ -756,6 +791,8 @@ export const refdesInputs: Record<string, InputFileState> = {
     sheets: [],
     selectedSheet: "",
     tag: "Not loaded",
+    // Untouched empty slot still counts as pristine until the user browses.
+    isExample: true,
   },
 };
 
@@ -766,7 +803,10 @@ export const refdesDemoScenarios: DemoScenario[] = [
     description: "Extract RefDes from annotated schematic PDF.",
     workflowId: "refdes_extract" as WorkflowId,
     outputStrategyId: "new_workbook_standard",
-    inputs: [refdesInputs.pdf, refdesInputs.bom],
+    // Pinlist must be seeded even though it only renders in piece_part
+    // mode — the tool filters inputStates by inputRoles, so a missing
+    // entry here would silently drop the pinlist picker.
+    inputs: [refdesInputs.pdf, refdesInputs.bom, refdesInputs.pinlist],
     mappings: [],
     validations: [{ id: "ready", severity: "info", area: "Run State", title: "Ready to run", detail: "PDF loaded and ready for extraction." }],
     previewRows: [],

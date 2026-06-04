@@ -174,7 +174,11 @@ export function RefDesExtractorTool() {
   }
 
   // Pristine = no real input loaded yet AND no run has been started.
+  // Switching to piece-part extraction is a sign of engagement (and
+  // reveals the pinlist slot), so we exit pristine then — mirroring the
+  // BOM Compare workflow-switch escape.
   const isPristine =
+    options.extraction_mode === "functional" &&
     visibleInputs.every((input) => input.isExample === true) &&
     panelRunMode === "idle";
 
@@ -236,6 +240,9 @@ export function RefDesExtractorTool() {
                 ...input,
                 path: pickedPath,
                 source: "desktop-bridge" as const,
+                // A real file replaces the example mock — clears the
+                // pristine EmptyState so the full input grid renders.
+                isExample: false,
                 tag: "Ready",
                 status: "ready" as const,
               }
@@ -257,6 +264,9 @@ export function RefDesExtractorTool() {
               ...input,
               path: pickedPath,
               source: "desktop-bridge" as const,
+              // A real file replaces the example mock — clears the
+              // pristine EmptyState so the full input grid renders.
+              isExample: false,
               isResolvingSheets: true,
               resolutionError: null,
               tag: "Inspecting",

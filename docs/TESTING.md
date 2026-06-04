@@ -39,10 +39,12 @@
 | Frontend FMEA inspection | `frontend/src/features/fmea/FmeaTool.inspection.test.tsx` | 2 | Vitest + RTL |
 | Frontend mapping columns | `frontend/src/features/fmea/mappingColumns.test.ts` | 21 | Vitest |
 | Frontend mapping analysis | `frontend/src/features/fmea/mappingAnalysis.test.ts` | 7 | Vitest |
+| Frontend BOM Compare tool | `frontend/src/features/bom-compare/BomCompareTool.test.tsx` | 3 | Vitest + RTL |
+| Frontend RefDes Extractor tool | `frontend/src/features/refdes-extractor/RefDesExtractorTool.test.tsx` | 2 | Vitest + RTL |
 | Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 4 | Vitest + RTL |
-| **Frontend subtotal** | | **170** | |
+| **Frontend subtotal** | | **175** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 6 | cargo test |
-| **Total** | | **327** | |
+| **Total** | | **332** | |
 
 ## Backend Tests
 

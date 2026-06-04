@@ -65,7 +65,7 @@ npm run dev              # Vite dev server (browser preview mode)
 npm run build            # Production build
 npm run typecheck        # TypeScript type checking
 npm run typecheck:tests  # TypeScript type checking for Vitest files
-npm test                 # Vitest (170 tests)
+npm test                 # Vitest (175 tests)
 
 # Desktop (requires Rust toolchain)
 npm run tauri:dev        # Dev mode with hot reload
@@ -174,7 +174,7 @@ The audit runs:
 - `pytest.importorskip("fitz")` for RefDes tests requiring PyMuPDF
 - `backend/tests/conftest.py` installs a `sys.path` shim for in-process unit tests
 
-### Frontend Tests (170 total across 27 test files)
+### Frontend Tests (175 total across 29 test files)
 - Vitest + React Testing Library
 - Browser-mock mode (no Tauri runtime needed)
 - `src/app/App.test.tsx`
@@ -187,6 +187,8 @@ The audit runs:
 - `src/components/primitives/HoldButton.test.tsx`
 - `src/components/primitives/EmptyState.test.tsx`
 - `src/contracts/sidecar.test.ts`
+- `src/features/bom-compare/BomCompareTool.test.tsx` (new in 0.4.6)
+- `src/features/refdes-extractor/RefDesExtractorTool.test.tsx` (new in 0.4.6)
 - `src/features/fmea/FmeaTool.test.tsx`
 - `src/features/fmea/FmeaTool.inspection.test.tsx`
 - `src/features/fmea/mappingColumns.test.ts`
@@ -206,7 +208,7 @@ The audit runs:
 - `src/stores/globalLogStore.test.ts`
 
 Run `npx vitest run --config frontend/vite.config.ts --reporter=default` to
-see individual counts per file — the suite totals 170 tests as of 0.4.6 and
+see individual counts per file — the suite totals 175 tests as of 0.4.6 and
 changes whenever a suite gains or loses cases.
 
 ## Critical Gotchas

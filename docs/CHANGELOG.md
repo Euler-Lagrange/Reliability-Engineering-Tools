@@ -33,8 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hydration path were brought back into parity with the other tools.
 - **Tests** — +31 backend tests (now **151**: adds
   `test_failure_rate_logic.py` ×12, `test_extraction_engine.py` ×6,
-  `test_bom_compare_logic.py` ×12, and one more FMEA Phase D case) and +2
-  frontend tests inside existing suites (now **170** across 27 files).
+  `test_bom_compare_logic.py` ×12, and one more FMEA Phase D case), +2
+  frontend tests inside existing suites, and new regression suites
+  `BomCompareTool.test.tsx` ×3 and `RefDesExtractorTool.test.tsx` ×2
+  (now **175** across 29 files).
 - **Doc fixes** — corrected the NextGen extraction-engine docstrings
   (the `refdes_test` engine is the default production backend, not a
   test-only / experimental path), `docs/DEVELOPMENT.md`, `release.bat`,
@@ -43,6 +45,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **BOM Compare Custom Compare had no file inputs** — switching to the
+  `bom_compare_custom` workflow rendered an empty Input Files card (and
+  dispatched zero inputs) because `bomCompareDemoScenarios` only contained
+  the group scenario, so the workflow-switch fallback re-seeded the input
+  slots without the `bomA`/`bomB` roles. Added the missing custom-compare
+  scenario plus a regression suite
+  (`frontend/src/features/bom-compare/BomCompareTool.test.tsx`).
+- **Pristine EmptyState never yielded after loading a real file** — the
+  browse handlers in BOM Compare, Failure Rate, and RefDes Extractor never
+  cleared `isExample`, so `isPristine` stayed true after a real workbook
+  /PDF was picked and the EmptyState kept covering the input grid — the
+  remaining file slots and sheet pickers were unreachable in the desktop
+  app. Browsing now sets `isExample: false` on the loaded slot.
+- **RefDes piece-part mode had no pinlist picker** — `refdesInputs.pinlist`
+  existed in the mocks but was never seeded into the demo scenario, so the
+  piece-part role filter (`pdf`/`bom`/`pinlist`) found no pinlist slot to
+  render. The pinlist is now seeded (hidden in functional mode), and
+  switching extraction mode counts as engagement so the grid (with the
+  pinlist slot) replaces the pristine EmptyState.
 - Synced the streamed `execute_run` ack contract: Rust now enriches the
   run-event ack with `session_generation`, matching the frontend Zod
   schema and protocol docs.

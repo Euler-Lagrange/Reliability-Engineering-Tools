@@ -265,6 +265,9 @@ export function BomCompareTool() {
               ...input,
               path: pickedPath,
               source: "desktop-bridge",
+              // A real file replaces the example mock — clears the
+              // pristine EmptyState so the full input grid renders.
+              isExample: false,
               isResolvingSheets: true,
               resolutionError: null,
               tag: "Inspecting",
