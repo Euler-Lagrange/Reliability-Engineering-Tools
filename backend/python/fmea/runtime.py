@@ -15,15 +15,22 @@ from common import (
     verify_excel_readable,
 )
 
-from shared.pre_run_validation import LabeledState, LabeledValue, validate_pre_run_state
+from shared.pre_run_validation import (
+    DO_NOT_MAP_SENTINEL,
+    LabeledState,
+    LabeledValue,
+    validate_pre_run_state,
+)
 from shared.output_preview import build_preview_from_file
 from fmea.fmea_generator_logic import FMEAProcessor, write_excel_report
 
 _logger = logging.getLogger(__name__)
 
 # Sentinel used by the frontend mapping table for "do not map this column".
-# Mirrors frontend/src/app/types.ts DO_NOT_MAP_VALUE.
-DO_NOT_MAP_SENTINEL = "__do_not_map__"
+# Mirrors frontend/src/app/types.ts DO_NOT_MAP_VALUE. Canonical definition now
+# lives in shared/pre_run_validation.py and is imported above; this module
+# re-exposes the name for backward compatibility so existing imports of
+# ``fmea.runtime.DO_NOT_MAP_SENTINEL`` keep resolving.
 
 
 # Fix D: map frontend canonical names (from FMEA_COLUMN_METADATA) to

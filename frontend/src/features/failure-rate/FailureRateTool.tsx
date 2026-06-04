@@ -26,10 +26,14 @@ import type {
 } from "../../app/types";
 import { DO_NOT_MAP_VALUE } from "../../app/types";
 import { backendClient, type RunRequestBody } from "../../shared/backend/client";
+import { deriveMappingRows } from "../../shared/mapping/deriveMappingRows";
+import { buildWorkbookColumnUnion } from "../fmea/mappingAnalysis";
+import { describeBackendError } from "../../shared/backend/cancelError";
 import { parentDirectoryForPath } from "../../shared/backend/fileManager";
 import {
   buildTimeline,
   cloneInputs,
+  emptyInputsFromScenario,
   useDesktopRunController,
 } from "../../shared/backend/useDesktopRunController";
 import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
@@ -38,11 +42,41 @@ import { useNotificationStore } from "../../stores/notificationStore";
 import { usePreviewStore } from "../../stores/previewStore";
 import { useShellStore } from "../../stores/shellStore";
 
+/**
+ * Bug fix: which file role each canonical mapping addresses, so the Column
+ * Mapping dropdowns can be rebuilt from THAT role's inspected workbook headers
+ * instead of the static fixture options. Verified against
+ * `backend/python/failure_rate/runtime.py`: pred_ref / pred_fr read the
+ * prediction workbook; fmea_cause / fmea_ratio / fmea_usage / fmea_func read
+ * the FMEA workbook.
+ */
+const FAILURE_RATE_CANONICAL_ROLES: Record<string, FileRole> = {
+  pred_ref: "prediction",
+  pred_fr: "prediction",
+  fmea_cause: "fmea",
+  fmea_ratio: "fmea",
+  fmea_usage: "fmea",
+  fmea_func: "fmea",
+};
+
 export function FailureRateTool() {
   const baseScenario = failureRateDemoScenarios[0];
-  const [inputStates, setInputStates] = useState<InputFileState[]>(() => cloneInputs(baseScenario.inputs));
-  const [mappingRows] = useState<ColumnMappingRow[]>([...failureRateMappings]);
+  // Family 1 fix: browser-mock seeds the demo scenario (populated preview);
+  // the real desktop runtime seeds empty slots so no example path leaks into
+  // a run. Matches FMEA's gated seeding.
+  const [inputStates, setInputStates] = useState<InputFileState[]>(() =>
+    backendClient.runtimeMode === "browser-mock"
+      ? cloneInputs(baseScenario.inputs)
+      : emptyInputsFromScenario(baseScenario.inputs),
+  );
   const [mappingOverrides, setMappingOverrides] = useState<Record<string, string>>({});
+  // Bug fix: per-role inspected workbook headers, populated from
+  // inspection.columns in inspectRole's success path and cleared for a role on
+  // re-browse. Keyed by FileRole (prediction / fmea); the mapping rows are
+  // derived from this below.
+  const [workbookColumnsByRole, setWorkbookColumnsByRole] = useState<
+    Partial<Record<FileRole, string[]>>
+  >({});
   const [options, setOptions] = useState({ unitMode: "per_hour", validateFmr: false });
   const [validations, setValidations] = useState<ValidationMessage[]>(baseScenario.validations);
   const [contextView, setContextView] = useState<"preview" | "run">("preview");
@@ -53,6 +87,11 @@ export function FailureRateTool() {
   const [runLogLines, setRunLogLines] = useState<string[]>([]);
   const [cancelledNotice, setCancelledNotice] = useState<string | null>(null);
   const contextHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  // Fix 2 (Family 2): re-entrancy guard for the desktop run pipeline. Held
+  // for the whole validate→execute window so a double-click on Link Rates
+  // can't launch a second run whose rejection (single-active-run guard) would
+  // clear the first, live run's session.
+  const isStartingRef = useRef(false);
   const backendMode = useShellStore((state) => state.backendMode);
   const setBackendState = useShellStore((state) => state.setBackendState);
   const failureRateOutputDirectory = useShellStore(
@@ -110,6 +149,7 @@ export function FailureRateTool() {
   const {
     beginAcceptedRun,
     resetSession: resetDesktopRunSession,
+    resetSessionUnlessLive: resetDesktopRunSessionUnlessLive,
     armTerminalHandler,
     cancel: cancelDesktopRun,
     panelRunMode,
@@ -157,6 +197,17 @@ export function FailureRateTool() {
   };
 
   const firstInputRole = inputStates[0]?.role ?? null;
+
+  // Bug fix: derive the Column Mapping rows from the static fixture AND the
+  // inspected workbook headers for each row's file role. A role with no
+  // inspected columns yet (nothing browsed — including all of browser-mock
+  // preview) keeps its fixture row verbatim, so the demo preview and existing
+  // tests are unchanged.
+  const mappingRows = useMemo<ColumnMappingRow[]>(
+    () =>
+      deriveMappingRows(failureRateMappings, FAILURE_RATE_CANONICAL_ROLES, workbookColumnsByRole),
+    [workbookColumnsByRole],
+  );
 
   function buildRunRequest(): RunRequestBody {
     return {
@@ -221,6 +272,14 @@ export function FailureRateTool() {
     // the stale validation cards so the Preview tab shows its neutral empty
     // state instead of warnings that describe the OLD file/sheet.
     setValidations([]);
+    // Bug fix: a new file replaces this role's inspected headers — drop the
+    // previous set so the mapping rows fall back to the fixture until the
+    // fresh inspection lands (and never offer the OLD workbook's headers).
+    setWorkbookColumnsByRole((current) => {
+      const next = { ...current };
+      delete next[role];
+      return next;
+    });
     setBackendState({
       backendStatus: "busy",
       backendMessage: `Inspecting workbook for ${role}...`,
@@ -260,7 +319,7 @@ export function FailureRateTool() {
       }
     } catch (error) {
       if (!fileRequestSeq.isCurrent(role, browseToken)) return;
-      const detail = error instanceof Error ? error.message : "Unknown sheet inspection failure";
+      const detail = describeBackendError(error, "Unknown sheet inspection failure");
       setInputStates((current) =>
         current.map((input) =>
           input.role === role
@@ -314,6 +373,14 @@ export function FailureRateTool() {
     try {
       const inspection = await backendClient.inspectInput(path, sheet, role);
       if (!fileRequestSeq.isCurrent(role, inspectToken)) return;
+      // Bug fix: record the inspected headers for this role so the Column
+      // Mapping dropdowns are rebuilt from real workbook columns. inspectRole
+      // used to read only `.length` here and discard `.columns`.
+      const workbookColumns = buildWorkbookColumnUnion([inspection.columns]);
+      setWorkbookColumnsByRole((current) => ({
+        ...current,
+        [role]: workbookColumns,
+      }));
       setBackendState({
         backendStatus: "ready",
         backendMode: inspection.mode,
@@ -334,7 +401,7 @@ export function FailureRateTool() {
       );
     } catch (error) {
       if (!fileRequestSeq.isCurrent(role, inspectToken)) return;
-      const detail = error instanceof Error ? error.message : "Unknown workbook analysis failure";
+      const detail = describeBackendError(error, "Unknown workbook analysis failure");
       setInputStates((current) =>
         current.map((input) =>
           input.role === role
@@ -398,6 +465,16 @@ export function FailureRateTool() {
       return;
     }
 
+    // Fix 2 (Family 2): re-entrancy guard. The Link Rates button is not
+    // disabled during the async validate→execute window, so a fast
+    // double-click could fire a second pipeline; the second executeRun is
+    // rejected by Python's single-active-run guard and its catch used to wipe
+    // the FIRST, live run. Swallow the re-entrant call here.
+    if (isStartingRef.current) {
+      return;
+    }
+    isStartingRef.current = true;
+
     const runRequest = buildRunRequest();
 
     // Fix R2-C1: clear any stale active run from a previous run BEFORE flipping
@@ -449,8 +526,9 @@ export function FailureRateTool() {
       armTerminalHandler();
       beginAcceptedRun(await backendClient.executeRun(runRequest));
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "Unknown backend execution failure";
-      resetDesktopRunSession();
+      const detail = describeBackendError(error, "Unknown backend execution failure");
+      // Fix 2 (Family 2): guarded reset — must not clobber a live sibling run.
+      resetDesktopRunSessionUnlessLive();
       setContextView("preview");
       setBackendState({
         backendStatus: "error",
@@ -462,6 +540,11 @@ export function FailureRateTool() {
         title: "Failure rate linking failed",
         detail,
       });
+    } finally {
+      // Release the re-entrancy guard once the validate→execute window has
+      // closed. A run accepted in this window is owned by the run store and
+      // survives.
+      isStartingRef.current = false;
     }
   }
 

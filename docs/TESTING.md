@@ -8,11 +8,13 @@
 | Backend security audit | `backend/tests/test_security_audit.py` | 17 | pytest |
 | Backend cancel bridge | `backend/tests/test_cancel_bridge.py` | 12 | pytest |
 | Backend output-directory helpers | `backend/tests/test_output_directory_helpers.py` | 4 | pytest |
-| Backend FMEA Phase D | `backend/tests/test_fmea_phase_d.py` | 45 | pytest |
+| Backend FMEA Phase D | `backend/tests/test_fmea_phase_d.py` | 46 | pytest |
 | Backend Failure-Rate logic | `backend/tests/test_failure_rate_logic.py` | 12 | pytest |
 | Backend RefDes extraction-engine | `backend/tests/test_extraction_engine.py` | 6 | pytest |
 | Backend BOM-compare logic | `backend/tests/test_bom_compare_logic.py` | 12 | pytest |
-| **Backend subtotal** | | **151** | |
+| Backend BOM-compare runtime | `backend/tests/test_bom_compare_runtime.py` | 4 | pytest |
+| Backend Failure-Rate runtime | `backend/tests/test_failure_rate_runtime.py` | 2 | pytest |
+| **Backend subtotal** | | **158** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 4 | Vitest + RTL |
 | Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 1 | Vitest + RTL |
@@ -23,7 +25,7 @@
 | Frontend hold button | `frontend/src/components/primitives/HoldButton.test.tsx` | 5 | Vitest + RTL |
 | Frontend empty state | `frontend/src/components/primitives/EmptyState.test.tsx` | 5 | Vitest + RTL |
 | Frontend run lifecycle | `frontend/src/shared/backend/runLifecycle.test.ts` | 6 | Vitest |
-| Frontend cancel error | `frontend/src/shared/backend/cancelError.test.ts` | 12 | Vitest |
+| Frontend cancel error | `frontend/src/shared/backend/cancelError.test.ts` | 18 | Vitest |
 | Frontend cancel run | `frontend/src/shared/backend/client.cancelRun.test.ts` | 2 | Vitest |
 | Frontend run event client | `frontend/src/shared/backend/client.runEvents.test.ts` | 2 | Vitest |
 | Frontend contract schemas | `frontend/src/contracts/sidecar.test.ts` | 4 | Vitest |
@@ -37,16 +39,17 @@
 | Frontend global log store | `frontend/src/stores/globalLogStore.test.ts` | 6 | Vitest |
 | Frontend keep-alive shell | `frontend/src/app/App.keepalive.test.tsx` | 2 | Vitest + RTL |
 | Frontend FMEA tool | `frontend/src/features/fmea/FmeaTool.test.tsx` | 9 | Vitest + RTL |
-| Frontend FMEA inspection | `frontend/src/features/fmea/FmeaTool.inspection.test.tsx` | 2 | Vitest + RTL |
+| Frontend FMEA inspection | `frontend/src/features/fmea/FmeaTool.inspection.test.tsx` | 5 | Vitest + RTL |
 | Frontend mapping columns | `frontend/src/features/fmea/mappingColumns.test.ts` | 27 | Vitest |
 | Frontend mapping analysis | `frontend/src/features/fmea/mappingAnalysis.test.ts` | 7 | Vitest |
-| Frontend BOM Compare tool | `frontend/src/features/bom-compare/BomCompareTool.test.tsx` | 6 | Vitest + RTL |
-| Frontend Failure Rate tool | `frontend/src/features/failure-rate/FailureRateTool.test.tsx` | 1 | Vitest + RTL |
-| Frontend RefDes Extractor tool | `frontend/src/features/refdes-extractor/RefDesExtractorTool.test.tsx` | 4 | Vitest + RTL |
+| Frontend BOM Compare tool | `frontend/src/features/bom-compare/BomCompareTool.test.tsx` | 12 | Vitest + RTL |
+| Frontend Failure Rate tool | `frontend/src/features/failure-rate/FailureRateTool.test.tsx` | 2 | Vitest + RTL |
+| Frontend RefDes Extractor tool | `frontend/src/features/refdes-extractor/RefDesExtractorTool.test.tsx` | 5 | Vitest + RTL |
+| Frontend mapping derivation | `frontend/src/shared/mapping/deriveMappingRows.test.ts` | 6 | Vitest |
 | Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 4 | Vitest + RTL |
-| **Frontend subtotal** | | **191** | |
+| **Frontend subtotal** | | **214** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 6 | cargo test |
-| **Total** | | **348** | |
+| **Total** | | **378** | |
 
 ## Backend Tests
 

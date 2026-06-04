@@ -15,7 +15,12 @@ from common import (
     validate_explicit_output_directory,
 )
 from common.exceptions import ValidationError
-from shared.pre_run_validation import LabeledState, LabeledValue, validate_pre_run_state
+from shared.pre_run_validation import (
+    DO_NOT_MAP_SENTINEL,
+    LabeledState,
+    LabeledValue,
+    validate_pre_run_state,
+)
 from shared.output_preview import build_preview_from_file
 
 from failure_rate.failure_rate_logic import FMEALinkerLogic
@@ -78,7 +83,31 @@ def _input_path(inputs_by_role: dict[str, dict[str, Any]], role: str) -> str | N
     return value or None
 
 
-def _get_mapping(body: dict[str, Any], canonical: str) -> str | None:
+def _get_mapping(
+    body: dict[str, Any],
+    canonical: str,
+    *,
+    required: bool = False,
+) -> str | None:
+    """Return the column a canonical is mapped to, or None.
+
+    Bug 2 (belt-and-suspenders): when ``required`` is True, the Do-Not-Map
+    sentinel ("__do_not_map__") is treated as None so a stale client that
+    pins a REQUIRED mapping to "do not map" can't inject the sentinel string
+    as a real column name into the execute path (which would otherwise crash
+    with a ColumnMappingError about a column literally named "__do_not_map__").
+    """
+    for m in body.get("mappings", []):
+        if isinstance(m, dict) and m.get("canonical") == canonical:
+            value = str(m.get("mappedTo", "")).strip()
+            if required and value == DO_NOT_MAP_SENTINEL:
+                return None
+            return value or None
+    return None
+
+
+def _raw_mapping(body: dict[str, Any], canonical: str) -> str | None:
+    """Return the mapped value verbatim (sentinel preserved), for validation."""
     for m in body.get("mappings", []):
         if isinstance(m, dict) and m.get("canonical") == canonical:
             value = str(m.get("mappedTo", "")).strip()
@@ -124,9 +153,25 @@ def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
     )
 
     req_mapping_names = _required_mappings(workflow_id)
+    # Bug 2: a required mapping pinned to the Do-Not-Map sentinel is a
+    # non-empty string, so without special handling _has_value would treat
+    # it as a present mapping — it would pass validate_run and then crash
+    # execute with ColumnMappingError("column '__do_not_map__' not found").
+    # Funnel sentinel-pinned required canonicals through invalid_mappings so
+    # validate_pre_run_state surfaces the precise invalid_do_not_map message.
+    # required_mappings reports the RAW value (sentinel preserved) so the
+    # sentinel is seen as present and is NOT short-circuited by the
+    # missing_mappings branch — letting the more precise invalid_do_not_map
+    # branch fire instead. A genuinely empty/absent mapping is raw None, so it
+    # still triggers missing_mappings as before.
     required_mapping_values = [
-        LabeledValue(name, _get_mapping(body, name))
+        LabeledValue(name, _raw_mapping(body, name))
         for name in req_mapping_names
+    ]
+    invalid_mapping_values = [
+        LabeledValue(name, _raw_mapping(body, name))
+        for name in req_mapping_names
+        if _raw_mapping(body, name) == DO_NOT_MAP_SENTINEL
     ]
 
     result = validate_pre_run_state(
@@ -135,6 +180,7 @@ def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
         loaded_states=loaded_states,
         not_loaded_message="Load current files and sheets for: {labels}.",
         required_mappings=required_mapping_values,
+        invalid_mappings=invalid_mapping_values,
     )
 
     if workflow_id not in SUPPORTED_WORKFLOWS:
@@ -265,12 +311,12 @@ def execute_run_request(
 
     # Build column map from mappings
     col_map = {
-        "pred_ref": _get_mapping(body, "pred_ref") or "",
-        "pred_fr": _get_mapping(body, "pred_fr") or "",
+        "pred_ref": _get_mapping(body, "pred_ref", required=True) or "",
+        "pred_fr": _get_mapping(body, "pred_fr", required=True) or "",
         "unit_mode": str(options.get("unit_mode", "per_hour")),
-        "fmea_cause": _get_mapping(body, "fmea_cause") or "",
-        "fmea_ratio": _get_mapping(body, "fmea_ratio") or "",
-        "fmea_usage": _get_mapping(body, "fmea_usage") or "",
+        "fmea_cause": _get_mapping(body, "fmea_cause", required=True) or "",
+        "fmea_ratio": _get_mapping(body, "fmea_ratio", required=True) or "",
+        "fmea_usage": _get_mapping(body, "fmea_usage", required=True) or "",
         "fmea_func": _get_mapping(body, "fmea_func") or "",
     }
     check_fmr = bool(options.get("validate_fmr", False))

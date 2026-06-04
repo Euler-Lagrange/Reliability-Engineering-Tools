@@ -28,10 +28,14 @@ import type {
 } from "../../app/types";
 import { DO_NOT_MAP_VALUE } from "../../app/types";
 import { backendClient, type RunRequestBody } from "../../shared/backend/client";
+import { deriveMappingRows } from "../../shared/mapping/deriveMappingRows";
+import { buildWorkbookColumnUnion } from "../fmea/mappingAnalysis";
+import { describeBackendError } from "../../shared/backend/cancelError";
 import { parentDirectoryForPath } from "../../shared/backend/fileManager";
 import {
   buildTimeline,
   cloneInputs,
+  emptyInputsFromScenario,
   useDesktopRunController,
 } from "../../shared/backend/useDesktopRunController";
 import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
@@ -44,6 +48,42 @@ const workflowInputRoles: Partial<Record<WorkflowId, FileRole[]>> = {
   bom_compare_group: ["grouping", "bom"],
   bom_compare_custom: ["bomA", "bomB"],
 };
+
+/**
+ * Bug fix: which file role each canonical mapping addresses, so the Column
+ * Mapping dropdowns can be rebuilt from THAT role's inspected workbook
+ * headers instead of the static fixture options. Verified against
+ * `backend/python/bom_compare/runtime.py`:
+ *   - group:  grouping_group_col / grouping_refdes_col read the grouping file;
+ *             bom_refdes_col / bom_desc_col read the BOM file.
+ *   - custom: refdes_col_a is File 1 (bomA); refdes_col_b is File 2 (bomB).
+ */
+const canonicalRolesByWorkflow: Partial<Record<WorkflowId, Record<string, FileRole>>> = {
+  bom_compare_group: {
+    grouping_group_col: "grouping",
+    grouping_refdes_col: "grouping",
+    bom_refdes_col: "bom",
+    bom_desc_col: "bom",
+  },
+  bom_compare_custom: {
+    refdes_col_a: "bomA",
+    refdes_col_b: "bomB",
+  },
+};
+
+/**
+ * Family 1 fix: seed inputs from the demo scenario in browser-mock mode (so
+ * the preview is populated) but from empty desktop slots in the real desktop
+ * runtime (so no fake example path leaks into a run). Used for both the
+ * initial `useState` seed and the workflow-change scenario-seed fallback —
+ * without it, switching to a never-visited workflow re-introduced the example
+ * paths in desktop mode.
+ */
+function seedInputsForRuntime(inputs: InputFileState[]): InputFileState[] {
+  return backendClient.runtimeMode === "browser-mock"
+    ? cloneInputs(inputs)
+    : emptyInputsFromScenario(inputs);
+}
 
 /**
  * A slot whose async inspection was interrupted by a workflow switch must
@@ -69,9 +109,19 @@ function sanitizeInterruptedInput(input: InputFileState): InputFileState {
 export function BomCompareTool() {
   const baseScenario = bomCompareDemoScenarios[0];
   const [workflowId, setWorkflowId] = useState<WorkflowId>(baseScenario.workflowId);
-  const [inputStates, setInputStates] = useState<InputFileState[]>(() => cloneInputs(baseScenario.inputs));
-  const [mappingRows, setMappingRows] = useState<ColumnMappingRow[]>(bomCompareGroupMappings);
+  const [inputStates, setInputStates] = useState<InputFileState[]>(() =>
+    seedInputsForRuntime(baseScenario.inputs),
+  );
   const [mappingOverrides, setMappingOverrides] = useState<Record<string, string>>({});
+  // Bug fix: per-role inspected workbook headers, populated from
+  // inspection.columns in inspectRole's success path and cleared for a role
+  // on re-browse. A SINGLE record keyed by FileRole survives workflow switches
+  // naturally: the two BOM-compare workflows use disjoint roles (group:
+  // grouping/bom, custom: bomA/bomB), so nothing leaks across a switch and we
+  // don't need to stash it in workflowStateCache.
+  const [workbookColumnsByRole, setWorkbookColumnsByRole] = useState<
+    Partial<Record<FileRole, string[]>>
+  >({});
   const [validations, setValidations] = useState<ValidationMessage[]>(baseScenario.validations);
   const [options, setOptions] = useState({
     base_match: true,
@@ -89,6 +139,11 @@ export function BomCompareTool() {
   const [runLogLines, setRunLogLines] = useState<string[]>([]);
   const [cancelledNotice, setCancelledNotice] = useState<string | null>(null);
   const contextHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  // Fix 2 (Family 2): re-entrancy guard for the desktop run pipeline. Held
+  // for the whole validate→execute window so a double-click on Compare can't
+  // launch a second run whose rejection (single-active-run guard) would clear
+  // the first, live run's session.
+  const isStartingRef = useRef(false);
   const backendMode = useShellStore((state) => state.backendMode);
   const setBackendState = useShellStore((state) => state.setBackendState);
   const bomCompareOutputDirectory = useShellStore(
@@ -146,6 +201,7 @@ export function BomCompareTool() {
   const {
     beginAcceptedRun,
     resetSession: resetDesktopRunSession,
+    resetSessionUnlessLive: resetDesktopRunSessionUnlessLive,
     armTerminalHandler,
     cancel: cancelDesktopRun,
     panelRunMode,
@@ -193,8 +249,10 @@ export function BomCompareTool() {
       }
       previousWorkflowId.current = workflowId;
 
-      const newMappings = workflowId === "bom_compare_custom" ? bomCompareCustomMappings : bomCompareGroupMappings;
-      setMappingRows([...newMappings]);
+      // Bug fix: mappingRows are now DERIVED (useMemo) from workflowId +
+      // workbookColumnsByRole, so there is no setMappingRows here. The fixture
+      // selection (group vs custom) and the inspected-header derivation both
+      // happen in that memo; this effect only resets the override/cache slices.
 
       // Fix 1: restore the incoming workflow's cached slices if we have visited
       // it this mount; otherwise seed from the scenario exactly as before.
@@ -206,7 +264,10 @@ export function BomCompareTool() {
       } else {
         setMappingOverrides({});
         const scenario = bomCompareDemoScenarios.find((s) => s.workflowId === workflowId) ?? baseScenario;
-        setInputStates(cloneInputs(scenario.inputs));
+        // Family 1 fix: desktop-aware seed for a never-visited workflow.
+        // Using cloneInputs here re-introduced the example paths in desktop
+        // mode when switching Group <-> Custom for the first time.
+        setInputStates(seedInputsForRuntime(scenario.inputs));
         setValidations(scenario.validations);
       }
       setRunMode("idle");
@@ -263,6 +324,19 @@ export function BomCompareTool() {
         .filter((input): input is InputFileState => Boolean(input)),
     [inputStates, roles],
   );
+
+  // Bug fix: derive the Column Mapping rows from the active workflow's fixture
+  // AND the inspected workbook headers for each row's file role. When a role
+  // has no inspected columns yet (nothing browsed — including all of
+  // browser-mock preview) its fixture row is kept verbatim, so the demo
+  // preview and existing tests are unchanged. Derived from state (not stored
+  // in setState) so it can never drift from workbookColumnsByRole.
+  const mappingRows = useMemo<ColumnMappingRow[]>(() => {
+    const fixtureRows =
+      workflowId === "bom_compare_custom" ? bomCompareCustomMappings : bomCompareGroupMappings;
+    const canonicalToRole = canonicalRolesByWorkflow[workflowId] ?? {};
+    return deriveMappingRows(fixtureRows, canonicalToRole, workbookColumnsByRole);
+  }, [workflowId, workbookColumnsByRole]);
 
   async function handleRevealOutput(path: string) {
     try {
@@ -362,6 +436,14 @@ export function BomCompareTool() {
     // the stale validation cards so the Preview tab shows its neutral empty
     // state instead of warnings that describe the OLD file/sheet.
     setValidations([]);
+    // Bug fix: a new file replaces this role's inspected headers — drop the
+    // previous set so the mapping rows fall back to the fixture until the
+    // fresh inspection lands (and never offer the OLD workbook's headers).
+    setWorkbookColumnsByRole((current) => {
+      const next = { ...current };
+      delete next[role];
+      return next;
+    });
     setBackendState({
       backendStatus: "busy",
       backendMessage: `Inspecting workbook for ${role}...`,
@@ -401,7 +483,7 @@ export function BomCompareTool() {
       }
     } catch (error) {
       if (!fileRequestSeq.isCurrent(role, token)) return;
-      const detail = error instanceof Error ? error.message : "Unknown sheet inspection failure";
+      const detail = describeBackendError(error, "Unknown sheet inspection failure");
       setInputStates((current) =>
         current.map((input) =>
           input.role === role
@@ -455,6 +537,14 @@ export function BomCompareTool() {
     try {
       const inspection = await backendClient.inspectInput(path, sheet, role);
       if (!fileRequestSeq.isCurrent(role, token)) return;
+      // Bug fix: record the inspected headers for this role so the Column
+      // Mapping dropdowns are rebuilt from real workbook columns. inspectRole
+      // used to read only `.length` here and discard `.columns`.
+      const workbookColumns = buildWorkbookColumnUnion([inspection.columns]);
+      setWorkbookColumnsByRole((current) => ({
+        ...current,
+        [role]: workbookColumns,
+      }));
       setBackendState({
         backendStatus: "ready",
         backendMode: inspection.mode,
@@ -475,7 +565,7 @@ export function BomCompareTool() {
       );
     } catch (error) {
       if (!fileRequestSeq.isCurrent(role, token)) return;
-      const detail = error instanceof Error ? error.message : "Unknown workbook analysis failure";
+      const detail = describeBackendError(error, "Unknown workbook analysis failure");
       setInputStates((current) =>
         current.map((input) =>
           input.role === role
@@ -539,6 +629,16 @@ export function BomCompareTool() {
       return;
     }
 
+    // Fix 2 (Family 2): re-entrancy guard. The Compare button is not disabled
+    // during the async validate→execute window, so a fast double-click could
+    // fire a second pipeline; the second executeRun is rejected by Python's
+    // single-active-run guard and its catch used to wipe the FIRST, live run.
+    // Swallow the re-entrant call here.
+    if (isStartingRef.current) {
+      return;
+    }
+    isStartingRef.current = true;
+
     const runRequest = buildRunRequest();
 
     // Fix R2-C1: clear any stale active run from a previous run BEFORE flipping
@@ -590,8 +690,9 @@ export function BomCompareTool() {
       armTerminalHandler();
       beginAcceptedRun(await backendClient.executeRun(runRequest));
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "Unknown backend execution failure";
-      resetDesktopRunSession();
+      const detail = describeBackendError(error, "Unknown backend execution failure");
+      // Fix 2 (Family 2): guarded reset — must not clobber a live sibling run.
+      resetDesktopRunSessionUnlessLive();
       setContextView("preview");
       setBackendState({
         backendStatus: "error",
@@ -603,6 +704,11 @@ export function BomCompareTool() {
         title: "BOM comparison failed",
         detail,
       });
+    } finally {
+      // Release the re-entrancy guard once the validate→execute window has
+      // closed (success, validation block, or error). The live run, if one
+      // was accepted, is now owned by the run store and survives.
+      isStartingRef.current = false;
     }
   }
 

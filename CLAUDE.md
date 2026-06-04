@@ -65,7 +65,7 @@ npm run dev              # Vite dev server (browser preview mode)
 npm run build            # Production build
 npm run typecheck        # TypeScript type checking
 npm run typecheck:tests  # TypeScript type checking for Vitest files
-npm test                 # Vitest (191 tests)
+npm test                 # Vitest (214 tests)
 
 # Desktop (requires Rust toolchain)
 npm run tauri:dev        # Dev mode with hot reload
@@ -73,7 +73,7 @@ npm run tauri:build:portable  # Release build → src-tauri/target/.../release/
 npm run cargo:test       # Rust bridge unit tests via the repo runner
 
 # Python sidecar (use project venv)
-.venv\Scripts\python.exe -m pytest backend/tests -v    # 151 backend tests (43 sidecar + 17 audit + 12 cancel bridge + 4 output-directory helper + 45 FMEA phase D + 12 failure-rate logic + 6 RefDes extraction-engine + 12 BOM-compare logic)
+.venv\Scripts\python.exe -m pytest backend/tests -v    # 158 backend tests (43 sidecar + 17 audit + 12 cancel bridge + 4 output-directory helper + 46 FMEA phase D + 12 failure-rate logic + 6 RefDes extraction-engine + 12 BOM-compare logic + 4 BOM-compare runtime + 2 failure-rate runtime)
 .venv\Scripts\python.exe backend/python/sidecar_main.py --self-test
 
 # Full release
@@ -157,15 +157,17 @@ The audit runs:
 
 ## Testing
 
-### Backend Tests (151 total)
+### Backend Tests (158 total)
 - 43 sidecar integration tests in `test_sidecar_main.py`
 - 17 security-audit tests in `test_security_audit.py` (synthetic positives + live tree scan)
 - 12 cancel-bridge tests in `test_cancel_bridge.py` (BOM Compare + RefDes bridges plus Failure Rate `FMEALinkerLogic.cancel` binding through `ActiveRun`)
 - 4 output-directory helper tests in `test_output_directory_helpers.py`
-- 45 FMEA Phase D tests in `test_fmea_phase_d.py`
+- 46 FMEA Phase D tests in `test_fmea_phase_d.py`
 - 12 Failure-Rate logic tests in `test_failure_rate_logic.py`
 - 6 RefDes extraction-engine tests in `test_extraction_engine.py`
 - 12 BOM-compare logic tests in `test_bom_compare_logic.py`
+- 4 BOM-compare runtime tests in `test_bom_compare_runtime.py` (dnp_regex default + Do-Not-Map sentinel validation)
+- 2 Failure-Rate runtime tests in `test_failure_rate_runtime.py` (Do-Not-Map sentinel validation)
 - Sidecar tests are subprocess-based: spawn sidecar, send NDJSON commands, verify responses
 - `stderr=subprocess.DEVNULL` to avoid Windows pipe buffer deadlock
 - `SIDECAR_HEARTBEAT_INTERVAL=9999` suppresses heartbeats during tests
@@ -174,7 +176,7 @@ The audit runs:
 - `pytest.importorskip("fitz")` for RefDes tests requiring PyMuPDF
 - `backend/tests/conftest.py` installs a `sys.path` shim for in-process unit tests
 
-### Frontend Tests (191 total across 31 test files)
+### Frontend Tests (214 total across 32 test files)
 - Vitest + React Testing Library
 - Browser-mock mode (no Tauri runtime needed)
 - `src/app/App.test.tsx`
@@ -206,11 +208,12 @@ The audit runs:
 - `src/shared/hooks/useAppShortcuts.test.tsx` (new in 0.4.2)
 - `src/shared/hooks/useRoleRequestSequence.test.ts`
 - `src/shared/hooks/useCopyToClipboard.test.ts`
+- `src/shared/mapping/deriveMappingRows.test.ts` (new in 0.4.6)
 - `src/shared/theme/themeRegistry.test.ts`
 - `src/stores/globalLogStore.test.ts`
 
 Run `npx vitest run --config frontend/vite.config.ts --reporter=default` to
-see individual counts per file — the suite totals 191 tests as of 0.4.6 and
+see individual counts per file — the suite totals 214 tests as of 0.4.6 and
 changes whenever a suite gains or loses cases.
 
 ## Critical Gotchas

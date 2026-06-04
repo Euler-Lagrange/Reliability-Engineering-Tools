@@ -1335,6 +1335,14 @@ def test_sidecar_executes_bom_compare_group(tmp_path: Path) -> None:
 
         output_path = Path(result["payload"]["output_file"])
         assert output_path.exists()
+
+        # Bug 1 regression guard: the grouping RefDes (R200, R201) both exist
+        # in the BOM, so nothing should be reported missing. Before the fix,
+        # an omitted dnp_regex compiled to a match-everything pattern that
+        # dropped the entire BOM as DNP and flagged every grouping RefDes as
+        # "missing in BOM". no_match_count is exposed on the result payload,
+        # so this stays a pure-payload assertion (no workbook parsing).
+        assert result["payload"]["no_match_count"] == 0
     finally:
         process.kill()
 

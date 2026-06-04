@@ -2,8 +2,45 @@ import { describe, expect, it } from "vitest";
 import {
   buildCancelNotification,
   classifyCancelError,
+  describeBackendError,
   describeCancelError,
 } from "./cancelError";
+
+describe("describeBackendError", () => {
+  it("returns a raw string rejection verbatim", () => {
+    // Tauri v2 rejects `Result<_, String>` with a raw string — the case this
+    // helper exists to fix for every backend invoke (sheet inspection,
+    // workbook analysis, execute_run, health check).
+    expect(
+      describeBackendError(
+        "Could not locate a non-empty header row within the first 1000 scanned rows.",
+        "Unknown sheet inspection failure",
+      ),
+    ).toBe("Could not locate a non-empty header row within the first 1000 scanned rows.");
+  });
+
+  it("extracts message from an Error instance", () => {
+    expect(describeBackendError(new Error("boom"), "fallback")).toBe("boom");
+  });
+
+  it("extracts message from a plain object with a message field", () => {
+    expect(describeBackendError({ message: "plain object" }, "fallback")).toBe(
+      "plain object",
+    );
+  });
+
+  it("uses the fallback when the error is null", () => {
+    expect(describeBackendError(null, "fallback")).toBe("fallback");
+  });
+
+  it("uses the fallback when the error has no usable message", () => {
+    expect(describeBackendError({}, "fallback")).toBe("fallback");
+  });
+
+  it("uses the fallback when the string is only whitespace", () => {
+    expect(describeBackendError("   ", "fallback")).toBe("fallback");
+  });
+});
 
 describe("describeCancelError", () => {
   it("returns a raw string rejection verbatim", () => {

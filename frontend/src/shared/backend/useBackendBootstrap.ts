@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { backendClient } from "./client";
+import { describeBackendError } from "./cancelError";
 import { useNotificationStore } from "../../stores/notificationStore";
 import { useRunStore } from "../../stores/runStore";
 import { useShellStore } from "../../stores/shellStore";
@@ -107,7 +108,7 @@ export function useBackendBootstrap() {
           return;
         }
 
-        const detail = error instanceof Error ? error.message : "Unknown backend initialization failure";
+        const detail = describeBackendError(error, "Unknown backend initialization failure");
         setBackendState({
           backendStatus: "error",
           backendMode: backendClient.runtimeMode,

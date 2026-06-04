@@ -400,6 +400,18 @@ class FMEAProcessor:
             if std in overrides and overrides[std] in df.columns:
                 mapped[std] = overrides[std]
             else:
+                # Bug 3: an explicit override that names a column NOT present
+                # in this dataframe is silently dropped (heuristic detection
+                # runs instead). Surface a WARNING so the discarded override
+                # is diagnosable in the run log. No behavior change — the
+                # heuristic fallback below still runs exactly as before.
+                if std in overrides and overrides[std]:
+                    self.log(
+                        f"Column override for '{std}' -> '{overrides[std]}' "
+                        f"ignored: that column is not present in {source_name}. "
+                        f"Falling back to automatic column detection.",
+                        "WARNING",
+                    )
                 found = resolve_column(df, candidates)
                 if found: mapped[std] = found
                 elif required_list and std in required_list: missing.append(std)
@@ -860,6 +872,17 @@ class FMEAProcessor:
                 and override in fmea_df.columns
             ):
                 return override
+            # Bug 3: an explicit effect-column override that names a column
+            # not present in the FMEA dataframe is silently discarded in
+            # favor of synonym-based heuristic resolution. Surface a WARNING
+            # so the discarded override is diagnosable. No behavior change.
+            if isinstance(override, str) and override.strip():
+                self.log(
+                    f"Effect-column override for '{canonical}' -> "
+                    f"'{override.strip()}' ignored: that column is not present "
+                    f"in the FMEA file. Falling back to automatic detection.",
+                    "WARNING",
+                )
             return resolve_column(fmea_df, fallback_synonyms)
 
         local_col = _resolve_effect_column("Local Effect", ['Local Effect'])

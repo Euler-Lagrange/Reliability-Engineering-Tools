@@ -220,8 +220,15 @@ def explode_bom(
 
 def _compile_patterns(options: AnalyzeOptions) -> Tuple[re.Pattern, Optional[re.Pattern], Optional[re.Pattern]]:
     """Compile regex patterns from options. Returns (dnp_re, ignore_tok_re, ignore_desc_re)."""
+    # Bug 1 (defense-in-depth): a falsy dnp_regex (empty string / None) is
+    # NOT an error — re.compile('') succeeds and matches every string, which
+    # would make explode_bom drop the entire BOM as DNP. Treat any falsy
+    # value as "use the canonical default" BEFORE compiling, so the
+    # match-everything pattern can never reach explode_bom regardless of how
+    # AnalyzeOptions was constructed.
+    dnp_source = options.dnp_regex or DEFAULT_DNP_REGEX
     try:
-        dnp_re = re.compile(options.dnp_regex, re.I)
+        dnp_re = re.compile(dnp_source, re.I)
     except re.error:
         _logger.warning(f"Invalid DNP regex pattern, using default: {options.dnp_regex}")
         try:

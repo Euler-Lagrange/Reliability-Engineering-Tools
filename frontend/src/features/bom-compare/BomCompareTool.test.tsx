@@ -118,6 +118,38 @@ describe("BomCompareTool custom compare workflow", () => {
     expect(screen.queryByText("Compare two BOMs")).not.toBeInTheDocument();
   });
 
+  // Regression (Family 1): in desktop mode the tool used to seed inputStates
+  // with cloneInputs(scenario.inputs) UNCONDITIONALLY, leaking the fake
+  // example path "DRIVE\inputs\NavUnit_Grouping.xlsx" (non-empty path + a
+  // sheet) into real runs. Such un-browsed slots passed validation then
+  // crashed mid-run with FileNotFoundError naming a path the user never
+  // typed. Desktop seeding must produce empty paths.
+  it("does not leak the example grouping path on first render in desktop mode", () => {
+    render(<BomCompareTool />);
+
+    // The fake example path must not appear anywhere on first contact.
+    expect(
+      screen.queryByText("DRIVE\\inputs\\NavUnit_Grouping.xlsx"),
+    ).not.toBeInTheDocument();
+  });
+
+  // Regression (Family 1): after dispatching a group run with no browsed
+  // files, every input the backend receives must carry an empty path —
+  // never a seeded example path.
+  it("sends empty input paths when no file was browsed (group run)", async () => {
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+
+    await user.click(screen.getByRole("tab", { name: /^Run$/i }));
+    await user.click(screen.getByRole("button", { name: "Compare" }));
+
+    await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
+    const request = backendMocks.executeRun.mock.calls[0][0];
+    for (const input of request.inputs as Array<{ path: string }>) {
+      expect(input.path).toBe("");
+    }
+  });
+
   it("dispatches bomA/bomB inputs and custom mappings for a custom run", async () => {
     const user = userEvent.setup();
     render(<BomCompareTool />);
@@ -180,6 +212,59 @@ describe("BomCompareTool custom compare workflow", () => {
     ).not.toBeInTheDocument();
   });
 
+  // Regression (Family 2): the Start/Compare button was not disabled during
+  // the async validateRun roundtrip, so a second handleStartRun could fire.
+  // The second executeRun was rejected by Python's single-active-run guard,
+  // landed in the catch, and unconditionally called resetDesktopRunSession() —
+  // clearing the FIRST (live) run's session from the store, dropping its
+  // events and result. The re-entrancy guard must make the second click a
+  // no-op so executeRun fires exactly once.
+  it("does not start a second run when Compare is double-clicked during validation", async () => {
+    let resolveValidate: (value: {
+      ok: boolean;
+      reason_code: string;
+      toast_text: string;
+      validations: never[];
+      output_preview: null;
+      mode: string;
+    }) => void = () => {};
+    backendMocks.validateRun.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveValidate = resolve;
+        }),
+    );
+
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+
+    await user.click(screen.getByRole("tab", { name: /^Run$/i }));
+    const compareButton = screen.getByRole("button", { name: "Compare" });
+
+    // Two clicks while validateRun is still pending. The guard must swallow
+    // the second so only ONE validate→execute pipeline runs.
+    await user.click(compareButton);
+    await user.click(compareButton);
+
+    // Only one validate roundtrip should have started.
+    expect(backendMocks.validateRun).toHaveBeenCalledTimes(1);
+
+    // Resolve the single validate; the (single) executeRun then fires.
+    resolveValidate({
+      ok: true,
+      reason_code: "ready",
+      toast_text: "Ready to run.",
+      validations: [],
+      output_preview: null,
+      mode: "desktop-bridge",
+    });
+
+    await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
+    // Crucially, executeRun must NOT have been called twice (which would have
+    // wiped the live run via the rejected second run's catch path).
+    expect(backendMocks.executeRun).toHaveBeenCalledTimes(1);
+  });
+
   // Regression (Fix 2): a stale validate_run result stranded in the Preview
   // tab after the user changed an input file — the previous run's validation
   // cards kept describing the OLD file. Browsing a new file must clear them.
@@ -209,6 +294,128 @@ describe("BomCompareTool custom compare workflow", () => {
     await waitFor(() =>
       expect(screen.queryByText("Ready to run")).not.toBeInTheDocument(),
     );
+  });
+
+  // Regression (Bug 1): Tauri v2 rejects `Result<_, String>` with a RAW
+  // STRING, not an Error instance. The legacy `error instanceof Error
+  // ? error.message : <generic fallback>` discarded the backend's real
+  // message for every string rejection, so the input card's resolution note
+  // read the generic "Unknown sheet inspection failure" instead of the
+  // sidecar's actual explanation. describeBackendError must surface the raw
+  // string verbatim.
+  it("surfaces a raw-string sheet inspection rejection in the input card note", async () => {
+    const backendMessage =
+      "Could not locate a non-empty header row within the first 1000 scanned rows.";
+    backendMocks.openExcelFile.mockResolvedValue("C:\\real\\Grouping.xlsx");
+    // Reject with a RAW STRING — exactly how Tauri surfaces a
+    // `Result<_, String>` error to the frontend.
+    backendMocks.listSheets.mockRejectedValue(backendMessage);
+
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+
+    await user.click(screen.getByRole("button", { name: "Browse for first BOM" }));
+
+    // The backend's real message must appear verbatim in the resolution note.
+    expect(await screen.findByText(backendMessage)).toBeInTheDocument();
+    // And the generic fallback must NOT have replaced it.
+    expect(
+      screen.queryByText("Unknown sheet inspection failure"),
+    ).not.toBeInTheDocument();
+  });
+
+  // Bug fix (adversarially verified): the Column Mapping dropdowns used to be
+  // static fixtures (bomCompareGroupMappings) that were never rebuilt from the
+  // real workbook's inspected headers — inspectRole discarded inspection.columns
+  // (only .length was read). On a real file the dropdown then offered fixture
+  // strings ("Component Group", "Reference Designator") that may not exist, the
+  // mappedTo defaults were pre-filled regardless, and a mismatch only surfaced
+  // at execute time as a ColumnMappingError. Now the grouping rows are derived
+  // from the inspected columns for the "grouping" role.
+  it("rebuilds the grouping mapping dropdowns from the inspected workbook headers", async () => {
+    backendMocks.openExcelFile.mockResolvedValue("C:\\real\\Grouping.xlsx");
+    backendMocks.listSheets.mockResolvedValue({
+      path: "C:\\real\\Grouping.xlsx",
+      sheets: ["Grouping"],
+      mode: "desktop-bridge",
+    });
+    // Real headers: "Reference Designator" matches the refdes fixture default
+    // (auto-fill), but the group fixture default "Component Group" is absent
+    // (no match → unmapped/attention).
+    backendMocks.inspectInput.mockResolvedValue({
+      mode: "desktop-bridge",
+      sheet: "Grouping",
+      columns: ["Circuit Block", "Reference Designator"],
+    });
+
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+
+    await user.click(screen.getByRole("button", { name: "Browse for first BOM" }));
+    await screen.findByText("C:\\real\\Grouping.xlsx");
+    await waitFor(() => expect(backendMocks.inspectInput).toHaveBeenCalled());
+
+    // The grouping group dropdown now offers the REAL headers, not the stale
+    // fixture options. Open the combobox and inspect its options.
+    const groupCombobox = await screen.findByRole("combobox", {
+      name: /grouping_group_col mapping/i,
+    });
+    await user.click(groupCombobox);
+    expect(
+      await screen.findByRole("option", { name: "Circuit Block" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "Reference Designator" }),
+    ).toBeInTheDocument();
+    // The fixture-only default that does NOT exist in this workbook is gone.
+    expect(
+      screen.queryByRole("option", { name: "Component Group" }),
+    ).not.toBeInTheDocument();
+  });
+
+  // Bug fix (continued): exact-name auto-fill on a real header match and
+  // needs-attention on a no-match must be reflected in the run request that is
+  // dispatched — the backend must receive the real header (or empty), never a
+  // stale fixture default for the inspected role.
+  it("dispatches real inspected headers (and empty for no-match) for the grouping role", async () => {
+    backendMocks.openExcelFile.mockResolvedValue("C:\\real\\Grouping.xlsx");
+    backendMocks.listSheets.mockResolvedValue({
+      path: "C:\\real\\Grouping.xlsx",
+      sheets: ["Grouping"],
+      mode: "desktop-bridge",
+    });
+    backendMocks.inspectInput.mockResolvedValue({
+      mode: "desktop-bridge",
+      sheet: "Grouping",
+      columns: ["Circuit Block", "Reference Designator"],
+    });
+
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+
+    await user.click(screen.getByRole("button", { name: "Browse for first BOM" }));
+    await screen.findByText("C:\\real\\Grouping.xlsx");
+    await waitFor(() => expect(backendMocks.inspectInput).toHaveBeenCalled());
+    // Wait for the inspected slot to settle (tag transitions to "Analyzed")
+    // so the derived mapping rows reflect the real headers before we run.
+    await screen.findByText("Analyzed");
+
+    await user.click(screen.getByRole("tab", { name: /^Run$/i }));
+    await user.click(screen.getByRole("button", { name: "Compare" }));
+
+    await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
+    const request = backendMocks.executeRun.mock.calls[0][0];
+    const mappingByCanonical = Object.fromEntries(
+      (request.mappings as Array<{ canonical: string; mappedTo: string }>).map(
+        (mapping) => [mapping.canonical, mapping.mappedTo],
+      ),
+    );
+
+    // refdes row auto-filled to the real header (exact match).
+    expect(mappingByCanonical.grouping_refdes_col).toBe("Reference Designator");
+    // group row has no matching header in this workbook — empty, NOT the stale
+    // fixture default "Component Group".
+    expect(mappingByCanonical.grouping_group_col).toBe("");
   });
 
   // Regression (review finding): switching workflow while a listSheets

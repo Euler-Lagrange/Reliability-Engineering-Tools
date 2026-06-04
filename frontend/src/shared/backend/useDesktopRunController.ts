@@ -9,6 +9,7 @@ import type {
 import type { ToolId } from "../../stores/shellStore";
 import { useShellStore } from "../../stores/shellStore";
 import { useNotificationStore } from "../../stores/notificationStore";
+import { useRunStore } from "../../stores/runStore";
 import { backendClient } from "./client";
 import { buildCancelNotification } from "./cancelError";
 import { buildRunTimeline, useBackendRunLifecycle } from "./runLifecycle";
@@ -29,6 +30,46 @@ export function cloneInputs(inputs: InputFileState[]): InputFileState[] {
     isResolvingSheets: input.isResolvingSheets ?? false,
     isAnalyzing: input.isAnalyzing ?? false,
     resolutionError: input.resolutionError ?? null,
+  }));
+}
+
+/**
+ * Desktop-runtime seed: an empty `InputFileState[]` that preserves only the
+ * scenario scaffolding (role/label/helper) so the InputCards render with the
+ * right structure, but carries NO file paths, sheets, or loaded flags.
+ *
+ * Family 1 fix: the three non-FMEA tools used to seed desktop `useState` with
+ * `cloneInputs(scenario.inputs)`, leaking the demo example paths
+ * (`DRIVE\inputs\…`) into REAL runs. Those un-browsed slots had a non-empty
+ * path + a sheet, so they passed backend validation and then crashed mid-run
+ * with a FileNotFoundError naming a path the user never typed (and the RefDes
+ * example PDF hard-failed on `fitz.open`). FMEA already seeded empty via a
+ * local copy of this helper; this is the unified shared version.
+ *
+ * `status`/`tag` use the codebase's neutral empty-slot vocabulary (matching
+ * the pinlist seed: `optional` chip + "Not loaded"), NOT the green
+ * `ready`/"Loaded" chip — an un-browsed desktop card must not look loaded.
+ *
+ * `isExample` stays `true` so every tool's `isPristine` check (which requires
+ * `every(isExample === true)`) keeps the first-contact EmptyState visible.
+ * Browsing a real file flips `isExample` to `false`, exiting pristine. The
+ * `isExample` flag is inert in InputGrid for empty paths (its example styling
+ * additionally requires a non-empty path), so this is purely the pristine
+ * gate.
+ */
+export function emptyInputsFromScenario(inputs: InputFileState[]): InputFileState[] {
+  return inputs.map((input) => ({
+    ...input,
+    path: "",
+    sheets: [],
+    selectedSheet: "",
+    status: "optional",
+    tag: "Not loaded",
+    isExample: true,
+    source: "desktop-bridge",
+    isResolvingSheets: false,
+    isAnalyzing: false,
+    resolutionError: null,
   }));
 }
 
@@ -267,10 +308,40 @@ export function useDesktopRunController(
     return true;
   }
 
+  /**
+   * Fix 2 (Family 2) defense-in-depth: a catch-path reset that REFUSES to
+   * clear a live (``starting``/``running``) run belonging to this tool.
+   *
+   * The double-click bug let a second `handleStartRun` reach its catch (its
+   * `executeRun` rejected by Python's single-active-run guard) and call the
+   * plain `resetSession`, which wiped the FIRST, live run's session — dropping
+   * its streamed events and its terminal result/toast. The re-entrancy ref in
+   * each tool is the primary guard; this is the belt-and-suspenders layer so
+   * an error path can never destroy a live sibling run it did not create.
+   *
+   * Legitimate resets (workflow-change effects, the pre-validate stale-session
+   * clear at the TOP of `handleStartRun`, which runs before any live run
+   * exists for this flow) keep calling the plain `resetSession` and are
+   * unaffected — only the error catch should consult this guarded variant.
+   */
+  function resetSessionUnlessLive() {
+    const current = useRunStore.getState().activeRun;
+    if (
+      current &&
+      current.toolId === toolId &&
+      (current.phase === "starting" || current.phase === "running")
+    ) {
+      // A live run for this tool is in flight — leave it alone.
+      return;
+    }
+    resetSession();
+  }
+
   return {
     session: desktopRunSession,
     beginAcceptedRun,
     resetSession,
+    resetSessionUnlessLive,
     armTerminalHandler,
     cancel,
     desktopTimeline,

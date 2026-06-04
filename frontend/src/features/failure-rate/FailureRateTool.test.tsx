@@ -103,3 +103,70 @@ describe("FailureRateTool stale validation handling", () => {
     );
   });
 });
+
+describe("FailureRateTool inspected-column mapping derivation", () => {
+  // Bug fix (adversarially verified): the Column Mapping dropdowns used to be a
+  // static fixture (failureRateMappings) that was never rebuilt from the real
+  // workbook's inspected headers — inspectRole discarded inspection.columns.
+  // On a real file the dropdown offered fixture strings ("Reference
+  // Designator", "Failure Rate") that may not exist, the mappedTo defaults were
+  // pre-filled regardless, and a mismatch only surfaced at execute time as a
+  // ColumnMappingError. Now the prediction rows are derived from the inspected
+  // columns for the "prediction" role.
+  it("rebuilds the prediction mapping dropdowns from the inspected headers and dispatches them", async () => {
+    backendMocks.openExcelFile.mockResolvedValue("C:\\real\\Predictions.xlsx");
+    backendMocks.listSheets.mockResolvedValue({
+      path: "C:\\real\\Predictions.xlsx",
+      sheets: ["Predictions"],
+      mode: "desktop-bridge",
+    });
+    // Real headers: "Failure Rate" matches the pred_fr fixture default
+    // (auto-fill), but the pred_ref default "Reference Designator" is absent
+    // (no match → unmapped/empty).
+    backendMocks.inspectInput.mockResolvedValue({
+      mode: "desktop-bridge",
+      sheet: "Predictions",
+      columns: ["Component", "Failure Rate"],
+    });
+
+    const user = userEvent.setup();
+    render(<FailureRateTool />);
+
+    await user.click(screen.getByRole("button", { name: "Browse for parts list" }));
+    await screen.findByText("C:\\real\\Predictions.xlsx");
+    await waitFor(() => expect(backendMocks.inspectInput).toHaveBeenCalled());
+    await screen.findByText("Analyzed");
+
+    // The prediction RefDes dropdown now offers the REAL headers, not the
+    // stale fixture options.
+    const predRefCombobox = await screen.findByRole("combobox", {
+      name: /pred_ref mapping/i,
+    });
+    await user.click(predRefCombobox);
+    expect(await screen.findByRole("option", { name: "Component" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Failure Rate" })).toBeInTheDocument();
+    // The fixture-only default that does NOT exist in this workbook is gone.
+    expect(
+      screen.queryByRole("option", { name: "Reference Designator" }),
+    ).not.toBeInTheDocument();
+    // Close the menu before dispatching the run.
+    await user.keyboard("{Escape}");
+
+    await user.click(screen.getByRole("tab", { name: /^Run$/i }));
+    await user.click(screen.getByRole("button", { name: "Link Rates" }));
+
+    await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
+    const request = backendMocks.executeRun.mock.calls[0][0];
+    const mappingByCanonical = Object.fromEntries(
+      (request.mappings as Array<{ canonical: string; mappedTo: string }>).map(
+        (mapping) => [mapping.canonical, mapping.mappedTo],
+      ),
+    );
+
+    // pred_fr auto-filled to the real header (exact match).
+    expect(mappingByCanonical.pred_fr).toBe("Failure Rate");
+    // pred_ref has no matching header in this workbook — empty, NOT the stale
+    // fixture default "Reference Designator".
+    expect(mappingByCanonical.pred_ref).toBe("");
+  });
+});

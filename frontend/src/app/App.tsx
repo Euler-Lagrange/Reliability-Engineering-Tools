@@ -15,6 +15,7 @@ import { ContextDrawer } from "../components/ContextDrawer";
 import { GlobalLogPanel } from "../components/GlobalLogPanel";
 import { ErrorBoundary } from "../shared/errors/ErrorBoundary";
 import { backendClient } from "../shared/backend/client";
+import { describeBackendError } from "../shared/backend/cancelError";
 import { useBackendBootstrap } from "../shared/backend/useBackendBootstrap";
 import { useBackendBusyReset } from "../shared/backend/useBackendBusyReset";
 import { useBackendRunSubscription } from "../shared/backend/useBackendRunSubscription";
@@ -216,7 +217,7 @@ export function App() {
               detail: path,
             });
           } catch (error) {
-            const detail = error instanceof Error ? error.message : "Health check failed";
+            const detail = describeBackendError(error, "Health check failed");
             pushNotification({
               tone: "error",
               title: "Could not fetch log path",

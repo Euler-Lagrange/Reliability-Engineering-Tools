@@ -9,6 +9,7 @@ import { useResolvedTheme } from "../../shared/theme/ThemeController";
 import { THEME_REGISTRY } from "../../shared/theme/themeRegistry";
 import { useShellStore } from "../../stores/shellStore";
 import { backendClient } from "../../shared/backend/client";
+import { describeBackendError } from "../../shared/backend/cancelError";
 import { useNotificationStore } from "../../stores/notificationStore";
 import styles from "./SettingsTool.module.css";
 
@@ -81,7 +82,7 @@ export function SettingsTool() {
         detail: `${result.backend} is responsive (${latencyMs} ms).`,
       });
     } catch (error: unknown) {
-      const detail = error instanceof Error ? error.message : "Health check failed";
+      const detail = describeBackendError(error, "Health check failed");
       setLastLatencyMs(null);
       setBackendState({
         backendStatus: "error",

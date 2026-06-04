@@ -31,14 +31,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the old inconsistent `Z{idx}` scheme.
 - **BOM / OneDrive parity** — BOM Compare and the OneDrive cloud-file
   hydration path were brought back into parity with the other tools.
-- **Tests** — +31 backend tests (now **151**: adds
+- **Tests** — +38 backend tests (now **158**: adds
   `test_failure_rate_logic.py` ×12, `test_extraction_engine.py` ×6,
-  `test_bom_compare_logic.py` ×12, and one more FMEA Phase D case), +2
+  `test_bom_compare_logic.py` ×12, `test_bom_compare_runtime.py` ×4,
+  `test_failure_rate_runtime.py` ×2, and two more FMEA Phase D cases), +2
   frontend tests inside existing suites, and new regression suites for
-  the input-visibility and interaction-state fixes below
+  the input-visibility, interaction-state, and file-loading fixes below
   (`BomCompareTool.test.tsx`, `RefDesExtractorTool.test.tsx`,
-  `FailureRateTool.test.tsx`, `App.keepalive.test.tsx`, plus added FMEA
-  cases — now **191** across 31 files).
+  `FailureRateTool.test.tsx`, `App.keepalive.test.tsx`,
+  `deriveMappingRows.test.ts`, plus added FMEA and cancel-error cases —
+  now **214** across 32 files).
 - **Doc fixes** — corrected the NextGen extraction-engine docstrings
   (the `refdes_test` engine is the default production backend, not a
   test-only / experimental path), `docs/DEVELOPMENT.md`, `release.bat`,
@@ -100,6 +102,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   evaluates all input slots. The adaptive-geometry checkbox is also
   disabled (with a hint) while geometry analysis is off, since the backend
   ignores it on that path.
+- **BOM Compare Group dropped the entire BOM as DNP (wrong output)** — the
+  frontend never sends `dnp_regex`, the runtime adapter defaulted it to
+  `""`, and `re.compile("")` matches everything, so with `ignore_dnp`
+  enabled every BOM row was skipped and every group run reported all
+  RefDes missing. The adapter now falls back to `DEFAULT_DNP_REGEX` (with
+  defense-in-depth in `_compile_patterns`), and the sidecar group-compare
+  test asserts a zero-missing fixture.
+- **Example demo paths leaked into real desktop runs** — BOM Compare,
+  Failure Rate, and RefDes seeded their input slots with fake
+  `DRIVE\inputs\...` example paths that passed backend validation and then
+  crashed mid-run (`FileNotFoundError`, raw `fitz` error) or silently
+  degraded output (RefDes "no BOM provided"). All three tools now seed
+  empty slots in desktop mode via a shared `emptyInputsFromScenario`
+  (FMEA's existing pattern), so un-loaded required slots block at
+  validate time with the precise "Select required files" message; empty
+  slots also no longer show green "Loaded" chips.
+- **Double-click Start wiped the live run's UI** — the Start button is
+  not disabled during the validate round-trip, so a second click launched
+  a second execute that the sidecar rejected; the rejection handler then
+  cleared the FIRST (live) run's session, dropping its events, result,
+  and toast. `handleStartRun` is now re-entrancy-guarded in all four
+  tools, and the failure path skips the session reset when a live run it
+  does not own is active.
+- **Do-Not-Map on a required column crashed at execute** — BOM Compare and
+  Failure Rate accepted the `__do_not_map__` sentinel through validation
+  (it reads as a non-empty mapping) and then failed mid-run with a
+  cryptic "column '__do_not_map__' not found". Both runtimes now report
+  it through the `invalid_do_not_map` validation branch up front; the
+  sentinel constant is shared from `shared/pre_run_validation.py`.
+- **Backend error messages were discarded by the frontend** — Tauri v2
+  rejects commands with a raw string, so every non-cancel catch's
+  `instanceof Error` check replaced the sidecar's real message
+  ("Could not locate a non-empty header row...", "Another backend run is
+  already active...") with generic fallbacks. All backend-invoke catches
+  now route through a shared `describeBackendError` (generalized from the
+  cancel-path normalizer), so input cards and toasts show the real cause.
+- **FMEA stale validation cards** — FMEA now clears the Preview tab's
+  validation cards when a file is browsed or a sheet changes (parity with
+  the BOM Compare / Failure Rate fix), and prunes manual mapping
+  overrides whose column no longer exists in the re-inspected workbook
+  (previously the table displayed the stale pick while the backend
+  silently auto-detected a different column; the backend now also logs a
+  WARNING when it discards an override).
+- **Mapping dropdowns now reflect the real workbook** — BOM Compare and
+  Failure Rate mapping rows were static demo fixtures; on real files the
+  dropdowns offered columns that didn't exist and mismatches surfaced
+  only as execute-time errors. Rows are now derived from the inspected
+  headers per role (exact-match auto-fill, attention state on no match),
+  falling back to the fixtures until a file is inspected.
 - Synced the streamed `execute_run` ack contract: Rust now enriches the
   run-event ack with `session_generation`, matching the frontend Zod
   schema and protocol docs.

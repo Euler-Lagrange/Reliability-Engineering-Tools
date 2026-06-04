@@ -2976,3 +2976,41 @@ def test_union_merge_missing_from_bom_emits_placeholder_with_diagnostic(
     )
     assert "missing from BOM" in diagnostics, diagnostics
     assert FMEAProcessor.MERGE_DIAG_GROUPING_ONLY in diagnostics, diagnostics
+
+
+# ---------------------------------------------------------------------------
+# Bug 3: an explicit column override naming a column NOT present in the
+# dataframe is silently discarded (heuristic detection runs instead). Add a
+# WARNING log so the silent discard becomes diagnosable. No behavior change.
+# ---------------------------------------------------------------------------
+
+
+def test_map_columns_warns_when_override_column_missing(caplog) -> None:
+    """A user override pointing at a non-existent column logs a WARNING.
+
+    ``map_columns`` falls back to heuristic detection when the override names
+    a column that isn't in the dataframe. Before the fix this fallback was
+    silent; now it emits a WARNING via the module logger so the run log shows
+    why the explicit pick was ignored.
+    """
+    proc = FMEAProcessor(log_callback=None)
+    df = pd.DataFrame({"Reference Designator": ["R1"], "Description": ["Resistor"]})
+    config_section = {"description": ["Description", "Component Description"]}
+
+    with caplog.at_level("WARNING", logger="fmea_generator"):
+        mapped = proc.map_columns(
+            df,
+            config_section,
+            required_list=["description"],
+            source_name="BOM file",
+            overrides={"description": "Nonexistent Column"},
+        )
+
+    # Heuristic fallback still resolves the column (no behavior change).
+    assert mapped["description"] == "Description"
+    # And a WARNING names the missing override column.
+    warnings = " ".join(
+        rec.getMessage() for rec in caplog.records if rec.levelname == "WARNING"
+    )
+    assert "Nonexistent Column" in warnings
+    assert "description" in warnings

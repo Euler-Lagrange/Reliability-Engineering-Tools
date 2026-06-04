@@ -23,10 +23,12 @@ import type {
   ValidationMessage,
 } from "../../app/types";
 import { backendClient, type RunRequestBody } from "../../shared/backend/client";
+import { describeBackendError } from "../../shared/backend/cancelError";
 import { parentDirectoryForPath } from "../../shared/backend/fileManager";
 import {
   buildTimeline,
   cloneInputs,
+  emptyInputsFromScenario,
   useDesktopRunController,
 } from "../../shared/backend/useDesktopRunController";
 import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
@@ -51,7 +53,15 @@ interface RefDesOptions {
 
 export function RefDesExtractorTool() {
   const baseScenario = refdesDemoScenarios[0];
-  const [inputStates, setInputStates] = useState<InputFileState[]>(() => cloneInputs(baseScenario.inputs));
+  // Family 1 fix: browser-mock seeds the demo scenario (populated preview);
+  // the real desktop runtime seeds empty slots so no example path leaks into
+  // a run — critically, the example PDF would otherwise hard-fail fitz.open
+  // and the example BOM would silently degrade extraction. Matches FMEA.
+  const [inputStates, setInputStates] = useState<InputFileState[]>(() =>
+    backendClient.runtimeMode === "browser-mock"
+      ? cloneInputs(baseScenario.inputs)
+      : emptyInputsFromScenario(baseScenario.inputs),
+  );
   const [options, setOptions] = useState<RefDesOptions>({
     extraction_mode: "functional",
     backend_mode: "auto",
@@ -70,6 +80,11 @@ export function RefDesExtractorTool() {
   const [runLogLines, setRunLogLines] = useState<string[]>([]);
   const [cancelledNotice, setCancelledNotice] = useState<string | null>(null);
   const contextHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  // Fix 2 (Family 2): re-entrancy guard for the desktop run pipeline. Held
+  // for the whole validate→execute window so a double-click on Extract can't
+  // launch a second run whose rejection (single-active-run guard) would clear
+  // the first, live run's session.
+  const isStartingRef = useRef(false);
   const backendMode = useShellStore((state) => state.backendMode);
   const setBackendState = useShellStore((state) => state.setBackendState);
   const refdesExtractorOutputDirectory = useShellStore(
@@ -140,6 +155,7 @@ export function RefDesExtractorTool() {
   const {
     beginAcceptedRun,
     resetSession: resetDesktopRunSession,
+    resetSessionUnlessLive: resetDesktopRunSessionUnlessLive,
     armTerminalHandler,
     cancel: cancelDesktopRun,
     panelRunMode,
@@ -308,6 +324,10 @@ export function RefDesExtractorTool() {
                     ? null
                     : "No sheets were found in the selected workbook.",
                 tag: sheetsResult.sheets.length > 0 ? "Loaded" : "Empty workbook",
+                // A successfully-loaded pinlist must graduate from its seeded
+                // "optional" status to "ready" so InputGrid renders the ✓
+                // loaded chip; an empty workbook needs attention instead.
+                status: sheetsResult.sheets.length > 0 ? "ready" : "attention",
               }
             : input,
         ),
@@ -320,7 +340,7 @@ export function RefDesExtractorTool() {
       });
     } catch (error) {
       if (!fileRequestSeq.isCurrent(role, token)) return;
-      const detail = error instanceof Error ? error.message : "Unknown sheet inspection failure";
+      const detail = describeBackendError(error, "Unknown sheet inspection failure");
       setInputStates((current) =>
         current.map((input) =>
           input.role === role
@@ -374,6 +394,16 @@ export function RefDesExtractorTool() {
       return;
     }
 
+    // Fix 2 (Family 2): re-entrancy guard. The Extract button is not disabled
+    // during the async validate→execute window, so a fast double-click could
+    // fire a second pipeline; the second executeRun is rejected by Python's
+    // single-active-run guard and its catch used to wipe the FIRST, live run.
+    // Swallow the re-entrant call here.
+    if (isStartingRef.current) {
+      return;
+    }
+    isStartingRef.current = true;
+
     const runRequest = buildRunRequest();
 
     // Fix R2-C1: clear any stale active run from a previous run BEFORE flipping
@@ -425,8 +455,9 @@ export function RefDesExtractorTool() {
       armTerminalHandler();
       beginAcceptedRun(await backendClient.executeRun(runRequest));
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "Unknown backend execution failure";
-      resetDesktopRunSession();
+      const detail = describeBackendError(error, "Unknown backend execution failure");
+      // Fix 2 (Family 2): guarded reset — must not clobber a live sibling run.
+      resetDesktopRunSessionUnlessLive();
       setContextView("preview");
       setBackendState({
         backendStatus: "error",
@@ -438,6 +469,11 @@ export function RefDesExtractorTool() {
         title: "RefDes extraction failed",
         detail,
       });
+    } finally {
+      // Release the re-entrancy guard once the validate→execute window has
+      // closed. A run accepted in this window is owned by the run store and
+      // survives.
+      isStartingRef.current = false;
     }
   }
 

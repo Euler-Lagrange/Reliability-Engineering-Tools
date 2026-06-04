@@ -37,10 +37,12 @@ import {
   type InspectInputResult,
   type RunRequestBody,
 } from "../../shared/backend/client";
+import { describeBackendError } from "../../shared/backend/cancelError";
 import { parentDirectoryForPath } from "../../shared/backend/fileManager";
 import {
   buildTimeline,
   cloneInputs,
+  emptyInputsFromScenario,
   useDesktopRunController,
 } from "../../shared/backend/useDesktopRunController";
 import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
@@ -202,25 +204,16 @@ function readStoredCcaPrefix(): string {
   }
 }
 
-/**
- * Produce an empty InputFileState[] suitable for the desktop (real) runtime,
- * where we must not pre-fill demo file paths. Role/label/helper/tag
- * semantics are preserved so the InputCards render with the same
- * scaffolding; only the path, sheet list, and loaded flags are reset.
- */
-function emptyInputsFromScenario(inputs: InputFileState[]): InputFileState[] {
-  return inputs.map((input) => ({
-    ...input,
-    path: "",
-    sheets: [],
-    selectedSheet: "",
-    isExample: false,
-    source: "desktop-bridge",
-    isResolvingSheets: false,
-    isAnalyzing: false,
-    resolutionError: null,
-  }));
-}
+// Family 1 fix: FMEA's local `emptyInputsFromScenario` was promoted verbatim
+// (modulo two confirmed-cosmetic bugs it carried) to the shared
+// `useDesktopRunController` module so all four tools seed empty desktop slots
+// identically. The shared helper additionally (a) sets a neutral
+// `optional`/"Not loaded" status+tag instead of inheriting the scenario's
+// green `ready`/"Loaded" chip — FMEA's local copy showed loaded-looking chips
+// on empty desktop cards — and (b) keeps `isExample: true` (the local copy set
+// `false`); FMEA reads neither flag (no isPristine/EmptyState here, and
+// InputGrid's example styling needs a non-empty path), so the change is inert
+// for FMEA and correct for the three tools whose isPristine gate needs it.
 
 // Evaluate once at module load; `backendClient.runtimeMode` is fixed per
 // session (the bridge cannot switch runtime modes after boot).
@@ -416,6 +409,11 @@ export function FmeaTool() {
   const [cancelledNotice, setCancelledNotice] = useState<string | null>(null);
   const [contextView, setContextView] = useState<"preview" | "run">("preview");
   const contextHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  // Fix 2 (Family 2): re-entrancy guard for the desktop run pipeline. Held
+  // for the whole validate→execute window so a double-click on Start can't
+  // launch a second run whose rejection (single-active-run guard) would clear
+  // the first, live run's session.
+  const isStartingRef = useRef(false);
   const backendMode = useShellStore((state) => state.backendMode);
   const setBackendState = useShellStore((state) => state.setBackendState);
   const fmeaOutputDirectory = useShellStore((state) => state.fmeaOutputDirectory);
@@ -434,6 +432,7 @@ export function FmeaTool() {
   const {
     beginAcceptedRun,
     resetSession: resetDesktopRunSession,
+    resetSessionUnlessLive: resetDesktopRunSessionUnlessLive,
     armTerminalHandler,
     cancel: cancelDesktopRun,
     panelRunMode,
@@ -582,6 +581,40 @@ export function FmeaTool() {
   );
   const inspectedColumns = aggregatedMappingSource.columns;
   const inspectedSourceLabel = aggregatedMappingSource.sourceLabelText;
+
+  // Family 3 fix: prune orphaned manual mapping overrides. `mappingOverrides`
+  // survives file/sheet changes, so an override pointing at a column ("Foo")
+  // that the newly-inspected workbook no longer exposes would leave the
+  // MappingTable still showing "Foo" while the backend silently discards it
+  // and auto-detects (`map_columns` honours an override only when
+  // `overrides[std] in df.columns`). Drop every override whose target column
+  // is no longer in the inspected set — but keep DO_NOT_MAP sentinels (an
+  // explicit unmap, not a column reference) and never prune while no file has
+  // been inspected yet (empty set), where dropping would clobber overrides the
+  // user set against options that simply haven't loaded. `inspectedColumns`
+  // is the union across every visible role, which is exactly the membership
+  // set every mapping row's dropdown draws from, so this is the right check.
+  useEffect(() => {
+    if (inspectedColumns.length === 0) {
+      return;
+    }
+    const allowed = new Set(inspectedColumns);
+    setMappingOverrides((current) => {
+      let changed = false;
+      const next: Record<string, string> = {};
+      for (const [canonical, value] of Object.entries(current)) {
+        if (value === DO_NOT_MAP_VALUE || allowed.has(value)) {
+          next[canonical] = value;
+        } else {
+          changed = true;
+        }
+      }
+      // Return the same reference when nothing was pruned so we don't trigger
+      // a needless re-render (and never loop on this effect).
+      return changed ? next : current;
+    });
+  }, [inspectedColumns]);
+
   const effectiveMappings = useMemo(
     () =>
       buildFmeaMappingRows(
@@ -852,7 +885,7 @@ export function FmeaTool() {
       }
     } catch (error) {
       if (!fileRequestSeq.isCurrent(role, token)) return;
-      const detail = error instanceof Error ? error.message : "Unknown workbook analysis failure";
+      const detail = describeBackendError(error, "Unknown workbook analysis failure");
       setInputStates((current) =>
         current.map((input) =>
           input.role === role
@@ -925,6 +958,11 @@ export function FmeaTool() {
       delete next[role];
       return next;
     });
+    // Fix 2: a new file invalidates the previous validate_run result — clear
+    // the stale validation cards (including the backend "ready-to-run" info
+    // card) so the Preview tab no longer describes the OLD file/sheet. Guarded
+    // by the early return above, so browser-mock demo cards are never wiped.
+    setValidations([]);
     setBackendState({
       backendStatus: "busy",
       backendMessage: `Inspecting workbook for ${role}...`,
@@ -964,7 +1002,7 @@ export function FmeaTool() {
       }
     } catch (error) {
       if (!fileRequestSeq.isCurrent(role, token)) return;
-      const detail = error instanceof Error ? error.message : "Unknown sheet inspection failure";
+      const detail = describeBackendError(error, "Unknown sheet inspection failure");
       setInputStates((current) =>
         current.map((input) =>
           input.role === role
@@ -1011,6 +1049,11 @@ export function FmeaTool() {
     );
 
     if (backendClient.runtimeMode === "desktop-bridge" && nextPath) {
+      // Fix 2: a sheet change re-inspects the workbook, invalidating the prior
+      // validate_run result — clear the stale validation cards so the Preview
+      // tab does not describe the previously-selected sheet. Kept on the
+      // desktop-bridge path so browser-mock demo cards are never wiped.
+      setValidations([]);
       void inspectRole(role, nextPath, selectedSheet, nextSheets);
     }
   }
@@ -1039,6 +1082,16 @@ export function FmeaTool() {
       setRunIndex(0);
       return;
     }
+
+    // Fix 2 (Family 2): re-entrancy guard. The Start button is not disabled
+    // during the async validate→execute window, so a fast double-click could
+    // fire a second pipeline; the second executeRun is rejected by Python's
+    // single-active-run guard and its catch used to wipe the FIRST, live run.
+    // Swallow the re-entrant call here.
+    if (isStartingRef.current) {
+      return;
+    }
+    isStartingRef.current = true;
 
     const runRequest = buildRunRequest(
       workflowId,
@@ -1108,8 +1161,9 @@ export function FmeaTool() {
       armTerminalHandler();
       beginAcceptedRun(await backendClient.executeRun(runRequest));
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "Unknown backend execution failure";
-      resetDesktopRunSession();
+      const detail = describeBackendError(error, "Unknown backend execution failure");
+      // Fix 2 (Family 2): guarded reset — must not clobber a live sibling run.
+      resetDesktopRunSessionUnlessLive();
       setContextView("preview");
       setBackendState({
         backendStatus: "error",
@@ -1121,6 +1175,11 @@ export function FmeaTool() {
         title: "FMEA run failed",
         detail,
       });
+    } finally {
+      // Release the re-entrancy guard once the validate→execute window has
+      // closed. A run accepted in this window is owned by the run store and
+      // survives.
+      isStartingRef.current = false;
     }
   }
 

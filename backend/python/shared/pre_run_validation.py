@@ -8,6 +8,16 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Sequence
 
 
+# Sentinel used by the frontend mapping table for "do not map this column".
+# Mirrors frontend/src/app/types.ts DO_NOT_MAP_VALUE. Defined here — the
+# shared pre-run validation module that every runtime adapter already imports
+# — so the literal lives in exactly one place across the backend. The sentinel
+# is a non-empty string, so ``_has_value`` would otherwise treat it as a valid
+# mapping; runtime adapters must funnel sentinel-pinned required mappings
+# through ``invalid_mappings`` so ``invalid_do_not_map_result`` fires.
+DO_NOT_MAP_SENTINEL = "__do_not_map__"
+
+
 @dataclass(frozen=True)
 class ValidationResult:
     """Structured result for GUI pre-run validation."""

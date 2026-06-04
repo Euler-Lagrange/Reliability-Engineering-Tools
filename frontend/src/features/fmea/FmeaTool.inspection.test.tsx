@@ -30,6 +30,7 @@ const { mockBackendClient } = vi.hoisted(() => ({
     inspectInput: vi.fn(),
     analyzeTemplate: vi.fn(),
     validateRun: vi.fn(),
+    revealInFileManager: vi.fn(),
     executeRun: vi.fn(),
     cancelRun: vi.fn(),
     readFletConfig: vi.fn(),
@@ -63,6 +64,44 @@ function functionalFmeaCard() {
     throw new Error("Expected Functional FMEA input card to render.");
   }
   return card;
+}
+
+function inputCard(label: string) {
+  const card = screen.getByText(label).closest("article");
+  if (!card) {
+    throw new Error(`Expected the "${label}" input card to render.`);
+  }
+  return card;
+}
+
+// A blocking validate_run result whose validation card is rendered in the
+// Preview tab. Used to seed a stale card that a subsequent browse / sheet
+// change must clear (Fix 2).
+const STALE_VALIDATION = {
+  ok: false as const,
+  reason_code: "blocked",
+  toast_text: "Resolve the highlighted setup issues before running.",
+  validations: [
+    {
+      id: "stale-1",
+      severity: "warning" as const,
+      area: "Run State",
+      title: "Stale configuration card",
+      detail: "This card describes the previously configured workbook.",
+    },
+  ],
+  output_preview: null,
+  mode: "desktop-bridge" as const,
+};
+
+// Seed a validation card by driving the Run tab -> Start -> validate_run.
+// A blocking (ok: false) result populates `validations` and bounces the
+// context view back to "preview", where the card is visible.
+async function seedValidationCard(user: ReturnType<typeof userEvent.setup>) {
+  mockBackendClient.validateRun.mockResolvedValueOnce(STALE_VALIDATION);
+  await user.click(screen.getByRole("tab", { name: /^Run$/i }));
+  await user.click(screen.getByRole("button", { name: "Start real run" }));
+  expect(await screen.findByText("Stale configuration card")).toBeInTheDocument();
 }
 
 beforeEach(() => {
@@ -185,5 +224,192 @@ describe("FmeaTool inspection flow", () => {
     ).toBeGreaterThan(0);
     expect(screen.getByText(/Scanned 20,000 rows/i)).toBeInTheDocument();
     expect(screen.getByText(/Scanned 100 columns/i)).toBeInTheDocument();
+  }, FMEA_INSPECTION_TEST_TIMEOUT_MS);
+
+  // Fix 2 (parity with BOM Compare / Failure Rate): a stale validate_run
+  // result must not survive an input change. FmeaTool previously cleared
+  // validations only at init, on workflow-change, and after validate_run, so
+  // browsing a new file left the prior run's cards describing the OLD file.
+  test("browsing a new file clears stale validation cards", async () => {
+    const user = userEvent.setup();
+    mockBackendClient.openExcelFile.mockResolvedValue("C:\\grouping.xlsx");
+    mockBackendClient.listSheets.mockResolvedValue({
+      path: "C:\\grouping.xlsx",
+      sheets: ["Grouping"],
+      mode: "desktop-bridge",
+    });
+    mockBackendClient.inspectInput.mockResolvedValue({
+      path: "C:\\grouping.xlsx",
+      sheet: "Grouping",
+      header_row: 1,
+      row_count: 10,
+      columns: ["Component Group", "Reference Designator"],
+      preview_rows: [{ "Component Group": "PSU" }],
+      rows_scanned: 10,
+      columns_scanned: 2,
+      row_cap_applied: false,
+      column_cap_applied: false,
+      header_search_cap_applied: false,
+      mode: "desktop-bridge",
+    });
+
+    renderTool();
+    // Seed a stale validation card via a blocking validate_run.
+    await seedValidationCard(user);
+
+    // Browse a new workbook for the default piece_part_generate Grouping role.
+    const card = inputCard("Grouping workbook");
+    await user.click(within(card).getByRole("button", { name: "Browse" }));
+
+    // The stale card must be gone once the new file lands.
+    await waitFor(() =>
+      expect(screen.queryByText("Stale configuration card")).not.toBeInTheDocument(),
+    );
+  }, FMEA_INSPECTION_TEST_TIMEOUT_MS);
+
+  // Family 3 fix: a manual mapping override must not outlive the column it
+  // pointed at. The user maps canonical X to column "Orphan Column"; a later
+  // file/sheet whose inspected columns no longer contain "Orphan Column"
+  // leaves the MappingTable still displaying it, while the backend silently
+  // discards the override and auto-detects (map_columns only honours an
+  // override when `overrides[std] in df.columns`). The orphaned override must
+  // be pruned when the inspected column set changes; overrides whose column
+  // still exists must survive.
+  test("prunes orphaned mapping overrides when re-inspected columns drop the mapped column", async () => {
+    const user = userEvent.setup();
+    mockBackendClient.openExcelFile.mockResolvedValue("C:\\grouping.xlsx");
+    mockBackendClient.listSheets.mockResolvedValue({
+      path: "C:\\grouping.xlsx",
+      sheets: ["Grouping"],
+      mode: "desktop-bridge",
+    });
+
+    // First inspection exposes "Orphan Column" and "Keep Column" as mappable.
+    const firstColumns = ["Failure Mode", "Orphan Column", "Keep Column"];
+    // Second inspection drops "Orphan Column" (the column an override targets).
+    const secondColumns = ["Failure Mode", "Keep Column"];
+    let inspectColumns = firstColumns;
+    mockBackendClient.inspectInput.mockImplementation((_path: string, sheet: string) =>
+      Promise.resolve({
+        path: "C:\\grouping.xlsx",
+        sheet,
+        header_row: 1,
+        row_count: 10,
+        columns: inspectColumns,
+        preview_rows: [{ "Failure Mode": "Open" }],
+        rows_scanned: 10,
+        columns_scanned: inspectColumns.length,
+        row_cap_applied: false,
+        column_cap_applied: false,
+        header_search_cap_applied: false,
+        mode: "desktop-bridge" as const,
+      }),
+    );
+
+    renderTool();
+
+    // Load the grouping workbook (default piece_part_generate workflow) and
+    // wait for the inspection round-trip to settle (Browse re-enabled) so the
+    // mapping dropdowns are populated with the inspected columns.
+    const card = inputCard("Grouping workbook");
+    await user.click(within(card).getByRole("button", { name: "Browse" }));
+    await waitFor(() =>
+      expect(within(card).getByRole("button", { name: "Browse" })).toBeEnabled(),
+    );
+
+    // Override canonical "Failure Mode" -> "Orphan Column" (a column that
+    // will disappear on the next inspection).
+    await user.click(screen.getByRole("combobox", { name: "Failure Mode mapping" }));
+    await user.click(
+      await screen.findByRole("option", { name: "Orphan Column - Grouping workbook" }),
+    );
+
+    // Override canonical "Failure Mode Ratio" -> "Keep Column" (a column that
+    // survives the next inspection — this override must be preserved).
+    await user.click(screen.getByRole("combobox", { name: "Failure Mode Ratio mapping" }));
+    await user.click(
+      await screen.findByRole("option", { name: "Keep Column - Grouping workbook" }),
+    );
+
+    // Sanity: both overrides are reflected in the triggers.
+    expect(
+      screen.getByRole("combobox", { name: "Failure Mode mapping" }),
+    ).toHaveTextContent("Orphan Column - Grouping workbook");
+    expect(
+      screen.getByRole("combobox", { name: "Failure Mode Ratio mapping" }),
+    ).toHaveTextContent("Keep Column - Grouping workbook");
+
+    // Re-browse the SAME role with a column set that no longer has
+    // "Orphan Column".
+    inspectColumns = secondColumns;
+    await user.click(within(inputCard("Grouping workbook")).getByRole("button", { name: "Browse" }));
+
+    // The orphaned override is pruned: the "Failure Mode" row reverts to its
+    // auto-detected exact-header value.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("combobox", { name: "Failure Mode mapping" }),
+      ).toHaveTextContent("Failure Mode - Grouping workbook"),
+    );
+    expect(
+      screen.getByRole("combobox", { name: "Failure Mode mapping" }),
+    ).not.toHaveTextContent("Orphan Column");
+
+    // The still-valid override survives — "Keep Column" is still inspected.
+    expect(
+      screen.getByRole("combobox", { name: "Failure Mode Ratio mapping" }),
+    ).toHaveTextContent("Keep Column - Grouping workbook");
+  }, FMEA_INSPECTION_TEST_TIMEOUT_MS);
+
+  // Fix 2: a sheet change re-inspects the workbook and likewise invalidates
+  // the prior validate_run result.
+  test("changing the selected sheet clears stale validation cards", async () => {
+    const user = userEvent.setup();
+    mockBackendClient.openExcelFile.mockResolvedValue("C:\\grouping.xlsx");
+    mockBackendClient.listSheets.mockResolvedValue({
+      path: "C:\\grouping.xlsx",
+      sheets: ["Grouping", "Alternate"],
+      mode: "desktop-bridge",
+    });
+    mockBackendClient.inspectInput.mockImplementation((_path: string, sheet: string) =>
+      Promise.resolve({
+        path: "C:\\grouping.xlsx",
+        sheet,
+        header_row: 1,
+        row_count: 10,
+        columns: ["Component Group", "Reference Designator"],
+        preview_rows: [{ "Component Group": "PSU" }],
+        rows_scanned: 10,
+        columns_scanned: 2,
+        row_cap_applied: false,
+        column_cap_applied: false,
+        header_search_cap_applied: false,
+        mode: "desktop-bridge" as const,
+      }),
+    );
+
+    renderTool();
+
+    // Load a workbook with two sheets so the sheet picker is interactive.
+    const card = inputCard("Grouping workbook");
+    await user.click(within(card).getByRole("button", { name: "Browse" }));
+    await waitFor(() =>
+      expect(within(card).getByRole("button", { name: "Browse" })).toBeEnabled(),
+    );
+
+    // Seed a stale validation card AFTER the file is loaded.
+    await seedValidationCard(user);
+
+    // Change the selected sheet — this re-inspects and must clear the card.
+    await user.click(
+      within(inputCard("Grouping workbook")).getByRole("combobox", {
+        name: /Grouping workbook sheet/i,
+      }),
+    );
+    await user.click(await screen.findByRole("option", { name: "Alternate" }));
+
+    await waitFor(() =>
+      expect(screen.queryByText("Stale configuration card")).not.toBeInTheDocument(),
+    );
   }, FMEA_INSPECTION_TEST_TIMEOUT_MS);
 });

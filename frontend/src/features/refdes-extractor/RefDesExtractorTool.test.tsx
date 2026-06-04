@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RefDesExtractorTool } from "./RefDesExtractorTool";
@@ -13,6 +13,7 @@ const backendMocks = vi.hoisted(() => ({
   openPdfFile: vi.fn(),
   openExcelFile: vi.fn(),
   listSheets: vi.fn(),
+  inspectInput: vi.fn(),
 }));
 
 vi.mock("../../shared/backend/client", () => ({
@@ -24,6 +25,7 @@ vi.mock("../../shared/backend/client", () => ({
     openExcelFile: backendMocks.openExcelFile,
     openPdfFile: backendMocks.openPdfFile,
     listSheets: backendMocks.listSheets,
+    inspectInput: backendMocks.inspectInput,
     openDirectory: vi.fn(),
     revealInFileManager: vi.fn(),
   },
@@ -52,6 +54,22 @@ beforeEach(() => {
   backendMocks.openPdfFile.mockReset();
   backendMocks.openExcelFile.mockReset();
   backendMocks.listSheets.mockReset();
+  backendMocks.inspectInput.mockReset();
+  backendMocks.validateRun.mockReset();
+  backendMocks.executeRun.mockReset();
+  backendMocks.validateRun.mockResolvedValue({
+    ok: true,
+    reason_code: "ready",
+    toast_text: "Ready to run.",
+    validations: [],
+    output_preview: null,
+    mode: "desktop-bridge",
+  });
+  backendMocks.executeRun.mockResolvedValue({
+    run_id: "run_test_001",
+    mode: "desktop-bridge",
+    session_generation: 1,
+  });
 });
 
 describe("RefDesExtractorTool piece-part mode", () => {
@@ -116,7 +134,15 @@ describe("RefDesExtractorTool piece-part mode", () => {
 
     // Browse only the pinlist (Excel branch -> listSheets resolution).
     await user.click(within(pinlistCard).getByRole("button", { name: "Browse" }));
-    expect(await within(pinlistCard).findByText("Loaded")).toBeInTheDocument();
+    const loadedChip = await within(pinlistCard).findByText("Loaded");
+    expect(loadedChip).toBeInTheDocument();
+
+    // BUG 3: the Excel listSheets success branch never set `status`, so the
+    // pinlist kept its seeded `status: "optional"` and InputGrid never gave it
+    // the ✓ "ready" classification. The chip must now read as ready and the
+    // card's step indicator must show the ✓.
+    expect(loadedChip).toHaveClass("status-chip--ready");
+    expect(within(pinlistCard).getByText("✓")).toBeInTheDocument();
 
     // Toggle back to Functional: the pinlist is filtered out of the visible
     // inputs, but it remains loaded engagement — the InputGrid must stay.
@@ -126,6 +152,26 @@ describe("RefDesExtractorTool piece-part mode", () => {
     expect(
       screen.queryByText("Extract reference designators"),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("RefDesExtractorTool dispatch with no browsed files", () => {
+  // Regression (Family 1): the tool seeded inputStates with the example PDF
+  // ("DRIVE\inputs\...") unconditionally, so a desktop run with nothing
+  // browsed would ship that fake path to the backend — where the example
+  // PDF hard-fails on fitz.open and the example BOM silently degrades the
+  // output. buildRunRequest filters on Boolean(path), so empty seeds mean
+  // NO inputs are sent until the user browses real files.
+  it("sends no inputs when nothing was browsed", async () => {
+    const user = userEvent.setup();
+    render(<RefDesExtractorTool />);
+
+    await user.click(screen.getByRole("tab", { name: /^Run$/i }));
+    await user.click(screen.getByRole("button", { name: "Extract" }));
+
+    await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
+    const request = backendMocks.executeRun.mock.calls[0][0];
+    expect(request.inputs).toEqual([]);
   });
 });
 
