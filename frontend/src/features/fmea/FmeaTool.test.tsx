@@ -146,6 +146,76 @@ describe("FmeaTool — Phase 5 mapping row visibility", () => {
     expect(hasMappingLabel("FMD-2016 Commodity Type 2")).toBe(false);
   }, FMEA_TOOL_TEST_TIMEOUT_MS);
 
+  test("Fix B-Strategy: changing output strategy preserves manual mapping overrides", async () => {
+    // Fix B-Strategy: the reset effect used to fire on
+    // [workflowId, outputStrategyId] and unconditionally wiped
+    // mappingOverrides. But changing the output strategy never changes
+    // which mapping rows are visible (visibility keys only on workflowId),
+    // so nuking the user's manual mappings was pure data loss that
+    // buildRunRequest then silently reverted. The fix splits the effect so
+    // a strategy change resets only run-presentation state.
+    const user = userEvent.setup();
+    renderApp();
+    await waitForFmeaTool();
+
+    // Set a manual override on a stable, always-visible row. With no
+    // workbook inspected in the default mock, the only selectable option
+    // is the "— Do Not Map —" sentinel, which is a perfectly valid
+    // manual override for this assertion.
+    const failureModeSelect = screen.getByRole("combobox", {
+      name: /^Failure Mode mapping$/i,
+    });
+    await user.click(failureModeSelect);
+    await user.click(await screen.findByRole("option", { name: /do not map/i }));
+
+    expect(
+      screen.getByRole("combobox", { name: /^Failure Mode mapping$/i }).textContent,
+    ).toContain("Do Not Map");
+
+    // Switch the output strategy via the StrategySelector card.
+    await user.click(
+      screen.getByRole("button", { name: /existing workbook \(preserve formatting\)/i }),
+    );
+
+    // The manual override must survive the strategy change.
+    expect(
+      screen.getByRole("combobox", { name: /^Failure Mode mapping$/i }).textContent,
+    ).toContain("Do Not Map");
+  }, FMEA_TOOL_TEST_TIMEOUT_MS);
+
+  test("Fix B-FMD: toggling the FMD standard preserves Commodity Type overrides", async () => {
+    // Fix B-FMD: mappingOverrides is keyed by the resolved (dynamic)
+    // Commodity Type label. Toggling the standard rebuilt the rows with the
+    // other standard's canonical, so the override lookup missed and the row
+    // reverted to auto-mapped. The fix migrates the dynamic override keys
+    // when the standard changes (migrateFmdOverrides).
+    const user = userEvent.setup();
+    renderApp();
+    await waitForFmeaTool();
+
+    // Default standard is FMD-2016. Set a manual override on the dynamic
+    // Commodity Type 1 row.
+    const commoditySelect = screen.getByRole("combobox", {
+      name: /^FMD-2016 Commodity Type 1 mapping$/i,
+    });
+    await user.click(commoditySelect);
+    await user.click(await screen.findByRole("option", { name: /do not map/i }));
+
+    expect(
+      screen.getByRole("combobox", { name: /^FMD-2016 Commodity Type 1 mapping$/i })
+        .textContent,
+    ).toContain("Do Not Map");
+
+    // Toggle the standard to FMD-91 — the row's label (and override key)
+    // changes, but the override must follow.
+    await user.click(screen.getByRole("radio", { name: /fmd-91/i }));
+
+    expect(
+      screen.getByRole("combobox", { name: /^FMD-91 Commodity Type 1 mapping$/i })
+        .textContent,
+    ).toContain("Do Not Map");
+  }, FMEA_TOOL_TEST_TIMEOUT_MS);
+
   test("info icon renders for every mapping row with help text", async () => {
     renderApp();
     await waitForFmeaTool();

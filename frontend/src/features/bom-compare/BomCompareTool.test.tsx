@@ -137,4 +137,133 @@ describe("BomCompareTool custom compare workflow", () => {
       request.mappings.map((mapping: { canonical: string }) => mapping.canonical),
     ).toEqual(["refdes_col_a", "refdes_col_b"]);
   });
+
+  // Regression (Fix 1): the workflow-change effect used to re-seed inputStates
+  // from the demo scenario on EVERY switch, so a round-trip (load a real file
+  // in Group → peek at Custom → back to Group) permanently discarded the
+  // loaded path. The per-workflow state cache must restore the loaded slice.
+  it("preserves a loaded file across a workflow round-trip", async () => {
+    backendMocks.openExcelFile.mockResolvedValue("C:\\real\\Grouping.xlsx");
+    backendMocks.listSheets.mockResolvedValue({
+      path: "C:\\real\\Grouping.xlsx",
+      sheets: ["Grouping"],
+      mode: "desktop-bridge",
+    });
+    backendMocks.inspectInput.mockResolvedValue({
+      mode: "desktop-bridge",
+      sheet: "Grouping",
+      columns: ["Component Group", "Reference Designator"],
+    });
+
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+
+    // Load a real grouping file in Group vs BOM mode.
+    await user.click(screen.getByRole("button", { name: "Browse for first BOM" }));
+    const loadedPath = await screen.findByText("C:\\real\\Grouping.xlsx");
+    expect(loadedPath).toBeInTheDocument();
+    // Let the post-browse inspect round-trip settle so the slot is fully
+    // loaded (tag transitions Inspecting → Desktop → Analyzed) before we
+    // switch workflows.
+    await waitFor(() => expect(backendMocks.inspectInput).toHaveBeenCalled());
+    expect(await screen.findByText("Analyzed")).toBeInTheDocument();
+
+    // Round-trip: peek at Custom Compare, then back to Group vs BOM.
+    await user.click(screen.getByRole("button", { name: /Custom Compare/i }));
+    await user.click(screen.getByRole("button", { name: /Group vs BOM/i }));
+
+    // The loaded path must survive — without the cache it reverts to the
+    // example mock "DRIVE\\inputs\\NavUnit_Grouping.xlsx".
+    expect(await screen.findByText("C:\\real\\Grouping.xlsx")).toBeInTheDocument();
+    expect(
+      screen.queryByText("DRIVE\\inputs\\NavUnit_Grouping.xlsx"),
+    ).not.toBeInTheDocument();
+  });
+
+  // Regression (Fix 2): a stale validate_run result stranded in the Preview
+  // tab after the user changed an input file — the previous run's validation
+  // cards kept describing the OLD file. Browsing a new file must clear them.
+  it("clears stale validation cards after browsing a new file", async () => {
+    backendMocks.openExcelFile.mockResolvedValue("C:\\real\\Grouping.xlsx");
+    backendMocks.listSheets.mockResolvedValue({
+      path: "C:\\real\\Grouping.xlsx",
+      sheets: ["Grouping"],
+      mode: "desktop-bridge",
+    });
+    backendMocks.inspectInput.mockResolvedValue({
+      mode: "desktop-bridge",
+      sheet: "Grouping",
+      columns: ["Component Group", "Reference Designator"],
+    });
+
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+
+    // The seeded "Ready to run" validation card is visible up front.
+    expect(screen.getByText("Ready to run")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Browse for first BOM" }));
+
+    // Once the new file lands the stale card is gone (neutral empty state).
+    await screen.findByText("C:\\real\\Grouping.xlsx");
+    await waitFor(() =>
+      expect(screen.queryByText("Ready to run")).not.toBeInTheDocument(),
+    );
+  });
+
+  // Regression (review finding): switching workflow while a listSheets
+  // inspection is still in flight stashed the slot with isResolvingSheets
+  // still true. Restoring that slice verbatim left the slot permanently
+  // stuck on "Loading..." with Browse and the sheet picker disabled — no
+  // in-app recovery. The cache must sanitize busy flags on stash and the
+  // per-role tokens must be bumped so the late continuation is dropped.
+  it("recovers a slot whose inspection was interrupted by a workflow switch", async () => {
+    backendMocks.openExcelFile.mockResolvedValue("C:\\real\\Grouping.xlsx");
+    let resolveListSheets: (value: {
+      path: string;
+      sheets: string[];
+      mode: string;
+    }) => void = () => {};
+    backendMocks.listSheets.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveListSheets = resolve;
+        }),
+    );
+
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+
+    // Start browsing — listSheets stays pending (isResolvingSheets: true).
+    await user.click(screen.getByRole("button", { name: "Browse for first BOM" }));
+    expect(await screen.findByRole("button", { name: "Loading..." })).toBeInTheDocument();
+
+    // Switch away while the inspection is still in flight — the outgoing
+    // slice is stashed mid-inspection.
+    await user.click(screen.getByRole("button", { name: /Custom Compare/i }));
+
+    // The orphaned listSheets continuation fires while Custom is active:
+    // its role ("grouping") matches nothing in the bomA/bomB slice, so the
+    // resolution is dropped and the stash keeps its busy flags.
+    resolveListSheets({
+      path: "C:\\real\\Grouping.xlsx",
+      sheets: ["Grouping"],
+      mode: "desktop-bridge",
+    });
+    await waitFor(() => expect(backendMocks.listSheets).toHaveBeenCalledTimes(1));
+
+    // Returning restores the stashed slice.
+    await user.click(screen.getByRole("button", { name: /Group vs BOM/i }));
+
+    // The restored slot must be recoverable: Browse re-enabled on BOTH
+    // slots (no permanently-stuck "Loading..." button).
+    await waitFor(() => {
+      const browseButtons = screen.getAllByRole("button", { name: "Browse" });
+      expect(browseButtons).toHaveLength(2);
+      for (const button of browseButtons) {
+        expect(button).toBeEnabled();
+      }
+    });
+    expect(screen.queryByRole("button", { name: "Loading..." })).not.toBeInTheDocument();
+  });
 });

@@ -45,6 +45,27 @@ const workflowInputRoles: Partial<Record<WorkflowId, FileRole[]>> = {
   bom_compare_custom: ["bomA", "bomB"],
 };
 
+/**
+ * A slot whose async inspection was interrupted by a workflow switch must
+ * not be cached with its busy flags set — restoring `isResolvingSheets` /
+ * `isAnalyzing` verbatim would leave Browse and the sheet picker disabled
+ * forever (the orphaned continuation can never clear them because it maps
+ * over the OTHER workflow's roles). Convert the slot to a recoverable
+ * "Review needed" state instead.
+ */
+function sanitizeInterruptedInput(input: InputFileState): InputFileState {
+  if (!input.isResolvingSheets && !input.isAnalyzing) {
+    return input;
+  }
+  return {
+    ...input,
+    isResolvingSheets: false,
+    isAnalyzing: false,
+    tag: "Review needed",
+    resolutionError: "Inspection was interrupted by the workflow switch. Browse the file again.",
+  };
+}
+
 export function BomCompareTool() {
   const baseScenario = bomCompareDemoScenarios[0];
   const [workflowId, setWorkflowId] = useState<WorkflowId>(baseScenario.workflowId);
@@ -81,6 +102,38 @@ export function BomCompareTool() {
 
   // Per-role token used to discard stale async listSheets/inspect results.
   const fileRequestSeq = useRoleRequestSequence<FileRole>();
+
+  // Per-workflow state cache (Fix 1). The two BOM-compare workflows use
+  // disjoint roles (group: grouping/bom, custom: bomA/bomB), so a fresh
+  // scenario seed on FIRST visit is correct. But re-seeding on EVERY switch
+  // discarded files loaded under one workflow when the user round-tripped
+  // through the other. We stash the outgoing workflow's input/mapping/
+  // validation slices here and restore them when the user returns, falling
+  // back to the scenario seed only for a workflow never visited this mount.
+  const workflowStateCache = useRef<
+    Partial<
+      Record<
+        WorkflowId,
+        {
+          inputStates: InputFileState[];
+          mappingOverrides: Record<string, string>;
+          validations: ValidationMessage[];
+        }
+      >
+    >
+  >({});
+  // Tracks the workflow whose slices are currently live so the change effect
+  // knows which cache key to stash under before switching.
+  const previousWorkflowId = useRef<WorkflowId>(workflowId);
+  // Latest-value mirrors of the cached slices. The workflow-change effect only
+  // runs on `workflowId`, so it must read the OUTGOING slices from refs rather
+  // than the stale closure to stash exactly what the user last saw.
+  const latestInputStates = useRef(inputStates);
+  const latestMappingOverrides = useRef(mappingOverrides);
+  const latestValidations = useRef(validations);
+  latestInputStates.current = inputStates;
+  latestMappingOverrides.current = mappingOverrides;
+  latestValidations.current = validations;
 
   const timeline = useMemo(() => buildTimeline(runMode, runIndex, runTemplates), [runIndex, runMode, runTemplates]);
   const progress =
@@ -120,12 +173,42 @@ export function BomCompareTool() {
   // Reset state when workflow changes
   useEffect(() => {
     startTransition(() => {
+      // Fix 1: stash the OUTGOING workflow's input/mapping/validation slices
+      // under its id before switching, so a later round-trip restores them.
+      const outgoing = previousWorkflowId.current;
+      if (outgoing !== workflowId) {
+        // Invalidate in-flight listSheets/inspect continuations for the
+        // outgoing roles. Without this, a late resolution fires against the
+        // incoming workflow's role set (a silent no-op) or surfaces stale
+        // backend status/toasts for a workflow the user has left. Bump
+        // (never reset) so old tokens can't collide with reissued ones.
+        for (const role of workflowInputRoles[outgoing] ?? []) {
+          fileRequestSeq.begin(role);
+        }
+        workflowStateCache.current[outgoing] = {
+          inputStates: latestInputStates.current.map(sanitizeInterruptedInput),
+          mappingOverrides: latestMappingOverrides.current,
+          validations: latestValidations.current,
+        };
+      }
+      previousWorkflowId.current = workflowId;
+
       const newMappings = workflowId === "bom_compare_custom" ? bomCompareCustomMappings : bomCompareGroupMappings;
       setMappingRows([...newMappings]);
-      setMappingOverrides({});
-      const scenario = bomCompareDemoScenarios.find((s) => s.workflowId === workflowId) ?? baseScenario;
-      setInputStates(cloneInputs(scenario.inputs));
-      setValidations(scenario.validations);
+
+      // Fix 1: restore the incoming workflow's cached slices if we have visited
+      // it this mount; otherwise seed from the scenario exactly as before.
+      const cached = workflowStateCache.current[workflowId];
+      if (cached) {
+        setInputStates(cached.inputStates);
+        setMappingOverrides(cached.mappingOverrides);
+        setValidations(cached.validations);
+      } else {
+        setMappingOverrides({});
+        const scenario = bomCompareDemoScenarios.find((s) => s.workflowId === workflowId) ?? baseScenario;
+        setInputStates(cloneInputs(scenario.inputs));
+        setValidations(scenario.validations);
+      }
       setRunMode("idle");
       setRunIndex(-1);
       setRunTemplates(baseScenario.runSequence.events);
@@ -275,6 +358,10 @@ export function BomCompareTool() {
           : input,
       ),
     );
+    // Fix 2: a new file invalidates the previous validate_run result — clear
+    // the stale validation cards so the Preview tab shows its neutral empty
+    // state instead of warnings that describe the OLD file/sheet.
+    setValidations([]);
     setBackendState({
       backendStatus: "busy",
       backendMessage: `Inspecting workbook for ${role}...`,
@@ -429,6 +516,11 @@ export function BomCompareTool() {
         };
       }),
     );
+
+    // Fix 2: a sheet change re-points the input at different data, so the
+    // previous validate_run result is now stale — clear it so Preview shows
+    // its neutral empty state rather than cards describing the OLD sheet.
+    setValidations([]);
 
     if (backendClient.runtimeMode === "desktop-bridge" && nextPath) {
       void inspectRole(role, nextPath, selectedSheet);

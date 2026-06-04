@@ -25,7 +25,7 @@ import type {
   WorkflowId,
 } from "../../app/types";
 import { DO_NOT_MAP_VALUE } from "../../app/types";
-import { FMEA_COLUMN_METADATA, resolveColumnLabel } from "./mappingColumns";
+import { FMEA_COLUMN_METADATA, migrateFmdOverrides, resolveColumnLabel } from "./mappingColumns";
 import {
   buildAggregatedMappingSource,
   buildWorkbookColumnUnion,
@@ -469,6 +469,10 @@ export function FmeaTool() {
     }
   }, [setPreview]);
 
+  // Full reset on workflow-mode change. A mode switch can change which
+  // mapping rows are visible (BOM-Only hides FMEA-ID; non-merge modes hide
+  // the merge-only effect rows), so clearing mapping overrides and
+  // validations here is correct — they may no longer apply to the new mode.
   useEffect(() => {
     startTransition(() => {
       setValidations(initialValidations);
@@ -499,7 +503,30 @@ export function FmeaTool() {
       armTerminalHandler();
       resetDesktopRunSession();
     });
-  }, [workflowId, outputStrategyId]);
+  }, [workflowId]);
+
+  // Fix B-Strategy: changing the output strategy never changes which
+  // mapping rows are visible — `isVisibleInMode` keys only on `workflowId`,
+  // not on the strategy. The previous effect lumped `outputStrategyId` into
+  // the full-reset deps above, so a strategy change unconditionally wiped
+  // `mappingOverrides` (and validations), silently discarding the user's
+  // manual mapping work which `buildRunRequest` then reverted. This
+  // dedicated effect resets ONLY run-presentation state on a strategy
+  // change and intentionally does NOT touch `setMappingOverrides` or
+  // `setValidations`. (Like the effect above, it also fires once on mount —
+  // React always runs effects on mount — which matches prior behavior.)
+  useEffect(() => {
+    startTransition(() => {
+      setRunMode("idle");
+      setRunIndex(-1);
+      setRunResult(null);
+      setRunLogLines([]);
+      setCancelledNotice(null);
+      setContextView("preview");
+      armTerminalHandler();
+      resetDesktopRunSession();
+    });
+  }, [outputStrategyId]);
 
   useEffect(() => {
     contextHeadingRef.current?.focus();
@@ -1167,7 +1194,20 @@ export function FmeaTool() {
                     ariaLabel="Failure modes standard"
                     mode="radio"
                     value={failureModesStandard}
-                    onChange={(next) => setFailureModesStandard(next as "FMD-91" | "FMD-2016")}
+                    onChange={(next) => {
+                      const nextStandard = next as "FMD-91" | "FMD-2016";
+                      // Fix B-FMD: the FMD Commodity Type rows carry a
+                      // dynamic canonical label keyed by the active
+                      // standard, and mappingOverrides is keyed by that
+                      // resolved label. Toggling the standard rebuilds
+                      // those rows under the other standard's key, so we
+                      // must migrate any manual overrides to the new keys
+                      // or they orphan and the UI silently reverts.
+                      setMappingOverrides((current) =>
+                        migrateFmdOverrides(current, failureModesStandard, nextStandard),
+                      );
+                      setFailureModesStandard(nextStandard);
+                    }}
                     options={[
                       { value: "FMD-91", label: "FMD-91" },
                       { value: "FMD-2016", label: "FMD-2016" },

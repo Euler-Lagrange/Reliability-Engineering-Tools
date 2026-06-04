@@ -217,6 +217,10 @@ export function FailureRateTool() {
           : input,
       ),
     );
+    // Fix 2: a new file invalidates the previous validate_run result — clear
+    // the stale validation cards so the Preview tab shows its neutral empty
+    // state instead of warnings that describe the OLD file/sheet.
+    setValidations([]);
     setBackendState({
       backendStatus: "busy",
       backendMessage: `Inspecting workbook for ${role}...`,
@@ -371,6 +375,11 @@ export function FailureRateTool() {
         };
       }),
     );
+
+    // Fix 2: a sheet change re-points the input at different data, so the
+    // previous validate_run result is now stale — clear it so Preview shows
+    // its neutral empty state rather than cards describing the OLD sheet.
+    setValidations([]);
 
     if (backendClient.runtimeMode === "desktop-bridge" && nextPath) {
       void inspectRole(role, nextPath, selectedSheet);

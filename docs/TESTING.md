@@ -35,16 +35,18 @@
 | Frontend role-request sequence | `frontend/src/shared/hooks/useRoleRequestSequence.test.ts` | 5 | Vitest |
 | Frontend copy to clipboard | `frontend/src/shared/hooks/useCopyToClipboard.test.ts` | 3 | Vitest |
 | Frontend global log store | `frontend/src/stores/globalLogStore.test.ts` | 6 | Vitest |
-| Frontend FMEA tool | `frontend/src/features/fmea/FmeaTool.test.tsx` | 7 | Vitest + RTL |
+| Frontend keep-alive shell | `frontend/src/app/App.keepalive.test.tsx` | 2 | Vitest + RTL |
+| Frontend FMEA tool | `frontend/src/features/fmea/FmeaTool.test.tsx` | 9 | Vitest + RTL |
 | Frontend FMEA inspection | `frontend/src/features/fmea/FmeaTool.inspection.test.tsx` | 2 | Vitest + RTL |
-| Frontend mapping columns | `frontend/src/features/fmea/mappingColumns.test.ts` | 21 | Vitest |
+| Frontend mapping columns | `frontend/src/features/fmea/mappingColumns.test.ts` | 27 | Vitest |
 | Frontend mapping analysis | `frontend/src/features/fmea/mappingAnalysis.test.ts` | 7 | Vitest |
-| Frontend BOM Compare tool | `frontend/src/features/bom-compare/BomCompareTool.test.tsx` | 3 | Vitest + RTL |
-| Frontend RefDes Extractor tool | `frontend/src/features/refdes-extractor/RefDesExtractorTool.test.tsx` | 2 | Vitest + RTL |
+| Frontend BOM Compare tool | `frontend/src/features/bom-compare/BomCompareTool.test.tsx` | 6 | Vitest + RTL |
+| Frontend Failure Rate tool | `frontend/src/features/failure-rate/FailureRateTool.test.tsx` | 1 | Vitest + RTL |
+| Frontend RefDes Extractor tool | `frontend/src/features/refdes-extractor/RefDesExtractorTool.test.tsx` | 4 | Vitest + RTL |
 | Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 4 | Vitest + RTL |
-| **Frontend subtotal** | | **175** | |
+| **Frontend subtotal** | | **191** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 6 | cargo test |
-| **Total** | | **332** | |
+| **Total** | | **348** | |
 
 ## Backend Tests
 

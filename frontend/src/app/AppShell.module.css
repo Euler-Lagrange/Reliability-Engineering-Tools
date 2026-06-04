@@ -272,6 +272,16 @@
   padding: var(--space-4) var(--space-6) var(--space-6);
 }
 
+/* Keep-alive tool pane wrapper. Every visited tool keeps its own pane so its
+   local state survives tool switches; only the active pane is visible. We do
+   NOT set `display` here so the UA stylesheet's `[hidden] { display: none }`
+   rule wins for inactive panes (it also removes them from the a11y tree and
+   tab order). The explicit `[hidden]` rule below is belt-and-suspenders in
+   case a future global rule sets `display` on this wrapper. */
+.toolPane[hidden] {
+  display: none;
+}
+
 .loading {
   display: grid;
   gap: var(--space-2);

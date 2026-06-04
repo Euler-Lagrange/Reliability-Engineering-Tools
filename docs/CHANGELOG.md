@@ -34,9 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tests** — +31 backend tests (now **151**: adds
   `test_failure_rate_logic.py` ×12, `test_extraction_engine.py` ×6,
   `test_bom_compare_logic.py` ×12, and one more FMEA Phase D case), +2
-  frontend tests inside existing suites, and new regression suites
-  `BomCompareTool.test.tsx` ×3 and `RefDesExtractorTool.test.tsx` ×2
-  (now **175** across 29 files).
+  frontend tests inside existing suites, and new regression suites for
+  the input-visibility and interaction-state fixes below
+  (`BomCompareTool.test.tsx`, `RefDesExtractorTool.test.tsx`,
+  `FailureRateTool.test.tsx`, `App.keepalive.test.tsx`, plus added FMEA
+  cases — now **191** across 31 files).
 - **Doc fixes** — corrected the NextGen extraction-engine docstrings
   (the `refdes_test` engine is the default production backend, not a
   test-only / experimental path), `docs/DEVELOPMENT.md`, `release.bat`,
@@ -64,6 +66,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   render. The pinlist is now seeded (hidden in functional mode), and
   switching extraction mode counts as engagement so the grid (with the
   pinlist slot) replaces the pristine EmptyState.
+- **Switching tools destroyed all loaded inputs** — the shell rendered only
+  the active tool, so switching tools (sidebar, `Ctrl+1..5`, `Ctrl+[`/`]`,
+  command palette) unmounted the outgoing tool and discarded every loaded
+  file, sheet selection, and manual column mapping. `App.tsx` is now a
+  keep-alive shell: tools mount on first visit and stay mounted behind a
+  `[hidden]` pane. This also fixes the cascade bugs — terminal run toasts
+  now fire even when the run's tool is not the active one, the live Run
+  panel survives a switch-away-and-back, and the FMEA/BOM Compare
+  mount-reset no longer orphans an in-flight run on re-entry.
+- **FMEA: changing Output Strategy wiped manual column mappings** — the
+  workflow/strategy reset effect cleared `mappingOverrides` (and run state)
+  on `outputStrategyId` changes even though strategy never alters the
+  mapping rows. The reset is now split: full reset on workflow change only;
+  strategy changes reset run-presentation state but preserve mappings and
+  validations.
+- **FMEA: toggling FMD-91 ↔ FMD-2016 dropped Commodity Type mappings** —
+  overrides are keyed by canonical labels and the two Commodity Type rows
+  have standard-specific labels, so the toggle orphaned the user's mapping
+  (and the run payload silently lost it). `migrateFmdOverrides` now remaps
+  the dynamic keys when the standard changes.
+- **BOM Compare: workflow round-trip discarded loaded files** — switching
+  group ↔ custom re-seeded the input slots from the demo scenario every
+  time. A per-workflow cache now stashes and restores each workflow's
+  inputs, mapping overrides, and validations within the session.
+- **Stale validation cards after changing inputs** — BOM Compare and
+  Failure Rate kept showing the previous validation results after the user
+  browsed a different file or changed a sheet; both now clear the
+  validation list when an input changes.
+- **RefDes: pristine empty-state covered a loaded pinlist** — loading only
+  a pinlist in piece-part mode and toggling back to functional re-triggered
+  the pristine EmptyState because the check ignored hidden inputs; it now
+  evaluates all input slots. The adaptive-geometry checkbox is also
+  disabled (with a hint) while geometry analysis is off, since the backend
+  ignores it on that path.
 - Synced the streamed `execute_run` ack contract: Rust now enriches the
   run-event ack with `session_generation`, matching the frontend Zod
   schema and protocol docs.

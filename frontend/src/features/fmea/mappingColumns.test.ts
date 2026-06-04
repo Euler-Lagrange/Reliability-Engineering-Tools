@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   FMEA_COLUMN_METADATA,
+  migrateFmdOverrides,
   resolveColumnLabel,
   type FmeaColumnMetadata,
 } from "./mappingColumns";
@@ -178,6 +179,70 @@ describe("FMEA_COLUMN_METADATA — FMD standard label swapping", () => {
     const row = findByCanonical("Failure Mode");
     expect(resolveColumnLabel(row, "FMD-91")).toBe("Failure Mode");
     expect(resolveColumnLabel(row, "FMD-2016")).toBe("Failure Mode");
+  });
+});
+
+describe("migrateFmdOverrides — Fix B-FMD: dynamic override key migration", () => {
+  // Fix B-FMD: mappingOverrides is keyed by the resolved (dynamic) label,
+  // so toggling the FMD standard would otherwise orphan overrides stored
+  // under the FMD Commodity Type rows. migrateFmdOverrides remaps those
+  // dynamic keys to the new standard's labels so the user's mapping work
+  // survives the toggle.
+
+  test("migrates an FMD-2016 Commodity Type 1 override to the FMD-91 key", () => {
+    const overrides = { "FMD-2016 Commodity Type 1": "HDA Col A" };
+    const next = migrateFmdOverrides(overrides, "FMD-2016", "FMD-91");
+
+    expect(next["FMD-91 Commodity Type 1"]).toBe("HDA Col A");
+    expect(next).not.toHaveProperty("FMD-2016 Commodity Type 1");
+  });
+
+  test("migrates the reverse direction (FMD-91 -> FMD-2016)", () => {
+    const overrides = { "FMD-91 Commodity Type 2": "HDA Col B" };
+    const next = migrateFmdOverrides(overrides, "FMD-91", "FMD-2016");
+
+    expect(next["FMD-2016 Commodity Type 2"]).toBe("HDA Col B");
+    expect(next).not.toHaveProperty("FMD-91 Commodity Type 2");
+  });
+
+  test("migrates every dynamic FMD Commodity Type row at once", () => {
+    const overrides = {
+      "FMD-2016 Commodity Type 1": "Col One",
+      "FMD-2016 Commodity Type 2": "Col Two",
+    };
+    const next = migrateFmdOverrides(overrides, "FMD-2016", "FMD-91");
+
+    expect(next).toEqual({
+      "FMD-91 Commodity Type 1": "Col One",
+      "FMD-91 Commodity Type 2": "Col Two",
+    });
+  });
+
+  test("leaves non-dynamic override keys untouched", () => {
+    const overrides = {
+      "Failure Mode": "Mode Col",
+      "FMD-2016 Commodity Type 1": "HDA Col A",
+    };
+    const next = migrateFmdOverrides(overrides, "FMD-2016", "FMD-91");
+
+    expect(next["Failure Mode"]).toBe("Mode Col");
+    expect(next["FMD-91 Commodity Type 1"]).toBe("HDA Col A");
+    expect(next).not.toHaveProperty("FMD-2016 Commodity Type 1");
+  });
+
+  test("is a no-op when the standard does not change", () => {
+    const overrides = { "FMD-2016 Commodity Type 1": "HDA Col A" };
+    const next = migrateFmdOverrides(overrides, "FMD-2016", "FMD-2016");
+
+    expect(next).toEqual(overrides);
+  });
+
+  test("does not mutate the input overrides object", () => {
+    const overrides = { "FMD-2016 Commodity Type 1": "HDA Col A" };
+    const snapshot = { ...overrides };
+    migrateFmdOverrides(overrides, "FMD-2016", "FMD-91");
+
+    expect(overrides).toEqual(snapshot);
   });
 });
 

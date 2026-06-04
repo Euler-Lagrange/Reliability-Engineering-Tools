@@ -177,9 +177,16 @@ export function RefDesExtractorTool() {
   // Switching to piece-part extraction is a sign of engagement (and
   // reveals the pinlist slot), so we exit pristine then — mirroring the
   // BOM Compare workflow-switch escape.
+  //
+  // We evaluate the example check against ALL inputStates, not just
+  // visibleInputs: in Functional mode the pinlist is filtered out of
+  // visibleInputs (inputRoles), so a pinlist that was loaded in Piece-Part
+  // mode and survives in state still counts as engagement. Scoping to
+  // visibleInputs would lose that engagement on toggle-back and wrongly
+  // revert the InputGrid to the pristine EmptyState.
   const isPristine =
     options.extraction_mode === "functional" &&
-    visibleInputs.every((input) => input.isExample === true) &&
+    inputStates.every((input) => input.isExample === true) &&
     panelRunMode === "idle";
 
   const handleLoadExample = () => {
@@ -545,6 +552,16 @@ export function RefDesExtractorTool() {
                 id="refdes-adaptive-geometry"
                 label="Adaptive geometry (smart page gating)"
                 checked={options.adaptive_geometry_enabled}
+                // Presentation-only gate: the backend returns from the
+                // annotation-only branch before reading adaptive_geometry_enabled
+                // when geometry analysis is off, so the option is silently inert.
+                // Disable (don't mutate) the value to reflect that.
+                disabled={!options.geometry_analysis_enabled}
+                hint={
+                  !options.geometry_analysis_enabled
+                    ? "Requires geometry analysis"
+                    : undefined
+                }
                 onChange={(next) =>
                   setOptions((prev) => ({ ...prev, adaptive_geometry_enabled: next }))
                 }

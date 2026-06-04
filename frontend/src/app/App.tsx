@@ -79,7 +79,30 @@ export function App() {
   const pushNotification = useNotificationStore((state) => state.push);
 
   const activeTool = toolDefinitions.find((tool) => tool.id === activeToolId) ?? toolDefinitions[0];
-  const ActiveToolComponent = activeTool.component;
+
+  // Keep-alive shell: once a tool has been visited we keep it mounted and
+  // toggle visibility with the [hidden] attribute instead of swapping the
+  // single rendered component. Unmounting a tool on every switch destroyed
+  // all of its local useState — loaded input files, sheet selections, column
+  // mapping overrides, workflow selection — and orphaned any in-flight run
+  // (the per-tool run controller, which owns terminal toasts, unmounted with
+  // it). Tools not yet visited are deliberately NOT rendered so their
+  // lazy-loaded module isn't fetched until first use. ``activeTool.id`` rather
+  // than ``activeToolId`` seeds the set so a stale/unknown persisted id still
+  // mounts the fallback tool we actually display.
+  const [visitedToolIds, setVisitedToolIds] = useState<Set<ToolId>>(
+    () => new Set<ToolId>([activeTool.id]),
+  );
+  useEffect(() => {
+    setVisitedToolIds((current) => {
+      if (current.has(activeTool.id)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.add(activeTool.id);
+      return next;
+    });
+  }, [activeTool.id]);
 
   // Phase 4 Task 4: focus management on tool switch.
   // The main element has tabIndex={-1} so it can programmatically receive
@@ -87,9 +110,19 @@ export function App() {
   // tool label when focus lands here. We push the focus() into a useEffect
   // keyed on activeToolId to avoid racing React's render cycle from the
   // click handler.
+  //
+  // Keep-alive note: with the keep-alive shell the just-revealed tool mounts
+  // (on first visit) in the same commit as the activeToolId change, and some
+  // tools focus their own context heading on mount. Deferring the shell's
+  // main.focus() into a rAF ensures it lands AFTER any tool-internal mount
+  // focus so the shell announcement still wins — matching the pre-keep-alive
+  // behaviour where the outgoing tool unmounted and could not steal focus.
   const mainRef = useRef<HTMLElement>(null);
   useEffect(() => {
-    mainRef.current?.focus();
+    const handle = requestAnimationFrame(() => {
+      mainRef.current?.focus();
+    });
+    return () => cancelAnimationFrame(handle);
   }, [activeToolId]);
 
   // Phase 4 Task 7: Cmd+K command palette.
@@ -390,25 +423,47 @@ export function App() {
               aria-live="polite"
               aria-label={`${activeTool.label} workspace`}
             >
-              <ErrorBoundary
-                title={`${activeTool.label} failed to render`}
-                detail="This tool boundary caught an error so the rest of the suite shell can keep running."
-                onReset={() => setActiveToolId(activeTool.id)}
-              >
-                <Suspense
-                  fallback={
-                    <section className={styles.loading}>
-                      <p className="eyebrow">Loading</p>
-                      <h2>Preparing {activeTool.label}</h2>
-                      <p className="section-card__description">
-                        The suite shell uses lazy-loaded tool modules so inactive tools stay lightweight.
-                      </p>
-                    </section>
-                  }
-                >
-                  <ActiveToolComponent />
-                </Suspense>
-              </ErrorBoundary>
+              {/* Every visited tool stays mounted; only the active one is
+                  visible. Inactive wrappers carry the `hidden` attribute,
+                  which the UA stylesheet renders as `display: none` and which
+                  also drops them from the accessibility tree and tab order —
+                  exactly what we want. Each tool gets its OWN ErrorBoundary
+                  and Suspense boundary so one tool's lazy fallback or render
+                  error can't blank a sibling. */}
+              {toolDefinitions
+                .filter((tool) => visitedToolIds.has(tool.id))
+                .map((tool) => {
+                  const ToolComponent = tool.component;
+                  const isActive = tool.id === activeTool.id;
+                  return (
+                    <div
+                      key={tool.id}
+                      data-tool-id={tool.id}
+                      className={styles.toolPane}
+                      hidden={!isActive}
+                    >
+                      <ErrorBoundary
+                        title={`${tool.label} failed to render`}
+                        detail="This tool boundary caught an error so the rest of the suite shell can keep running."
+                        onReset={() => setActiveToolId(tool.id)}
+                      >
+                        <Suspense
+                          fallback={
+                            <section className={styles.loading}>
+                              <p className="eyebrow">Loading</p>
+                              <h2>Preparing {tool.label}</h2>
+                              <p className="section-card__description">
+                                The suite shell uses lazy-loaded tool modules so inactive tools stay lightweight.
+                              </p>
+                            </section>
+                          }
+                        >
+                          <ToolComponent />
+                        </Suspense>
+                      </ErrorBoundary>
+                    </div>
+                  );
+                })}
             </main>
             <GlobalLogPanel />
           </div>

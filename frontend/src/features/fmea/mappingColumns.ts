@@ -182,3 +182,42 @@ export function resolveColumnLabel(
 ): string {
   return meta.getLabel ? meta.getLabel(fmdStandard) : meta.canonical;
 }
+
+/**
+ * Fix B-FMD: migrate manual mapping overrides across an FMD-standard
+ * change.
+ *
+ * `mappingOverrides` is keyed by each row's *resolved* canonical label.
+ * For the FMD Commodity Type rows that label is dynamic (`getLabel`), so a
+ * standard toggle rebuilds those rows under the other standard's key. The
+ * override lookup would then miss and the UI would silently revert to the
+ * auto-mapped value while `buildRunRequest` dropped the user's mapping.
+ *
+ * This helper walks every metadata entry that carries a `getLabel` and
+ * moves any override stored under the old standard's label to the new
+ * standard's label, deleting the stale key. Static (non-dynamic) keys are
+ * left untouched. Returns a fresh object — the input is never mutated.
+ */
+export function migrateFmdOverrides(
+  overrides: Record<string, string>,
+  fromStandard: "FMD-91" | "FMD-2016",
+  toStandard: "FMD-91" | "FMD-2016",
+): Record<string, string> {
+  if (fromStandard === toStandard) {
+    return { ...overrides };
+  }
+
+  const next = { ...overrides };
+  for (const meta of FMEA_COLUMN_METADATA) {
+    if (!meta.getLabel) {
+      continue;
+    }
+    const oldKey = meta.getLabel(fromStandard);
+    const newKey = meta.getLabel(toStandard);
+    if (Object.prototype.hasOwnProperty.call(next, oldKey)) {
+      next[newKey] = next[oldKey];
+      delete next[oldKey];
+    }
+  }
+  return next;
+}
