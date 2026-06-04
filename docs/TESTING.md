@@ -189,7 +189,7 @@ new FMEA tests must do the same or validation will reject the request.
 | Single-active-run guard | `test_sidecar_rejects_second_execute_while_run_is_active` |
 | Error recovery | `test_sidecar_execute_emits_backend_error_on_missing_columns`, `test_sidecar_remains_responsive_after_failed_run` |
 | Missing-file validation | `test_sidecar_validate_rejects_missing_required_files` |
-| FMEA Phase D (in-process, 45 tests) | BOM inheritance, variant handling, failure modes standard filtering, fill-gaps validation, usage fraction calculations, legacy enrichment rejection, functional-to-piecepart preservation, CCA prefix handling, output directory configuration (including unwritable-directory fallback), Part Usage (PU) column logic, column override modes, union merge strategies, FMC mapping, bijective FMEA-ID suffix |
+| FMEA Phase D (in-process, 46 tests) | BOM inheritance, variant handling, failure modes standard filtering, fill-gaps validation, usage fraction calculations, legacy enrichment rejection, functional-to-piecepart preservation, CCA prefix handling, output directory configuration (including unwritable-directory fallback), Part Usage (PU) column logic, column override modes, union merge strategies, FMC mapping, bijective FMEA-ID suffix |
 | Inspection caps (subprocess, 4 tests) | `inspect_input` row cap at 20 000 rows, column cap at 100 columns, sparse-sheet row cap by physical rows scanned, header-search cap failure within 1 000 rows |
 | Failure-Rate logic (in-process, 12 tests) | Failure Rate (FR) linker math driven through `FMEALinkerLogic.process`: per-mode `Mode_FR = Part_FR * Usage * Corrected_Ratio` arithmetic, unit-mode scaling to per-hour space, RefDes lookup normalization — asserts exact computed numbers |
 | RefDes extraction-engine (in-process, 6 tests) | NextGen `_disambiguate_pin_mapping` pin-label collision resolution across the three-tier priority (body center inside group rect → body overlaps rect → nearest body by distance) when multiple components share a pin label |
@@ -215,7 +215,7 @@ neither of which exists under jsdom, so the client returns mock data from
 | `frontend/src/components/primitives/HoldButton.test.tsx` | 5 — hold-to-confirm interaction, cancel on release, progress feedback |
 | `frontend/src/components/primitives/EmptyState.test.tsx` | 5 — empty state rendering, icon, message, action slot |
 | `frontend/src/shared/backend/runLifecycle.test.ts` | 6 — run lifecycle state transitions (ack, progress, result, cancel, error, reset) |
-| `frontend/src/shared/backend/cancelError.test.ts` | 12 — cancel error detection, wrapping, propagation across error types |
+| `frontend/src/shared/backend/cancelError.test.ts` | 18 — cancel error detection, wrapping, propagation across error types, plus `describeBackendError` normalization of raw-string Tauri rejections |
 | `frontend/src/shared/backend/client.cancelRun.test.ts` | 2 — cancel run command dispatch and response handling |
 | `frontend/src/shared/backend/client.runEvents.test.ts` | 2 — production run-event subscription schema parsing |
 | `frontend/src/shared/backend/useBackendBusyReset.test.ts` | 9 — busy state recovery after run completion, error, or unmount |
@@ -225,10 +225,15 @@ neither of which exists under jsdom, so the client returns mock data from
 | `frontend/src/shared/hooks/useRoleRequestSequence.test.ts` | 5 — per-role async request sequencing (stale response suppression) |
 | `frontend/src/shared/hooks/useCopyToClipboard.test.ts` | 3 — clipboard write, success feedback, error handling |
 | `frontend/src/stores/globalLogStore.test.ts` | 6 — global log ring buffer: append, clear, toggle, filter, export format, capacity |
-| `frontend/src/features/fmea/FmeaTool.test.tsx` | 7 — FMEA tool rendering, workflow selection, input validation, run integration |
-| `frontend/src/features/fmea/FmeaTool.inspection.test.tsx` | 2 — sheet selection interactivity during background aggregation, inspection cap warning display |
+| `frontend/src/app/App.keepalive.test.tsx` | 2 — keep-alive shell: tool-local state survives a tool-switch round-trip, only visited tools mount |
+| `frontend/src/features/fmea/FmeaTool.test.tsx` | 9 — FMEA tool rendering, workflow selection, input validation, run integration, mapping-override survival across output-strategy and FMD-standard changes |
+| `frontend/src/features/fmea/FmeaTool.inspection.test.tsx` | 5 — sheet selection interactivity during background aggregation, inspection cap warning display, stale-validation clears on browse/sheet change, orphaned-override pruning |
 | `frontend/src/features/toolRunDispatch.test.tsx` | 4 — BOM Compare, Failure Rate, and RefDes workflow dispatch from React tools, plus validation-failure (execute_run skipped) |
-| `frontend/src/features/fmea/mappingColumns.test.ts` | 21 — column synonym matching, priority ordering, ambiguity resolution |
+| `frontend/src/features/bom-compare/BomCompareTool.test.tsx` | 12 — custom-compare slots, pristine exit, workflow round-trip cache, interrupted-inspection recovery, double-start guard, raw-string error surfacing, real-header mapping derivation, dispatch payloads |
+| `frontend/src/features/failure-rate/FailureRateTool.test.tsx` | 2 — stale-validation clears on browse, real-header mapping derivation |
+| `frontend/src/features/refdes-extractor/RefDesExtractorTool.test.tsx` | 5 — piece-part pinlist slot, pristine behavior, empty-input dispatch, adaptive-geometry gating |
+| `frontend/src/shared/mapping/deriveMappingRows.test.ts` | 6 — mapping-row derivation from inspected headers (exact match, no match, fixture fallback) |
+| `frontend/src/features/fmea/mappingColumns.test.ts` | 27 — column synonym matching, priority ordering, ambiguity resolution, FMD override-key migration |
 | `frontend/src/features/fmea/mappingAnalysis.test.ts` | 7 — mapping completeness analysis, gap detection, suggestions, multi-source provenance merging |
 
 `vitest.setup.ts` is configured in `vite.config.ts`. It registers

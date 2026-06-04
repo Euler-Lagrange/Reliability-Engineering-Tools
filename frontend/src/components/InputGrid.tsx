@@ -133,7 +133,11 @@ export function InputGrid({ inputs, onBrowse, onSheetChange, getDisabledSheetRea
             {!input.resolutionError && input.isAnalyzing ? (
               <p className="input-card__note">Inspecting the selected sheet through the desktop backend bridge.</p>
             ) : null}
-            {!input.resolutionError && input.source === "desktop-bridge" ? (
+            {/* Gate on loaded sheets: empty desktop-seeded slots carry
+                source "desktop-bridge" before anything is browsed, and a
+                loaded PDF never has sheets — neither should claim sheets
+                were loaded. */}
+            {!input.resolutionError && input.source === "desktop-bridge" && input.sheets.length > 0 ? (
               <p className="input-card__note">Sheets loaded from the desktop backend bridge.</p>
             ) : null}
           </article>

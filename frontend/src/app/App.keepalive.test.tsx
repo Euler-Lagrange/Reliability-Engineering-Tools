@@ -1,6 +1,8 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "./App";
+import { useNotificationStore } from "../stores/notificationStore";
+import { useRunStore } from "../stores/runStore";
 import { useShellStore } from "../stores/shellStore";
 import { useThemeStore } from "../stores/themeStore";
 
@@ -12,6 +14,8 @@ import { useThemeStore } from "../stores/themeStore";
 
 function renderApp() {
   window.localStorage.clear();
+  useRunStore.setState({ activeRun: null });
+  useNotificationStore.setState({ notifications: [] });
   useShellStore.setState({
     activeToolId: "dark_star_fmea",
     backendStatus: "connecting",

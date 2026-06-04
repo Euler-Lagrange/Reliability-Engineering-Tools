@@ -45,3 +45,6 @@ frontend/vitest.setup.d.ts
 
 # Design-tool handoff bundles (reference-only, not shipped)
 design_handoff_reliability_tools/
+
+# Vitest reporter output artifact
+.vitest-out.json
