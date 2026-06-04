@@ -20,7 +20,7 @@ from __future__ import annotations
 import pandas as pd
 
 from common.refdes_utils import expand_refdes_range, split_refdes_list
-from bom_compare.bom_compare_logic import ColumnMapping, AnalyzeOptions
+from bom_compare.bom_compare_logic import ColumnMapping, AnalyzeOptions, compare_two_boms
 from bom_compare.group_analysis import analyze
 
 
@@ -180,3 +180,196 @@ def test_analyze_matches_hyphenated_pin_to_base_component() -> None:
 
     assert results.missing_in_bom.empty
     assert results.bom_not_in_groups.empty
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 regression: the group default run is byte-stable with loose OFF.
+#
+# The frontend "base match" checkbox now defaults to FALSE and maps to
+# loose_base_match. A default run (loose off) must NOT fuzzy-prefix-match
+# bases: a grouping base 'U20' is NOT covered by a BOM base 'U200'.
+# ---------------------------------------------------------------------------
+
+def test_analyze_default_loose_off_no_prefix_match() -> None:
+    """Default (loose_base_match=False): a prefix-only base is NOT covered.
+
+    Grouping has U20; BOM has U200. With loose OFF these are distinct bases,
+    so U20 is missing-in-BOM and U200 is extra. This pins the behavior a
+    default desktop run must preserve (loose matching is opt-in).
+    """
+    results = _run_analyze(["U20"], ["U200"])
+
+    assert set(results.missing_in_bom["Token"]) == {"U20"}
+    assert set(results.bom_not_in_groups["Base"]) == {"U200"}
+
+
+def test_analyze_loose_on_prefix_base_is_covered() -> None:
+    """loose_base_match=True: a BOM base that starts with the grouping base
+    (and whose remainder is not all digits) covers it.
+
+    Grouping base 'U20A' is covered by BOM base 'U20AB' (remainder 'B' is not
+    all-digits), so nothing is missing and nothing is extra.
+    """
+    group_df = pd.DataFrame({"Group": ["G0"], "RefDes": ["U20A"]})
+    bom_df = pd.DataFrame({"RefDes": ["U20AB"], "Description": [""]})
+    mapping = ColumnMapping(
+        grouping_group_col="Group",
+        grouping_refdes_col="RefDes",
+        bom_refdes_col="RefDes",
+        bom_desc_col="Description",
+    )
+    options = AnalyzeOptions(
+        run_warning_checks=False,
+        run_duplicate_checks=False,
+        check_part_usage=False,
+        check_fmr=False,
+        loose_base_match=True,
+    )
+    results = analyze(
+        group_df, bom_df, mapping, options,
+        file_paths=("grouping.xlsx", "bom.xlsx"),
+    )
+
+    assert results.missing_in_bom.empty
+    assert results.bom_not_in_groups.empty
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: custom (BOM-vs-BOM) compare must honor exact_match, ignore_dnp,
+# loose_base_match, and check_fmr with the SAME user-facing semantics as the
+# group path.
+# ---------------------------------------------------------------------------
+
+def _custom_df(rows):
+    return pd.DataFrame(rows)
+
+
+def test_custom_base_match_default_reduces_pins_to_base() -> None:
+    """Default custom compare (exact_match=False) reduces tokens to base
+    RefDes, mirroring the group path. 'U200-1' (pin 1) in File 1 matches
+    'U200' in File 2: nothing only-in-A, nothing only-in-B.
+    """
+    bom_a = _custom_df([{"RefDes": "U200-1"}])
+    bom_b = _custom_df([{"RefDes": "U200"}])
+
+    result = compare_two_boms(
+        bom_a, bom_b, refdes_col_a="RefDes", refdes_col_b="RefDes",
+        check_part_usage=False,
+    )
+
+    assert result.only_in_a == []
+    assert result.only_in_b == []
+    assert result.in_both_count == 1
+
+
+def test_custom_exact_match_keeps_full_token() -> None:
+    """exact_match=True compares full canonical tokens: 'U200-1' does NOT
+    match 'U200', so each side reports a unique entry.
+    """
+    bom_a = _custom_df([{"RefDes": "U200-1"}])
+    bom_b = _custom_df([{"RefDes": "U200"}])
+
+    result = compare_two_boms(
+        bom_a, bom_b, refdes_col_a="RefDes", refdes_col_b="RefDes",
+        exact_match=True,
+        check_part_usage=False,
+    )
+
+    assert [r["RefDes"] for r in result.only_in_a] == ["U200-1"]
+    assert [r["RefDes"] for r in result.only_in_b] == ["U200"]
+    assert result.in_both_count == 0
+
+
+def test_custom_ignore_dnp_skips_dnp_rows() -> None:
+    """ignore_dnp=True drops rows whose RefDes/Description marks them DNP.
+
+    File 1 lists C1 (live) and C2 (marked DNP in its description). With DNP
+    filtering on, C2 is removed before comparison, so File 2 (only C1) has
+    nothing extra and File 1 has nothing only-in-A.
+    """
+    bom_a = _custom_df([
+        {"RefDes": "C1", "Description": "Cap 10uF"},
+        {"RefDes": "C2", "Description": "Cap DNP"},
+    ])
+    bom_b = _custom_df([{"RefDes": "C1", "Description": "Cap 10uF"}])
+
+    result = compare_two_boms(
+        bom_a, bom_b, refdes_col_a="RefDes", refdes_col_b="RefDes",
+        ignore_dnp=True, desc_col_a="Description", desc_col_b="Description",
+        check_part_usage=False,
+    )
+
+    assert result.only_in_a == []
+    assert result.only_in_b == []
+    assert result.in_both_count == 1
+
+
+def test_custom_ignore_dnp_false_keeps_dnp_rows() -> None:
+    """ignore_dnp=False keeps the DNP-marked row, so C2 is reported only-in-A."""
+    bom_a = _custom_df([
+        {"RefDes": "C1", "Description": "Cap 10uF"},
+        {"RefDes": "C2", "Description": "Cap DNP"},
+    ])
+    bom_b = _custom_df([{"RefDes": "C1", "Description": "Cap 10uF"}])
+
+    result = compare_two_boms(
+        bom_a, bom_b, refdes_col_a="RefDes", refdes_col_b="RefDes",
+        ignore_dnp=False, desc_col_a="Description", desc_col_b="Description",
+        check_part_usage=False,
+    )
+
+    assert [r["RefDes"] for r in result.only_in_a] == ["C2"]
+
+
+def test_custom_loose_base_match_prefix_covered() -> None:
+    """loose_base_match=True suppresses an only-in-A base whose prefix matches
+    an only-in-B base (and vice-versa), mirroring the group path.
+    """
+    bom_a = _custom_df([{"RefDes": "U20A"}])
+    bom_b = _custom_df([{"RefDes": "U20AB"}])
+
+    result = compare_two_boms(
+        bom_a, bom_b, refdes_col_a="RefDes", refdes_col_b="RefDes",
+        loose_base_match=True,
+        check_part_usage=False,
+    )
+
+    assert result.only_in_a == []
+    assert result.only_in_b == []
+
+
+def test_custom_check_fmr_flags_bad_sum() -> None:
+    """check_fmr=True validates per-RefDes FMR sums on each file. A RefDes
+    whose failure-mode ratios do not sum to 1.0 is reported in fmr_warnings.
+    """
+    bom_a = _custom_df([
+        {"RefDes": "U1", "Ratio": 0.5},
+        {"RefDes": "U1", "Ratio": 0.2},  # sums to 0.7 -> bad
+        {"RefDes": "U2", "Ratio": 1.0},  # ok
+    ])
+    bom_b = _custom_df([{"RefDes": "U1", "Ratio": 1.0}, {"RefDes": "U2", "Ratio": 1.0}])
+
+    result = compare_two_boms(
+        bom_a, bom_b, refdes_col_a="RefDes", refdes_col_b="RefDes",
+        check_fmr=True,
+        check_part_usage=False,
+    )
+
+    bad = {w["RefDes"] for w in result.fmr_warnings}
+    assert "U1" in bad
+    assert "U2" not in bad
+
+
+def test_custom_check_fmr_off_by_default() -> None:
+    """When check_fmr is not requested, fmr_warnings stays empty even if a
+    Ratio column exists with non-summing ratios.
+    """
+    bom_a = _custom_df([{"RefDes": "U1", "Ratio": 0.5}])
+    bom_b = _custom_df([{"RefDes": "U1", "Ratio": 0.5}])
+
+    result = compare_two_boms(
+        bom_a, bom_b, refdes_col_a="RefDes", refdes_col_b="RefDes",
+        check_part_usage=False,
+    )
+
+    assert result.fmr_warnings == []

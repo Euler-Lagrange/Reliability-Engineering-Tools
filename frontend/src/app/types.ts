@@ -62,14 +62,6 @@ export interface WorkflowOption {
    * FMEA workflow, grouping for fill_gaps.
    */
   optionalRoles?: FileRole[];
-  /**
-   * When true, the workflow is shown in the UI but cannot be selected.
-   * Used to preview "Coming soon" workflows whose backend hasn't
-   * shipped yet — e.g. functional_to_piecepart before Phase D.
-   */
-  disabled?: boolean;
-  /** Optional tooltip shown when the workflow is disabled. */
-  disabledReason?: string;
 }
 
 export interface SheetOption {

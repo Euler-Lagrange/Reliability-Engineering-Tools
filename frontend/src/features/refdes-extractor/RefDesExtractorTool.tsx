@@ -7,6 +7,7 @@ import { ValidationPreview } from "../../components/ValidationPreview";
 import { CheckboxField } from "../../components/primitives/CheckboxField";
 import { ContextTabs } from "../../components/primitives/ContextTabs";
 import { EmptyState } from "../../components/primitives/EmptyState";
+import { NumberField } from "../../components/primitives/NumberField";
 import { OptionsField } from "../../components/primitives/OptionsField";
 import { OptionsSection } from "../../components/primitives/OptionsSection";
 import { OutputFolderPicker } from "../../components/OutputFolderPicker";
@@ -548,7 +549,6 @@ export function RefDesExtractorTool() {
               <OptionsField label="Extraction mode">
                 <ToggleChip<ExtractionMode>
                   ariaLabel="Extraction mode"
-                  mode="radio"
                   value={options.extraction_mode}
                   onChange={(next) =>
                     setOptions((prev) => ({ ...prev, extraction_mode: next as ExtractionMode }))
@@ -600,6 +600,51 @@ export function RefDesExtractorTool() {
                 }
                 onChange={(next) =>
                   setOptions((prev) => ({ ...prev, adaptive_geometry_enabled: next }))
+                }
+              />
+
+              <NumberField
+                id="refdes-geometry-batch-size"
+                label="Geometry batch size"
+                value={options.geometry_batch_size}
+                min={1}
+                step={1}
+                // Consumed only on the geometry path (_run_geometry_in_batches);
+                // the backend never reads it when geometry analysis is off, so
+                // disable (don't mutate) the field to mirror the adaptive
+                // checkbox gate.
+                disabled={!options.geometry_analysis_enabled}
+                hint={
+                  options.geometry_analysis_enabled
+                    ? "Pages per geometry batch"
+                    : "Requires geometry analysis"
+                }
+                onChange={(next) =>
+                  setOptions((prev) => ({ ...prev, geometry_batch_size: next }))
+                }
+              />
+
+              <NumberField
+                id="refdes-max-pin-label-length"
+                label="Max pin label length"
+                value={options.max_pin_label_length}
+                min={1}
+                step={1}
+                hint="Longest token treated as a pin label"
+                onChange={(next) =>
+                  setOptions((prev) => ({ ...prev, max_pin_label_length: next }))
+                }
+              />
+
+              <NumberField
+                id="refdes-prov-distance"
+                label="Provenance distance"
+                value={options.prov_distance}
+                min={0.5}
+                step={0.5}
+                hint="Max distance for designator-annotation pairing"
+                onChange={(next) =>
+                  setOptions((prev) => ({ ...prev, prov_distance: next }))
                 }
               />
 

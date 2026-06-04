@@ -2077,6 +2077,58 @@ tbody tr:hover {
   color: var(--text-faint);
 }
 
+.number-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.number-field__label {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-uppercase);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.number-field__input {
+  appearance: none;
+  width: 100%;
+  max-width: 160px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  transition:
+    border-color 140ms var(--ease),
+    box-shadow 140ms var(--ease);
+}
+
+.number-field__input:hover:not(:focus):not(:disabled) {
+  border-color: var(--line-strong);
+}
+
+.number-field__input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--shadow-focus-ring);
+}
+
+.number-field__input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.number-field__hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
 .context-tabs {
   display: flex;
   flex-direction: row;

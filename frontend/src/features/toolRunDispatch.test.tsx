@@ -82,6 +82,25 @@ describe("tool run dispatch", () => {
     });
   });
 
+  it("forwards the six comparison options to the backend (base_match defaults off)", async () => {
+    // All six BOM Compare checkboxes must reach the backend in the run body so
+    // the runtime adapter can wire them. base_match defaults to FALSE so a
+    // default run keeps loose base matching off (byte-identical to pre-wiring).
+    render(<BomCompareTool />);
+    await runTool("Compare");
+
+    await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
+    const body = backendMocks.executeRun.mock.calls[0][0];
+    expect(body.options).toEqual({
+      base_match: false,
+      exact_match: false,
+      ignore_dnp: true,
+      check_part_usage: true,
+      check_fmr: false,
+      treat_prov_as_covered: true,
+    });
+  });
+
   it("dispatches the Failure Rate workflow", async () => {
     render(<FailureRateTool />);
     await runTool("Link Rates");

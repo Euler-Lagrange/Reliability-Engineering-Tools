@@ -103,7 +103,11 @@ class ColumnMapping:
 
 @dataclass
 class AnalyzeOptions:
-    base_match: bool = True
+    # NOTE: there is intentionally no ``base_match`` field. The frontend "base
+    # match" checkbox is wired to ``loose_base_match`` in runtime.py (the wire
+    # key stays ``base_match`` for stability, but it maps to loose/prefix base
+    # matching). A previously-dead ``base_match`` field was removed so no
+    # checkbox can silently no-op against a field nothing reads.
     exact_match: bool = False
     treat_prov_as_covered: bool = True
     ignore_dnp: bool = True
@@ -145,6 +149,7 @@ class BomCompareResult:
     duplicates_b: List[Dict[str, Any]] = field(default_factory=list)  # Duplicate RefDes in BOM B
     part_usage_warnings: List[Dict[str, Any]] = field(default_factory=list)  # Part Usage validation warnings
     scope_warnings: List[Dict[str, Any]] = field(default_factory=list)  # CB vs PP scope warnings for FMEA-like files
+    fmr_warnings: List[Dict[str, Any]] = field(default_factory=list)  # Failure Mode Ratio sum warnings (check_fmr)
 
 
 # -----------------------------------------------------------------------------

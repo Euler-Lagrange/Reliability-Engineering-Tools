@@ -173,3 +173,126 @@ def test_custom_compare_required_mapping_sentinel_blocks_validation(tmp_path: Pa
 
     assert result["ok"] is False
     assert result["reason_code"] == "invalid_do_not_map"
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 wiring: the custom path must forward exact_match, ignore_dnp,
+# check_fmr (and base_match->loose) into compare_two_boms, not silently drop
+# them. These exercise the full runtime adapter end-to-end (read -> compare ->
+# write) and assert on the result-payload metrics.
+# ---------------------------------------------------------------------------
+
+def _build_custom_body_with(
+    tmp_path: Path,
+    rows_a: list[dict],
+    rows_b: list[dict],
+    *,
+    options: dict,
+    mappings: list[dict] | None = None,
+) -> dict:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    bom_a_path = tmp_path / "bom_a.xlsx"
+    bom_b_path = tmp_path / "bom_b.xlsx"
+    pd.DataFrame(rows_a).to_excel(bom_a_path, index=False)
+    pd.DataFrame(rows_b).to_excel(bom_b_path, index=False)
+    return {
+        "workflowId": "bom_compare_custom",
+        "outputStrategyId": "new_workbook_standard",
+        "outputDirectory": str(tmp_path),
+        "inputs": [
+            _input_state("bomA", "File 1", bom_a_path),
+            _input_state("bomB", "File 2", bom_b_path),
+        ],
+        "mappings": mappings or [
+            {"canonical": "refdes_col_a", "mappedTo": "Reference Designator", "status": "mapped"},
+            {"canonical": "refdes_col_b", "mappedTo": "Reference Designator", "status": "mapped"},
+        ],
+        "options": options,
+    }
+
+
+def test_custom_runtime_exact_match_toggles_matching(tmp_path: Path) -> None:
+    """With exact_match=False (default semantics) a pin token matches its base
+    component; with exact_match=True it does not. Proves the option reaches
+    compare_two_boms via _run_custom_compare.
+    """
+    rows_a = [{"Reference Designator": "U200-1"}]
+    rows_b = [{"Reference Designator": "U200"}]
+
+    base_body = _build_custom_body_with(
+        tmp_path / "base", rows_a, rows_b,
+        options={"check_part_usage": False, "exact_match": False},
+    )
+    base_result = bom_runtime.execute_run_request(base_body)
+    assert base_result["status"] == "success"
+    assert base_result["no_match_count"] == 0, (
+        "Base-mode custom compare should match U200-1 to U200; "
+        f"got summary {base_result['summary']}"
+    )
+
+    exact_body = _build_custom_body_with(
+        tmp_path / "exact", rows_a, rows_b,
+        options={"check_part_usage": False, "exact_match": True},
+    )
+    exact_result = bom_runtime.execute_run_request(exact_body)
+    assert exact_result["status"] == "success"
+    assert exact_result["no_match_count"] == 2, (
+        "Exact-mode custom compare should treat U200-1 and U200 as distinct; "
+        f"got summary {exact_result['summary']}"
+    )
+
+
+def test_custom_runtime_ignore_dnp_filters_rows(tmp_path: Path) -> None:
+    """ignore_dnp=True drops DNP rows before comparison; =False keeps them."""
+    rows_a = [
+        {"Reference Designator": "C1", "Description": "Cap 10uF"},
+        {"Reference Designator": "C2", "Description": "Cap DNP"},
+    ]
+    rows_b = [{"Reference Designator": "C1", "Description": "Cap 10uF"}]
+    mappings = [
+        {"canonical": "refdes_col_a", "mappedTo": "Reference Designator", "status": "mapped"},
+        {"canonical": "refdes_col_b", "mappedTo": "Reference Designator", "status": "mapped"},
+    ]
+
+    on_body = _build_custom_body_with(
+        tmp_path / "on", rows_a, rows_b,
+        options={"check_part_usage": False, "ignore_dnp": True},
+        mappings=mappings,
+    )
+    on_result = bom_runtime.execute_run_request(on_body)
+    assert on_result["status"] == "success"
+    assert on_result["no_match_count"] == 0, (
+        f"DNP C2 should be filtered; got summary {on_result['summary']}"
+    )
+
+    off_body = _build_custom_body_with(
+        tmp_path / "off", rows_a, rows_b,
+        options={"check_part_usage": False, "ignore_dnp": False},
+        mappings=mappings,
+    )
+    off_result = bom_runtime.execute_run_request(off_body)
+    assert off_result["status"] == "success"
+    assert off_result["no_match_count"] == 1, (
+        f"With ignore_dnp off, C2 should be only-in-A; got summary {off_result['summary']}"
+    )
+
+
+def test_custom_runtime_check_fmr_reports_warnings(tmp_path: Path) -> None:
+    """check_fmr=True surfaces per-RefDes FMR-sum warnings in the result's
+    warning_count for the custom path.
+    """
+    rows_a = [
+        {"Reference Designator": "U1", "Ratio": 0.5},
+        {"Reference Designator": "U1", "Ratio": 0.2},  # sums to 0.7 -> bad
+    ]
+    rows_b = [{"Reference Designator": "U1", "Ratio": 1.0}]
+
+    body = _build_custom_body_with(
+        tmp_path, rows_a, rows_b,
+        options={"check_part_usage": False, "check_fmr": True},
+    )
+    result = bom_runtime.execute_run_request(body)
+    assert result["status"] == "success"
+    assert result["warning_count"] >= 1, (
+        f"check_fmr should surface the U1 FMR-sum warning; got {result['summary']}"
+    )

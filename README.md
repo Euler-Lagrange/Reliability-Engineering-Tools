@@ -52,8 +52,8 @@ npm run tauri:dev              # Desktop with hot reload
 ```powershell
 npm run typecheck              # TypeScript type checking
 npm run typecheck:tests        # TypeScript type checking for Vitest files
-npm test                       # Frontend tests (214 tests across 32 test suites)
-.venv\Scripts\python.exe -m pytest backend\tests -v   # Backend tests (158 tests across sidecar, audit, cancel bridge, output-directory helpers, FMEA phase D, failure-rate logic, RefDes extraction-engine, BOM-compare logic)
+npm test                       # Frontend tests (226 tests across 33 test suites)
+.venv\Scripts\python.exe -m pytest backend\tests -v   # Backend tests (176 tests across sidecar, audit, cancel bridge, output-directory helpers, FMEA phase D, failure-rate logic, RefDes extraction-engine, BOM-compare logic)
 ```
 
 ### Build

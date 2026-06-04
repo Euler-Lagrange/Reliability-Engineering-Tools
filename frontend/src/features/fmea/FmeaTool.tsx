@@ -1251,7 +1251,6 @@ export function FmeaTool() {
                 >
                   <ToggleChip<"FMD-91" | "FMD-2016">
                     ariaLabel="Failure modes standard"
-                    mode="radio"
                     value={failureModesStandard}
                     onChange={(next) => {
                       const nextStandard = next as "FMD-91" | "FMD-2016";
@@ -1282,7 +1281,6 @@ export function FmeaTool() {
                 >
                   <ToggleChip<HdaSource>
                     ariaLabel="HDA source"
-                    mode="radio"
                     value={hdaSource}
                     onChange={(next) => setHdaSource(next as HdaSource)}
                     options={[

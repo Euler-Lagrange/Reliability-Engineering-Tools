@@ -31,16 +31,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the old inconsistent `Z{idx}` scheme.
 - **BOM / OneDrive parity** — BOM Compare and the OneDrive cloud-file
   hydration path were brought back into parity with the other tools.
-- **Tests** — +38 backend tests (now **158**: adds
+- **Tests** — +56 backend tests (now **176**: adds
   `test_failure_rate_logic.py` ×12, `test_extraction_engine.py` ×6,
-  `test_bom_compare_logic.py` ×12, `test_bom_compare_runtime.py` ×4,
-  `test_failure_rate_runtime.py` ×2, and two more FMEA Phase D cases), +2
-  frontend tests inside existing suites, and new regression suites for
-  the input-visibility, interaction-state, and file-loading fixes below
-  (`BomCompareTool.test.tsx`, `RefDesExtractorTool.test.tsx`,
+  `test_bom_compare_logic.py` ×21, `test_bom_compare_runtime.py` ×7,
+  `test_failure_rate_runtime.py` ×2, and eight more FMEA Phase D cases),
+  +3 frontend tests inside existing suites, and new regression suites for
+  the input-visibility, interaction-state, file-loading, and wiring fixes
+  below (`BomCompareTool.test.tsx`, `RefDesExtractorTool.test.tsx`,
   `FailureRateTool.test.tsx`, `App.keepalive.test.tsx`,
-  `deriveMappingRows.test.ts`, plus added FMEA and cancel-error cases —
-  now **214** across 32 files).
+  `deriveMappingRows.test.ts`, `NumberField.test.tsx`, plus added FMEA
+  and cancel-error cases — now **226** across 33 files).
 - **Doc fixes** — corrected the NextGen extraction-engine docstrings
   (the `refdes_test` engine is the default production backend, not a
   test-only / experimental path), `docs/DEVELOPMENT.md`, `release.bat`,
@@ -151,6 +151,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only as execute-time errors. Rows are now derived from the inspected
   headers per role (exact-match auto-fill, attention state on no match),
   falling back to the fixtures until a file is inspected.
+- **All six BOM Compare option checkboxes now drive real behavior** — a
+  192-element interactive-wiring audit found "base match" was dead in
+  both workflows (the backend read only the never-sent
+  `loose_base_match`) and four options were silently ignored in Custom
+  Compare. The `base_match` wire key now maps to the real loose
+  base-match behavior (frontend default flipped to off so default runs
+  are byte-identical), and the custom path honors `exact_match`,
+  `ignore_dnp`, `check_fmr` (new `Failure_Mode_Ratio` warnings sheet),
+  and loose base matching with group-path semantics.
+  `treat_prov_as_covered` is provably inapplicable to a two-BOM compare
+  (no group-name column) and is now disabled with a hint in custom mode.
+- **FMEA HDA source flag is now authoritative** — the toggle's
+  `hdaSource` payload was read by nothing; selecting "Separate HDA file"
+  without attaching one silently fell back to inline detection. The
+  backend now blocks `separate` with no HDA workbook at validate time
+  (`missing_separate_hda`) and ignores stray HDA paths when `inline` is
+  selected. Legacy clients without the flag keep path-presence behavior.
+- **RefDes numeric tuning options got UI** — geometry batch size, max
+  pin-label length, and provenance distance were honored by the backend
+  but frozen at defaults with no controls. Added a `NumberField`
+  primitive and three Options fields (geometry batch size disabled while
+  geometry analysis is off).
+- **Dead UI code removed** — ToggleChip's unused checkbox mode + `name`
+  prop, RunStatePanel's unused `revealOutputLabel` prop, and
+  WorkflowSelector's unreachable disabled-card branch (plus the stale
+  pre-Phase-D `WorkflowOption.disabled` fields).
 - Synced the streamed `execute_run` ack contract: Rust now enriches the
   run-event ack with `session_generation`, matching the frontend Zod
   schema and protocol docs.

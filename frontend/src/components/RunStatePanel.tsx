@@ -41,7 +41,6 @@ interface RunStatePanelProps {
   /** Caption shown below the Start button when {@link startDisabled} is true. */
   startDisabledReason?: string;
   onRevealOutput?: (path: string) => void;
-  revealOutputLabel?: string;
 }
 
 function formatEta(seconds: number): string {
@@ -80,7 +79,6 @@ export function RunStatePanel({
   startDisabled = false,
   startDisabledReason,
   onRevealOutput,
-  revealOutputLabel = OPEN_FOLDER_LABEL,
 }: RunStatePanelProps) {
   const isBusy = runMode === "starting" || runMode === "running" || runMode === "cancelling";
   const canCancel = runMode === "starting" || runMode === "running";
@@ -260,7 +258,7 @@ export function RunStatePanel({
                 className="ghost-button"
                 onClick={() => onRevealOutput(result.outputFile)}
               >
-                {revealOutputLabel}
+                {OPEN_FOLDER_LABEL}
               </button>
             ) : null}
           </div>

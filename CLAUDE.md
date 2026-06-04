@@ -65,7 +65,7 @@ npm run dev              # Vite dev server (browser preview mode)
 npm run build            # Production build
 npm run typecheck        # TypeScript type checking
 npm run typecheck:tests  # TypeScript type checking for Vitest files
-npm test                 # Vitest (214 tests)
+npm test                 # Vitest (226 tests)
 
 # Desktop (requires Rust toolchain)
 npm run tauri:dev        # Dev mode with hot reload
@@ -73,7 +73,7 @@ npm run tauri:build:portable  # Release build → src-tauri/target/.../release/
 npm run cargo:test       # Rust bridge unit tests via the repo runner
 
 # Python sidecar (use project venv)
-.venv\Scripts\python.exe -m pytest backend/tests -v    # 158 backend tests (43 sidecar + 17 audit + 12 cancel bridge + 4 output-directory helper + 46 FMEA phase D + 12 failure-rate logic + 6 RefDes extraction-engine + 12 BOM-compare logic + 4 BOM-compare runtime + 2 failure-rate runtime)
+.venv\Scripts\python.exe -m pytest backend/tests -v    # 176 backend tests (43 sidecar + 17 audit + 12 cancel bridge + 4 output-directory helper + 52 FMEA phase D + 12 failure-rate logic + 6 RefDes extraction-engine + 21 BOM-compare logic + 7 BOM-compare runtime + 2 failure-rate runtime)
 .venv\Scripts\python.exe backend/python/sidecar_main.py --self-test
 
 # Full release
@@ -157,16 +157,16 @@ The audit runs:
 
 ## Testing
 
-### Backend Tests (158 total)
+### Backend Tests (176 total)
 - 43 sidecar integration tests in `test_sidecar_main.py`
 - 17 security-audit tests in `test_security_audit.py` (synthetic positives + live tree scan)
 - 12 cancel-bridge tests in `test_cancel_bridge.py` (BOM Compare + RefDes bridges plus Failure Rate `FMEALinkerLogic.cancel` binding through `ActiveRun`)
 - 4 output-directory helper tests in `test_output_directory_helpers.py`
-- 46 FMEA Phase D tests in `test_fmea_phase_d.py`
+- 52 FMEA Phase D tests in `test_fmea_phase_d.py` (incl. the hdaSource contract)
 - 12 Failure-Rate logic tests in `test_failure_rate_logic.py`
 - 6 RefDes extraction-engine tests in `test_extraction_engine.py`
-- 12 BOM-compare logic tests in `test_bom_compare_logic.py`
-- 4 BOM-compare runtime tests in `test_bom_compare_runtime.py` (dnp_regex default + Do-Not-Map sentinel validation)
+- 21 BOM-compare logic tests in `test_bom_compare_logic.py` (incl. custom-path option semantics)
+- 7 BOM-compare runtime tests in `test_bom_compare_runtime.py` (dnp_regex default, Do-Not-Map sentinel validation, custom option wiring)
 - 2 Failure-Rate runtime tests in `test_failure_rate_runtime.py` (Do-Not-Map sentinel validation)
 - Sidecar tests are subprocess-based: spawn sidecar, send NDJSON commands, verify responses
 - `stderr=subprocess.DEVNULL` to avoid Windows pipe buffer deadlock
@@ -176,7 +176,7 @@ The audit runs:
 - `pytest.importorskip("fitz")` for RefDes tests requiring PyMuPDF
 - `backend/tests/conftest.py` installs a `sys.path` shim for in-process unit tests
 
-### Frontend Tests (214 total across 32 test files)
+### Frontend Tests (226 total across 33 test files)
 - Vitest + React Testing Library
 - Browser-mock mode (no Tauri runtime needed)
 - `src/app/App.test.tsx`
@@ -189,6 +189,7 @@ The audit runs:
 - `src/components/primitives/CommandPalette.test.tsx`
 - `src/components/primitives/HoldButton.test.tsx`
 - `src/components/primitives/EmptyState.test.tsx`
+- `src/components/primitives/NumberField.test.tsx` (new in 0.4.6)
 - `src/contracts/sidecar.test.ts`
 - `src/features/bom-compare/BomCompareTool.test.tsx` (new in 0.4.6)
 - `src/features/failure-rate/FailureRateTool.test.tsx` (new in 0.4.6)
@@ -213,7 +214,7 @@ The audit runs:
 - `src/stores/globalLogStore.test.ts`
 
 Run `npx vitest run --config frontend/vite.config.ts --reporter=default` to
-see individual counts per file — the suite totals 214 tests as of 0.4.6 and
+see individual counts per file — the suite totals 226 tests as of 0.4.6 and
 changes whenever a suite gains or loses cases.
 
 ## Critical Gotchas
@@ -227,6 +228,64 @@ changes whenever a suite gains or loses cases.
 - **Windows Job Object owns the sidecar**: on Windows the Rust bridge creates a `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` job and assigns the spawned `python.exe` to it (`windows_job` module in `src-tauri/src/lib.rs`). When the bridge process dies, Windows reaps the sidecar automatically. Do NOT remove the assignment — without it a Rust panic that bypasses `on_window_event` orphans a live sidecar process.
 - **Shell-level run subscription**: `useBackendRunSubscription` is mounted once in `App.tsx` and owns the subscription to `backend://run-event`. Per-tool hooks (`useBackendRunLifecycle`) project events into local state but do NOT subscribe directly. If you need a new stream subscription, add it next to `useBackendRunSubscription` at the shell level — do not subscribe inside a tool component or you will miss events during tool switches.
 - **Keep-alive tool shell**: `App.tsx` mounts each tool on first visit and keeps it mounted afterwards, hiding inactive tools behind a `[hidden]` pane. Tool-local state (loaded files, sheet selections, mapping overrides) deliberately survives tool switches — do NOT revert to a single `<ActiveToolComponent />` render or add a `key` to tool panes, both of which remount tools and destroy loaded inputs.
+
+## Wiring Invariants — Anti-Tech-Debt Rules
+
+Every one of these rules exists because its violation shipped a real bug
+(found and fixed in the 0.4.6 audits). Violating them recreates known tech
+debt. When adding or reviewing UI/option/backend code, check the change
+against this list.
+
+1. **Every interactive control must be wired end-to-end.** A control's
+   handler → state → consumer chain must terminate in something real: a
+   backend reader, a store, a render branch, or an OS call. Never add an
+   option key to a tool's `options` state without the matching reader in
+   that tool's `runtime.py` (and a runtime test proving it) — `base_match`
+   and `hdaSource` were sent for months while the backend read neither.
+   The inverse also holds: a backend option with no UI control must either
+   get a control or be removed from the frontend payload.
+2. **If a control is inert in a particular mode, disable it with a hint —
+   never render it silently ignored.** Pattern: RefDes adaptive-geometry
+   checkbox, BOM Compare `treat_prov_as_covered` in custom mode
+   (`disabled` + `hint` on `CheckboxField`).
+3. **Never seed example/mock paths into desktop state.** Desktop-bridge
+   seeding goes through `emptyInputsFromScenario` (shared in
+   `useDesktopRunController.ts`); `cloneInputs(scenario.inputs)` is for
+   browser-mock only. Example `DRIVE\inputs\...` paths pass backend
+   validation and then crash mid-run with paths the user never typed.
+4. **Mock scenario data is load-bearing.** Every workflow needs a
+   `DemoScenario` whose `inputs` cover ALL of that workflow's roles —
+   a missing scenario/role rendered Custom Compare with zero file slots.
+   When adding a workflow, add its scenario (or a role-complete superset
+   like FMEA's `allPrototypeInputs`) in the same change.
+5. **All backend-invoke `catch` blocks use `describeBackendError`**
+   (`shared/backend/cancelError.ts`). Tauri v2 rejects with raw strings;
+   `error instanceof Error ? error.message : fallback` silently discards
+   every real sidecar message. Never reintroduce that ternary.
+6. **`DO_NOT_MAP_VALUE` has exactly two definitions** that must stay in
+   lockstep: `frontend/src/app/types.ts` and
+   `backend/python/shared/pre_run_validation.py` (`DO_NOT_MAP_SENTINEL`,
+   re-exported by `fmea/runtime.py`). Backends must reject the sentinel on
+   REQUIRED mappings at validate time (`invalid_do_not_map`), not crash at
+   execute.
+7. **Mapping rows derive from real inspected headers** via
+   `shared/mapping/deriveMappingRows.ts` (BOM Compare, Failure Rate) or
+   `buildFmeaMappingRows` (FMEA). The static fixture rows in
+   `mocks/scenarios.ts` are the fallback for un-inspected roles only —
+   never the live dropdown source for a loaded file.
+8. **`handleStartRun` is re-entrancy-guarded** (`isStartingRef`) in every
+   tool, and failed-start cleanup goes through `resetSessionUnlessLive` so
+   it can never clobber a live run's session. Keep both when touching run
+   dispatch.
+9. **When stashing input state across a context switch** (e.g. BOM
+   Compare's per-workflow cache), sanitize in-flight busy flags
+   (`isResolvingSheets`/`isAnalyzing`) and bump the per-role request
+   tokens — a verbatim stash restores a permanently-stuck slot whose
+   orphaned continuation can never clear it.
+10. **Keep doc counts honest.** Test counts live in CLAUDE.md (twice),
+    README.md, and docs/TESTING.md (two tables). If a suite gains or loses
+    cases, update all of them in the same commit — drift between them was
+    a recurring QA finding.
 
 ## Crash Dumps
 

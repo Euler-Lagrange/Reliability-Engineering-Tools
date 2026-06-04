@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RefDesExtractorTool } from "./RefDesExtractorTool";
@@ -172,6 +172,81 @@ describe("RefDesExtractorTool dispatch with no browsed files", () => {
     await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
     const request = backendMocks.executeRun.mock.calls[0][0];
     expect(request.inputs).toEqual([]);
+  });
+});
+
+describe("RefDesExtractorTool numeric tuning fields", () => {
+  it("renders the three tuning fields with their defaults", () => {
+    render(<RefDesExtractorTool />);
+
+    expect(
+      screen.getByRole("spinbutton", { name: "Geometry batch size" }),
+    ).toHaveValue(10);
+    expect(
+      screen.getByRole("spinbutton", { name: "Max pin label length" }),
+    ).toHaveValue(4);
+    expect(
+      screen.getByRole("spinbutton", { name: "Provenance distance" }),
+    ).toHaveValue(15);
+  });
+
+  it("dispatches the edited geometry batch size in the run request options", async () => {
+    const user = userEvent.setup();
+    render(<RefDesExtractorTool />);
+
+    // fireEvent.change delivers one change event with the final value —
+    // matching a paste or spinner step. userEvent.type would key in
+    // character-by-character against the controlled value, appending to the
+    // existing 10.
+    const batch = screen.getByRole("spinbutton", { name: "Geometry batch size" });
+    fireEvent.change(batch, { target: { value: "25" } });
+    expect(batch).toHaveValue(25);
+
+    await user.click(screen.getByRole("tab", { name: /^Run$/i }));
+    await user.click(screen.getByRole("button", { name: "Extract" }));
+
+    await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
+    const request = backendMocks.executeRun.mock.calls[0][0];
+    expect(request.options.geometry_batch_size).toBe(25);
+  });
+
+  it("dispatches the edited provenance distance in the run request options", async () => {
+    const user = userEvent.setup();
+    render(<RefDesExtractorTool />);
+
+    const prov = screen.getByRole("spinbutton", { name: "Provenance distance" });
+    fireEvent.change(prov, { target: { value: "12.5" } });
+    expect(prov).toHaveValue(12.5);
+
+    await user.click(screen.getByRole("tab", { name: /^Run$/i }));
+    await user.click(screen.getByRole("button", { name: "Extract" }));
+
+    await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
+    const request = backendMocks.executeRun.mock.calls[0][0];
+    expect(request.options.prov_distance).toBe(12.5);
+  });
+
+  it("disables the geometry batch size field when geometry analysis is off", async () => {
+    const user = userEvent.setup();
+    render(<RefDesExtractorTool />);
+
+    const batch = screen.getByRole("spinbutton", { name: "Geometry batch size" });
+    const maxPin = screen.getByRole("spinbutton", { name: "Max pin label length" });
+    const prov = screen.getByRole("spinbutton", { name: "Provenance distance" });
+    const geometry = screen.getByRole("checkbox", { name: "Enable geometry analysis" });
+
+    // Default: geometry on -> batch size enabled.
+    expect(batch).toBeEnabled();
+
+    await user.click(geometry);
+    expect(batch).toBeDisabled();
+    // Max pin length and provenance distance are read on every extraction
+    // path, so they stay enabled regardless of geometry analysis.
+    expect(maxPin).toBeEnabled();
+    expect(prov).toBeEnabled();
+
+    await user.click(geometry);
+    expect(batch).toBeEnabled();
   });
 });
 

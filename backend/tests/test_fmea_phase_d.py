@@ -3014,3 +3014,344 @@ def test_map_columns_warns_when_override_column_missing(caplog) -> None:
     )
     assert "Nonexistent Column" in warnings
     assert "description" in warnings
+
+
+# ---------------------------------------------------------------------------
+# Contract fix: backend honors the ``hdaSource`` flag.
+#
+# The frontend sends ``options.hdaSource`` ("inline" | "separate") to declare
+# whether the run should read HDA data from a dedicated workbook or detect it
+# inline from BOM columns. Previously the backend ignored the flag entirely and
+# decided purely on whether an ``hda`` input path was present, so:
+#
+#   * Picking "Separate HDA file" but never attaching one silently fell back to
+#     inline detection instead of failing — the user's explicit choice was lost.
+#   * A stray ``hda`` path left over from a previous toggle (or sent by a client
+#     that ships all roles) would be loaded even though the user selected inline.
+#
+# The flag is now authoritative in BOTH directions:
+#   1. ``hdaSource == "separate"`` with no usable hda path → validation FAILS.
+#   2. ``hdaSource == "inline"`` IGNORES any stray hda path (inline detection).
+#   3. ``hdaSource`` absent (legacy client) → unchanged: path presence decides.
+#
+# The seam is in ``fmea/runtime.py``: validation gates case (1), and the execute
+# path resolves the effective hda path/sheet from the flag before building
+# ``run_inputs`` — so ``fmea_generator_logic.py`` stays flag-free and keeps its
+# simple ``if hda_path:`` branch.
+# ---------------------------------------------------------------------------
+
+
+def _hda_separate_fixture(tmp_path: Path) -> dict:
+    """Fixture where the BOM has NO inline commodity columns but a dedicated
+    HDA workbook supplies them. This lets a test distinguish the
+    "loaded separate HDA" branch from the "inline detection" branch:
+    inline detection on this BOM finds no commodity columns and warns.
+    """
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    paths: dict[str, Path] = {}
+
+    # BOM intentionally omits BAE HDA Commodity columns.
+    bom_path = tmp_path / "bom.xlsx"
+    pd.DataFrame(
+        [
+            {
+                "Reference Designator": "C200",
+                "Part Number": "CAP-1",
+                "Description": "Cap",
+                "Part Usage": "1",
+            }
+        ]
+    ).to_excel(bom_path, index=False)
+    paths["bom"] = bom_path
+
+    grouping_path = tmp_path / "grouping.xlsx"
+    pd.DataFrame(
+        [
+            {
+                "Component Group": "GRP-1",
+                "Reference Designator": "C200",
+                "Function Description": "Filter",
+                "Schematic Page": "1",
+            }
+        ]
+    ).to_excel(grouping_path, index=False)
+    paths["grouping"] = grouping_path
+
+    # Dedicated HDA workbook keyed by Part Number.
+    hda_path = tmp_path / "hda.xlsx"
+    pd.DataFrame(
+        [
+            {
+                "Part Number": "CAP-1",
+                "BAE HDA Commodity I": "Capacitor",
+                "BAE HDA Commodity II": "Ceramic",
+            }
+        ]
+    ).to_excel(hda_path, index=False)
+    paths["hda"] = hda_path
+
+    fm_path = tmp_path / "failure_modes.xlsx"
+    pd.DataFrame(
+        [
+            {
+                "FMD-2016 Commodity Type 1": "Capacitor",
+                "FMD-2016 Commodity Type 2": "Ceramic",
+                "Failure Mode": "Short",
+                "Failure Mode Ratio": 1.0,
+            }
+        ]
+    ).to_excel(fm_path, index=False)
+    paths["fm"] = fm_path
+
+    return paths
+
+
+def test_hda_source_separate_without_path_blocks_validation(tmp_path: Path) -> None:
+    """(a) hdaSource=separate with no hda path → validation FAILS with an
+    actionable reason code and message naming the HDA workbook."""
+    paths = _hda_separate_fixture(tmp_path)
+    body = {
+        "workflowId": "piece_part_generate",
+        "outputStrategyId": "new_workbook_standard",
+        "options": {
+            "failureModesStandard": "FMD-2016",
+            "hdaSource": "separate",
+        },
+        "inputs": [
+            _state("grouping", paths["grouping"]),
+            _state("bom", paths["bom"]),
+            _state("failureModes", paths["fm"]),
+            # NOTE: no hda input attached.
+        ],
+        "mappings": [],
+    }
+    result = validate_run_request(body)
+    assert result["ok"] is False, result
+    assert result["reason_code"] == "missing_separate_hda", result
+    detail = (result["toast_text"] or "").lower()
+    assert "hda" in detail
+    # Message must offer both remedies (attach a file OR switch to inline).
+    assert "inline" in detail
+    # The structured validations list should also surface the block.
+    blocked = [
+        v
+        for v in result["validations"]
+        if v.get("severity") == "error" and "hda" in (v.get("detail", "").lower())
+    ]
+    assert blocked, result["validations"]
+
+
+def test_hda_source_separate_without_path_blocks_execute(tmp_path: Path) -> None:
+    """(3) execute_run_request re-validates, so the separate-but-missing case
+    is also blocked at execute time with a ValidationError."""
+    paths = _hda_separate_fixture(tmp_path)
+    body = {
+        "workflowId": "piece_part_generate",
+        "outputStrategyId": "new_workbook_standard",
+        "options": {
+            "failureModesStandard": "FMD-2016",
+            "hdaSource": "separate",
+        },
+        "outputDirectory": str(tmp_path),
+        "inputs": [
+            _state("grouping", paths["grouping"]),
+            _state("bom", paths["bom"]),
+            _state("failureModes", paths["fm"]),
+        ],
+        "mappings": [],
+    }
+    with pytest.raises(ValidationError):
+        execute_run_request(body)
+
+
+def test_hda_source_separate_with_path_loads_separate_file(tmp_path: Path) -> None:
+    """(b) hdaSource=separate WITH an hda path → validation ok and execute
+    loads the dedicated HDA file (proven by the "Loading dedicated HDA file"
+    log line, which only the separate branch emits)."""
+    paths = _hda_separate_fixture(tmp_path)
+    body = {
+        "workflowId": "piece_part_generate",
+        "outputStrategyId": "new_workbook_standard",
+        "options": {
+            "failureModesStandard": "FMD-2016",
+            "hdaSource": "separate",
+        },
+        "outputDirectory": str(tmp_path),
+        "inputs": [
+            _state("grouping", paths["grouping"]),
+            _state("bom", paths["bom"]),
+            _state("failureModes", paths["fm"]),
+            _state("hda", paths["hda"]),
+        ],
+        "mappings": [],
+    }
+    # Validation passes when the hda file is attached.
+    validation = validate_run_request(body)
+    assert validation["ok"] is True, validation
+
+    logs: list[str] = []
+    result = execute_run_request(body, log_callback=logs.append)
+    assert result["status"] == "success", result
+    joined = " ".join(logs)
+    assert "Loading dedicated HDA file" in joined, logs
+    assert "Detecting inline HDA columns" not in joined, logs
+
+
+def test_hda_source_inline_ignores_stray_hda_path(tmp_path: Path) -> None:
+    """(c) + (4) hdaSource=inline WITH a stray hda path → the hda file is NOT
+    loaded; inline detection runs instead. This guards against a hidden hda
+    role being sent with a path while the user has toggled back to inline.
+    """
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "C200",
+                "Part Number": "CAP-1",
+                "Description": "Cap",
+                # BOM carries inline commodity columns here.
+                "BAE HDA Commodity I": "Capacitor",
+                "BAE HDA Commodity II": "Ceramic",
+                "Part Usage": "1",
+            }
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "GRP-1",
+                "Reference Designator": "C200",
+                "Function Description": "Filter",
+                "Schematic Page": "1",
+            }
+        ],
+        fm_rows=[
+            {
+                "FMD-2016 Commodity Type 1": "Capacitor",
+                "FMD-2016 Commodity Type 2": "Ceramic",
+                "Failure Mode": "Short",
+                "Failure Mode Ratio": 1.0,
+            }
+        ],
+    )
+    # A stray HDA workbook that, if loaded, would emit "Loading dedicated
+    # HDA file". With hdaSource=inline it must be ignored.
+    stray_hda = tmp_path / "stray_hda.xlsx"
+    pd.DataFrame(
+        [
+            {
+                "Part Number": "CAP-1",
+                "BAE HDA Commodity I": "WRONG",
+                "BAE HDA Commodity II": "WRONG",
+            }
+        ]
+    ).to_excel(stray_hda, index=False)
+
+    body = {
+        "workflowId": "piece_part_generate",
+        "outputStrategyId": "new_workbook_standard",
+        "options": {
+            "failureModesStandard": "FMD-2016",
+            "hdaSource": "inline",
+        },
+        "outputDirectory": str(tmp_path),
+        "inputs": [
+            _state("grouping", paths["grouping"]),
+            _state("bom", paths["bom"]),
+            _state("failureModes", paths["fm"]),
+            # Stray hda input present even though source is inline.
+            _state("hda", stray_hda),
+        ],
+        "mappings": [],
+    }
+    # Validation passes (inline source never requires an hda file).
+    validation = validate_run_request(body)
+    assert validation["ok"] is True, validation
+
+    logs: list[str] = []
+    result = execute_run_request(body, log_callback=logs.append)
+    assert result["status"] == "success", result
+    joined = " ".join(logs)
+    # The stray dedicated HDA file must NOT have been loaded.
+    assert "Loading dedicated HDA file" not in joined, logs
+    assert "Detecting inline HDA columns" in joined, logs
+
+
+def test_hda_source_absent_legacy_client_path_presence_decides(tmp_path: Path) -> None:
+    """(d) options WITHOUT hdaSource (legacy client) → behavior is unchanged:
+    an attached hda path is loaded as a dedicated file (path presence decides).
+    """
+    paths = _hda_separate_fixture(tmp_path)
+    body = {
+        "workflowId": "piece_part_generate",
+        "outputStrategyId": "new_workbook_standard",
+        # No hdaSource key in options.
+        "options": {"failureModesStandard": "FMD-2016"},
+        "outputDirectory": str(tmp_path),
+        "inputs": [
+            _state("grouping", paths["grouping"]),
+            _state("bom", paths["bom"]),
+            _state("failureModes", paths["fm"]),
+            _state("hda", paths["hda"]),
+        ],
+        "mappings": [],
+    }
+    validation = validate_run_request(body)
+    assert validation["ok"] is True, validation
+
+    logs: list[str] = []
+    result = execute_run_request(body, log_callback=logs.append)
+    assert result["status"] == "success", result
+    joined = " ".join(logs)
+    # Legacy behavior: a present hda path loads the dedicated file.
+    assert "Loading dedicated HDA file" in joined, logs
+
+
+def test_hda_source_absent_legacy_no_hda_path_uses_inline(tmp_path: Path) -> None:
+    """(d) options WITHOUT hdaSource and NO hda path → inline detection, exactly
+    as before the flag existed."""
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "C200",
+                "Part Number": "CAP-1",
+                "Description": "Cap",
+                "BAE HDA Commodity I": "Capacitor",
+                "BAE HDA Commodity II": "Ceramic",
+                "Part Usage": "1",
+            }
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "GRP-1",
+                "Reference Designator": "C200",
+                "Function Description": "Filter",
+                "Schematic Page": "1",
+            }
+        ],
+        fm_rows=[
+            {
+                "FMD-2016 Commodity Type 1": "Capacitor",
+                "FMD-2016 Commodity Type 2": "Ceramic",
+                "Failure Mode": "Short",
+                "Failure Mode Ratio": 1.0,
+            }
+        ],
+    )
+    body = {
+        "workflowId": "piece_part_generate",
+        "outputStrategyId": "new_workbook_standard",
+        "options": {"failureModesStandard": "FMD-2016"},
+        "outputDirectory": str(tmp_path),
+        "inputs": [
+            _state("grouping", paths["grouping"]),
+            _state("bom", paths["bom"]),
+            _state("failureModes", paths["fm"]),
+        ],
+        "mappings": [],
+    }
+    logs: list[str] = []
+    result = execute_run_request(body, log_callback=logs.append)
+    assert result["status"] == "success", result
+    joined = " ".join(logs)
+    assert "Detecting inline HDA columns" in joined, logs
+    assert "Loading dedicated HDA file" not in joined, logs

@@ -6,6 +6,7 @@ BOM Compare - Custom Compare Module
 BOM-vs-BOM comparison engine: compare two BOMs using RefDes as key anchor,
 with FMEA-aware scope analysis, duplicate detection, and part usage validation.
 """
+import re
 import threading
 from typing import Dict, List, Optional, Set, Tuple, Any
 
@@ -16,6 +17,7 @@ from common import (
     get_tool_logger,
     check_cancelled,
     CancellationError,
+    FMR_TOLERANCE,
     get_synonyms,
     parse_usage,
     to_reason_code_label,
@@ -24,10 +26,12 @@ from common import (
 from common.exceptions import ColumnMappingError
 from common.refdes_utils import (
     canonicalize_refdes,
+    get_base_refdes,
     get_prefix,
     is_known_prefix,
     get_usage_base_refdes,
     split_refdes_list,
+    CONTROL_CHARS_PATTERN,
 )
 from common.validation_utils import (
     validate_part_usage,
@@ -41,7 +45,7 @@ from common.fmea_utils import (
 )
 from common.column_synonyms import get_synonyms as _get_synonyms
 
-from .bom_compare_logic import BomCompareResult
+from .bom_compare_logic import BomCompareResult, DEFAULT_DNP_REGEX
 
 _logger = get_tool_logger("bom_compare")
 
@@ -88,11 +92,31 @@ def compare_two_boms(
     check_part_usage: bool = True,
     source_name_a: Optional[str] = None,
     source_name_b: Optional[str] = None,
+    *,
+    exact_match: bool = False,
+    loose_base_match: bool = False,
+    ignore_dnp: bool = True,
+    dnp_regex: Optional[str] = None,
+    desc_col_a: Optional[str] = None,
+    desc_col_b: Optional[str] = None,
+    check_fmr: bool = False,
 ) -> BomCompareResult:
     """
     Compare two BOMs using RefDes as the key anchor.
 
-    Uses FULL EXACT MATCH - RefDes must match exactly (e.g., U312-B17 only matches U312-B17).
+    Matching mode mirrors the group-vs-BOM path so the shared "exact match" /
+    "base match" checkboxes mean the same thing in both workflows:
+
+    - ``exact_match=False`` (default): each RefDes token is reduced to its base
+      RefDes for matching (``U200-1`` pin reduces to ``U200``). Hyphens are PINS,
+      never ranges (locked-in project convention) — ``get_base_refdes`` preserves
+      connector-pin notation but strips instance suffixes/trailing letters so a
+      pin lines up with its base component.
+    - ``exact_match=True``: keys are the full canonical tokens (``U200-1`` only
+      matches ``U200-1``).
+    - ``loose_base_match=True`` (only meaningful with base matching): an
+      only-in-A base is suppressed when an only-in-B base starts with it (and
+      vice-versa), matching the group path's fuzzy-prefix behavior.
 
     Args:
         bom_a_df: First BOM DataFrame (reference)
@@ -102,8 +126,16 @@ def compare_two_boms(
         compare_columns: Optional list of (col_a, col_b) tuples for additional comparison
         log_callback: Optional callback for logging progress
         stop_event: Optional threading.Event for cancellation support
+        check_part_usage: Validate part usage values against 1/instance_count
         source_name_a: Optional source filename/path for BOM A (used for FMEA gating)
         source_name_b: Optional source filename/path for BOM B (used for FMEA gating)
+        exact_match: Match on full canonical tokens instead of base RefDes
+        loose_base_match: Fuzzy-prefix base matching (base path only)
+        ignore_dnp: Skip rows whose RefDes/Description matches the DNP regex
+        dnp_regex: DNP pattern (falsy -> canonical default)
+        desc_col_a: Description column in BOM A (for DNP filtering)
+        desc_col_b: Description column in BOM B (for DNP filtering)
+        check_fmr: Validate per-RefDes Failure Mode Ratio sums == 1.0 on each file
 
     Returns:
         BomCompareResult with only_in_a, only_in_b, differences, and summary
@@ -114,6 +146,19 @@ def compare_two_boms(
         _logger.info(msg)
 
     result = BomCompareResult()
+
+    # Compile the DNP regex once. A falsy value (omitted/empty/None) must fall
+    # back to the canonical default, NEVER compile '' (which matches every
+    # string and would drop the entire BOM). Mirrors group_analysis._compile_patterns.
+    dnp_source = dnp_regex or DEFAULT_DNP_REGEX
+    try:
+        dnp_re = re.compile(dnp_source, re.I)
+    except re.error:
+        _logger.warning(f"Invalid DNP regex pattern, using default: {dnp_regex}")
+        try:
+            dnp_re = re.compile(DEFAULT_DNP_REGEX, re.I)
+        except re.error:
+            dnp_re = re.compile(r"\bDNP\b", re.I)
 
     # Validate inputs
     if bom_a_df is None or bom_a_df.empty:
@@ -139,6 +184,12 @@ def compare_two_boms(
           NOTE: Still normalizes whitespace and uppercases for consistent matching.
           Use this for non-RefDes keys or when you want "U1-U3" as a single value.
         - "refdes_list": Split and expand RefDes ranges (e.g., "U1-U3" -> ["U1", "U2", "U3"]).
+
+        When ``exact_match`` is False, each RefDes-list token is additionally
+        reduced to its BASE RefDes (``get_base_refdes``) so a pin token (U200-1)
+        lines up with its base component (U200) — identical to the group path.
+        ``key_mode="exact"`` always treats the whole cell as one key and is left
+        untouched (it is a non-RefDes/whole-cell mode, not a base-matching mode).
         """
         # Handle NaN/None safely
         if value is None or (hasattr(pd, "isna") and pd.isna(value)):
@@ -147,7 +198,26 @@ def compare_two_boms(
             # Exact mode: single key, but normalized for reliable matching
             s = str(value).strip()
             return [s.upper()] if s else []
-        return split_refdes_list(value)
+        tokens = split_refdes_list(value)
+        if exact_match:
+            return tokens
+        # Base-match mode: reduce each token to its base RefDes (pins/instances
+        # collapse onto the base component). Drop any token that reduces to empty.
+        bases = [get_base_refdes(tok) for tok in tokens]
+        return [b for b in bases if b]
+
+    def is_dnp_row(ref_val: Any, desc_val: Any) -> bool:
+        """True when ignore_dnp is on and this row matches the DNP pattern.
+
+        Mirrors group_analysis.explode_bom: the RefDes + Description text is
+        normalized (control chars stripped) and matched against the DNP regex.
+        """
+        if not ignore_dnp:
+            return False
+        check_str = CONTROL_CHARS_PATTERN.sub(
+            "", f"{normalize_text(ref_val)} {normalize_text(desc_val)}"
+        )
+        return bool(dnp_re.search(check_str))
 
     def normalize_text(value: Any) -> str:
         if value is None or (hasattr(pd, "isna") and pd.isna(value)):
@@ -453,13 +523,36 @@ def compare_two_boms(
         # Other FMEA row types are ignored for duplicate checks.
         return None, None
 
+    # Resolve a Description column per file for DNP filtering. The custom-path
+    # frontend never sends an explicit description mapping, so auto-detect one
+    # when ignore_dnp is on (consistent with how the BOM is scanned for DNP on
+    # the group path, where description text participates in the DNP match).
+    def _resolve_desc_col(df: pd.DataFrame, explicit: Optional[str]) -> Optional[str]:
+        if explicit and explicit in df.columns:
+            return explicit
+        if not ignore_dnp:
+            return None
+        return detect_column(df.columns, get_synonyms('description'))
+
+    desc_a = _resolve_desc_col(bom_a_df, desc_col_a)
+    desc_b = _resolve_desc_col(bom_b_df, desc_col_b)
+    if ignore_dnp:
+        log(
+            f"  DNP filtering enabled (File 1 desc col: {desc_a or 'N/A'}, "
+            f"File 2 desc col: {desc_b or 'N/A'})"
+        )
+
     # Build RefDes indexes + duplicate identity maps
     check_cancelled(stop_event, "Cancelled before indexing BOM A")
     index_a: Dict[str, Dict[str, Any]] = {}
     all_occurrences_a: Dict[Tuple[Any, ...], List[Dict[str, Any]]] = {}
     duplicate_meta_a: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
+    dnp_skipped_a = 0
     for excel_row, row in enumerate(bom_a_df.to_dict('records'), start=2):
         ref_val = row.get(refdes_col_a, "")
+        if is_dnp_row(ref_val, row.get(desc_a, "") if desc_a else ""):
+            dnp_skipped_a += 1
+            continue
         keys = extract_keys(ref_val)
         row_type = scope_a["row_type_by_excel_row"].get(excel_row, "other")
         for key in keys:
@@ -478,8 +571,12 @@ def compare_two_boms(
     index_b: Dict[str, Dict[str, Any]] = {}
     all_occurrences_b: Dict[Tuple[Any, ...], List[Dict[str, Any]]] = {}
     duplicate_meta_b: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
+    dnp_skipped_b = 0
     for excel_row, row in enumerate(bom_b_df.to_dict('records'), start=2):
         ref_val = row.get(refdes_col_b, "")
+        if is_dnp_row(ref_val, row.get(desc_b, "") if desc_b else ""):
+            dnp_skipped_b += 1
+            continue
         keys = extract_keys(ref_val)
         row_type = scope_b["row_type_by_excel_row"].get(excel_row, "other")
         for key in keys:
@@ -494,6 +591,9 @@ def compare_two_boms(
                 all_occurrences_b.setdefault(dup_key, []).append(row)
                 duplicate_meta_b.setdefault(dup_key, dup_meta or {})
 
+    if ignore_dnp and (dnp_skipped_a or dnp_skipped_b):
+        log(f"  Skipped DNP rows: File 1={dnp_skipped_a}, File 2={dnp_skipped_b}")
+
     # Count duplicate identities (not just repeated RefDes in piece-part rows).
     dup_count_a = sum(1 for refs in all_occurrences_a.values() if len(refs) > 1)
     dup_count_b = sum(1 for refs in all_occurrences_b.values() if len(refs) > 1)
@@ -504,12 +604,27 @@ def compare_two_boms(
 
     log(f"BOM A: {len(index_a)} unique RefDes, BOM B: {len(index_b)} unique RefDes")
 
-    # Find set differences (FULL EXACT MATCH)
+    # Find set differences. Keys are full canonical tokens (exact_match) or base
+    # RefDes (default), so this is exact/base matching depending on extract_keys.
     set_a = set(index_a.keys())
     set_b = set(index_b.keys())
 
-    only_in_a = sorted(set_a - set_b)
-    only_in_b = sorted(set_b - set_a)
+    raw_only_in_a = set_a - set_b
+    raw_only_in_b = set_b - set_a
+
+    # loose_base_match (base path only): suppress an only-in-A key when an
+    # only-in-B key starts with it (prefix), and vice-versa — mirrors the group
+    # path's fuzzy-prefix coverage in _find_missing_in_bom / _find_extra_in_bom.
+    # In exact_match mode there is no base concept, so loose matching is a no-op.
+    if loose_base_match and not exact_match:
+        def _covered_by_prefix(key: str, others: set) -> bool:
+            return any(other.startswith(key) for other in others if other != key)
+
+        only_in_a = sorted(k for k in raw_only_in_a if not _covered_by_prefix(k, set_b))
+        only_in_b = sorted(k for k in raw_only_in_b if not _covered_by_prefix(k, set_a))
+    else:
+        only_in_a = sorted(raw_only_in_a)
+        only_in_b = sorted(raw_only_in_b)
     in_both = sorted(set_a & set_b)
 
     log(f"Only in A: {len(only_in_a)}, Only in B: {len(only_in_b)}, In both: {len(in_both)}")
@@ -775,6 +890,51 @@ def compare_two_boms(
 
     result.part_usage_warnings = usage_warnings
 
+    # Failure Mode Ratio validation (if enabled). Mirrors group_analysis._check_fmr:
+    # per-RefDes Σ(Ratio) must equal 1.0 within FMR_TOLERANCE. FMR validation
+    # groups by the instance/pin designator (the verbatim, upper-cased RefDes
+    # cell value) — the locked-in project semantic — NOT by base, so multi-pin
+    # designators are summed independently of base reduction used for matching.
+    fmr_warnings: List[Dict[str, Any]] = []
+    if check_fmr:
+        def check_fmr_for_df(df: pd.DataFrame, ref_col: str, source_label: str) -> List[Dict[str, Any]]:
+            ratio_col = detect_column(df.columns, get_synonyms('ratio'))
+            if not ratio_col:
+                log(f"  {source_label}: Ratio column not found — skipping FMR check.")
+                return []
+            log(f"Checking FMR Summing in {source_label} (column: {ratio_col})...")
+            ref_sums: Dict[str, float] = {}
+            for row in df.to_dict('records'):
+                check_cancelled(stop_event, "Cancelled during FMR check")
+                ref_val = row.get(ref_col)
+                if pd.isna(ref_val):
+                    continue
+                ref_raw = str(ref_val).strip().upper()
+                if not ref_raw:
+                    continue
+                try:
+                    val = float(row.get(ratio_col))
+                except (TypeError, ValueError):
+                    val = 0.0
+                ref_sums[ref_raw] = ref_sums.get(ref_raw, 0.0) + val
+            out: List[Dict[str, Any]] = []
+            for ref, total in ref_sums.items():
+                if abs(total - 1.0) > FMR_TOLERANCE:
+                    out.append({
+                        "Source": source_label,
+                        "RefDes": ref,
+                        "Sum": total,
+                        "Status": "FMR != 1.0",
+                    })
+            return out
+
+        fmr_warnings.extend(check_fmr_for_df(bom_a_df, refdes_col_a, "File 1"))
+        fmr_warnings.extend(check_fmr_for_df(bom_b_df, refdes_col_b, "File 2"))
+        if fmr_warnings:
+            log(f"[WARNING] Found {len(fmr_warnings)} Failure Mode Ratio sum errors")
+
+    result.fmr_warnings = fmr_warnings
+
     # Build summary
     # Count unique RefDes that have duplicates (for clearer reporting)
     unique_dup_refdes_a = len({
@@ -806,6 +966,7 @@ def compare_two_boms(
         'scope_warnings_a': scope_warnings_a,
         'scope_warnings_b': scope_warnings_b,
         'scope_warnings_total': len(scope_warnings),
+        'fmr_warnings': len(fmr_warnings),  # Failure Mode Ratio sum errors
     }
 
     return result

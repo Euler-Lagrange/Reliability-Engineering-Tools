@@ -228,6 +228,23 @@ def write_bom_compare_excel(
         write_df_to_sheet(ws_usage, df_usage)
         style_worksheet(ws_usage, df_usage, max_width=40, alternate_rows=True)
 
+    # Failure Mode Ratio warnings sheet (custom-path check_fmr)
+    if getattr(result, "fmr_warnings", None):
+        ws_fmr = wb.create_sheet("Failure_Mode_Ratio")
+        source_map = {'File 1': bom_a_name, 'File 2': bom_b_name}
+        fmr_rows = []
+        for w in result.fmr_warnings:
+            src = w.get('Source', '')
+            fmr_rows.append({
+                'Source': source_map.get(src, src),
+                'RefDes': w.get('RefDes'),
+                'Sum': w.get('Sum'),
+                'Status': w.get('Status'),
+            })
+        df_fmr = pd.DataFrame(fmr_rows)
+        write_df_to_sheet(ws_fmr, df_fmr)
+        style_worksheet(ws_fmr, df_fmr, max_width=40, alternate_rows=True)
+
     # Scope warnings sheet (for FMEA CB-vs-PP consistency warnings)
     if result.scope_warnings:
         ws_scope = wb.create_sheet("Scope_Warnings")

@@ -401,7 +401,14 @@ def _run_group_compare(
         bom_desc_col=_get_mapping(body, "bom_desc_col"),
     )
     analyze_options = AnalyzeOptions(
-        base_match=options.get("base_match", True),
+        # The frontend "base match" checkbox maps to loose/prefix base matching.
+        # The wire key stays ``base_match`` (frontend stability), but it drives
+        # ``loose_base_match`` here — the only base-matching control the group
+        # analyzer actually reads. The frontend default for this option is now
+        # FALSE, so a default run keeps loose matching OFF (byte-identical to the
+        # pre-wiring behavior). The dead AnalyzeOptions.base_match field was
+        # removed; nothing in the analyzer ever read it.
+        loose_base_match=options.get("base_match", False),
         exact_match=options.get("exact_match", False),
         treat_prov_as_covered=options.get("treat_prov_as_covered", True),
         ignore_dnp=options.get("ignore_dnp", True),
@@ -517,6 +524,17 @@ def _run_custom_compare(
     emit_status("running", "Comparing entries", "Comparing entries between files...")
     emit_progress("Comparing entries", "Comparing...", 30)
 
+    # Forward the shared comparison options so the custom (BOM-vs-BOM) path
+    # honors the same checkboxes as the group path:
+    #   - base_match  -> loose_base_match (frontend default FALSE; see group path)
+    #   - exact_match -> full-token vs base-RefDes matching
+    #   - ignore_dnp  -> skip Do-Not-Populate rows before comparison
+    #   - check_fmr   -> per-RefDes Failure Mode Ratio sum validation
+    # NOTE: ``treat_prov_as_covered`` is intentionally NOT forwarded here. On the
+    # group path it drops grouping tokens whose GROUP-NAME column contains
+    # "PROV". The custom path compares two BOMs by RefDes and has no group-name
+    # column, so there is no provisional-group signal to act on — the option is
+    # genuinely inapplicable to a two-BOM compare (not merely unimplemented).
     result = compare_two_boms(
         bom_a_df, bom_b_df,
         refdes_col_a=refdes_col_a,
@@ -528,6 +546,10 @@ def _run_custom_compare(
         check_part_usage=options.get("check_part_usage", True),
         source_name_a=path_a,
         source_name_b=path_b,
+        exact_match=options.get("exact_match", False),
+        loose_base_match=options.get("base_match", False),
+        ignore_dnp=options.get("ignore_dnp", True),
+        check_fmr=options.get("check_fmr", False),
     )
 
     emit_status("running", "Writing workbook", "Writing Excel report...")
@@ -552,7 +574,11 @@ def _run_custom_compare(
     only_a = len(result.only_in_a)
     only_b = len(result.only_in_b)
     diff_count = len(result.differences)
-    warning_count = len(result.part_usage_warnings) + len(result.scope_warnings)
+    warning_count = (
+        len(result.part_usage_warnings)
+        + len(result.scope_warnings)
+        + len(result.fmr_warnings)
+    )
 
     return {
         "status": "success",

@@ -124,7 +124,12 @@ export function BomCompareTool() {
   >({});
   const [validations, setValidations] = useState<ValidationMessage[]>(baseScenario.validations);
   const [options, setOptions] = useState({
-    base_match: true,
+    // "base match" maps to the backend's loose/prefix base-matching mode
+    // (AnalyzeOptions.loose_base_match). It defaults to FALSE so a default run
+    // produces byte-identical output to the pre-wiring behavior (the backend
+    // base-matching default has always been loose=off). Checking it opts into
+    // fuzzy-prefix base coverage on BOTH the group and custom workflows.
+    base_match: false,
     exact_match: false,
     ignore_dnp: true,
     check_part_usage: true,
@@ -854,17 +859,28 @@ export function BomCompareTool() {
               eyebrow="Comparison Settings"
               description="Tune the comparison output."
             >
-              {Object.entries(options).map(([key, value]) => (
-                <CheckboxField
-                  key={key}
-                  id={`bom-compare-option-${key}`}
-                  label={key.replace(/_/g, " ")}
-                  checked={value}
-                  onChange={(next) =>
-                    setOptions((prev) => ({ ...prev, [key]: next } as typeof prev))
-                  }
-                />
-              ))}
+              {Object.entries(options).map(([key, value]) => {
+                // treat_prov_as_covered keys off the grouping file's
+                // group-name column ("PROV" groups), which a two-BOM custom
+                // compare does not have — the backend provably never reads
+                // it on the custom path, so disable it there with a hint
+                // (mirrors the RefDes adaptive-geometry pattern).
+                const groupOnly =
+                  key === "treat_prov_as_covered" && workflowId === "bom_compare_custom";
+                return (
+                  <CheckboxField
+                    key={key}
+                    id={`bom-compare-option-${key}`}
+                    label={key.replace(/_/g, " ")}
+                    checked={value}
+                    disabled={groupOnly}
+                    hint={groupOnly ? "Group vs BOM mode only" : undefined}
+                    onChange={(next) =>
+                      setOptions((prev) => ({ ...prev, [key]: next } as typeof prev))
+                    }
+                  />
+                );
+              })}
               <OutputFolderPicker
                 value={bomCompareOutputDirectory}
                 onChange={setBomCompareOutputDirectory}

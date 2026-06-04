@@ -452,6 +452,27 @@ def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
                 affected_labels=result.affected_labels,
             )
 
+    # Contract fix: honor the ``hdaSource`` flag. When the user explicitly
+    # selected "Separate HDA file" but no usable HDA workbook is loaded, the
+    # old backend silently fell back to inline detection. Block that here so
+    # the explicit choice is respected. ``inline`` and the legacy absent case
+    # never require an HDA file. Checked only after the prior gates pass so the
+    # narrowest blocking message still wins (matches the elif chain above).
+    if result.ok:
+        hda_source = _hda_source(options)
+        if hda_source == "separate" and not _is_input_loaded(
+            inputs_by_role.get("hda") or {}
+        ):
+            result = type(result)(
+                ok=False,
+                reason_code="missing_separate_hda",
+                toast_text=(
+                    "Separate HDA file selected but no HDA workbook is loaded. "
+                    "Attach the HDA workbook or switch HDA source to inline."
+                ),
+                affected_labels=(_role_label("hda"),) + result.affected_labels,
+            )
+
     response: dict[str, Any] = {
         "ok": result.ok,
         "reason_code": result.reason_code,
@@ -505,6 +526,59 @@ def _build_fmea_output_preview(
 def _selected_sheet(inputs_by_role: dict[str, dict[str, Any]], role: str) -> str | None:
     value = str((inputs_by_role.get(role) or {}).get("selectedSheet", "")).strip()
     return value or None
+
+
+# Contract fix: the frontend sends ``options.hdaSource`` ("inline" | "separate")
+# to declare whether HDA commodity data comes from a dedicated workbook or is
+# detected inline from BOM columns. The backend now honors the flag in BOTH
+# directions instead of guessing from path presence (see
+# ``_hda_source`` / ``_resolve_hda_path`` and the ``missing_separate_hda``
+# validation gate).
+#
+# ``None`` (flag absent) preserves legacy behavior for older/other clients that
+# don't send it: path presence decides inline vs. separate downstream.
+def _hda_source(options: Mapping[str, Any]) -> str | None:
+    """Read the normalized ``hdaSource`` flag, or ``None`` when absent.
+
+    Returns ``"inline"`` or ``"separate"`` for recognized values; ``None`` when
+    the key is missing or blank (legacy client) so callers fall back to the
+    historical path-presence behavior.
+    """
+    raw = options.get("hdaSource")
+    if raw is None:
+        return None
+    value = str(raw).strip().lower()
+    return value or None
+
+
+def _resolve_hda_path(
+    inputs_by_role: dict[str, dict[str, Any]],
+    hda_source: str | None,
+) -> str | None:
+    """Resolve the effective dedicated-HDA path, honoring ``hdaSource``.
+
+    This is the single seam where the flag becomes authoritative for the
+    execute path, keeping ``fmea_generator_logic.py`` flag-free:
+
+    * ``hda_source == "inline"`` → return ``None`` so the logic layer ignores
+      any stray hda input (a hidden hda role can persist with a path after the
+      user toggles back to inline) and runs inline detection instead.
+    * Otherwise (``"separate"`` or ``None`` for legacy clients) → return the
+      attached hda path, or ``None`` when none is attached.
+    """
+    if hda_source == "inline":
+        return None
+    return str((inputs_by_role.get("hda") or {}).get("path", "")).strip() or None
+
+
+def _resolve_hda_sheet(
+    inputs_by_role: dict[str, dict[str, Any]],
+    hda_source: str | None,
+) -> str | None:
+    """Resolve the effective HDA sheet, suppressed when the source is inline."""
+    if hda_source == "inline":
+        return None
+    return _selected_sheet(inputs_by_role, "hda")
 
 
 def _resolve_output_directory(
@@ -629,6 +703,16 @@ def execute_run_request(
         else None
     ) or None
     inputs_by_role = _collect_inputs(body)
+    # Contract fix: resolve the effective HDA source ONCE so the flag is
+    # authoritative for every workflow branch below. When the source is
+    # "inline" the helpers return None, so a stray hda input (e.g. a hidden
+    # role that kept its path after the user toggled back to inline) is
+    # ignored and the logic layer runs inline detection. "separate" / legacy
+    # absent keep using the attached path. fmea_generator_logic.py stays
+    # flag-free — it still branches only on whether it received an hda path.
+    hda_source = _hda_source(options)
+    effective_hda_path = _resolve_hda_path(inputs_by_role, hda_source)
+    effective_hda_sheet = _resolve_hda_sheet(inputs_by_role, hda_source)
     # Fix A2: plumb the frontend's column mapping rows through to the
     # processor as column_overrides. Previously we hardcoded {} and the
     # user's explicit column picks were silently discarded, forcing the
@@ -710,7 +794,7 @@ def execute_run_request(
             "fmea": str((inputs_by_role.get("existingFmea") or {}).get("path", "")).strip() or None,
             "bom": str((inputs_by_role.get("bom") or {}).get("path", "")).strip() or None,
             "fm": str((inputs_by_role.get("failureModes") or {}).get("path", "")).strip() or None,
-            "hda": str((inputs_by_role.get("hda") or {}).get("path", "")).strip() or None,
+            "hda": effective_hda_path,
             "group": str((inputs_by_role.get("grouping") or {}).get("path", "")).strip() or None,
             "verbose": False,
             "column_overrides": column_overrides,
@@ -718,7 +802,7 @@ def execute_run_request(
             "fmea_sheet": _selected_sheet(inputs_by_role, "existingFmea"),
             "bom_sheet": _selected_sheet(inputs_by_role, "bom"),
             "fm_sheet": _selected_sheet(inputs_by_role, "failureModes"),
-            "hda_sheet": _selected_sheet(inputs_by_role, "hda"),
+            "hda_sheet": effective_hda_sheet,
             "group_sheet": _selected_sheet(inputs_by_role, "grouping"),
         }
 
@@ -744,7 +828,7 @@ def execute_run_request(
         run_inputs = {
             "func": str((inputs_by_role.get("functionalFmea") or {}).get("path", "")).strip() or None,
             "bom": str((inputs_by_role.get("bom") or {}).get("path", "")).strip() or None,
-            "hda": str((inputs_by_role.get("hda") or {}).get("path", "")).strip() or None,
+            "hda": effective_hda_path,
             "fm": str((inputs_by_role.get("failureModes") or {}).get("path", "")).strip() or None,
             "group": str((inputs_by_role.get("grouping") or {}).get("path", "")).strip() or None,
             "out_folder": str(output_directory),
@@ -754,7 +838,7 @@ def execute_run_request(
             "failure_modes_standard": failure_modes_standard,
             "func_sheet": _selected_sheet(inputs_by_role, "functionalFmea"),
             "bom_sheet": _selected_sheet(inputs_by_role, "bom"),
-            "hda_sheet": _selected_sheet(inputs_by_role, "hda"),
+            "hda_sheet": effective_hda_sheet,
             "fm_sheet": _selected_sheet(inputs_by_role, "failureModes"),
             "group_sheet": _selected_sheet(inputs_by_role, "grouping"),
         }
@@ -782,7 +866,7 @@ def execute_run_request(
         run_inputs = {
             "group": str((inputs_by_role.get("grouping") or {}).get("path", "")).strip() or None,
             "bom": str((inputs_by_role.get("bom") or {}).get("path", "")).strip() or None,
-            "hda": str((inputs_by_role.get("hda") or {}).get("path", "")).strip() or None,
+            "hda": effective_hda_path,
             "fm": str((inputs_by_role.get("failureModes") or {}).get("path", "")).strip() or None,
             "func": None,
             "piecepart_fmea": None,
@@ -797,7 +881,7 @@ def execute_run_request(
             "failure_modes_standard": failure_modes_standard,
             "group_sheet": _selected_sheet(inputs_by_role, "grouping"),
             "bom_sheet": _selected_sheet(inputs_by_role, "bom"),
-            "hda_sheet": _selected_sheet(inputs_by_role, "hda"),
+            "hda_sheet": effective_hda_sheet,
             "fm_sheet": _selected_sheet(inputs_by_role, "failureModes"),
             "func_sheet": None,
             "piecepart_fmea_sheet": None,

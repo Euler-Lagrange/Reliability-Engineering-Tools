@@ -247,6 +247,30 @@ body. Currently defined fields:
   intersection of requested columns and actual columns; columns that do not
   exist in the DataFrame are ignored, and an empty intersection is logged as
   a warning.
+- `hdaSource` — string, `"inline"` or `"separate"`, FMEA workflows,
+  optional. **Authoritative when present** (added in 0.4.6): `"separate"`
+  with no usable `hda` input path blocks validation with `reason_code`
+  `"missing_separate_hda"`; `"inline"` causes any stray `hda` input path
+  to be ignored (inline detection from the BOM is used). When the field is
+  absent (legacy clients), the presence of an `hda` input path decides.
+- BOM Compare options (`bom_compare_group` + `bom_compare_custom`):
+  `exact_match` (full canonical token matching vs base-RefDes reduction),
+  `base_match` (maps to loose/prefix base matching; default off),
+  `ignore_dnp` (skip Do-Not-Populate rows; the optional `dnp_regex`
+  string falls back to the canonical `DEFAULT_DNP_REGEX` when omitted or
+  empty — an empty pattern is never compiled), `check_fmr` (per-RefDes
+  failure-mode-ratio sum validation; custom path emits a
+  `Failure_Mode_Ratio` warnings sheet), and `check_part_usage`. All of
+  these are honored on **both** workflows as of 0.4.6.
+  `treat_prov_as_covered` is **group-only** (it keys off the grouping
+  file's group-name column, which a two-BOM custom compare does not
+  have); the custom path ignores it and the UI disables it there.
+- Mapping values may carry the Do-Not-Map sentinel `"__do_not_map__"`
+  (single source of truth: `shared/pre_run_validation.DO_NOT_MAP_SENTINEL`
+  mirrored by `frontend/src/app/types.ts` `DO_NOT_MAP_VALUE`). A REQUIRED
+  mapping set to the sentinel blocks validation with `reason_code`
+  `"invalid_do_not_map"` — it must never reach the execute path as a
+  literal column name.
 
 The legacy `enrichments` field has been removed. The backend tolerates
 legacy payloads for backward compatibility but hard-fails with

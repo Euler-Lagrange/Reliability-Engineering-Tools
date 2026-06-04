@@ -150,6 +150,22 @@ describe("BomCompareTool custom compare workflow", () => {
     }
   });
 
+  // treat_prov_as_covered reads the grouping file's group-name column,
+  // which custom compare (two plain BOMs) does not have — the backend never
+  // consumes it on the custom path, so the checkbox must read as inert there.
+  it("disables the group-only prov checkbox in Custom Compare", async () => {
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+
+    expect(screen.getByRole("checkbox", { name: /treat prov as covered/i })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: /Custom Compare/i }));
+    expect(screen.getByRole("checkbox", { name: /treat prov as covered/i })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: /Group vs BOM/i }));
+    expect(screen.getByRole("checkbox", { name: /treat prov as covered/i })).toBeEnabled();
+  });
+
   it("dispatches bomA/bomB inputs and custom mappings for a custom run", async () => {
     const user = userEvent.setup();
     render(<BomCompareTool />);
