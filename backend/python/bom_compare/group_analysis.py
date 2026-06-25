@@ -9,6 +9,7 @@ and write Excel reports.
 """
 import os
 import re
+import math
 import datetime
 import threading
 from typing import Dict, List, Optional, Set, Tuple, Any
@@ -314,7 +315,7 @@ def _find_extra_in_bom(
     else:
         for base in sorted(b_bases):
             check_cancelled(stop_event, "Analysis cancelled by user.")
-            if base not in g_bases and not (options.loose_base_match and any(base.startswith(gb) for gb in g_bases)):
+            if base not in g_bases and not (options.loose_base_match and any(base.startswith(gb) and not base[len(gb):].isdigit() for gb in g_bases)):
                 extra_rows.append({
                     "Base": base,
                     "BOM_Tokens": ", ".join(sorted(set(b_base_map.get(base, [])))),
@@ -483,6 +484,12 @@ def _check_fmr(
     ref_idx = col_idx[mapping.grouping_refdes_col]
     ratio_idx = col_idx.get(ratio_col) if ratio_col else None
 
+    # Track RefDes whose ratio cell was non-numeric / NaN. Such a cell must NOT
+    # silently contribute: float(NaN) does not raise, so a NaN ratio would poison
+    # the sum and make abs(total - 1.0) > tol always False (the inconsistent
+    # component silently passes), and a text cell would silently count as 0.0.
+    # We exclude invalid cells from the sum and FLAG the RefDes instead.
+    ref_invalid: set = set()
     for row in group_df.itertuples(index=False):
         check_cancelled(stop_event, "Analysis cancelled by user.")
         ref_val = row[ref_idx]
@@ -492,16 +499,34 @@ def _check_fmr(
         ref_raw = str(ref_val).strip().upper()
         if not ref_raw:
             continue
+        raw_ratio = row[ratio_idx] if ratio_idx is not None else None
+        # A blank / NaN ratio cell (e.g. a part-header or continuation row that
+        # repeats the RefDes with no ratio) is SKIPPED — not summed and not
+        # flagged. float(NaN) would poison the sum so abs(total-1.0)>tol always
+        # passes; and flagging it would noise up a RefDes whose real rows already
+        # sum to 1.0. A genuinely short sum is still caught below. A non-numeric
+        # TEXT or non-finite cell IS a data error: exclude it AND flag the RefDes.
+        if raw_ratio is None or pd.isna(raw_ratio):
+            continue
         try:
-            val = float(row[ratio_idx]) if ratio_idx is not None else 0.0
+            parsed = float(raw_ratio)
         except (ValueError, TypeError):
-            val = 0.0
-        ref_sums[ref_raw] = ref_sums.get(ref_raw, 0.0) + val
+            ref_invalid.add(ref_raw)
+            continue
+        if not math.isfinite(parsed):
+            ref_invalid.add(ref_raw)
+            continue
+        ref_sums[ref_raw] = ref_sums.get(ref_raw, 0.0) + parsed
 
     for ref, total in ref_sums.items():
         check_cancelled(stop_event, "Analysis cancelled by user.")
-        if abs(total - 1.0) > FMR_TOLERANCE:
+        if ref in ref_invalid:
+            fmr_rows.append({"RefDes": ref, "Sum": total, "Status": "Non-numeric ratio cell (sum incomplete)"})
+        elif abs(total - 1.0) > FMR_TOLERANCE:
             fmr_rows.append({"RefDes": ref, "Sum": total, "Status": "FMR != 1.0"})
+    # RefDes whose ratio cells were ALL non-numeric never reached ref_sums.
+    for ref in sorted(ref_invalid - set(ref_sums)):
+        fmr_rows.append({"RefDes": ref, "Sum": float("nan"), "Status": "Non-numeric ratio cell"})
 
     return pd.DataFrame(fmr_rows, columns=["RefDes", "Sum", "Status"])
 

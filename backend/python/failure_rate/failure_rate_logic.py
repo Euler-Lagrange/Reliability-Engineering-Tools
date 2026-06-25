@@ -54,7 +54,9 @@ from common import (
 from common.refdes_utils import (
     extract_base_refdes,
     extract_instance_refdes,
+    split_refdes_list,
 )
+from common.fmea_utils import classify_fmea_rows
 
 # Initialize module logger
 _logger = get_tool_logger("failure_rate")
@@ -156,7 +158,37 @@ class FMEALinkerLogic:
         
         # Normalize RefDes with zero-stripping (U01 -> U1, R001 -> R1)
         pred['RefDes_Norm'] = pred[pred_ref_col].apply(normalize_refdes_for_lookup)
-        pred['FR_Clean'] = pd.to_numeric(pred[pred_fr_col], errors='coerce').fillna(0.0)
+        # Coerce the prediction failure rate to numeric. A cell that held a
+        # non-empty but unparseable value (a formula string with no cached
+        # result, '1.2 FIT', 'TBD', free text) becomes NaN here; fillna(0.0)
+        # would then silently treat it as a real 0.0 failure rate and the linked
+        # row would look identical to a genuinely-zero part. Track those RefDes
+        # so linked rows get a visible Validation_Notes flag instead of an
+        # invisible zero (Tier-1 fix: silent prediction-FR coercion).
+        _pred_fr_numeric = pd.to_numeric(pred[pred_fr_col], errors='coerce')
+        _pred_fr_raw = pred[pred_fr_col]
+        # A cell is unparseable if it was non-empty text that coerced to NaN, OR a
+        # non-finite number ('inf' / '1e999' coerce to inf, NOT NaN). Both must be
+        # flagged AND zeroed so they never propagate as inf/garbage into Mode_FR
+        # and Function_FR (mirrors the math.isfinite guard the BOM FMR check uses).
+        _pred_fr_finite = _pred_fr_numeric.apply(lambda v: pd.notna(v) and math.isfinite(v))
+        _unparseable_fr_mask = (
+            (_pred_fr_numeric.isna()
+             & _pred_fr_raw.notna()
+             & (_pred_fr_raw.astype(str).str.strip() != ""))
+            | (_pred_fr_numeric.notna() & ~_pred_fr_finite)
+        )
+        pred['FR_Clean'] = _pred_fr_numeric.where(_pred_fr_finite, 0.0)
+        unparseable_fr_refs = set(pred.loc[_unparseable_fr_mask, 'RefDes_Norm'])
+        unparseable_fr_refs.discard("")
+        if unparseable_fr_refs:
+            _ufr_sample = ', '.join(sorted(unparseable_fr_refs)[:5])
+            _ufr_remaining = len(unparseable_fr_refs) - 5
+            _ufr_suffix = f" (and {_ufr_remaining} more)" if _ufr_remaining > 0 else ""
+            self.log(
+                f"  WARNING: {len(unparseable_fr_refs)} Prediction RefDes have a "
+                f"non-numeric Failure Rate (treated as 0.0): {_ufr_sample}{_ufr_suffix}"
+            )
 
         # Validate and apply unit conversion
         valid_unit_modes = {'per_hour', 'per_million_hours', 'per_billion_hours'}
@@ -248,6 +280,11 @@ class FMEALinkerLogic:
             if refdes and refdes in fr_lookup:
                 part_fr = fr_lookup[refdes]
                 linked_count += 1
+                # The RefDes matched, but its Prediction FR cell was non-numeric
+                # and got coerced to 0.0. Flag it so a silent zero isn't mistaken
+                # for a real link (Tier-1 fix: silent prediction-FR coercion).
+                if refdes in unparseable_fr_refs:
+                    notes.append("Prediction FR unparseable (treated as 0.0)")
             elif refdes:
                 part_fr = 0.0
                 missing_refs.add(refdes)
@@ -334,7 +371,17 @@ class FMEALinkerLogic:
                     fmea.loc[mask, 'Validation_Notes'] += f"FMR Sum {total:.2f} != 1.0; "
             self._report_progress(0.95)  # L7: 95% after FMR validation
 
-        if fmea_func_col and fmea_func_col != "None":
+        # Circuit/function-block roll-up (Tier-1 fix): a block row (FMEA Level =
+        # Circuit/Function Block, or a cause cell listing multiple RefDes) is an
+        # aggregate, not an independent part. Replace its phantom first-RefDes
+        # rate with the SUM of its piece-part children and exclude it from the
+        # function total so part rates are not double-counted. Returns False for
+        # plain piece-part files, in which case the legacy Function-Description
+        # roll-up runs unchanged.
+        applied_block_rollup = self._apply_circuit_block_rollup(
+            fmea, fmea_cause_col, fmea_func_col, fr_lookup
+        )
+        if not applied_block_rollup and fmea_func_col and fmea_func_col != "None":
             self.log("  Calculating Function Failure Rates...")
             func_fr = fmea.groupby(fmea_func_col)['Mode_FR'].transform('sum')
             fmea['Function_FR'] = func_fr
@@ -342,6 +389,194 @@ class FMEALinkerLogic:
         self.merged_df = fmea
         self._report_progress(1.0)  # L7: 100% complete
         return fmea
+
+    # FMEA-ID column synonyms used to tie a piece-part row to its circuit/
+    # function-block parent by shared id prefix (block "CPU-001" owns
+    # "CPU-001-R201-A"). Kept narrow to avoid grabbing a generic "ID Number".
+    _FMEA_ID_SYNONYMS = ("fmea id", "fmea-id", "fmea_id", "fmeaid")
+
+    def _detect_fmea_id_col(self, fmea: "pd.DataFrame") -> Optional[str]:
+        """Return the FMEA-ID column name if present, else None."""
+        for col in fmea.columns:
+            col_text = str(col).lower().strip()
+            if any(syn in col_text for syn in self._FMEA_ID_SYNONYMS):
+                return col
+        return None
+
+    def _apply_circuit_block_rollup(
+        self,
+        fmea: "pd.DataFrame",
+        fmea_cause_col: str,
+        fmea_func_col: str,
+        fr_lookup: dict,
+    ) -> bool:
+        """Roll circuit/function-block rows up from their piece-part children.
+
+        A block row that HAS piece-part children (associated by shared FMEA-ID
+        prefix, or by the block's listed RefDes when no FMEA-ID column exists)
+        gets failure rate = SUM of its children's Mode_FR and is EXCLUDED from
+        the function total (its children are counted instead).
+
+        A CHILDLESS block is a LEAF: if its cause lists >1 RefDes its rate
+        becomes the sum of those components' prediction lambdas (killing the
+        phantom first-RefDes rate); a single-RefDes leaf keeps its computed rate.
+        Leaf blocks are COUNTED in the function total. This is what prevents the
+        regression where a block-only functional FMEA had every rate wiped to 0.
+
+        Function_FR = the per-function sum of every COUNTED (non-rolled) row's
+        Mode_FR, broadcast to all rows of that function (so it stays consistent
+        when a function mixes block/child rows with ungrouped piece-parts).
+
+        Returns True when a block structure was found and applied; False for a
+        plain piece-part file (legacy Function-Description roll-up then runs).
+        """
+        token = self.cancel
+
+        class _ClassifyCancel:
+            def check(_self):
+                if token is not None:
+                    token.check("Processing cancelled by user.")
+
+        # Classify on the ORIGINAL columns only — the result columns we just
+        # added (Extracted_RefDes, etc.) would otherwise confuse the classifier.
+        _added = {
+            "Extracted_RefDes", "Validation_RefDes", "Part_FR", "Mode_FR",
+            "Corrected_Ratio", "Validation_Notes", "Function_FR",
+        }
+        orig_cols = [c for c in fmea.columns if c not in _added]
+        try:
+            classifications, _level_col, _validated = classify_fmea_rows(
+                fmea[orig_cols], log_func=None, cancel_token=_ClassifyCancel()
+            )
+        except InterruptedError:
+            raise
+        except Exception as exc:  # classification is best-effort; never break a run
+            self.log(f"  Note: circuit-block classification skipped ({exc}).")
+            return False
+
+        if len(classifications) != len(fmea):
+            return False
+        row_types = [c.row_type for c in classifications]
+        block_positions = [i for i, t in enumerate(row_types) if t == "circuit_block"]
+        if not block_positions:
+            return False  # plain piece-part file -> legacy function roll-up
+
+        mode_fr = list(fmea["Mode_FR"])
+        part_fr = list(fmea["Part_FR"])
+        notes = list(fmea["Validation_Notes"])
+        cause_vals = (
+            list(fmea[fmea_cause_col]) if fmea_cause_col in fmea.columns
+            else [""] * len(fmea)
+        )
+
+        # --- associate piece-part children to their block ---
+        children: Dict[int, list] = {bp: [] for bp in block_positions}
+        fmea_id_col = self._detect_fmea_id_col(fmea[orig_cols])
+        if fmea_id_col is not None:
+            ids = [str(v).strip() if pd.notna(v) else "" for v in fmea[fmea_id_col]]
+            block_id_by_pos = {bp: ids[bp] for bp in block_positions if ids[bp]}
+            for j, t in enumerate(row_types):
+                if t == "circuit_block":
+                    continue
+                pp_id = ids[j]
+                if not pp_id:
+                    continue
+                best_bp, best_len = None, -1
+                for bp, bid in block_id_by_pos.items():
+                    if (pp_id == bid or pp_id.startswith(bid + "-")) and len(bid) > best_len:
+                        best_bp, best_len = bp, len(bid)
+                if best_bp is not None:
+                    children[best_bp].append(j)
+            assoc = f"FMEA-ID column '{fmea_id_col}'"
+        else:
+            extracted = [str(v).strip().upper() for v in fmea["Extracted_RefDes"]]
+            block_refsets = {}
+            for bp in block_positions:
+                raw = cause_vals[bp] if pd.notna(cause_vals[bp]) else ""
+                refset = {normalize_refdes_for_lookup(tok) for tok in split_refdes_list(str(raw))}
+                refset.discard("")
+                block_refsets[bp] = refset
+            for j, t in enumerate(row_types):
+                if t == "circuit_block":
+                    continue
+                child_ref = normalize_refdes_for_lookup(extracted[j])
+                if not child_ref:
+                    continue
+                for bp in block_positions:
+                    if child_ref in block_refsets[bp]:
+                        children[bp].append(j)
+                        break
+            assoc = "listed RefDes (no FMEA-ID column)"
+
+        # --- set each block's rate; track which blocks are "rolled" (replaced by
+        #     their children in the function total) vs "leaf" (counted directly) ---
+        rolled = set()
+        leaf_blocks = 0
+        for bp in block_positions:
+            kids = children[bp]
+            if kids:
+                r = sum(mode_fr[j] for j in kids)
+                part_fr[bp] = r
+                mode_fr[bp] = r
+                notes[bp] = (notes[bp] or "") + (
+                    f"Circuit-block roll-up of {len(kids)} piece-part row(s); "
+                )
+                rolled.add(bp)
+            else:
+                leaf_blocks += 1
+                raw = cause_vals[bp] if (bp < len(cause_vals) and pd.notna(cause_vals[bp])) else ""
+                listed = [normalize_refdes_for_lookup(t) for t in split_refdes_list(str(raw))]
+                listed = [x for x in listed if x]
+                if len(listed) > 1:
+                    # Leaf block with multiple components but no enumerated child
+                    # rows (block-only functional FMEA): rate = sum of the listed
+                    # components' predicted lambdas, NOT the phantom first RefDes.
+                    r = sum(fr_lookup.get(x, 0.0) for x in listed)
+                    part_fr[bp] = r
+                    mode_fr[bp] = r
+                    notes[bp] = (notes[bp] or "") + (
+                        f"Block roll-up of {len(listed)} listed component(s); "
+                    )
+                # else: single/zero-RefDes leaf -> keep its computed rate (do NOT zero).
+
+        # --- Function_FR: per-function sum of every COUNTED (non-rolled) row's
+        #     Mode_FR, broadcast to all rows of that function (consistent). ---
+        function_fr: list = [None] * len(fmea)
+        if fmea_func_col and fmea_func_col != "None" and fmea_func_col in fmea.columns:
+            func_vals = list(fmea[fmea_func_col])
+            eff = [(0.0 if i in rolled else mode_fr[i]) for i in range(len(fmea))]
+            tmp = pd.DataFrame({"_func": func_vals, "_eff": eff})
+            func_sum = tmp.groupby("_func")["_eff"].sum().to_dict()
+            function_fr = [func_sum.get(func_vals[j]) for j in range(len(fmea))]
+        else:
+            # No function column: a block defines its own group (block + children).
+            for bp in block_positions:
+                function_fr[bp] = mode_fr[bp]
+                for j in children[bp]:
+                    function_fr[j] = mode_fr[bp]
+
+        fmea["Part_FR"] = part_fr
+        fmea["Mode_FR"] = mode_fr
+        fmea["Validation_Notes"] = notes
+        fmea["Function_FR"] = function_fr
+
+        # --- structure log + self-check (sum of rolled blocks == sum of their
+        #     children; flag piece-parts not attached to any rolled block) ---
+        attached = set(j for v in children.values() for j in v)
+        unattached_pp = sum(
+            1 for j, t in enumerate(row_types)
+            if t != "circuit_block" and j not in attached
+        )
+        self.log(
+            f"  Circuit-block roll-up via {assoc}: {len(rolled)} block(s) rolled "
+            f"from {len(attached)} child row(s), {leaf_blocks} leaf block(s)."
+        )
+        if unattached_pp and rolled:
+            self.log(
+                f"  Note: {unattached_pp} piece-part row(s) are not attached to any "
+                f"block; counted directly in their function total."
+            )
+        return True
 
     def save_results(self, output_path: Union[str, Path]) -> None:
         """Save merged results to an Excel file."""

@@ -686,9 +686,12 @@ class FMEAProcessor:
         #   - process() in bom_only mode  → counts come from the BOM
         #   - process_functional_to_piecepart() → counts come from the
         #     functional FMEA (see that method for its own clear())
-        #   - process_gaps() intentionally does NOT populate this map
-        #     because fill_gaps never triggers the inheritance path
-        #     (missing_refdes ⊆ bom_refdes)
+        #   - process_gaps() (fill_gaps) MAY hit the inheritance path: a
+        #     variant RefDes (e.g. U200-1) absent from the BOM whose base
+        #     (U200) IS present inherits from the base. When fill_gaps runs
+        #     WITHOUT a grouping file, variant_counts_by_base stays empty, so
+        #     the inherited usage_fraction falls back to "1/1" and is FLAGGED
+        #     for review in the BOM_Additions notes column (see below).
         #
         # The resulting `usage_fraction` ("1/N") on each BOM_Additions
         # row therefore reflects "1 of N total instances of this base in
@@ -2101,8 +2104,20 @@ class FMEAProcessor:
         # Phase D: record BOM inheritance for the BOM_Additions sheet.
         # Done AFTER HDA/FMD lookup so the entry has the full enrichment.
         if inherited_from_base is not None:
-            count = self.variant_counts_by_base.get(inherited_from_base, 0) or 1
-            usage_fraction = f"1/{count}"
+            known_count = self.variant_counts_by_base.get(inherited_from_base)
+            if known_count and known_count > 0:
+                usage_fraction = f"1/{known_count}"
+                inherit_note = ""
+            else:
+                # No instance-count source for this base (e.g. fill_gaps without a
+                # grouping file). We cannot know how many instances the base has,
+                # so "1/1" is a best guess, not a fact — flag it for review rather
+                # than silently asserting single-instance usage (Tier-1 fix #7).
+                usage_fraction = "1/1"
+                inherit_note = (
+                    f"Usage 1/1 is a best guess - instance count for base "
+                    f"{inherited_from_base} is unknown (no grouping/count source); verify."
+                )
             self.bom_additions.append({
                 "ref_des": ref_des,
                 "base_refdes": inherited_from_base,
@@ -2114,7 +2129,7 @@ class FMEAProcessor:
                 "fmd1": fmd_c1,
                 "fmd2": fmd_c2,
                 "source_workflow": source_workflow,
-                "notes": "",
+                "notes": inherit_note,
             })
             self.log(
                 f"BOM addition inferred: '{ref_des}' inherited from '{inherited_from_base}' "

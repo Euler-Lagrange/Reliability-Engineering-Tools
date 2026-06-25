@@ -7,6 +7,7 @@ BOM-vs-BOM comparison engine: compare two BOMs using RefDes as key anchor,
 with FMEA-aware scope analysis, duplicate detection, and part usage validation.
 """
 import re
+import math
 import threading
 from typing import Dict, List, Optional, Set, Tuple, Any
 
@@ -618,7 +619,12 @@ def compare_two_boms(
     # In exact_match mode there is no base concept, so loose matching is a no-op.
     if loose_base_match and not exact_match:
         def _covered_by_prefix(key: str, others: set) -> bool:
-            return any(other.startswith(key) for other in others if other != key)
+            # Residual-digit guard: 'R1' must NOT be treated as covering 'R12'
+            # (the residual '2' is a digit continuation = a different component).
+            return any(
+                other.startswith(key) and not other[len(key):].isdigit()
+                for other in others if other != key
+            )
 
         only_in_a = sorted(k for k in raw_only_in_a if not _covered_by_prefix(k, set_b))
         only_in_b = sorted(k for k in raw_only_in_b if not _covered_by_prefix(k, set_a))
@@ -904,6 +910,10 @@ def compare_two_boms(
                 return []
             log(f"Checking FMR Summing in {source_label} (column: {ratio_col})...")
             ref_sums: Dict[str, float] = {}
+            # See group_analysis._check_fmr: a NaN ratio (float(NaN) does not
+            # raise) would poison the sum so abs(total-1.0)>tol always passes, and
+            # a text cell would silently count as 0.0. Exclude + flag instead.
+            ref_invalid: Set[str] = set()
             for row in df.to_dict('records'):
                 check_cancelled(stop_event, "Cancelled during FMR check")
                 ref_val = row.get(ref_col)
@@ -912,20 +922,40 @@ def compare_two_boms(
                 ref_raw = str(ref_val).strip().upper()
                 if not ref_raw:
                     continue
+                raw_ratio = row.get(ratio_col)
+                # Blank/NaN ratio (continuation row) -> skip silently; the sum
+                # check still catches a genuinely short sum. Non-numeric TEXT or
+                # non-finite -> exclude AND flag. (See group_analysis._check_fmr.)
+                if raw_ratio is None or pd.isna(raw_ratio):
+                    continue
                 try:
-                    val = float(row.get(ratio_col))
+                    parsed = float(raw_ratio)
                 except (TypeError, ValueError):
-                    val = 0.0
-                ref_sums[ref_raw] = ref_sums.get(ref_raw, 0.0) + val
+                    ref_invalid.add(ref_raw)
+                    continue
+                if not math.isfinite(parsed):
+                    ref_invalid.add(ref_raw)
+                    continue
+                ref_sums[ref_raw] = ref_sums.get(ref_raw, 0.0) + parsed
             out: List[Dict[str, Any]] = []
             for ref, total in ref_sums.items():
-                if abs(total - 1.0) > FMR_TOLERANCE:
+                if ref in ref_invalid:
+                    out.append({
+                        "Source": source_label, "RefDes": ref, "Sum": total,
+                        "Status": "Non-numeric ratio cell (sum incomplete)",
+                    })
+                elif abs(total - 1.0) > FMR_TOLERANCE:
                     out.append({
                         "Source": source_label,
                         "RefDes": ref,
                         "Sum": total,
                         "Status": "FMR != 1.0",
                     })
+            for ref in sorted(ref_invalid - set(ref_sums)):
+                out.append({
+                    "Source": source_label, "RefDes": ref, "Sum": float("nan"),
+                    "Status": "Non-numeric ratio cell",
+                })
             return out
 
         fmr_warnings.extend(check_fmr_for_df(bom_a_df, refdes_col_a, "File 1"))

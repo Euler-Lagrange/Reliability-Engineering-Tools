@@ -245,6 +245,211 @@ def test_normalize_refdes_strips_leading_zeros_and_handles_nan() -> None:
     assert normalize_refdes_for_lookup(None) == ""
 
 
+def test_circuit_block_rollup_sums_children_by_fmea_id() -> None:
+    """A circuit-block row rolls up to the SUM of its piece-part children, tied
+    by FMEA-ID prefix, and is excluded from the function total (no double-count).
+
+    Worked example: block CPU-001 owns R201 (two modes 0.6/0.4) and C5.
+        lambda(R201)=1e-6, lambda(C5)=4e-7
+        roll-up = lambda(R201) + lambda(C5) = 1.4e-6
+    The block row's failure rate becomes the roll-up; Function_FR is that same
+    roll-up broadcast to every row (NOT block + parts = 2x).
+    """
+    pred = pd.DataFrame(
+        [
+            {"Reference Designator": "R201", "Failure Rate": 1e-6},
+            {"Reference Designator": "C5", "Failure Rate": 4e-7},
+        ]
+    )
+    fmea = pd.DataFrame(
+        [
+            {"FMEA-ID": "CPU-001", "FMEA Level": "Circuit Block",
+             "Failure Mode Causes": "R201, C5", "Failure Mode Ratio": "",
+             "Part Usage": "", "Function": "CPU power"},
+            {"FMEA-ID": "CPU-001-R201-A", "FMEA Level": "Piece-Part",
+             "Failure Mode Causes": "R201", "Failure Mode Ratio": 0.6,
+             "Part Usage": 1.0, "Function": "CPU power"},
+            {"FMEA-ID": "CPU-001-R201-B", "FMEA Level": "Piece-Part",
+             "Failure Mode Causes": "R201", "Failure Mode Ratio": 0.4,
+             "Part Usage": 1.0, "Function": "CPU power"},
+            {"FMEA-ID": "CPU-001-C5-A", "FMEA Level": "Piece-Part",
+             "Failure Mode Causes": "C5", "Failure Mode Ratio": 1.0,
+             "Part Usage": 1.0, "Function": "CPU power"},
+        ]
+    )
+    result = _make_logic(pred, fmea).process(dict(COL_MAP, fmea_func="Function"))
+
+    # Piece-part Mode_FR unchanged by the roll-up.
+    assert result["Mode_FR"].iloc[1] == pytest.approx(1e-6 * 0.6)
+    assert result["Mode_FR"].iloc[2] == pytest.approx(1e-6 * 0.4)
+    assert result["Mode_FR"].iloc[3] == pytest.approx(4e-7 * 1.0)
+
+    rollup = 1e-6 + 4e-7  # 1.4e-6
+    # Block row failure rate IS the roll-up (no more phantom first-RefDes rate).
+    assert result["Mode_FR"].iloc[0] == pytest.approx(rollup)
+    assert result["Part_FR"].iloc[0] == pytest.approx(rollup)
+    # Function_FR is the roll-up broadcast to every row, NOT double-counted.
+    assert list(result["Function_FR"]) == pytest.approx([rollup] * 4)
+    assert "Circuit-block roll-up" in result["Validation_Notes"].iloc[0]
+
+
+def test_circuit_block_rollup_falls_back_to_listed_refdes_without_id() -> None:
+    """With no FMEA-ID column, the block's listed RefDes are matched to children."""
+    pred = pd.DataFrame(
+        [
+            {"Reference Designator": "R201", "Failure Rate": 1e-6},
+            {"Reference Designator": "C5", "Failure Rate": 4e-7},
+        ]
+    )
+    fmea = pd.DataFrame(
+        [
+            {"FMEA Level": "Circuit Block", "Failure Mode Causes": "R201, C5",
+             "Failure Mode Ratio": "", "Part Usage": ""},
+            {"FMEA Level": "Piece-Part", "Failure Mode Causes": "R201",
+             "Failure Mode Ratio": 0.6, "Part Usage": 1.0},
+            {"FMEA Level": "Piece-Part", "Failure Mode Causes": "R201",
+             "Failure Mode Ratio": 0.4, "Part Usage": 1.0},
+            {"FMEA Level": "Piece-Part", "Failure Mode Causes": "C5",
+             "Failure Mode Ratio": 1.0, "Part Usage": 1.0},
+        ]
+    )
+    result = _make_logic(pred, fmea).process(COL_MAP)
+
+    rollup = 1e-6 + 4e-7
+    assert result["Mode_FR"].iloc[0] == pytest.approx(rollup)
+    assert "Circuit-block roll-up" in result["Validation_Notes"].iloc[0]
+
+
+def test_plain_piece_part_file_keeps_legacy_function_rollup() -> None:
+    """No block rows -> Function_FR still sums Mode_FR by Function Description."""
+    pred = pd.DataFrame(
+        [
+            {"Reference Designator": "R1", "Failure Rate": 0.001},
+            {"Reference Designator": "R2", "Failure Rate": 0.002},
+        ]
+    )
+    fmea = pd.DataFrame(
+        [
+            {"Failure Mode Causes": "R1", "Failure Mode Ratio": 1.0,
+             "Part Usage": 1.0, "Function": "F_A"},
+            {"Failure Mode Causes": "R2", "Failure Mode Ratio": 1.0,
+             "Part Usage": 1.0, "Function": "F_A"},
+        ]
+    )
+    result = _make_logic(pred, fmea).process(dict(COL_MAP, fmea_func="Function"))
+    # Legacy behaviour: both rows carry the function total 0.003.
+    assert list(result["Function_FR"]) == pytest.approx([0.003, 0.003])
+
+
+def test_unparseable_prediction_fr_is_flagged_not_silent() -> None:
+    """A non-numeric Prediction FR is coerced to 0.0 but FLAGGED, not silent."""
+    pred = pd.DataFrame(
+        [
+            {"Reference Designator": "R1", "Failure Rate": "TBD"},
+            {"Reference Designator": "R2", "Failure Rate": 0.002},
+        ]
+    )
+    fmea = pd.DataFrame(
+        [
+            {"Failure Mode Causes": "R1", "Failure Mode Ratio": 1.0, "Part Usage": 1.0},
+            {"Failure Mode Causes": "R2", "Failure Mode Ratio": 1.0, "Part Usage": 1.0},
+        ]
+    )
+    result = _make_logic(pred, fmea).process(COL_MAP)
+
+    # R1's FR was unparseable -> 0.0 but explicitly flagged.
+    assert result["Part_FR"].iloc[0] == 0.0
+    assert result["Mode_FR"].iloc[0] == 0.0
+    assert "unparseable" in result["Validation_Notes"].iloc[0].lower()
+    # R2 is a clean numeric link with no false flag.
+    assert result["Mode_FR"].iloc[1] == pytest.approx(0.002)
+    assert "unparseable" not in result["Validation_Notes"].iloc[1].lower()
+
+
+def test_block_only_file_leaf_block_keeps_rate_not_zeroed() -> None:
+    """Regression guard: a block-only FMEA (Circuit Block rows, NO piece-part
+    children) must keep real rates. A multi-RefDes leaf block = sum of its listed
+    components' lambda; a single-RefDes leaf block keeps its own computed rate.
+    The roll-up must NOT wipe childless blocks to 0.
+    """
+    pred = pd.DataFrame(
+        [
+            {"Reference Designator": "R201", "Failure Rate": 1e-6},
+            {"Reference Designator": "C5", "Failure Rate": 4e-7},
+            {"Reference Designator": "U9", "Failure Rate": 2e-6},
+        ]
+    )
+    fmea = pd.DataFrame(
+        [
+            {"FMEA Level": "Circuit Block", "Failure Mode Causes": "R201, C5",
+             "Failure Mode Ratio": "", "Part Usage": ""},   # multi-RefDes leaf
+            {"FMEA Level": "Circuit Block", "Failure Mode Causes": "U9",
+             "Failure Mode Ratio": 1.0, "Part Usage": 1.0},  # single-RefDes leaf
+        ]
+    )
+    result = _make_logic(pred, fmea).process(COL_MAP)
+
+    # Multi-RefDes leaf -> sum of listed lambdas (NOT zero, NOT phantom-first-only).
+    assert result["Mode_FR"].iloc[0] == pytest.approx(1e-6 + 4e-7)
+    # Single-RefDes leaf -> keeps its computed rate, never zeroed.
+    assert result["Mode_FR"].iloc[1] == pytest.approx(2e-6)
+
+
+def test_infinite_prediction_fr_is_flagged_and_zeroed() -> None:
+    """A prediction FR of 'inf' must be flagged and zeroed, never propagated."""
+    pred = pd.DataFrame(
+        [
+            {"Reference Designator": "U1", "Failure Rate": "inf"},
+            {"Reference Designator": "U2", "Failure Rate": 0.002},
+        ]
+    )
+    fmea = pd.DataFrame(
+        [
+            {"Failure Mode Causes": "U1", "Failure Mode Ratio": 1.0, "Part Usage": 1.0},
+            {"Failure Mode Causes": "U2", "Failure Mode Ratio": 1.0, "Part Usage": 1.0},
+        ]
+    )
+    result = _make_logic(pred, fmea).process(COL_MAP)
+
+    assert result["Part_FR"].iloc[0] == 0.0
+    assert result["Mode_FR"].iloc[0] == 0.0
+    assert "unparseable" in result["Validation_Notes"].iloc[0].lower()
+    assert math.isfinite(result["Mode_FR"].iloc[1])
+    assert result["Mode_FR"].iloc[1] == pytest.approx(0.002)
+
+
+def test_function_fr_consistent_when_block_and_ungrouped_pp_share_function() -> None:
+    """Function_FR is one per-function total for ALL rows of a function, even
+    when the function mixes a block+children with an unrelated ungrouped
+    piece-part — no two different 'function totals' in a single function.
+    """
+    pred = pd.DataFrame(
+        [
+            {"Reference Designator": "R201", "Failure Rate": 1e-6},
+            {"Reference Designator": "R900", "Failure Rate": 5e-6},
+        ]
+    )
+    fmea = pd.DataFrame(
+        [
+            {"FMEA-ID": "CPU-001", "FMEA Level": "Circuit Block",
+             "Failure Mode Causes": "R201", "Failure Mode Ratio": "",
+             "Part Usage": "", "Function": "f"},
+            {"FMEA-ID": "CPU-001-R201-A", "FMEA Level": "Piece-Part",
+             "Failure Mode Causes": "R201", "Failure Mode Ratio": 1.0,
+             "Part Usage": 1.0, "Function": "f"},
+            {"FMEA-ID": "PP-R900", "FMEA Level": "Piece-Part",
+             "Failure Mode Causes": "R900", "Failure Mode Ratio": 1.0,
+             "Part Usage": 1.0, "Function": "f"},
+        ]
+    )
+    result = _make_logic(pred, fmea).process(dict(COL_MAP, fmea_func="Function"))
+
+    # function total = child R201 (1e-6) + ungrouped R900 (5e-6) = 6e-6, all rows.
+    assert list(result["Function_FR"]) == pytest.approx([6e-6, 6e-6, 6e-6])
+    # the block's OWN rate is just its child = 1e-6.
+    assert result["Mode_FR"].iloc[0] == pytest.approx(1e-6)
+
+
 def test_fmr_validation_groups_by_instance_not_base() -> None:
     """FMR (ratio) validation sums to 1.0 PER instance/pin designator (U200-1),
     NOT per base component.

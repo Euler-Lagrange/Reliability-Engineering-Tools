@@ -373,3 +373,127 @@ def test_custom_check_fmr_off_by_default() -> None:
     )
 
     assert result.fmr_warnings == []
+
+
+# ---------------------------------------------------------------------------
+# Tier-1 fix #9: loose_base_match residual-digit guard. 'R1' must NOT be
+# treated as covering 'R12' (residual '2' is a digit = a different component).
+# Three of the four loose-match directions previously lacked this guard.
+# ---------------------------------------------------------------------------
+
+def test_analyze_loose_residual_digit_guard_extra_direction() -> None:
+    """Group path: with loose on, grouping base 'R1' must not swallow BOM base
+    'R12'. R12 stays flagged as extra; R1 stays flagged as missing.
+    """
+    group_df = pd.DataFrame({"Group": ["G0"], "RefDes": ["R1"]})
+    bom_df = pd.DataFrame({"RefDes": ["R12"], "Description": [""]})
+    mapping = ColumnMapping(
+        grouping_group_col="Group", grouping_refdes_col="RefDes",
+        bom_refdes_col="RefDes", bom_desc_col="Description",
+    )
+    options = AnalyzeOptions(
+        run_warning_checks=False, run_duplicate_checks=False,
+        check_part_usage=False, check_fmr=False, loose_base_match=True,
+    )
+    results = analyze(
+        group_df, bom_df, mapping, options,
+        file_paths=("grouping.xlsx", "bom.xlsx"),
+    )
+    assert set(results.bom_not_in_groups["Base"]) == {"R12"}
+    assert set(results.missing_in_bom["Token"]) == {"R1"}
+
+
+def test_custom_loose_residual_digit_guard() -> None:
+    """Custom path: 'R1' and 'R12' are different components; loose match must
+    NOT suppress either (residual '2' is a digit continuation).
+    """
+    bom_a = _custom_df([{"RefDes": "R1"}])
+    bom_b = _custom_df([{"RefDes": "R12"}])
+
+    result = compare_two_boms(
+        bom_a, bom_b, refdes_col_a="RefDes", refdes_col_b="RefDes",
+        loose_base_match=True, check_part_usage=False,
+    )
+
+    assert [r["RefDes"] for r in result.only_in_a] == ["R1"]
+    assert [r["RefDes"] for r in result.only_in_b] == ["R12"]
+
+
+def test_analyze_loose_nondigit_residual_is_covered() -> None:
+    """Positive side of the residual-digit guard: a NON-digit residual is still
+    covered under loose match — grouping base 'CPU' is covered by BOM base 'CPUA'
+    (residual 'A'), unlike the digit-residual R1/R12 case which stays flagged.
+    """
+    group_df = pd.DataFrame({"Group": ["G"], "RefDes": ["CPU"]})
+    bom_df = pd.DataFrame({"RefDes": ["CPUA"], "Description": [""]})
+    mapping = ColumnMapping(
+        grouping_group_col="Group", grouping_refdes_col="RefDes",
+        bom_refdes_col="RefDes", bom_desc_col="Description",
+    )
+    options = AnalyzeOptions(
+        run_warning_checks=False, run_duplicate_checks=False,
+        check_part_usage=False, check_fmr=False, loose_base_match=True,
+    )
+    results = analyze(
+        group_df, bom_df, mapping, options,
+        file_paths=("grouping.xlsx", "bom.xlsx"),
+    )
+    assert results.missing_in_bom.empty
+
+
+# ---------------------------------------------------------------------------
+# Tier-1 fix #6: a NaN/non-numeric ratio cell must be FLAGGED, not silently
+# summed. Old behavior: float(NaN) does not raise, NaN poisons the sum, and
+# abs(NaN - 1.0) > tol is False, so the inconsistent RefDes silently passed.
+# ---------------------------------------------------------------------------
+
+def test_custom_check_fmr_text_ratio_flagged_blank_skipped() -> None:
+    """Custom path: a blank (NaN) continuation row whose RefDes still sums to 1.0
+    is NOT flagged (no false positive); a non-numeric TEXT ratio IS flagged. The
+    underlying #6 fix (a NaN no longer poisons the sum into a silent pass) still
+    holds because the blank is excluded from the sum, not summed as NaN.
+    """
+    bom_a = _custom_df([
+        {"RefDes": "U1", "Ratio": float("nan")},  # blank continuation row
+        {"RefDes": "U1", "Ratio": 0.6},
+        {"RefDes": "U1", "Ratio": 0.4},           # U1 real rows sum to 1.0
+        {"RefDes": "U2", "Ratio": "bad"},         # non-numeric text -> data error
+        {"RefDes": "U2", "Ratio": 0.5},
+    ])
+    bom_b = _custom_df([{"RefDes": "U9", "Ratio": 1.0}])
+
+    result = compare_two_boms(
+        bom_a, bom_b, refdes_col_a="RefDes", refdes_col_b="RefDes",
+        check_fmr=True, check_part_usage=False,
+    )
+
+    statuses = {w["RefDes"]: w["Status"] for w in result.fmr_warnings}
+    assert "U1" not in statuses                    # blank skipped, sums to 1.0
+    assert "U2" in statuses
+    assert "non-numeric" in statuses["U2"].lower()  # text flagged
+
+
+def test_analyze_check_fmr_text_ratio_flagged_blank_skipped_group_path() -> None:
+    """Group path mirrors the custom path: blank ratio skipped, text flagged."""
+    group_df = pd.DataFrame({
+        "Group": ["G", "G", "G", "G", "G"],
+        "RefDes": ["U1", "U1", "U1", "U2", "U2"],
+        "Ratio": [float("nan"), 0.6, 0.4, "bad", 0.5],
+    })
+    bom_df = pd.DataFrame({"RefDes": ["U1", "U2"], "Description": ["", ""]})
+    mapping = ColumnMapping(
+        grouping_group_col="Group", grouping_refdes_col="RefDes",
+        bom_refdes_col="RefDes", bom_desc_col="Description",
+    )
+    options = AnalyzeOptions(
+        run_warning_checks=False, run_duplicate_checks=False,
+        check_part_usage=False, check_fmr=True,
+    )
+    results = analyze(
+        group_df, bom_df, mapping, options,
+        file_paths=("grouping.xlsx", "bom.xlsx"),
+    )
+    flagged = dict(zip(results.fmr_warnings["RefDes"], results.fmr_warnings["Status"]))
+    assert "U1" not in flagged                      # blank skipped, sums to 1.0
+    assert "U2" in flagged
+    assert "non-numeric" in flagged["U2"].lower()

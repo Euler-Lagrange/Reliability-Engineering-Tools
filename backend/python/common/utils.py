@@ -425,8 +425,19 @@ def try_read_table(path: str, header_row: int = 0, sheet_name=None, log_func=Non
     path = str(path_obj)
     ext = os.path.splitext(path)[1].lower()
 
-    # Build shared kwargs for pandas.read_excel (sheet_name flows through all paths)
-    _excel_kwargs = {"header": header_row, "dtype": str}
+    # Build shared kwargs for pandas.read_excel (sheet_name flows through all paths).
+    # keep_default_na=False + na_values=[""] preserves the long-standing
+    # "empty Excel cell -> NaN" behavior while stopping pandas from silently
+    # coercing literal text like 'NA' / 'N/A' / 'NULL' to NaN. Without this, the
+    # SAME data read from .xlsx and .csv diverged (the CSV branch below already
+    # passes keep_default_na=False), so a RefDes/part/description legitimately
+    # valued 'NA' vanished only for Excel inputs (Tier-1 fix).
+    _excel_kwargs = {
+        "header": header_row,
+        "dtype": str,
+        "keep_default_na": False,
+        "na_values": [""],
+    }
     if sheet_name is not None:
         _excel_kwargs["sheet_name"] = sheet_name
 

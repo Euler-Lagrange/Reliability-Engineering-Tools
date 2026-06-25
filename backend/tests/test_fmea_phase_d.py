@@ -1635,6 +1635,51 @@ def test_union_merge_both_sources_no_diagnostic(tmp_path: Path) -> None:
     assert proc.group_merge_diagnostics == [], proc.group_merge_diagnostics
 
 
+def test_fill_gaps_inheritance_without_count_source_flags_guess(tmp_path: Path) -> None:
+    """Tier-1 #7: fill_gaps inheritance with NO grouping/count source must emit
+    usage_fraction '1/1' as a FLAGGED best guess, not a silent assertion.
+
+    The old FMEA lists variant R34-A (its base R34 is in the BOM, the variant
+    is not), and no grouping file is supplied, so variant_counts_by_base is
+    empty. The inherited BOM_Additions row must carry usage '1/1' AND a review
+    note (previously '1/1' was emitted with an empty note, silently implying the
+    base has exactly one instance).
+    """
+    paths = _merge_fixture(
+        tmp_path,
+        old_fmea_rows=[
+            {
+                "FMEA Level": "Circuit Block",
+                "FMEA-ID": "BLK-001",
+                "Failure Mode Causes": "R34-A",
+                "Function Description": "Bias network",
+                "Schematic Page": "3",
+                "Local Effect": "",
+                "Next Higher Effect": "",
+                "End Effect": "",
+            },
+        ],
+        grouping_rows=None,
+        bom_rows=[
+            {
+                "Reference Designator": "R34",
+                "Part Number": "RES-1",
+                "Description": "Resistor",
+                "BAE HDA Commodity I": "Resistor",
+                "BAE HDA Commodity II": "Chip",
+                "Part Usage": "1",
+            },
+        ],
+    )
+    proc, df = _run_gaps_merge(tmp_path, paths, include_grouping=False)
+
+    inherited = [e for e in proc.bom_additions if e["base_refdes"] == "R34"]
+    assert inherited, proc.bom_additions
+    assert inherited[0]["usage_fraction"] == "1/1"
+    note = inherited[0]["notes"].lower()
+    assert "best guess" in note and "verify" in note, inherited[0]["notes"]
+
+
 def test_union_merge_old_only_flags_missing_from_grouping(tmp_path: Path) -> None:
     """Phase 4 / A5: when a component is only in the old FMEA, its row
     must carry the 'missing from Grouping File' diagnostic."""

@@ -344,6 +344,7 @@ def execute_run_request(
     # --- Load BOM (1-5%) ---
     bom_set: set[str] = set()
     bom_page_map: dict[str, set[int]] | None = None
+    bom_load_error: str | None = None
     if bom_path:
         emit_status("running", "Loading BOM", "Loading BOM workbook...")
         emit_progress("Loading BOM", "Loading BOM...", 2)
@@ -355,8 +356,33 @@ def execute_run_request(
         except (InterruptedError, CancellationError):
             raise
         except Exception as exc:
-            stream_log(f"WARNING: BOM load failed ({exc}). Proceeding without BOM verification.")
+            # The user supplied a BOM for cross-check; a load failure must NOT
+            # masquerade as a completed verification. Continue (per design) but
+            # surface it prominently in the result, not just one log line, since
+            # an empty bom_set marks EVERY component "NOT IN BOM" (Tier-1 #4).
+            bom_load_error = f"the supplied BOM could not be loaded ({exc})"
+            stream_log(
+                f"WARNING: A BOM was supplied for cross-check but it failed to "
+                f"load ({exc}). Extraction will continue, but EVERY component is "
+                f"reported NOT IN BOM because no BOM data is available. Fix the "
+                f"BOM (sheet selection / file lock / RefDes column) and re-run to "
+                f"actually verify."
+            )
             bom_set = set()
+        # An empty-but-successful load (wrong sheet, blank RefDes column, all
+        # values failing the RefDes regex) reproduces the same silent "looks
+        # complete" report: bom_set is empty so every component is NOT IN BOM.
+        # Treat it as a soft failure and surface it just as prominently.
+        if bom_load_error is None and not bom_set:
+            bom_load_error = (
+                "the BOM loaded but contained 0 recognizable RefDes "
+                "(check the selected sheet and the RefDes column)"
+            )
+            stream_log(
+                "WARNING: the supplied BOM loaded but yielded 0 RefDes, so every "
+                "component will be reported NOT IN BOM. Check the sheet selection "
+                "and the RefDes column, then re-run to actually verify."
+            )
     emit_progress("Loading BOM", "BOM loaded.", 5)
 
     # --- Load Pinlist (5-8%) ---
@@ -495,10 +521,19 @@ def execute_run_request(
         notes.append(f"Fallback reason: {details['fallback_reason']}")
     if not bom_path:
         notes.append("No BOM provided — all groups marked as unverified.")
+    elif bom_load_error:
+        notes.insert(0, (
+            f"BOM CROSS-CHECK FAILED: {bom_load_error}. Every component is marked "
+            f"NOT IN BOM, so this report does NOT reflect a real BOM comparison. "
+            f"Re-run with a usable BOM to verify."
+        ))
 
     return {
         "status": "success",
-        "title": "RefDes extraction complete",
+        "title": (
+            "RefDes extraction complete - BOM cross-check FAILED"
+            if bom_load_error else "RefDes extraction complete"
+        ),
         "summary": f"{total_refdes} components extracted from {total_groups} groups.",
         "output_file": str(output_path),
         "primary_metric": f"{verified} verified groups",

@@ -138,10 +138,39 @@ def _finalize_headers(normalized_row: list[str]) -> list[str]:
     if last_non_empty_index == -1:
         return []
 
-    return [
+    raw = [
         value or f"Column {index + 1}"
         for index, value in enumerate(normalized_row[: last_non_empty_index + 1])
     ]
+
+    # Dedupe with the SAME suffix scheme pandas.read_excel applies to duplicate
+    # headers (a second 'Part Number' becomes 'Part Number.1'), so the names the
+    # mapping dropdown shows match the column names the runtime actually binds
+    # against. Without this, two 'Part Number' columns both render as
+    # 'Part Number' here, but the runtime frame has 'Part Number'/'Part Number.1'
+    # — so selecting the second one silently bound the FIRST column (Tier-1 fix).
+    #
+    # The candidate suffix must avoid colliding with BOTH an already-emitted name
+    # AND any other original header (e.g. a literal 'Part Number.1' that already
+    # exists): pandas' mangle_dupe_cols does this look-ahead, so we must too, or
+    # the dropdown and the runtime frame diverge again. Verified to match
+    # pandas.read_excel output, including pre-existing dotted headers.
+    raw_set = set(raw)
+    used: set[str] = set()
+    deduped: list[str] = []
+    for name in raw:
+        if name not in used:
+            used.add(name)
+            deduped.append(name)
+            continue
+        k = 1
+        candidate = f"{name}.{k}"
+        while candidate in raw_set or candidate in used:
+            k += 1
+            candidate = f"{name}.{k}"
+        used.add(candidate)
+        deduped.append(candidate)
+    return deduped
 
 
 def _extract_header_details(worksheet: Any) -> tuple[int, list[str], int, int, bool, bool]:
