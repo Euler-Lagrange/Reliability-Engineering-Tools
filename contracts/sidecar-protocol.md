@@ -167,7 +167,9 @@ All eight commands currently implemented by the sidecar:
     - `notes` — may include a note about inherited BOM additions when the
       workbook contains a `BOM_Additions` sheet (emitted whenever pin/variant
       RefDes such as `U200-X` inherited their data from a base BOM row like
-      `U200`)
+      `U200`). For `refdes_extract` runs with a BOM, the notes also carry a
+      BOM-coverage summary (and a prominent BOM-cross-check-failed note when the
+      BOM cannot be loaded)
     - `log_lines`
     - `row_count`
     - `warning_count`

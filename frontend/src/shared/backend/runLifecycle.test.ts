@@ -1,7 +1,16 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
+import type { SidecarRunEvent } from "../../contracts/sidecar";
 import { MAX_LOG_LINES, useRunStore } from "../../stores/runStore";
-import { useBackendRunLifecycle } from "./runLifecycle";
+import { patchFromRunEvent, useBackendRunLifecycle } from "./runLifecycle";
+
+function statusEvent(runId: string, status: string): SidecarRunEvent {
+  return {
+    kind: "status",
+    run_id: runId,
+    payload: { status, stage: status, message: `${status}...` },
+  } as unknown as SidecarRunEvent;
+}
 
 beforeEach(() => {
   useRunStore.setState({ activeRun: null });
@@ -122,5 +131,40 @@ describe("useBackendRunLifecycle", () => {
     expect(result.current.session.phase).toBe("failure");
     expect(result.current.session.errorCode).toBe("KeyError");
     expect(result.current.session.errorTraceback).toBe("traceback lines");
+  });
+});
+
+describe("patchFromRunEvent terminal guard", () => {
+  function buildCurrent(runId: string, phase: string) {
+    const { result } = renderHook(() => useBackendRunLifecycle("dark_star_fmea"));
+    act(() => {
+      result.current.beginAcceptedRun({
+        run_id: runId,
+        mode: "desktop-bridge",
+        session_generation: 1,
+      });
+      useRunStore.getState().patchActiveRun({ phase: phase as never });
+    });
+    return useRunStore.getState().activeRun!;
+  }
+
+  it("ignores a late non-terminal status once the run is terminal (cancel-after-finish)", () => {
+    const current = buildCurrent("run_cancel_after_finish", "success");
+    const patch = patchFromRunEvent(current, statusEvent("run_cancel_after_finish", "cancelling"), (p) => p);
+    expect(patch).toBeNull();
+  });
+
+  it("still progresses running -> cancelling normally", () => {
+    const current = buildCurrent("run_cancelling_ok", "running");
+    const patch = patchFromRunEvent(current, statusEvent("run_cancelling_ok", "cancelling"), (p) => p);
+    expect(patch?.phase).toBe("cancelling");
+  });
+
+  it("does not block a terminal status when the phase is already terminal", () => {
+    // terminal current + terminal incoming: the guard must only drop late
+    // NON-terminal statuses, so a (duplicate) terminal status still applies.
+    const current = buildCurrent("run_terminal_dup", "cancelled");
+    const patch = patchFromRunEvent(current, statusEvent("run_terminal_dup", "cancelled"), (p) => p);
+    expect(patch?.phase).toBe("cancelled");
   });
 });

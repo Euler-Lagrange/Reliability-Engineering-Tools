@@ -1,8 +1,8 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RefDesExtractorTool } from "./RefDesExtractorTool";
-import { useRunStore } from "../../stores/runStore";
+import { buildActiveRunFromAccepted, useRunStore } from "../../stores/runStore";
 import { useShellStore } from "../../stores/shellStore";
 import { useNotificationStore } from "../../stores/notificationStore";
 
@@ -152,6 +152,48 @@ describe("RefDesExtractorTool piece-part mode", () => {
     expect(
       screen.queryByText("Extract reference designators"),
     ).not.toBeInTheDocument();
+  });
+
+  // Regression (#17): a finished run's terminal phase lingers in the store, so
+  // browsing the BOM (the Excel path, AFTER the pdf early-return) flips the busy
+  // chip and useBackendBusyReset would wipe it. handleBrowse must clear the stale
+  // terminal run first (guarded, so a live sibling run survives). This covers the
+  // post-pdf-return placement that is unique to this tool.
+  it("clears a lingering terminal run when browsing the BOM", async () => {
+    backendMocks.openExcelFile.mockResolvedValue("C:\\real\\BOM.xlsx");
+    backendMocks.listSheets.mockResolvedValue({
+      path: "C:\\real\\BOM.xlsx",
+      sheets: ["Main BOM"],
+      mode: "desktop-bridge",
+    });
+    backendMocks.inspectInput.mockResolvedValue({
+      mode: "desktop-bridge",
+      sheet: "Main BOM",
+      columns: ["RefDes"],
+    });
+
+    const user = userEvent.setup();
+    render(<RefDesExtractorTool />);
+
+    // A finished run lingers (terminal phase, owned by this tool).
+    act(() => {
+      useRunStore.getState().setActiveRun(
+        buildActiveRunFromAccepted({
+          runId: "done_rd_run",
+          toolId: "refdes_extractor",
+          sessionGeneration: 1,
+        }),
+      );
+      useRunStore.getState().patchActiveRun({ phase: "success" });
+    });
+
+    // Non-pristine now, so the InputGrid renders; browse the BOM (Excel) card.
+    const bomCard = (await screen.findByText("BOM workbook (optional)")).closest(
+      "article",
+    ) as HTMLElement;
+    await user.click(within(bomCard).getByRole("button", { name: "Browse" }));
+
+    await waitFor(() => expect(useRunStore.getState().activeRun).toBeNull());
   });
 });
 

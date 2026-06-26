@@ -5,6 +5,37 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **RefDes Extractor — BOM coverage reverse-diff** — with a BOM loaded, the
+  extractor emits three sheets: `Coverage Summary`, `BOM Not Grouped` (BOM
+  RefDes not cleanly grouped, split Not Extracted / Extracted-Ungrouped /
+  Extracted-Provisional and enriched with Part Number + Description from the
+  BOM), and `Extracted Not In BOM`. Component-level matching; failure-isolated
+  so a coverage defect can never lose the extraction output.
+
+### Fixed
+
+- **Tier-1 data-correctness** — circuit/function-block failure-rate roll-up in
+  the Failure Rate linker; BOM-Compare blank-ratio FMR poisoning + loose
+  base-match residual-digit guard; Excel/CSV `NA`-literal read parity and
+  duplicate-header dedup; FMEA fill-gaps `1/1` usage flagged as a best-guess;
+  RefDes BOM-load failure surfaced prominently instead of a silent "all
+  unverified".
+- **Tier-2 run-lifecycle** — the success toast + "saved to…" message is no
+  longer lost on every successful run (#10); a late `cancelling` no longer
+  strands the UI in "Cancelling…" (#11); a new toast behind 5 sticky errors no
+  longer self-evicts (#12); switching workflow/strategy mid-run no longer
+  orphans the backend job (#16); browsing after a finished run no longer lets
+  the "Inspecting…" busy chip be wiped (#17).
+
+### Removed
+
+- Deleted the dead `refdes_extractor/bom_verifier.py` (zero callers); the BOM
+  cross-check is computed fresh in the engine's own normalized space.
+
 ## [0.4.6] - 2026-06-04 — Holistic Review Cleanup
 
 ### Holistic review cleanup

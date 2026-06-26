@@ -1,8 +1,8 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BomCompareTool } from "./BomCompareTool";
-import { useRunStore } from "../../stores/runStore";
+import { buildActiveRunFromAccepted, useRunStore } from "../../stores/runStore";
 import { useShellStore } from "../../stores/shellStore";
 import { useNotificationStore } from "../../stores/notificationStore";
 
@@ -488,5 +488,70 @@ describe("BomCompareTool custom compare workflow", () => {
       }
     });
     expect(screen.queryByRole("button", { name: "Loading..." })).not.toBeInTheDocument();
+  });
+
+  // Regression (#16): switching workflow MID-RUN must not orphan the backend
+  // job. The change-effect used the unguarded resetDesktopRunSession, which
+  // cleared a live run from the store (dropping its events/result and blocking
+  // the next run). The guarded variant must leave a live run untouched.
+  it("does not clobber a live run when the workflow is switched mid-run", async () => {
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+
+    // A run is live (running) and owned by this tool.
+    act(() => {
+      useRunStore.getState().setActiveRun(
+        buildActiveRunFromAccepted({
+          runId: "live_bc_run",
+          toolId: "bom_compare",
+          sessionGeneration: 1,
+        }),
+      );
+      useRunStore.getState().patchActiveRun({ phase: "running" });
+    });
+
+    await user.click(screen.getByRole("button", { name: /Custom Compare/i }));
+
+    expect(useRunStore.getState().activeRun?.runId).toBe("live_bc_run");
+    expect(useRunStore.getState().activeRun?.phase).toBe("running");
+  });
+
+  // Regression (#17): a finished run's terminal phase lingers in the store, so
+  // when Browse flips the busy chip, useBackendBusyReset sees (terminal phase +
+  // busy) and wipes the "Inspecting..." chip. handleBrowse must clear the stale
+  // terminal run first (guarded, so a live sibling run is never clobbered).
+  it("clears a lingering terminal run when browsing a new file", async () => {
+    backendMocks.openExcelFile.mockResolvedValue("C:\\real\\Grouping.xlsx");
+    backendMocks.listSheets.mockResolvedValue({
+      path: "C:\\real\\Grouping.xlsx",
+      sheets: ["Grouping"],
+      mode: "desktop-bridge",
+    });
+    backendMocks.inspectInput.mockResolvedValue({
+      mode: "desktop-bridge",
+      sheet: "Grouping",
+      columns: ["Component Group", "Reference Designator"],
+    });
+
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+
+    // A finished run lingers (terminal phase, owned by this tool).
+    act(() => {
+      useRunStore.getState().setActiveRun(
+        buildActiveRunFromAccepted({
+          runId: "done_bc_run",
+          toolId: "bom_compare",
+          sessionGeneration: 1,
+        }),
+      );
+      useRunStore.getState().patchActiveRun({ phase: "success" });
+    });
+
+    // A terminal run makes the tool non-pristine, so the InputGrid (with
+    // "Browse" buttons) renders in place of the pristine EmptyState.
+    await user.click(screen.getAllByRole("button", { name: "Browse" })[0]);
+
+    await waitFor(() => expect(useRunStore.getState().activeRun).toBeNull());
   });
 });

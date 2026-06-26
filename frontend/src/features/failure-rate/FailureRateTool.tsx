@@ -280,6 +280,10 @@ export function FailureRateTool() {
       delete next[role];
       return next;
     });
+    // Fix #17: clear a lingering terminal run before flipping to busy, else
+    // useBackendBusyReset (terminal phase + busy) instantly wipes this
+    // "Inspecting..." chip. Guarded so a live sibling run survives.
+    resetDesktopRunSessionUnlessLive();
     setBackendState({
       backendStatus: "busy",
       backendMessage: `Inspecting workbook for ${role}...`,

@@ -431,6 +431,16 @@ An Excel workbook containing:
 - **Component counts** — per-group and total RefDes counts.
 - **Page index** — which PDF page each group was extracted from.
 
+When a BOM workbook is loaded, three BOM-coverage sheets are also written:
+
+- **Coverage Summary** — counts of BOM components, how many were grouped, how
+  many weren't, and how many extracted RefDes are absent from the BOM.
+- **BOM Not Grouped** — BOM RefDes that didn't land in a clean group, each
+  tagged Not Extracted / Extracted-Ungrouped / Extracted-Provisional and
+  enriched with the BOM's Part Number and Description.
+- **Extracted Not In BOM** — RefDes pulled off the schematic that are not in the
+  BOM.
+
 ### Review drawer (⌘R / Ctrl+R)
 
 After running Validate, open the Review drawer from the topbar (or press

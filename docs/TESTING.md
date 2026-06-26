@@ -27,7 +27,8 @@
 | Frontend command palette | `frontend/src/components/primitives/CommandPalette.test.tsx` | 5 | Vitest + RTL |
 | Frontend hold button | `frontend/src/components/primitives/HoldButton.test.tsx` | 5 | Vitest + RTL |
 | Frontend empty state | `frontend/src/components/primitives/EmptyState.test.tsx` | 5 | Vitest + RTL |
-| Frontend run lifecycle | `frontend/src/shared/backend/runLifecycle.test.ts` | 6 | Vitest |
+| Frontend run lifecycle | `frontend/src/shared/backend/runLifecycle.test.ts` | 9 | Vitest |
+| Frontend desktop run controller | `frontend/src/shared/backend/useDesktopRunController.test.ts` | 2 | Vitest |
 | Frontend cancel error | `frontend/src/shared/backend/cancelError.test.ts` | 18 | Vitest |
 | Frontend cancel run | `frontend/src/shared/backend/client.cancelRun.test.ts` | 2 | Vitest |
 | Frontend run event client | `frontend/src/shared/backend/client.runEvents.test.ts` | 2 | Vitest |
@@ -40,20 +41,21 @@
 | Frontend role-request sequence | `frontend/src/shared/hooks/useRoleRequestSequence.test.ts` | 5 | Vitest |
 | Frontend copy to clipboard | `frontend/src/shared/hooks/useCopyToClipboard.test.ts` | 3 | Vitest |
 | Frontend global log store | `frontend/src/stores/globalLogStore.test.ts` | 6 | Vitest |
+| Frontend notification store | `frontend/src/stores/notificationStore.test.ts` | 3 | Vitest |
 | Frontend keep-alive shell | `frontend/src/app/App.keepalive.test.tsx` | 2 | Vitest + RTL |
-| Frontend FMEA tool | `frontend/src/features/fmea/FmeaTool.test.tsx` | 9 | Vitest + RTL |
+| Frontend FMEA tool | `frontend/src/features/fmea/FmeaTool.test.tsx` | 11 | Vitest + RTL |
 | Frontend FMEA inspection | `frontend/src/features/fmea/FmeaTool.inspection.test.tsx` | 5 | Vitest + RTL |
 | Frontend mapping columns | `frontend/src/features/fmea/mappingColumns.test.ts` | 27 | Vitest |
 | Frontend mapping analysis | `frontend/src/features/fmea/mappingAnalysis.test.ts` | 7 | Vitest |
-| Frontend BOM Compare tool | `frontend/src/features/bom-compare/BomCompareTool.test.tsx` | 13 | Vitest + RTL |
+| Frontend BOM Compare tool | `frontend/src/features/bom-compare/BomCompareTool.test.tsx` | 15 | Vitest + RTL |
 | Frontend Failure Rate tool | `frontend/src/features/failure-rate/FailureRateTool.test.tsx` | 2 | Vitest + RTL |
-| Frontend RefDes Extractor tool | `frontend/src/features/refdes-extractor/RefDesExtractorTool.test.tsx` | 9 | Vitest + RTL |
+| Frontend RefDes Extractor tool | `frontend/src/features/refdes-extractor/RefDesExtractorTool.test.tsx` | 10 | Vitest + RTL |
 | Frontend number field | `frontend/src/components/primitives/NumberField.test.tsx` | 6 | Vitest + RTL |
 | Frontend mapping derivation | `frontend/src/shared/mapping/deriveMappingRows.test.ts` | 6 | Vitest |
 | Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 5 | Vitest + RTL |
-| **Frontend subtotal** | | **226** | |
+| **Frontend subtotal** | | **239** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 6 | cargo test |
-| **Total** | | **452** | |
+| **Total** | | **465** | |
 
 ## Backend Tests
 
@@ -63,7 +65,8 @@ real subprocess. Every test in that file starts a fresh
 
 In-process unit tests (`test_cancel_bridge.py`, `test_fmea_phase_d.py`,
 `test_failure_rate_logic.py`, `test_extraction_engine.py`,
-`test_bom_compare_logic.py`) import backend modules directly; see
+`test_bom_compare_logic.py`, `test_read_layer.py`, `test_coverage_report.py`,
+`test_bom_loader.py`) import backend modules directly; see
 **In-process tests** below for the `conftest.py` shim that makes those
 imports resolve.
 
@@ -193,11 +196,14 @@ new FMEA tests must do the same or validation will reject the request.
 | Single-active-run guard | `test_sidecar_rejects_second_execute_while_run_is_active` |
 | Error recovery | `test_sidecar_execute_emits_backend_error_on_missing_columns`, `test_sidecar_remains_responsive_after_failed_run` |
 | Missing-file validation | `test_sidecar_validate_rejects_missing_required_files` |
-| FMEA Phase D (in-process, 52 tests) | BOM inheritance, variant handling, failure modes standard filtering, fill-gaps validation, usage fraction calculations, legacy enrichment rejection, functional-to-piecepart preservation, CCA prefix handling, output directory configuration (including unwritable-directory fallback), Part Usage (PU) column logic, column override modes, union merge strategies, FMC mapping, bijective FMEA-ID suffix |
+| FMEA Phase D (in-process, 53 tests) | BOM inheritance, variant handling, failure modes standard filtering, fill-gaps validation, usage fraction calculations, legacy enrichment rejection, functional-to-piecepart preservation, CCA prefix handling, output directory configuration (including unwritable-directory fallback), Part Usage (PU) column logic, column override modes, union merge strategies, FMC mapping, bijective FMEA-ID suffix |
 | Inspection caps (subprocess, 4 tests) | `inspect_input` row cap at 20 000 rows, column cap at 100 columns, sparse-sheet row cap by physical rows scanned, header-search cap failure within 1 000 rows |
-| Failure-Rate logic (in-process, 12 tests) | Failure Rate (FR) linker math driven through `FMEALinkerLogic.process`: per-mode `Mode_FR = Part_FR * Usage * Corrected_Ratio` arithmetic, unit-mode scaling to per-hour space, RefDes lookup normalization — asserts exact computed numbers |
+| Failure-Rate logic (in-process, 19 tests) | Failure Rate (FR) linker math driven through `FMEALinkerLogic.process`: per-mode `Mode_FR = Part_FR * Usage * Corrected_Ratio` arithmetic, unit-mode scaling to per-hour space, RefDes lookup normalization — asserts exact computed numbers |
 | RefDes extraction-engine (in-process, 6 tests) | NextGen `_disambiguate_pin_mapping` pin-label collision resolution across the three-tier priority (body center inside group rect → body overlaps rect → nearest body by distance) when multiple components share a pin label |
-| BOM-compare logic (in-process, 12 tests) | BOM Compare range/set math: opt-in RefDes range expansion (`R200-R205` → R200..R205) while the `analyze` orchestrator never expands by default (hyphens denote pins, e.g. `U200-1` reduces to base `U200`), zero-pad preservation, and `analyze` set math (Missing in BOM / BOM Not in Groups, both directions) |
+| BOM-compare logic (in-process, 26 tests) | BOM Compare range/set math: opt-in RefDes range expansion (`R200-R205` → R200..R205) while the `analyze` orchestrator never expands by default (hyphens denote pins, e.g. `U200-1` reduces to base `U200`), zero-pad preservation, and `analyze` set math (Missing in BOM / BOM Not in Groups, both directions) |
+| Read layer (in-process, 6 tests) | Excel/CSV `NA`/`N/A` literal-text read parity and duplicate-header dedup matching pandas' `.1`/`.2` scheme |
+| RefDes BOM-coverage (in-process, 19 tests) | Reverse-diff of extracted RefDes vs a loaded BOM: `BOM Not Grouped` (Not Extracted / Extracted-Ungrouped / Extracted-Provisional, with Part#/Description), `Extracted Not In BOM`, `Coverage Summary` counts, component-level normalization, unparented-pin rejection, and the sheet writer |
+| BOM-loader metadata (in-process, 5 tests) | Opt-in Part Number / Description capture in `load_bom_data`, keyed to the normalized RefDes, with Description-over-Name precedence |
 
 ## Frontend Tests
 

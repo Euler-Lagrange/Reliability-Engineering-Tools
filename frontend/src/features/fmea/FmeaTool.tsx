@@ -500,7 +500,9 @@ export function FmeaTool() {
       setCancelledNotice(null);
       setContextView("preview");
       armTerminalHandler();
-      resetDesktopRunSession();
+      // Fix #16: guard the reset so switching workflow MID-RUN doesn't clobber a
+      // live run (which would orphan the backend job). Idle/terminal still reset.
+      resetDesktopRunSessionUnlessLive();
     });
   }, [workflowId]);
 
@@ -523,7 +525,9 @@ export function FmeaTool() {
       setCancelledNotice(null);
       setContextView("preview");
       armTerminalHandler();
-      resetDesktopRunSession();
+      // Fix #16: guard the reset so switching strategy MID-RUN doesn't clobber a
+      // live run (which would orphan the backend job). Idle/terminal still reset.
+      resetDesktopRunSessionUnlessLive();
     });
   }, [outputStrategyId]);
 
@@ -963,6 +967,10 @@ export function FmeaTool() {
     // card) so the Preview tab no longer describes the OLD file/sheet. Guarded
     // by the early return above, so browser-mock demo cards are never wiped.
     setValidations([]);
+    // Fix #17: clear a lingering terminal run before flipping to busy, else
+    // useBackendBusyReset (terminal phase + busy) instantly wipes this
+    // "Inspecting..." chip. Guarded so a live sibling run survives.
+    resetDesktopRunSessionUnlessLive();
     setBackendState({
       backendStatus: "busy",
       backendMessage: `Inspecting workbook for ${role}...`,

@@ -209,6 +209,14 @@ export function useDesktopRunController(
     if (handledDesktopTerminalRef.current === terminalKey) {
       return;
     }
+    // #10: the backend emits status:success (result still null) BEFORE the
+    // result event. Wait for the result rather than marking the terminal handled
+    // now — otherwise this fires with result===null, skips the success branch
+    // below, and the later result event short-circuits on the handled key, so
+    // the success toast + shell message are lost on every successful run.
+    if (phase === "success" && !desktopRunSession.result) {
+      return;
+    }
     handledDesktopTerminalRef.current = terminalKey;
 
     if (phase === "success" && desktopRunSession.result) {

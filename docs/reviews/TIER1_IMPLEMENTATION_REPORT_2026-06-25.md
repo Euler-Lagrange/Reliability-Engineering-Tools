@@ -1,5 +1,10 @@
 # Tier-1 Implementation Report — for Jacob (branch `fix/tier1-data-correctness`)
 
+> **Status (2026-06-26):** merged to `main` as commit `66e507b`; the
+> `fix/tier1-data-correctness` branch no longer exists (review with
+> `git show 66e507b`). The 195/226/427 counts below are the point-in-time
+> snapshot from when this report was written.
+
 ## Bottom line
 
 9 of the 11 Tier-1 items are implemented, regression-tested, and adversarially QA'd. The full verification matrix is green:

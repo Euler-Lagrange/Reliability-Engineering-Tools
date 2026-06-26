@@ -74,7 +74,12 @@ export const useNotificationStore = create<NotificationState>((set) => ({
         const overflow = next.length - MAX_VISIBLE_NOTIFICATIONS;
         const nonErrorIndices: number[] = [];
         const errorIndices: number[] = [];
-        next.forEach((n, i) => {
+        // Eviction candidates are the EXISTING notifications only — never the
+        // just-pushed incoming (appended last, index === state.notifications
+        // .length, which is never enumerated here). Otherwise a new non-error
+        // toast arriving behind a full queue of sticky errors would select
+        // ITSELF as the victim and never display.
+        state.notifications.forEach((n, i) => {
           if (n.tone === "error") errorIndices.push(i);
           else nonErrorIndices.push(i);
         });

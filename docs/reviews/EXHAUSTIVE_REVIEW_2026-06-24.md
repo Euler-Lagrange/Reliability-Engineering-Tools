@@ -50,6 +50,13 @@ Only `_find_missing_in_bom` guards `c[len(base):].isdigit()`; the other three di
 
 ## TIER 2 — Lost feedback or stuck UI (confirmed; no wrong numbers, but real run-integrity failures)
 
+> **Status (2026-06-26):** #10, #11, #12, #16, #17 are now FIXED
+> (`useDesktopRunController.ts`, `runLifecycle.ts`, `notificationStore.ts`,
+> `FmeaTool.tsx`, `BomCompareTool.tsx`). The remaining Tier-2 items
+> (#13–#15, #18–#21) are still open. (Separately, Tier-1 #2–#4 and #6–#9 shipped
+> in commit `66e507b`, and the RefDes BOM-coverage feature shipped in `4ce9bc3`.)
+> The findings below are preserved as the original 2026-06-24 review.
+
 **10. Every successful desktop run silently loses its success toast + "saved to…" message** · `useDesktopRunController.ts:208-226`
 The sidecar emits `status:success` then `result` as two separate events. The terminal handler marks the run "handled" on the first one — when `result` is still null — so the success branch (toast + shell "Generated workbook at…" message) never fires. The Run panel still shows the result, so it's silent UX loss, not a hang — but it happens on *every* successful run. (High frequency; the tests jump straight to `result` and never replay the real two-event ordering, so it's uncaught.)
 

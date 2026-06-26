@@ -1,7 +1,8 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, test, beforeEach } from "vitest";
 import { App } from "../../app/App";
+import { buildActiveRunFromAccepted, useRunStore } from "../../stores/runStore";
 import { useShellStore } from "../../stores/shellStore";
 import { useThemeStore } from "../../stores/themeStore";
 
@@ -65,6 +66,7 @@ function hasMappingLabel(label: string): boolean {
 describe("FmeaTool — Phase 5 mapping row visibility", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    useRunStore.setState({ activeRun: null });
   });
 
   test("default piece_part_generate mode shows FMEA-ID and hides merge-only rows", async () => {
@@ -258,5 +260,56 @@ describe("FmeaTool — Phase 5 mapping row visibility", () => {
     await user.click(screen.getByRole("button", { name: /merge piece-part fmea/i }));
     await user.click(screen.getByRole("button", { name: /piece-part from grouping file/i }));
     expect(document.querySelectorAll(".mapping-field__name").length).toBe(initialCount);
+  }, FMEA_TOOL_TEST_TIMEOUT_MS);
+
+  // Regression (#16): switching workflow mode MID-RUN must not orphan the
+  // backend job — the change-effect's reset must be guarded so a live run
+  // survives.
+  test("does not clobber a live run when the workflow mode is switched mid-run", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await waitForFmeaTool();
+
+    act(() => {
+      useRunStore.getState().setActiveRun(
+        buildActiveRunFromAccepted({
+          runId: "live_fmea_workflow",
+          toolId: "dark_star_fmea",
+          sessionGeneration: 1,
+        }),
+      );
+      useRunStore.getState().patchActiveRun({ phase: "running" });
+    });
+
+    await user.click(screen.getByRole("button", { name: /piece-part from bom only/i }));
+
+    expect(useRunStore.getState().activeRun?.runId).toBe("live_fmea_workflow");
+    expect(useRunStore.getState().activeRun?.phase).toBe("running");
+  }, FMEA_TOOL_TEST_TIMEOUT_MS);
+
+  // Regression (#16): the SEPARATE output-strategy change-effect must also use
+  // the guarded reset so switching strategy mid-run can't orphan the job.
+  test("does not clobber a live run when the output strategy is switched mid-run", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await waitForFmeaTool();
+
+    act(() => {
+      useRunStore.getState().setActiveRun(
+        buildActiveRunFromAccepted({
+          runId: "live_fmea_strategy",
+          toolId: "dark_star_fmea",
+          sessionGeneration: 1,
+        }),
+      );
+      useRunStore.getState().patchActiveRun({ phase: "running" });
+    });
+
+    await user.click(
+      screen.getByRole("button", { name: /existing workbook \(preserve formatting\)/i }),
+    );
+
+    expect(useRunStore.getState().activeRun?.runId).toBe("live_fmea_strategy");
+    expect(useRunStore.getState().activeRun?.phase).toBe("running");
   }, FMEA_TOOL_TEST_TIMEOUT_MS);
 });

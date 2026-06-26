@@ -113,7 +113,19 @@ export function patchFromRunEvent(
       // Ack arrives via beginAcceptedRun() in normal flow; ignore here so we
       // don't reset state if a duplicate ack comes through.
       return null;
-    case "status":
+    case "status": {
+      // Terminal guard: a late NON-terminal status — notably "cancelling",
+      // emitted if a cancel is processed in the narrow window between a run's
+      // result and cleanup — must not clobber an already-settled terminal phase.
+      // Without this the UI sticks in "Cancelling..." forever (no further
+      // terminal event ever arrives). Mirrors markDisconnected's wasTerminal
+      // guard. The normal running -> cancelling -> cancelled path is unaffected
+      // (running is non-terminal) and a genuine later terminal still applies.
+      const isTerminalPhase = (p: unknown) =>
+        p === "success" || p === "failure" || p === "cancelled";
+      if (isTerminalPhase(current.phase) && !isTerminalPhase(event.payload.status)) {
+        return null;
+      }
       return {
         runId: event.run_id,
         phase: event.payload.status,
@@ -128,6 +140,7 @@ export function patchFromRunEvent(
             ? new Date().toISOString()
             : current.finishedAt,
       };
+    }
     case "progress":
       return {
         runId: event.run_id,
