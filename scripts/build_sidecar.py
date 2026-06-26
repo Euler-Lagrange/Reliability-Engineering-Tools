@@ -58,7 +58,7 @@ def main():
         "--hidden-import", "refdes_extractor.extraction_engine",
         "--hidden-import", "refdes_extractor.geometry_analyzer",
         "--hidden-import", "refdes_extractor.bom_loader",
-        "--hidden-import", "refdes_extractor.bom_verifier",
+        "--hidden-import", "refdes_extractor.coverage_report",
         "--hidden-import", "refdes_extractor.pinlist_parenting",
         "--hidden-import", "refdes_extractor.group_detection",
         "--hidden-import", "refdes_test.refdes_test_logic",

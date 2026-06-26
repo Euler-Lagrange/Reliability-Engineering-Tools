@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import json
 import re
@@ -48,6 +48,24 @@ _PAGE_COLUMN_REJECT_PHRASES = (
     "SHEETMETAL",
 )
 
+# Description-column candidates, precise-first. The shared ``description``
+# synonym table leads with the generic ``Name`` (a net/component name), which
+# would shadow a real ``Description`` column for coverage enrichment, so we
+# curate the order locally rather than reorder the global table.
+_DESCRIPTION_COLUMN_PRIORITY = [
+    "Description",
+    "Part Description",
+    "Primary Part Description",
+    "Item Description",
+    "Component Description",
+    "Part_Description",
+    "Desc",
+    "PartDesc",
+    "Part Name",
+    "Component Name",
+    "Name",
+]
+
 
 @dataclass(frozen=True)
 class BomLoadResult:
@@ -57,6 +75,9 @@ class BomLoadResult:
     page_map: Dict[str, Set[int]]
     refdes_column: Optional[str] = None
     page_column: Optional[str] = None
+    # {normalized_refdes: {"part_number", "description"}} — only populated when
+    # ``include_component_metadata`` is requested. Keyed identically to ``refdes``.
+    meta: Dict[str, Dict[str, str]] = field(default_factory=dict)
 
 
 def _load_configured_ref_prefixes() -> list[str]:
@@ -93,6 +114,23 @@ def strip_instance_suffix(refdes: str, prefixes: Optional[list[str]] = None) -> 
     if match:
         return f"{match.group(1)}{match.group(2)}".upper()
     return normalized
+
+
+def _clean_cell(value) -> str:
+    """Coerce a DataFrame cell to a trimmed string, NaN/None -> ''."""
+    if value is None or pd.isna(value):
+        return ""
+    return str(value).strip()
+
+
+def _find_metadata_column(df: pd.DataFrame, synonyms: list[str]) -> Optional[str]:
+    """Case-insensitive exact match of a column header against synonyms."""
+    cols_upper = {str(col).strip().upper(): col for col in df.columns}
+    for candidate in synonyms:
+        resolved = cols_upper.get(str(candidate).strip().upper())
+        if resolved:
+            return resolved
+    return None
 
 
 def _find_base_refdes_column(
@@ -240,6 +278,7 @@ def load_bom_data(
     sheet_name=None,
     *,
     include_page_metadata: bool = False,
+    include_component_metadata: bool = False,
     mode: str = BASE_MODE,
 ) -> BomLoadResult:
     """Load normalized RefDes data from a BOM file."""
@@ -277,12 +316,20 @@ def load_bom_data(
         if page_col:
             log(f"  Detected BOM page column: '{page_col}'")
 
+        meta: Dict[str, Dict[str, str]] = {}
+        pn_col = desc_col = None
+        if include_component_metadata:
+            pn_col = _find_metadata_column(df, get_synonyms("part_number"))
+            desc_col = _find_metadata_column(df, _DESCRIPTION_COLUMN_PRIORITY)
+
         for _, row in df.iterrows():
             raw_ref = row.get(ref_col)
             if pd.isna(raw_ref):
                 continue
 
             pages = _parse_page_numbers(row.get(page_col)) if page_col else set()
+            row_pn = _clean_cell(row.get(pn_col)) if pn_col else ""
+            row_desc = _clean_cell(row.get(desc_col)) if desc_col else ""
             for token in _iter_tokens(raw_ref, mode=mode):
                 normalized = _normalize_token(
                     token,
@@ -295,6 +342,10 @@ def load_bom_data(
                 refs.add(normalized)
                 if pages:
                     page_map[normalized].update(pages)
+                # First non-blank metadata for a RefDes wins; always seed the
+                # key (even blank) so coverage lookups are predictable.
+                if include_component_metadata and normalized not in meta:
+                    meta[normalized] = {"part_number": row_pn, "description": row_desc}
 
         log(f"  Loaded {len(refs)} components from BOM.")
         if page_map:
@@ -305,6 +356,7 @@ def load_bom_data(
             page_map={key: set(values) for key, values in page_map.items()},
             refdes_column=ref_col,
             page_column=page_col,
+            meta=meta,
         )
     except Exception as ex:
         raise RuntimeError(f"Failed to read BOM: {ex}") from ex

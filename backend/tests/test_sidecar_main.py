@@ -1579,6 +1579,58 @@ def test_sidecar_executes_refdes_extract(tmp_path: Path) -> None:
         process.kill()
 
 
+def test_sidecar_refdes_extract_emits_bom_coverage_sheets(tmp_path: Path) -> None:
+    """A BOM whose parts aren't on the schematic must surface a reverse-diff.
+
+    End-to-end guard for the coverage wiring: the BOM (R1, R2) shares no RefDes
+    with the PDF's lone CPU-001 group annotation, so both land in 'BOM Not
+    Grouped' as Not Extracted and the three coverage sheets are written.
+    """
+    from openpyxl import load_workbook
+
+    body = _build_refdes_extract_run_body(tmp_path)
+
+    process = subprocess.Popen(
+        [sys.executable, str(SIDECAR)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        env=SIDECAR_ENV,
+    )
+    try:
+        _read_ready_line(process)
+        ack = _send_command(process, "req_exec_rd_cov", "execute_run", body)
+        assert ack["kind"] == "ack"
+        run_id = ack["payload"]["run_id"]
+
+        terminal = _read_until(process, run_id=run_id, timeout=30.0)
+        while terminal["kind"] not in {"result", "backend_error", "cancelled"}:
+            terminal = _read_until(process, run_id=run_id, timeout=30.0)
+
+        assert terminal["kind"] == "result"
+        output_path = Path(terminal["payload"]["output_file"])
+        assert output_path.exists()
+
+        wb = load_workbook(output_path)
+        try:
+            assert {"Coverage Summary", "BOM Not Grouped", "Extracted Not In BOM"} <= set(wb.sheetnames)
+            bng = wb["BOM Not Grouped"]
+            rows = {
+                bng.cell(row=r, column=1).value: bng.cell(row=r, column=4).value
+                for r in range(2, bng.max_row + 1)
+            }
+            assert "R1" in rows and "R2" in rows
+            assert rows["R1"] == "Not Extracted"
+        finally:
+            wb.close()
+
+        notes = " ".join(terminal["payload"].get("notes", []))
+        assert "BOM coverage" in notes
+    finally:
+        process.kill()
+
+
 def test_sidecar_rejects_refdes_missing_pdf(tmp_path: Path) -> None:
     __import__("pytest").importorskip("fitz")
 

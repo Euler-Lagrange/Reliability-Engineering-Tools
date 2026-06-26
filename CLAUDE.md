@@ -73,7 +73,7 @@ npm run tauri:build:portable  # Release build → src-tauri/target/.../release/
 npm run cargo:test       # Rust bridge unit tests via the repo runner
 
 # Python sidecar (use project venv)
-.venv\Scripts\python.exe -m pytest backend/tests -v    # 195 backend tests (43 sidecar + 17 audit + 12 cancel bridge + 4 output-directory helper + 53 FMEA phase D + 19 failure-rate logic + 6 RefDes extraction-engine + 26 BOM-compare logic + 7 BOM-compare runtime + 2 failure-rate runtime + 6 read-layer)
+.venv\Scripts\python.exe -m pytest backend/tests -v    # 220 backend tests (44 sidecar + 17 audit + 12 cancel bridge + 4 output-directory helper + 53 FMEA phase D + 19 failure-rate logic + 6 RefDes extraction-engine + 26 BOM-compare logic + 7 BOM-compare runtime + 2 failure-rate runtime + 6 read-layer + 19 RefDes BOM-coverage + 5 BOM-loader metadata)
 .venv\Scripts\python.exe backend/python/sidecar_main.py --self-test
 
 # Full release
@@ -157,8 +157,8 @@ The audit runs:
 
 ## Testing
 
-### Backend Tests (195 total)
-- 43 sidecar integration tests in `test_sidecar_main.py`
+### Backend Tests (220 total)
+- 44 sidecar integration tests in `test_sidecar_main.py` (incl. the RefDes BOM-coverage sheet emission)
 - 17 security-audit tests in `test_security_audit.py` (synthetic positives + live tree scan)
 - 12 cancel-bridge tests in `test_cancel_bridge.py` (BOM Compare + RefDes bridges plus Failure Rate `FMEALinkerLogic.cancel` binding through `ActiveRun`)
 - 4 output-directory helper tests in `test_output_directory_helpers.py`
@@ -169,6 +169,8 @@ The audit runs:
 - 7 BOM-compare runtime tests in `test_bom_compare_runtime.py` (dnp_regex default, Do-Not-Map sentinel validation, custom option wiring)
 - 2 Failure-Rate runtime tests in `test_failure_rate_runtime.py` (Do-Not-Map sentinel validation)
 - 6 read-layer tests in `test_read_layer.py` (Excel/CSV NA-literal parity, duplicate-header dedup matching pandas)
+- 19 RefDes BOM-coverage tests in `test_coverage_report.py` (reverse-diff buckets: Not Extracted / Extracted-Ungrouped / Extracted-Provisional, component-level normalization, deterministic collapse of same-base BOM rows, unparented-pin rejection, multi-row page/group union, NaN-cell guards, BOM enrichment, summary counts, sheet writer)
+- 5 BOM-loader metadata tests in `test_bom_loader.py` (opt-in Part Number / Description capture keyed to the normalized RefDes, Description-over-Name precedence)
 - Sidecar tests are subprocess-based: spawn sidecar, send NDJSON commands, verify responses
 - `stderr=subprocess.DEVNULL` to avoid Windows pipe buffer deadlock
 - `SIDECAR_HEARTBEAT_INTERVAL=9999` suppresses heartbeats during tests

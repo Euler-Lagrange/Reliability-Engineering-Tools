@@ -824,7 +824,11 @@ export const refdesDemoScenarios: DemoScenario[] = [
         outputFile: "DRIVE\\outputs\\RefDesExtract_20260406.xlsx",
         primaryMetric: "10 verified groups",
         secondaryMetric: "2 unverified, 245 total components",
-        notes: ["Backend: nextgen.", "Extraction mode: functional."],
+        notes: [
+          "Backend: nextgen.",
+          "Extraction mode: functional.",
+          "BOM coverage: 6 BOM component(s) not grouped (4 never extracted), 3 extracted not in BOM — see the 'Coverage Summary', 'BOM Not Grouped', and 'Extracted Not In BOM' sheets.",
+        ],
       },
     },
   },

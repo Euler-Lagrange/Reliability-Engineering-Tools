@@ -336,22 +336,29 @@ def execute_run_request(
         extract_with_geometry_analysis_detailed,
         extract_annotations_from_doc,
         detect_groups_with_fallback,
-        load_bom_with_metadata,
         load_pinlist,
     )
+    from refdes_extractor.bom_loader import BASE_MODE, load_bom_data
+    from refdes_extractor.coverage_report import build_coverage, write_coverage_sheets
     from refdes_extractor.extraction_engine import cleanup_words_extraction_threads
 
     # --- Load BOM (1-5%) ---
     bom_set: set[str] = set()
     bom_page_map: dict[str, set[int]] | None = None
+    bom_meta: dict[str, dict[str, str]] = {}
     bom_load_error: str | None = None
     if bom_path:
         emit_status("running", "Loading BOM", "Loading BOM workbook...")
         emit_progress("Loading BOM", "Loading BOM...", 2)
         try:
-            bom_set, bom_page_map = load_bom_with_metadata(
+            _bom_result = load_bom_data(
                 Path(bom_path), log_func=stream_log, sheet_name=bom_sheet,
+                include_page_metadata=True, include_component_metadata=True,
+                mode=BASE_MODE,
             )
+            bom_set = _bom_result.refdes
+            bom_page_map = _bom_result.page_map
+            bom_meta = _bom_result.meta
             stream_log(f"Loaded {len(bom_set)} RefDes from BOM.")
         except (InterruptedError, CancellationError):
             raise
@@ -453,6 +460,42 @@ def execute_run_request(
         cleanup_words_extraction_threads()
         doc.close()
 
+    # --- Compute BOM coverage reverse-diff (only meaningful with a real BOM) ---
+    # Gated on a non-empty, successfully-loaded BOM: with no BOM the diff is
+    # degenerate (everything "unverified"), and a failed load already emits the
+    # prominent BOM-CROSS-CHECK-FAILED notice below.
+    coverage = None
+    if bom_set and not bom_load_error:
+        # Coverage is a SECONDARY, additive report computed after the expensive
+        # extraction has finished. A defect here must never sink the primary
+        # result, so swallow any failure and continue without coverage sheets.
+        try:
+            coverage = build_coverage(
+                bom_set, results, bom_meta=bom_meta, bom_page_map=bom_page_map,
+            )
+        except (InterruptedError, CancellationError):
+            raise
+        except Exception as exc:
+            coverage = None
+            stream_log(
+                f"WARNING: the BOM coverage report could not be computed ({exc}); "
+                f"the extraction output is unaffected."
+            )
+
+    def _safe_write_coverage(workbook) -> None:
+        """Append coverage sheets, never letting a failure abort the main save."""
+        if coverage is None:
+            return
+        try:
+            write_coverage_sheets(workbook, coverage)
+        except (InterruptedError, CancellationError):
+            raise
+        except Exception as exc:
+            stream_log(
+                f"WARNING: coverage sheets could not be written ({exc}); the main "
+                f"extraction sheet is unaffected."
+            )
+
     # --- Write Excel (90-98%) ---
     emit_status("running", "Writing workbook", "Writing extraction results...")
     emit_progress("Writing workbook", "Writing...", 92)
@@ -466,6 +509,7 @@ def execute_run_request(
             ws = wb.active
             ws.title = "RefDes Extraction"
             write_df_to_sheet(ws, df)
+            _safe_write_coverage(wb)
             wb.save(str(tmp_output))
             wb.close()
         else:
@@ -475,6 +519,7 @@ def execute_run_request(
             ws.title = "RefDes Extraction"
             ws.append(["Group", "Failure Mode Causes", "Component Count", "Pages"])
             ws.append(["(No groups extracted)", "", 0, ""])
+            _safe_write_coverage(wb)
             wb.save(str(tmp_output))
             wb.close()
         if not verify_excel_readable(tmp_output):
@@ -527,6 +572,15 @@ def execute_run_request(
             f"NOT IN BOM, so this report does NOT reflect a real BOM comparison. "
             f"Re-run with a usable BOM to verify."
         ))
+
+    if coverage is not None:
+        cs = coverage.summary
+        notes.append(
+            f"BOM coverage: {cs['bom_not_grouped_count']} BOM component(s) not grouped "
+            f"({cs['not_extracted_count']} never extracted), "
+            f"{cs['extracted_not_in_bom_count']} extracted not in BOM — see the "
+            f"'Coverage Summary', 'BOM Not Grouped', and 'Extracted Not In BOM' sheets."
+        )
 
     return {
         "status": "success",

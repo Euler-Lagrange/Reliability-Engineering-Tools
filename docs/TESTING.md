@@ -4,7 +4,7 @@
 
 | Suite | Path | Count | Framework |
 |-------|------|-------|-----------|
-| Backend integration | `backend/tests/test_sidecar_main.py` | 43 | pytest |
+| Backend integration | `backend/tests/test_sidecar_main.py` | 44 | pytest |
 | Backend security audit | `backend/tests/test_security_audit.py` | 17 | pytest |
 | Backend cancel bridge | `backend/tests/test_cancel_bridge.py` | 12 | pytest |
 | Backend output-directory helpers | `backend/tests/test_output_directory_helpers.py` | 4 | pytest |
@@ -15,7 +15,9 @@
 | Backend BOM-compare runtime | `backend/tests/test_bom_compare_runtime.py` | 7 | pytest |
 | Backend Failure-Rate runtime | `backend/tests/test_failure_rate_runtime.py` | 2 | pytest |
 | Backend read-layer (NA + header dedup) | `backend/tests/test_read_layer.py` | 6 | pytest |
-| **Backend subtotal** | | **195** | |
+| Backend RefDes BOM-coverage | `backend/tests/test_coverage_report.py` | 19 | pytest |
+| Backend BOM-loader metadata | `backend/tests/test_bom_loader.py` | 5 | pytest |
+| **Backend subtotal** | | **220** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 4 | Vitest + RTL |
 | Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 1 | Vitest + RTL |
@@ -51,7 +53,7 @@
 | Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 5 | Vitest + RTL |
 | **Frontend subtotal** | | **226** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 6 | cargo test |
-| **Total** | | **427** | |
+| **Total** | | **452** | |
 
 ## Backend Tests
 
