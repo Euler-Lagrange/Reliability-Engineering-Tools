@@ -554,4 +554,81 @@ describe("BomCompareTool custom compare workflow", () => {
 
     await waitFor(() => expect(useRunStore.getState().activeRun).toBeNull());
   });
+
+  // Tier-1 #5: enter Custom Compare and inspect BOTH files so the column-pair
+  // picker has real headers to auto-pair from.
+  async function enterCustomAndInspectBothFiles(
+    user: ReturnType<typeof userEvent.setup>,
+  ) {
+    backendMocks.openExcelFile.mockResolvedValue("C:\\real\\File.xlsx");
+    backendMocks.listSheets.mockResolvedValue({
+      path: "C:\\real\\File.xlsx",
+      sheets: ["Sheet1"],
+      mode: "desktop-bridge",
+    });
+    backendMocks.inspectInput.mockResolvedValue({
+      mode: "desktop-bridge",
+      sheet: "Sheet1",
+      columns: ["Reference Designator", "Part Number", "Description"],
+    });
+    await user.click(screen.getByRole("button", { name: /Custom Compare/i }));
+    await user.click(screen.getAllByRole("button", { name: "Browse" })[0]);
+    await waitFor(() => expect(backendMocks.inspectInput).toHaveBeenCalledTimes(1));
+    await user.click(screen.getAllByRole("button", { name: "Browse" })[1]);
+    await waitFor(() => expect(backendMocks.inspectInput).toHaveBeenCalledTimes(2));
+  }
+
+  // Tier-1 #5: the picker auto-pairs matching headers (RefDes excluded) in
+  // Custom Compare and is hidden entirely in Group mode (no second BOM to pair).
+  it("auto-pairs matching columns in Custom Compare and hides the picker in Group mode", async () => {
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+    await enterCustomAndInspectBothFiles(user);
+
+    expect(screen.getByText("Column Value Comparison")).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: /Remove compare pair/i }),
+    ).toHaveLength(2); // Part Number + Description; Reference Designator excluded
+
+    await user.click(screen.getByRole("button", { name: /Group vs BOM/i }));
+    expect(screen.queryByText("Column Value Comparison")).not.toBeInTheDocument();
+  });
+
+  // Regression: removing the LAST auto-paired row must leave the picker empty —
+  // the auto-pair seed is one-shot per inspected file set, so it must not
+  // re-fire just because the array returned to empty.
+  it("does not re-seed after the user removes the last compare pair", async () => {
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+    await enterCustomAndInspectBothFiles(user);
+
+    await user.click(screen.getAllByRole("button", { name: /Remove compare pair/i })[1]);
+    await user.click(screen.getAllByRole("button", { name: /Remove compare pair/i })[0]);
+
+    expect(
+      screen.queryByRole("button", { name: /Remove compare pair/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/No column comparisons configured/i)).toBeInTheDocument();
+  });
+
+  // Regression: a trimmed pair set must survive a Custom->Group->Custom
+  // round-trip (the per-workflow cache restores it and the auto-pair seed must
+  // not re-fire over the restored value).
+  it("preserves a trimmed compare-pair set across a Custom->Group->Custom round-trip", async () => {
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+    await enterCustomAndInspectBothFiles(user);
+
+    await user.click(screen.getAllByRole("button", { name: /Remove compare pair/i })[1]);
+    expect(
+      screen.getAllByRole("button", { name: /Remove compare pair/i }),
+    ).toHaveLength(1);
+
+    await user.click(screen.getByRole("button", { name: /Group vs BOM/i }));
+    await user.click(screen.getByRole("button", { name: /Custom Compare/i }));
+
+    expect(
+      screen.getAllByRole("button", { name: /Remove compare pair/i }),
+    ).toHaveLength(1);
+  });
 });

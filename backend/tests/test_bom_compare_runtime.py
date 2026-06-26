@@ -296,3 +296,54 @@ def test_custom_runtime_check_fmr_reports_warnings(tmp_path: Path) -> None:
     assert result["warning_count"] >= 1, (
         f"check_fmr should surface the U1 FMR-sum warning; got {result['summary']}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Tier-1 #5: the custom path must forward the frontend's compare_columns option
+# (an array of {col_a, col_b, rule} dicts) into compare_two_boms so per-column
+# VALUE diffs are produced. Without the option, zero value diffs are reported.
+# These prove the option reaches the runtime reader end-to-end (read -> compare
+# -> write) and lands in the result's secondary_metric "{n} differences".
+# ---------------------------------------------------------------------------
+
+def test_custom_runtime_forwards_compare_columns(tmp_path: Path) -> None:
+    """A compare_columns pair on a column that differs between the two files
+    surfaces as a value diff in the result's secondary_metric.
+    """
+    rows_a = [{"Reference Designator": "R1", "Part Number": "PN-10K"}]
+    rows_b = [{"Reference Designator": "R1", "Part Number": "PN-4K7"}]
+
+    body = _build_custom_body_with(
+        tmp_path, rows_a, rows_b,
+        options={
+            "check_part_usage": False,
+            "compare_columns": [
+                {"col_a": "Part Number", "col_b": "Part Number", "rule": "Text (ignore case)"},
+            ],
+        },
+    )
+    result = bom_runtime.execute_run_request(body)
+    assert result["status"] == "success"
+    assert "1 differences" in result["secondary_metric"], (
+        "compare_columns should produce one value diff for R1's Part Number; "
+        f"got secondary_metric {result['secondary_metric']!r}"
+    )
+
+
+def test_custom_runtime_without_compare_columns_reports_zero_differences(tmp_path: Path) -> None:
+    """Without compare_columns, the same differing column produces zero value
+    diffs (RefDes membership only).
+    """
+    rows_a = [{"Reference Designator": "R1", "Part Number": "PN-10K"}]
+    rows_b = [{"Reference Designator": "R1", "Part Number": "PN-4K7"}]
+
+    body = _build_custom_body_with(
+        tmp_path, rows_a, rows_b,
+        options={"check_part_usage": False},
+    )
+    result = bom_runtime.execute_run_request(body)
+    assert result["status"] == "success"
+    assert "0 differences" in result["secondary_metric"], (
+        "Without compare_columns no value diffs should be reported; "
+        f"got secondary_metric {result['secondary_metric']!r}"
+    )

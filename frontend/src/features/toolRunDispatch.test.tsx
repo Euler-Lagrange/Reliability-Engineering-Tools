@@ -12,6 +12,9 @@ const backendMocks = vi.hoisted(() => ({
   validateRun: vi.fn(),
   executeRun: vi.fn(),
   cancelRun: vi.fn(),
+  openExcelFile: vi.fn(),
+  listSheets: vi.fn(),
+  inspectInput: vi.fn(),
 }));
 
 vi.mock("../shared/backend/client", () => ({
@@ -20,7 +23,9 @@ vi.mock("../shared/backend/client", () => ({
     validateRun: backendMocks.validateRun,
     executeRun: backendMocks.executeRun,
     cancelRun: backendMocks.cancelRun,
-    openExcelFile: vi.fn(),
+    openExcelFile: backendMocks.openExcelFile,
+    listSheets: backendMocks.listSheets,
+    inspectInput: backendMocks.inspectInput,
     openPdfFile: vi.fn(),
     openDirectory: vi.fn(),
     revealInFileManager: vi.fn(),
@@ -56,6 +61,9 @@ beforeEach(() => {
   backendMocks.validateRun.mockReset();
   backendMocks.executeRun.mockReset();
   backendMocks.cancelRun.mockReset();
+  backendMocks.openExcelFile.mockReset();
+  backendMocks.listSheets.mockReset();
+  backendMocks.inspectInput.mockReset();
   backendMocks.validateRun.mockResolvedValue({
     ok: true,
     reason_code: "ready",
@@ -99,6 +107,52 @@ describe("tool run dispatch", () => {
       check_fmr: false,
       treat_prov_as_covered: true,
     });
+  });
+
+  it("forwards configured Custom Compare column pairs as options.compare_columns", async () => {
+    // Tier-1 #5: in Custom Compare, once both files are inspected the
+    // auto-pair effect seeds compare pairs from matching headers (excluding
+    // the RefDes key). Those pairs must reach the backend payload as
+    // options.compare_columns (array of {col_a, col_b, rule}) so the runtime
+    // adapter can wire per-column value diffs.
+    backendMocks.openExcelFile.mockResolvedValue("C:\\real\\File.xlsx");
+    backendMocks.listSheets.mockResolvedValue({
+      path: "C:\\real\\File.xlsx",
+      sheets: ["Sheet1"],
+      mode: "desktop-bridge",
+    });
+    backendMocks.inspectInput.mockResolvedValue({
+      mode: "desktop-bridge",
+      sheet: "Sheet1",
+      columns: ["Reference Designator", "Part Number", "Description"],
+    });
+
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+
+    await user.click(screen.getByRole("button", { name: /Custom Compare/i }));
+
+    // Browse + inspect BOTH files so the auto-pair effect has headers for
+    // bomA and bomB.
+    const browseButtons = screen.getAllByRole("button", { name: "Browse" });
+    await user.click(browseButtons[0]);
+    await waitFor(() =>
+      expect(backendMocks.inspectInput).toHaveBeenCalledTimes(1),
+    );
+    await user.click(screen.getAllByRole("button", { name: "Browse" })[1]);
+    await waitFor(() =>
+      expect(backendMocks.inspectInput).toHaveBeenCalledTimes(2),
+    );
+
+    await runTool("Compare");
+
+    await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
+    const body = backendMocks.executeRun.mock.calls[0][0];
+    // The RefDes key column is excluded; the two shared value columns pair up.
+    expect(body.options.compare_columns).toEqual([
+      { col_a: "Part Number", col_b: "Part Number", rule: "Text (ignore case)" },
+      { col_a: "Description", col_b: "Description", rule: "Text (ignore case)" },
+    ]);
   });
 
   it("dispatches the Failure Rate workflow", async () => {

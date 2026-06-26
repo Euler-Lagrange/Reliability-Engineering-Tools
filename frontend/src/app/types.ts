@@ -39,6 +39,27 @@ export type MappingOrigin = "mapped" | "derived" | "merge_only";
  */
 export const DO_NOT_MAP_VALUE = "__do_not_map__";
 export const DO_NOT_MAP_LABEL = "— Do Not Map —";
+
+/**
+ * Per-column comparison rule for Custom BOM Compare value diffs (Tier-1 #5).
+ * These exact strings are matched loosely by the backend's `values_differ`
+ * (`bom_compare/custom_compare.py`): "Numeric" -> numeric tolerance compare,
+ * "...exact..." -> case-sensitive text, otherwise case-insensitive text. Do
+ * NOT change the wording without updating that matcher.
+ */
+export type CompareRule = "Text (ignore case)" | "Text (exact)" | "Numeric";
+
+/**
+ * One column-value comparison pair for Custom BOM Compare. The frontend sends
+ * an array of these as `options.compare_columns`; the runtime adapter
+ * (`bom_compare/runtime.py` `_run_custom_compare`) converts each to a
+ * `(col_a, col_b, rule)` tuple for `compare_two_boms`.
+ */
+export interface ComparePair {
+  col_a: string;
+  col_b: string;
+  rule: CompareRule;
+}
 export type ValidationSeverity = "info" | "warning" | "error";
 export type RunEventStatus = "completed" | "active" | "pending";
 export type RunMode = "idle" | "starting" | "running" | "cancelling" | "success" | "failure" | "cancelled" | "disconnected";

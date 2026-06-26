@@ -10,15 +10,18 @@ import { ContextTabs } from "../../components/primitives/ContextTabs";
 import { EmptyState } from "../../components/primitives/EmptyState";
 import { OptionsSection } from "../../components/primitives/OptionsSection";
 import { OutputFolderPicker } from "../../components/OutputFolderPicker";
+import { ColumnPairPicker } from "./ColumnPairPicker";
 import { GitDiff } from "@phosphor-icons/react";
 import {
   bomCompareWorkflowOptions,
   bomCompareDemoScenarios,
   bomCompareGroupMappings,
   bomCompareCustomMappings,
+  bomCompareCustomColumns,
 } from "../../mocks/scenarios";
 import type {
   ColumnMappingRow,
+  ComparePair,
   FileRole,
   InputFileState,
   RunEventTemplate,
@@ -86,6 +89,28 @@ function seedInputsForRuntime(inputs: InputFileState[]): InputFileState[] {
 }
 
 /**
+ * Tier-1 #5: browser-mock seed for the ColumnPairPicker. The picker derives its
+ * column choices from inspected workbook headers (`workbookColumnsByRole`),
+ * which only populate in the desktop runtime. In browser-mock there is no
+ * inspect round-trip, so we seed the custom workflow's two roles from the demo
+ * scenario's example headers (Wiring Invariant #4/#7) — without this the
+ * browser preview's picker would always show its empty state. Returns an empty
+ * record for the group workflow (no picker there) and in the desktop runtime
+ * (real inspection populates it).
+ */
+function seedColumnsForWorkflow(
+  workflowId: WorkflowId,
+): Partial<Record<FileRole, string[]>> {
+  if (
+    backendClient.runtimeMode === "browser-mock" &&
+    workflowId === "bom_compare_custom"
+  ) {
+    return { bomA: bomCompareCustomColumns, bomB: bomCompareCustomColumns };
+  }
+  return {};
+}
+
+/**
  * A slot whose async inspection was interrupted by a workflow switch must
  * not be cached with its busy flags set — restoring `isResolvingSheets` /
  * `isAnalyzing` verbatim would leave Browse and the sheet picker disabled
@@ -121,7 +146,13 @@ export function BomCompareTool() {
   // don't need to stash it in workflowStateCache.
   const [workbookColumnsByRole, setWorkbookColumnsByRole] = useState<
     Partial<Record<FileRole, string[]>>
-  >({});
+  >(() => seedColumnsForWorkflow(baseScenario.workflowId));
+  // Tier-1 #5: per-column VALUE diff pairs for Custom Compare. Sent as
+  // `options.compare_columns` for the custom workflow only. Auto-populated from
+  // headers that match (case-insensitively) in BOTH files once they're both
+  // inspected; the user can add/remove/edit pairs afterward. Stashed per
+  // workflow (Wiring Invariant #9) so it survives a Group<->Custom round-trip.
+  const [comparePairs, setComparePairs] = useState<ComparePair[]>([]);
   const [validations, setValidations] = useState<ValidationMessage[]>(baseScenario.validations);
   const [options, setOptions] = useState({
     // "base match" maps to the backend's loose/prefix base-matching mode
@@ -178,6 +209,7 @@ export function BomCompareTool() {
           inputStates: InputFileState[];
           mappingOverrides: Record<string, string>;
           validations: ValidationMessage[];
+          comparePairs: ComparePair[];
         }
       >
     >
@@ -191,9 +223,11 @@ export function BomCompareTool() {
   const latestInputStates = useRef(inputStates);
   const latestMappingOverrides = useRef(mappingOverrides);
   const latestValidations = useRef(validations);
+  const latestComparePairs = useRef(comparePairs);
   latestInputStates.current = inputStates;
   latestMappingOverrides.current = mappingOverrides;
   latestValidations.current = validations;
+  latestComparePairs.current = comparePairs;
 
   const timeline = useMemo(() => buildTimeline(runMode, runIndex, runTemplates), [runIndex, runMode, runTemplates]);
   const progress =
@@ -250,6 +284,7 @@ export function BomCompareTool() {
           inputStates: latestInputStates.current.map(sanitizeInterruptedInput),
           mappingOverrides: latestMappingOverrides.current,
           validations: latestValidations.current,
+          comparePairs: latestComparePairs.current,
         };
       }
       previousWorkflowId.current = workflowId;
@@ -266,6 +301,11 @@ export function BomCompareTool() {
         setInputStates(cached.inputStates);
         setMappingOverrides(cached.mappingOverrides);
         setValidations(cached.validations);
+        // Tier-1 #5: restore the cached compare pairs. For a workflow visited
+        // before, this preserves the user's edits (and is [] for group, since
+        // the picker never renders there). On a switch INTO custom for the
+        // first time the else-branch clears it so the auto-pair effect can seed.
+        setComparePairs(cached.comparePairs);
       } else {
         setMappingOverrides({});
         const scenario = bomCompareDemoScenarios.find((s) => s.workflowId === workflowId) ?? baseScenario;
@@ -274,6 +314,17 @@ export function BomCompareTool() {
         // mode when switching Group <-> Custom for the first time.
         setInputStates(seedInputsForRuntime(scenario.inputs));
         setValidations(scenario.validations);
+        // Tier-1 #5: clear compare pairs for a never-visited workflow. Group
+        // mode keeps it empty (no picker); custom mode lets the auto-pair
+        // effect populate it once both files are inspected.
+        setComparePairs([]);
+      }
+      // Tier-1 #5: in browser-mock there's no inspect round-trip, so seed the
+      // incoming custom workflow's example columns for the picker. Merge so a
+      // role already populated by a real (desktop) inspection is never clobbered.
+      const seededColumns = seedColumnsForWorkflow(workflowId);
+      if (Object.keys(seededColumns).length > 0) {
+        setWorkbookColumnsByRole((current) => ({ ...seededColumns, ...current }));
       }
       setRunMode("idle");
       setRunIndex(-1);
@@ -345,6 +396,84 @@ export function BomCompareTool() {
     return deriveMappingRows(fixtureRows, canonicalToRole, workbookColumnsByRole);
   }, [workflowId, workbookColumnsByRole]);
 
+  // Tier-1 #5: the effective RefDes key columns for each custom file (mapping
+  // override wins over the derived fixture default). These are EXCLUDED from
+  // auto-pairing — the key column is the join, not a value to diff.
+  const mappedColumnFor = (canonical: string): string => {
+    const override = mappingOverrides[canonical];
+    if (override !== undefined) {
+      return override;
+    }
+    return mappingRows.find((row) => row.canonical === canonical)?.mappedTo ?? "";
+  };
+  const refdesColA = mappedColumnFor("refdes_col_a");
+  const refdesColB = mappedColumnFor("refdes_col_b");
+
+  const customColumnsA = workbookColumnsByRole.bomA ?? [];
+  const customColumnsB = workbookColumnsByRole.bomB ?? [];
+
+  // Tier-1 #5: signature of the inspected column set we last auto-paired for.
+  // The one-shot seed keys off this (NOT comparePairs.length): deleting the last
+  // pair or round-tripping Group<->Custom keeps the same signature, so it does
+  // not re-seed — only a genuinely new inspection (different columns) re-pairs.
+  const autoPairedSignatureRef = useRef<string | null>(null);
+
+  // Tier-1 #5 auto-pair: when both custom files are inspected, seed compare
+  // pairs ONCE per inspected column set from headers that match (normalized) in
+  // both files, excluding the mapped RefDes key columns. comparePairs is read
+  // via ref so it is not an effect dep (a dep would re-fire the seed every time
+  // the array returns to empty — re-adding rows the user just deleted, and
+  // clobbering a restored cache mid-round-trip).
+  useEffect(() => {
+    if (workflowId !== "bom_compare_custom") {
+      return;
+    }
+    if (customColumnsA.length === 0 || customColumnsB.length === 0) {
+      return;
+    }
+    const signature = JSON.stringify([
+      customColumnsA,
+      customColumnsB,
+      refdesColA,
+      refdesColB,
+    ]);
+    if (autoPairedSignatureRef.current === signature) {
+      return;
+    }
+    autoPairedSignatureRef.current = signature;
+    if (latestComparePairs.current.length > 0) {
+      // A restored cache or the user's existing edits — never clobber.
+      return;
+    }
+    const normalize = (value: string) => value.trim().toLowerCase();
+    const excluded = new Set(
+      [refdesColA, refdesColB].filter(Boolean).map(normalize),
+    );
+    const bByNormalized = new Map<string, string>();
+    for (const column of customColumnsB) {
+      const key = normalize(column);
+      if (!bByNormalized.has(key)) {
+        bByNormalized.set(key, column);
+      }
+    }
+    const seenA = new Set<string>();
+    const autoPairs: ComparePair[] = [];
+    for (const column of customColumnsA) {
+      const key = normalize(column);
+      if (!key || excluded.has(key) || seenA.has(key)) {
+        continue;
+      }
+      seenA.add(key);
+      const matchB = bByNormalized.get(key);
+      if (matchB) {
+        autoPairs.push({ col_a: column, col_b: matchB, rule: "Text (ignore case)" });
+      }
+    }
+    if (autoPairs.length > 0) {
+      setComparePairs(autoPairs);
+    }
+  }, [workflowId, customColumnsA, customColumnsB, refdesColA, refdesColB]);
+
   async function handleRevealOutput(path: string) {
     try {
       await backendClient.revealInFileManager(parentDirectoryForPath(path));
@@ -381,6 +510,20 @@ export function BomCompareTool() {
     // handling), so adding a selector would be user-visible but would
     // silently no-op until backend support lands. Re-evaluate when the
     // backend runtime surfaces a `preserve_formatting` code path.
+    // Tier-1 #5: the custom path's per-column value diffs ride along in
+    // options.compare_columns (array of {col_a, col_b, rule}). Group mode has
+    // no second BOM to pair against, so the key is omitted there. Pairs with an
+    // empty File-1 or File-2 column are dropped — the backend reader
+    // (_run_custom_compare) also guards this, but pruning here keeps the
+    // payload clean.
+    const runOptions =
+      workflowId === "bom_compare_custom"
+        ? {
+            ...options,
+            compare_columns: comparePairs.filter((pair) => pair.col_a && pair.col_b),
+          }
+        : options;
+
     return {
       workflowId,
       outputStrategyId: "new_workbook_standard",
@@ -400,7 +543,7 @@ export function BomCompareTool() {
         mappedTo: mappingOverrides[row.canonical] ?? row.mappedTo,
         status: mappingOverrides[row.canonical] ? "manual" : row.status,
       })),
-      options,
+      options: runOptions,
       outputDirectory: bomCompareOutputDirectory,
     };
   }
@@ -892,6 +1035,25 @@ export function BomCompareTool() {
                 onChange={setBomCompareOutputDirectory}
               />
             </OptionsSection>
+
+            {/* Tier-1 #5: column-value diff pairs. Rendered ONLY in Custom
+                Compare — Group mode has no second BOM to pair against, so the
+                control is inert there and is hidden entirely (mirrors the
+                treat_prov_as_covered hide/disable pattern). */}
+            {workflowId === "bom_compare_custom" ? (
+              <SectionCard
+                title="Column Value Comparison"
+                eyebrow="Custom Compare"
+                description="Diff specific column values for RefDes present in both files. Matching headers are paired automatically once both files are inspected."
+              >
+                <ColumnPairPicker
+                  pairs={comparePairs}
+                  columnsA={customColumnsA}
+                  columnsB={customColumnsB}
+                  onChange={setComparePairs}
+                />
+              </SectionCard>
+            ) : null}
           </div>
 
           <aside className="workspace-grid__side workspace-grid__side--sticky">

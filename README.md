@@ -7,7 +7,7 @@ A Windows desktop application for hardware reliability engineering analysis. Bui
 | Tool | Description |
 |------|-------------|
 | **FMEA Generator** | Generate piece-part FMEA workbooks from grouping, BOM, and failure mode sources. Supports four workflows: standard (`piece_part_generate`), BOM-only (`bom_only`), functional-to-piece-part (`functional_to_piecepart`), and fill-gaps (`fill_gaps`), with optional template preservation. |
-| **BOM Compare** | Compare grouping files against BOMs (coverage check) or two arbitrary BOMs (delta analysis). Detects missing, extra, and mismatched RefDes with FMEA-aware scope warnings. |
+| **BOM Compare** | Compare grouping files against BOMs (coverage check) or two arbitrary BOMs (delta analysis). Detects missing/extra RefDes and per-column value differences (Custom Compare's column-pair picker), with FMEA-aware scope warnings. |
 | **Failure Rate** | Link prediction failure rates to FMEA failure modes. Calculates mode failure rates with configurable unit conversion and FMR validation. |
 | **RefDes Extractor** | Extract reference designators and pins from annotated schematic PDFs. Adaptive 4-phase geometry analysis with NextGen and Legacy backend routing. With a BOM loaded, cross-checks coverage both ways — emitting Coverage Summary, BOM Not Grouped, and Extracted Not In BOM sheets. |
 | **Settings** | Theme selection, backend diagnostics, and application info. |
@@ -52,8 +52,8 @@ npm run tauri:dev              # Desktop with hot reload
 ```powershell
 npm run typecheck              # TypeScript type checking
 npm run typecheck:tests        # TypeScript type checking for Vitest files
-npm test                       # Frontend tests (239 tests across 35 test suites)
-.venv\Scripts\python.exe -m pytest backend\tests -v   # Backend tests (220 tests across sidecar, audit, cancel bridge, output-directory helpers, FMEA phase D, failure-rate logic, RefDes extraction-engine, BOM-compare logic, read-layer, RefDes BOM-coverage, BOM-loader metadata)
+npm test                       # Frontend tests (243 tests across 35 test suites)
+.venv\Scripts\python.exe -m pytest backend\tests -v   # Backend tests (226 tests across sidecar, audit, cancel bridge, output-directory helpers, FMEA phase D, failure-rate logic, RefDes extraction-engine, BOM-compare logic, read-layer, RefDes BOM-coverage, BOM-loader metadata)
 ```
 
 ### Build

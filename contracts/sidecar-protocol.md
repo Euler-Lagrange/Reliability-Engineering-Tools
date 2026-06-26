@@ -267,6 +267,12 @@ body. Currently defined fields:
   `treat_prov_as_covered` is **group-only** (it keys off the grouping
   file's group-name column, which a two-BOM custom compare does not
   have); the custom path ignores it and the UI disables it there.
+  `bom_compare_custom` additionally accepts `compare_columns` — an array of
+  `{col_a, col_b, rule}` (rule one of `"Text (ignore case)"` / `"Text (exact)"`
+  / `"Numeric"`) that drives the per-column value diff (the `Differences`
+  sheet) — and `key_mode` (`"refdes_list"` default vs `"exact"`). Both are
+  **custom-only**; with no `compare_columns` the custom path reports RefDes
+  presence/absence only.
 - Mapping values may carry the Do-Not-Map sentinel `"__do_not_map__"`
   (single source of truth: `shared/pre_run_validation.DO_NOT_MAP_SENTINEL`
   mirrored by `frontend/src/app/types.ts` `DO_NOT_MAP_VALUE`). A REQUIRED

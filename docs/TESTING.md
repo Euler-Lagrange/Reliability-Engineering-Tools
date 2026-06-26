@@ -11,13 +11,13 @@
 | Backend FMEA Phase D | `backend/tests/test_fmea_phase_d.py` | 53 | pytest |
 | Backend Failure-Rate logic | `backend/tests/test_failure_rate_logic.py` | 19 | pytest |
 | Backend RefDes extraction-engine | `backend/tests/test_extraction_engine.py` | 6 | pytest |
-| Backend BOM-compare logic | `backend/tests/test_bom_compare_logic.py` | 26 | pytest |
-| Backend BOM-compare runtime | `backend/tests/test_bom_compare_runtime.py` | 7 | pytest |
+| Backend BOM-compare logic | `backend/tests/test_bom_compare_logic.py` | 30 | pytest |
+| Backend BOM-compare runtime | `backend/tests/test_bom_compare_runtime.py` | 9 | pytest |
 | Backend Failure-Rate runtime | `backend/tests/test_failure_rate_runtime.py` | 2 | pytest |
 | Backend read-layer (NA + header dedup) | `backend/tests/test_read_layer.py` | 6 | pytest |
 | Backend RefDes BOM-coverage | `backend/tests/test_coverage_report.py` | 19 | pytest |
 | Backend BOM-loader metadata | `backend/tests/test_bom_loader.py` | 5 | pytest |
-| **Backend subtotal** | | **220** | |
+| **Backend subtotal** | | **226** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 4 | Vitest + RTL |
 | Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 1 | Vitest + RTL |
@@ -47,15 +47,15 @@
 | Frontend FMEA inspection | `frontend/src/features/fmea/FmeaTool.inspection.test.tsx` | 5 | Vitest + RTL |
 | Frontend mapping columns | `frontend/src/features/fmea/mappingColumns.test.ts` | 27 | Vitest |
 | Frontend mapping analysis | `frontend/src/features/fmea/mappingAnalysis.test.ts` | 7 | Vitest |
-| Frontend BOM Compare tool | `frontend/src/features/bom-compare/BomCompareTool.test.tsx` | 15 | Vitest + RTL |
+| Frontend BOM Compare tool | `frontend/src/features/bom-compare/BomCompareTool.test.tsx` | 18 | Vitest + RTL |
 | Frontend Failure Rate tool | `frontend/src/features/failure-rate/FailureRateTool.test.tsx` | 2 | Vitest + RTL |
 | Frontend RefDes Extractor tool | `frontend/src/features/refdes-extractor/RefDesExtractorTool.test.tsx` | 10 | Vitest + RTL |
 | Frontend number field | `frontend/src/components/primitives/NumberField.test.tsx` | 6 | Vitest + RTL |
 | Frontend mapping derivation | `frontend/src/shared/mapping/deriveMappingRows.test.ts` | 6 | Vitest |
-| Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 5 | Vitest + RTL |
-| **Frontend subtotal** | | **239** | |
+| Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 6 | Vitest + RTL |
+| **Frontend subtotal** | | **243** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 6 | cargo test |
-| **Total** | | **465** | |
+| **Total** | | **475** | |
 
 ## Backend Tests
 
@@ -200,7 +200,7 @@ new FMEA tests must do the same or validation will reject the request.
 | Inspection caps (subprocess, 4 tests) | `inspect_input` row cap at 20 000 rows, column cap at 100 columns, sparse-sheet row cap by physical rows scanned, header-search cap failure within 1 000 rows |
 | Failure-Rate logic (in-process, 19 tests) | Failure Rate (FR) linker math driven through `FMEALinkerLogic.process`: per-mode `Mode_FR = Part_FR * Usage * Corrected_Ratio` arithmetic, unit-mode scaling to per-hour space, RefDes lookup normalization — asserts exact computed numbers |
 | RefDes extraction-engine (in-process, 6 tests) | NextGen `_disambiguate_pin_mapping` pin-label collision resolution across the three-tier priority (body center inside group rect → body overlaps rect → nearest body by distance) when multiple components share a pin label |
-| BOM-compare logic (in-process, 26 tests) | BOM Compare range/set math: opt-in RefDes range expansion (`R200-R205` → R200..R205) while the `analyze` orchestrator never expands by default (hyphens denote pins, e.g. `U200-1` reduces to base `U200`), zero-pad preservation, and `analyze` set math (Missing in BOM / BOM Not in Groups, both directions) |
+| BOM-compare logic (in-process, 29 tests) | BOM Compare range/set math: opt-in RefDes range expansion (`R200-R205` → R200..R205) while the `analyze` orchestrator never expands by default (hyphens denote pins, e.g. `U200-1` reduces to base `U200`), zero-pad preservation, `analyze` set math (Missing in BOM / BOM Not in Groups, both directions), and the custom per-column value-diff contract (`compare_columns` flags a changed value, omitting it reports none, Numeric rule ignores text formatting) |
 | Read layer (in-process, 6 tests) | Excel/CSV `NA`/`N/A` literal-text read parity and duplicate-header dedup matching pandas' `.1`/`.2` scheme |
 | RefDes BOM-coverage (in-process, 19 tests) | Reverse-diff of extracted RefDes vs a loaded BOM: `BOM Not Grouped` (Not Extracted / Extracted-Ungrouped / Extracted-Provisional, with Part#/Description), `Extracted Not In BOM`, `Coverage Summary` counts, component-level normalization, unparented-pin rejection, and the sheet writer |
 | BOM-loader metadata (in-process, 5 tests) | Opt-in Part Number / Description capture in `load_bom_data`, keyed to the normalized RefDes, with Description-over-Name precedence |
@@ -238,8 +238,8 @@ neither of which exists under jsdom, so the client returns mock data from
 | `frontend/src/app/App.keepalive.test.tsx` | 2 — keep-alive shell: tool-local state survives a tool-switch round-trip, only visited tools mount |
 | `frontend/src/features/fmea/FmeaTool.test.tsx` | 9 — FMEA tool rendering, workflow selection, input validation, run integration, mapping-override survival across output-strategy and FMD-standard changes |
 | `frontend/src/features/fmea/FmeaTool.inspection.test.tsx` | 5 — sheet selection interactivity during background aggregation, inspection cap warning display, stale-validation clears on browse/sheet change, orphaned-override pruning |
-| `frontend/src/features/toolRunDispatch.test.tsx` | 5 — BOM Compare, Failure Rate, and RefDes workflow dispatch from React tools, validation-failure (execute_run skipped), all six BOM Compare options reach the backend |
-| `frontend/src/features/bom-compare/BomCompareTool.test.tsx` | 13 — custom-compare slots, pristine exit, workflow round-trip cache, interrupted-inspection recovery, double-start guard, raw-string error surfacing, real-header mapping derivation, dispatch payloads, group-only prov checkbox disabled in custom |
+| `frontend/src/features/toolRunDispatch.test.tsx` | 6 — BOM Compare, Failure Rate, and RefDes workflow dispatch from React tools, validation-failure (execute_run skipped), all six BOM Compare options reach the backend, and Custom Compare column pairs reach `options.compare_columns` |
+| `frontend/src/features/bom-compare/BomCompareTool.test.tsx` | 14 — custom-compare slots, pristine exit, workflow round-trip cache, interrupted-inspection recovery, double-start guard, raw-string error surfacing, real-header mapping derivation, dispatch payloads, group-only prov checkbox disabled in custom, column-pair picker auto-pairs in custom / hidden in group |
 | `frontend/src/features/failure-rate/FailureRateTool.test.tsx` | 2 — stale-validation clears on browse, real-header mapping derivation |
 | `frontend/src/features/refdes-extractor/RefDesExtractorTool.test.tsx` | 9 — piece-part pinlist slot, pristine behavior, empty-input dispatch, adaptive-geometry gating, numeric tuning fields (render, dispatch, geometry gating) |
 | `frontend/src/components/primitives/NumberField.test.tsx` | 6 — numeric field value/onChange parsing, NaN guard, min clamp, min/max/step/disabled forwarding |

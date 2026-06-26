@@ -232,8 +232,12 @@ omitted):
 
 - **Only_In_A** — RefDes present in the first file but missing from the second.
 - **Only_In_B** — RefDes present in the second file but missing from the first.
-- **Differences** — RefDes present in both, but with differing field values
-  (for example, part number or description).
+- **Differences** — RefDes present in both, but with differing values in the
+  columns you chose to compare. In Custom Compare a **Column Value Comparison**
+  picker auto-pairs matching headers between the two files (the RefDes key is
+  excluded) and lets you add/remove pairs and set a per-pair rule (Text / Text
+  exact / Numeric). With no pair configured, Custom Compare reports RefDes
+  presence/absence only.
 - **Duplicates_A**, **Duplicates_B** — RefDes that appear more than once in
   either file.
 - **Part_Usage_Warnings** — when the files carry Part Usage values, this

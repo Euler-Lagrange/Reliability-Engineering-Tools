@@ -2403,6 +2403,73 @@ tbody tr:hover {
   font-style: italic;
 }
 
+/* ---- ColumnPairPicker (Custom BOM Compare value diffs) ---------- */
+
+.column-pair-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.column-pair-picker__empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.column-pair-picker__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.column-pair-picker__select-cell {
+  vertical-align: middle;
+}
+
+.column-pair-picker__action-head {
+  width: 44px;
+}
+
+.column-pair-picker__action-cell {
+  width: 44px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.column-pair-picker__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    color 150ms cubic-bezier(0.25, 1, 0.5, 1),
+    background 150ms cubic-bezier(0.25, 1, 0.5, 1),
+    border-color 150ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.column-pair-picker__remove:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.column-pair-picker__remove:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
+  border-color: var(--accent);
+}
+
+.column-pair-picker__footer {
+  display: flex;
+}
+
 /* ---- MappingTable toolbar + bulk actions ------------------------ */
 
 .mapping-table__toolbar {

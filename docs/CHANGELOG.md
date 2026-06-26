@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **BOM Compare — Custom column-value diff** — Custom Compare now diffs column
+  *values* (not just RefDes presence/absence) for RefDes present in both files,
+  via a column-pair picker that auto-pairs matching headers (RefDes key
+  excluded) and supports a per-pair rule (Text / Text exact / Numeric). Sent as
+  `options.compare_columns`; previously a custom compare always reported
+  "0 differences" on values because no control sent them.
 - **RefDes Extractor — BOM coverage reverse-diff** — with a BOM loaded, the
   extractor emits three sheets: `Coverage Summary`, `BOM Not Grouped` (BOM
   RefDes not cleanly grouped, split Not Extracted / Extracted-Ungrouped /

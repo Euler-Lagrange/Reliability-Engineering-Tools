@@ -497,3 +497,91 @@ def test_analyze_check_fmr_text_ratio_flagged_blank_skipped_group_path() -> None
     assert "U1" not in flagged                      # blank skipped, sums to 1.0
     assert "U2" in flagged
     assert "non-numeric" in flagged["U2"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Tier-1 #5: custom (BOM-vs-BOM) per-column VALUE diff. With ``compare_columns``
+# supplied, a RefDes present in BOTH files whose mapped column values differ is
+# reported in ``result.differences``. Without ``compare_columns`` the custom
+# compare reports RefDes membership only and emits NO value diffs. These pin the
+# backend contract the Tier-1 #5 wiring depends on.
+# ---------------------------------------------------------------------------
+
+def test_compare_two_boms_flags_a_changed_column_value() -> None:
+    """A RefDes in both files whose Part Number differs is reported in
+    ``differences`` with the column label and both values.
+    """
+    bom_a = _custom_df([
+        {"RefDes": "R1", "Part Number": "PN-10K"},
+        {"RefDes": "C2", "Part Number": "PN-1UF"},
+    ])
+    bom_b = _custom_df([
+        {"RefDes": "R1", "Part Number": "PN-4K7"},
+        {"RefDes": "C2", "Part Number": "PN-1UF"},
+    ])
+
+    result = compare_two_boms(
+        bom_a, bom_b,
+        refdes_col_a="RefDes", refdes_col_b="RefDes",
+        compare_columns=[("Part Number", "Part Number", "Text (ignore case)")],
+        check_part_usage=False,
+    )
+
+    assert len(result.differences) == 1
+    diff = result.differences[0]
+    assert diff["RefDes"] == "R1"
+    assert diff["Column"] == "Part Number"
+    assert diff["Value_A"] == "PN-10K"
+    assert diff["Value_B"] == "PN-4K7"
+
+
+def test_compare_two_boms_without_compare_columns_reports_no_value_diffs() -> None:
+    """Without ``compare_columns`` the custom compare matches on RefDes
+    membership only — even a column that differs produces zero value diffs.
+    """
+    bom_a = _custom_df([{"RefDes": "R1", "Part Number": "PN-10K"}])
+    bom_b = _custom_df([{"RefDes": "R1", "Part Number": "PN-4K7"}])
+
+    result = compare_two_boms(
+        bom_a, bom_b,
+        refdes_col_a="RefDes", refdes_col_b="RefDes",
+        check_part_usage=False,
+    )
+
+    assert result.differences == []
+
+
+def test_compare_two_boms_numeric_rule_ignores_text_formatting() -> None:
+    """The Numeric rule compares values numerically, so '1' and '1.0' are equal
+    and produce no diff (a text rule would flag the formatting difference).
+    """
+    bom_a = _custom_df([{"RefDes": "R1", "Qty": "1"}])
+    bom_b = _custom_df([{"RefDes": "R1", "Qty": "1.0"}])
+
+    result = compare_two_boms(
+        bom_a, bom_b,
+        refdes_col_a="RefDes", refdes_col_b="RefDes",
+        compare_columns=[("Qty", "Qty", "Numeric")],
+        check_part_usage=False,
+    )
+
+    assert result.differences == []
+
+
+def test_compare_two_boms_skips_pair_with_column_absent_from_a_file() -> None:
+    """A compare pair whose column is missing from one file must NOT yield a
+    spurious 'value vs empty' diff for every matched RefDes — the pair is
+    dropped because the column cannot be compared (e.g. a stale pair after the
+    user re-inspected a file with a different schema).
+    """
+    bom_a = _custom_df([{"RefDes": "R1", "Part Number": "PN-10K"}])
+    bom_b = _custom_df([{"RefDes": "R1", "Description": "RES 10K"}])  # no Part Number
+
+    result = compare_two_boms(
+        bom_a, bom_b,
+        refdes_col_a="RefDes", refdes_col_b="RefDes",
+        compare_columns=[("Part Number", "Part Number", "Text (ignore case)")],
+        check_part_usage=False,
+    )
+
+    assert result.differences == []

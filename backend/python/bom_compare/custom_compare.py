@@ -260,6 +260,21 @@ def compare_two_boms(
         return pairs
 
     compare_pairs = parse_compare_columns(compare_columns)
+    # Drop any pair whose column is missing from its file. row.get(col, "")
+    # would otherwise return "" for every row, flagging a spurious "value vs
+    # empty" diff on every matched RefDes (e.g. a stale auto-pair left over after
+    # the user re-inspected a file with a different schema).
+    if compare_pairs:
+        a_cols = set(bom_a_df.columns)
+        b_cols = set(bom_b_df.columns)
+        validated_pairs: List[Tuple[str, str, str]] = []
+        for col_a, col_b, rule in compare_pairs:
+            if col_a in a_cols and col_b in b_cols:
+                validated_pairs.append((col_a, col_b, rule))
+            else:
+                missing = "File 1" if col_a not in a_cols else "File 2"
+                log(f"  Skipping compare column pair ({col_a!r} <-> {col_b!r}): column not found in {missing}")
+        compare_pairs = validated_pairs
 
     # FMEA detection combines filename signal + row-scan classification.
     filename_fmea_a = is_fmea_file(source_name_a or "")

@@ -65,7 +65,7 @@ npm run dev              # Vite dev server (browser preview mode)
 npm run build            # Production build
 npm run typecheck        # TypeScript type checking
 npm run typecheck:tests  # TypeScript type checking for Vitest files
-npm test                 # Vitest (239 tests)
+npm test                 # Vitest (243 tests)
 
 # Desktop (requires Rust toolchain)
 npm run tauri:dev        # Dev mode with hot reload
@@ -73,7 +73,7 @@ npm run tauri:build:portable  # Release build → src-tauri/target/.../release/
 npm run cargo:test       # Rust bridge unit tests via the repo runner
 
 # Python sidecar (use project venv)
-.venv\Scripts\python.exe -m pytest backend/tests -v    # 220 backend tests (44 sidecar + 17 audit + 12 cancel bridge + 4 output-directory helper + 53 FMEA phase D + 19 failure-rate logic + 6 RefDes extraction-engine + 26 BOM-compare logic + 7 BOM-compare runtime + 2 failure-rate runtime + 6 read-layer + 19 RefDes BOM-coverage + 5 BOM-loader metadata)
+.venv\Scripts\python.exe -m pytest backend/tests -v    # 226 backend tests (44 sidecar + 17 audit + 12 cancel bridge + 4 output-directory helper + 53 FMEA phase D + 19 failure-rate logic + 6 RefDes extraction-engine + 30 BOM-compare logic + 9 BOM-compare runtime + 2 failure-rate runtime + 6 read-layer + 19 RefDes BOM-coverage + 5 BOM-loader metadata)
 .venv\Scripts\python.exe backend/python/sidecar_main.py --self-test
 
 # Full release
@@ -157,7 +157,7 @@ The audit runs:
 
 ## Testing
 
-### Backend Tests (220 total)
+### Backend Tests (226 total)
 - 44 sidecar integration tests in `test_sidecar_main.py` (incl. the RefDes BOM-coverage sheet emission)
 - 17 security-audit tests in `test_security_audit.py` (synthetic positives + live tree scan)
 - 12 cancel-bridge tests in `test_cancel_bridge.py` (BOM Compare + RefDes bridges plus Failure Rate `FMEALinkerLogic.cancel` binding through `ActiveRun`)
@@ -165,8 +165,8 @@ The audit runs:
 - 53 FMEA Phase D tests in `test_fmea_phase_d.py` (incl. the hdaSource contract and fill_gaps no-count-source flagging)
 - 19 Failure-Rate logic tests in `test_failure_rate_logic.py` (incl. circuit-block roll-up, leaf-block preservation, prediction-FR coercion flagging)
 - 6 RefDes extraction-engine tests in `test_extraction_engine.py`
-- 26 BOM-compare logic tests in `test_bom_compare_logic.py` (incl. custom-path option semantics, residual-digit guard, non-numeric FMR flagging)
-- 7 BOM-compare runtime tests in `test_bom_compare_runtime.py` (dnp_regex default, Do-Not-Map sentinel validation, custom option wiring)
+- 30 BOM-compare logic tests in `test_bom_compare_logic.py` (incl. custom-path option semantics, residual-digit guard, non-numeric FMR flagging, per-column value-diff contract)
+- 9 BOM-compare runtime tests in `test_bom_compare_runtime.py` (dnp_regex default, Do-Not-Map sentinel validation, custom option wiring, compare_columns forwarding)
 - 2 Failure-Rate runtime tests in `test_failure_rate_runtime.py` (Do-Not-Map sentinel validation)
 - 6 read-layer tests in `test_read_layer.py` (Excel/CSV NA-literal parity, duplicate-header dedup matching pandas)
 - 19 RefDes BOM-coverage tests in `test_coverage_report.py` (reverse-diff buckets: Not Extracted / Extracted-Ungrouped / Extracted-Provisional, component-level normalization, deterministic collapse of same-base BOM rows, unparented-pin rejection, multi-row page/group union, NaN-cell guards, BOM enrichment, summary counts, sheet writer)
@@ -179,7 +179,7 @@ The audit runs:
 - `pytest.importorskip("fitz")` for RefDes tests requiring PyMuPDF
 - `backend/tests/conftest.py` installs a `sys.path` shim for in-process unit tests
 
-### Frontend Tests (239 total across 35 test files)
+### Frontend Tests (243 total across 35 test files)
 - Vitest + React Testing Library
 - Browser-mock mode (no Tauri runtime needed)
 - `src/app/App.test.tsx`
@@ -219,7 +219,7 @@ The audit runs:
 - `src/stores/notificationStore.test.ts` (new — toast eviction never drops the incoming)
 
 Run `npx vitest run --config frontend/vite.config.ts --reporter=default` to
-see individual counts per file — the suite totals 239 tests as of 0.4.6 and
+see individual counts per file — the suite totals 243 tests as of 0.4.6 and
 changes whenever a suite gains or loses cases.
 
 ## Critical Gotchas

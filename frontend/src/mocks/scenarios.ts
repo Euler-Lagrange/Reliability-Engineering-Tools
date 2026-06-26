@@ -561,6 +561,20 @@ export const bomCompareGroupMappings: ColumnMappingRow[] = [
   },
 ];
 
+// Custom Compare example headers. These are load-bearing (Wiring Invariant
+// #4/#7): they back both the mapping dropdowns and — once a file is inspected
+// in the desktop app — the ColumnPairPicker's value-diff column choices. The
+// two files share "Part Number", "Description", and "Quantity" headers so the
+// auto-pair heuristic (case-insensitive header match, excluding the RefDes
+// key) has matching pairs to seed; "Reference Designator" is the key and is
+// intentionally excluded from value diffs.
+export const bomCompareCustomColumns = [
+  "Reference Designator",
+  "Part Number",
+  "Description",
+  "Quantity",
+];
+
 export const bomCompareCustomMappings: ColumnMappingRow[] = [
   {
     canonical: "refdes_col_a",

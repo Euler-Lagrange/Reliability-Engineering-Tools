@@ -513,7 +513,10 @@ def _run_custom_compare(
 
     compare_columns_raw = options.get("compare_columns") or []
     compare_columns = [
-        (entry.get("col_a", ""), entry.get("col_b", ""), entry.get("rule", "Text (exact)"))
+        # Default rule matches custom_compare.parse_compare_columns and the
+        # frontend picker default ("Text (ignore case)"); the frontend always
+        # sends an explicit rule, so this is only the rule-less-entry fallback.
+        (entry.get("col_a", ""), entry.get("col_b", ""), entry.get("rule", "Text (ignore case)"))
         for entry in compare_columns_raw
         if isinstance(entry, dict) and entry.get("col_a") and entry.get("col_b")
     ]
