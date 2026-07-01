@@ -44,6 +44,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Bounded sidecar startup + release-safe resolution (Tier-2 #14, decision
+  D)** — the `ready` handshake is now read on a worker thread with a BOUNDED
+  wait (default 60s, `RELIABILITY_TOOLS_READY_TIMEOUT_SECS`); a sidecar that
+  stalls during import (cold-disk `import fitz`, AV scan of the PyInstaller
+  bootloader) no longer hangs the whole bootstrap forever with no watchdog
+  active. Separately, release-build resource resolution is now **exe-adjacent
+  only** (dev keeps the ancestor walk), so a stray parent-directory `.venv` or
+  `backend/` can no longer be bound. +5 cargo tests.
 - **Sidecar stdout resilience (Tier-2 #13)** — a single unparseable line on the
   sidecar's stdout (e.g. a stray write to fd 1 from a C extension like PyMuPDF
   or openpyxl) no longer tears down the whole session and fails every pending

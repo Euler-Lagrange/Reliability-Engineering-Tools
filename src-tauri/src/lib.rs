@@ -858,21 +858,40 @@ fn merge_disconnect_message(base: &str, detail: Option<&str>) -> String {
     }
 }
 
-fn find_existing_relative(relative: &str) -> Option<PathBuf> {
+/// Ordered base directories to search for a bundled / dev resource.
+///
+/// Decision D: in a RELEASE build (`walk_ancestors == false`) we look
+/// **exe-adjacent only** — the bundled sidecar sits next to the executable, and
+/// walking every ancestor to the drive root risked binding a stray `.venv` or
+/// `backend/` from a parent directory. In a DEV build we keep the full ancestor
+/// walk (plus the crate manifest's ancestors) so `cargo tauri dev` from a deep
+/// `target/` directory still resolves the repo-root `.venv` / sidecar script.
+fn candidate_bases(exe: Option<&Path>, manifest_dir: &Path, walk_ancestors: bool) -> Vec<PathBuf> {
     let mut bases: Vec<PathBuf> = Vec::new();
-
-    if let Ok(current_exe) = env::current_exe() {
-        for ancestor in current_exe.ancestors() {
+    if let Some(exe) = exe {
+        if let Some(dir) = exe.parent() {
+            bases.push(dir.to_path_buf());
+        }
+        if walk_ancestors {
+            for ancestor in exe.ancestors() {
+                bases.push(ancestor.to_path_buf());
+            }
+        }
+    }
+    if walk_ancestors {
+        for ancestor in manifest_dir.ancestors() {
             bases.push(ancestor.to_path_buf());
         }
     }
-
-    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    for ancestor in manifest_dir.ancestors() {
-        bases.push(ancestor.to_path_buf());
-    }
-
     bases
+}
+
+fn find_existing_relative(relative: &str) -> Option<PathBuf> {
+    let exe = env::current_exe().ok();
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    // `cfg!(debug_assertions)` is true in dev/debug builds, false in the
+    // packaged release build.
+    candidate_bases(exe.as_deref(), &manifest_dir, cfg!(debug_assertions))
         .into_iter()
         .map(|base| base.join(relative))
         .find(|candidate| candidate.exists())
@@ -907,6 +926,38 @@ fn resolve_sidecar_script() -> Result<PathBuf, String> {
 
 fn resolve_bundled_sidecar() -> Option<PathBuf> {
     find_existing_relative("reliability-tools-sidecar.exe")
+}
+
+/// Bounded wait budget for the sidecar's `ready` handshake. Cold-disk
+/// PyInstaller unpack + `import fitz` + an AV scan can legitimately take a
+/// while, so the default is generous (60s) and env-overridable — but it MUST be
+/// bounded. An unbounded `read_line` here (which ran before the heartbeat
+/// supervisor started) hung the whole bootstrap forever if the sidecar stalled
+/// during import (Tier-2 #14).
+fn ready_timeout() -> Duration {
+    env::var("RELIABILITY_TOOLS_READY_TIMEOUT_SECS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(Duration::from_secs)
+        .unwrap_or_else(|| Duration::from_secs(60))
+}
+
+enum ReadyOutcome<R> {
+    Ready(R),
+    Failed(String),
+    TimedOut,
+}
+
+/// Await the readiness signal from the reader thread, bounded by `timeout`.
+fn await_ready<R>(rx: &mpsc::Receiver<Result<R, String>>, timeout: Duration) -> ReadyOutcome<R> {
+    match rx.recv_timeout(timeout) {
+        Ok(Ok(value)) => ReadyOutcome::Ready(value),
+        Ok(Err(message)) => ReadyOutcome::Failed(message),
+        Err(mpsc::RecvTimeoutError::Timeout) => ReadyOutcome::TimedOut,
+        Err(mpsc::RecvTimeoutError::Disconnected) => {
+            ReadyOutcome::Failed("Python sidecar readiness channel closed unexpectedly.".to_string())
+        }
+    }
 }
 
 fn spawn_managed_sidecar(session: SessionSlot, shared: Arc<SessionShared>) -> Result<ManagedSidecar, String> {
@@ -992,28 +1043,69 @@ fn spawn_managed_sidecar(session: SessionSlot, shared: Arc<SessionShared>) -> Re
 
     spawn_stderr_logger(stderr);
 
-    let mut stdout_reader = BufReader::new(stdout);
-    let mut ready_line = String::new();
-    loop {
-        ready_line.clear();
-        let read = stdout_reader
-            .read_line(&mut ready_line)
-            .map_err(|error| format!("Failed while waiting for python sidecar readiness: {error}"))?;
-        if read == 0 {
-            return Err("Python sidecar exited before sending a ready message.".to_string());
-        }
+    // Tier-2 #14: read the readiness handshake on a worker thread with a
+    // BOUNDED wait. The old inline read_line was unbounded and ran BEFORE the
+    // heartbeat supervisor started, so a sidecar that stalled during import
+    // (cold-disk `import fitz`, an AV scan of the PyInstaller bootloader) hung
+    // the whole bootstrap forever with no watchdog active.
+    let (ready_tx, ready_rx) = mpsc::channel::<Result<BufReader<ChildStdout>, String>>();
+    thread::spawn(move || {
+        let mut stdout_reader = BufReader::new(stdout);
+        let mut ready_line = String::new();
+        let outcome = loop {
+            ready_line.clear();
+            match stdout_reader.read_line(&mut ready_line) {
+                Err(error) => {
+                    break Err(format!(
+                        "Failed while waiting for python sidecar readiness: {error}"
+                    ));
+                }
+                Ok(0) => {
+                    break Err("Python sidecar exited before sending a ready message.".to_string());
+                }
+                Ok(_) => {
+                    let trimmed = ready_line.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    match serde_json::from_str::<Value>(trimmed) {
+                        Ok(parsed) => {
+                            if parsed.get("kind").and_then(Value::as_str) == Some("ready") {
+                                break Ok(());
+                            }
+                            // Some other early line before ready — keep waiting.
+                        }
+                        Err(error) => {
+                            break Err(format!(
+                                "Python sidecar emitted invalid ready JSON: {error}. Line: {trimmed}"
+                            ));
+                        }
+                    }
+                }
+            }
+        };
+        // Hand the buffered reader back on success so the caller reuses it.
+        let _ = ready_tx.send(outcome.map(|()| stdout_reader));
+    });
 
-        let trimmed = ready_line.trim();
-        if trimmed.is_empty() {
-            continue;
+    let stdout_reader = match await_ready(&ready_rx, ready_timeout()) {
+        ReadyOutcome::Ready(reader) => reader,
+        ReadyOutcome::Failed(message) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(message);
         }
-
-        let parsed: Value = serde_json::from_str(trimmed)
-            .map_err(|error| format!("Python sidecar emitted invalid ready JSON: {error}. Line: {trimmed}"))?;
-        if parsed.get("kind").and_then(Value::as_str) == Some("ready") {
-            break;
+        ReadyOutcome::TimedOut => {
+            // Killing the child closes stdout, so the reader thread's blocked
+            // read_line returns 0 and the detached thread exits on its own.
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!(
+                "Python sidecar did not send a ready message within {}s (possible stall during import).",
+                ready_timeout().as_secs()
+            ));
         }
-    }
+    };
 
     let child = Arc::new(Mutex::new(child));
     let stdout = stdout_reader.into_inner();
@@ -1510,10 +1602,14 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        classify_stdout_line, correlation_id, enrich_run_event_for_frontend,
-        merge_disconnect_message, should_forward_run_event, StdoutLine,
+        await_ready, candidate_bases, classify_stdout_line, correlation_id,
+        enrich_run_event_for_frontend, merge_disconnect_message, should_forward_run_event,
+        ReadyOutcome, StdoutLine,
     };
     use serde_json::json;
+    use std::path::PathBuf;
+    use std::sync::mpsc;
+    use std::time::Duration;
 
     #[test]
     fn merge_disconnect_message_appends_fatal_detail() {
@@ -1567,6 +1663,61 @@ mod tests {
                 );
             }
             other => panic!("expected a parsed frame, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn candidate_bases_release_is_exe_adjacent_only() {
+        // Decision D: a release build must NOT walk ancestors to the drive root
+        // — only the exe's own directory, so a stray parent `.venv` can't bind.
+        let exe = PathBuf::from("app").join("bin").join("tool.exe");
+        let manifest = PathBuf::from("crate");
+        let bases = candidate_bases(Some(exe.as_path()), &manifest, false);
+        assert_eq!(bases, vec![PathBuf::from("app").join("bin")]);
+    }
+
+    #[test]
+    fn candidate_bases_dev_walks_ancestors() {
+        let exe = PathBuf::from("repo")
+            .join("target")
+            .join("debug")
+            .join("tool.exe");
+        let manifest = PathBuf::from("repo").join("src-tauri");
+        let bases = candidate_bases(Some(exe.as_path()), &manifest, true);
+        assert!(bases.contains(&PathBuf::from("repo").join("target").join("debug")));
+        assert!(bases.contains(&PathBuf::from("repo"))); // an exe ancestor
+        assert!(bases.contains(&PathBuf::from("repo").join("src-tauri"))); // manifest ancestor
+    }
+
+    #[test]
+    fn await_ready_returns_ready_when_a_value_arrives() {
+        let (tx, rx) = mpsc::channel::<Result<u32, String>>();
+        tx.send(Ok(42)).unwrap();
+        match await_ready(&rx, Duration::from_secs(1)) {
+            ReadyOutcome::Ready(value) => assert_eq!(value, 42),
+            _ => panic!("expected Ready"),
+        }
+    }
+
+    #[test]
+    fn await_ready_returns_failed_on_error() {
+        let (tx, rx) = mpsc::channel::<Result<u32, String>>();
+        tx.send(Err("boom".to_string())).unwrap();
+        match await_ready(&rx, Duration::from_secs(1)) {
+            ReadyOutcome::Failed(message) => assert_eq!(message, "boom"),
+            _ => panic!("expected Failed"),
+        }
+    }
+
+    #[test]
+    fn await_ready_times_out_when_nothing_arrives() {
+        // Tier-2 #14: a silent sidecar (never sends ready) must be bounded, not
+        // hang. Keep the sender alive so the channel is not Disconnected before
+        // the timeout elapses.
+        let (_tx, rx) = mpsc::channel::<Result<u32, String>>();
+        match await_ready(&rx, Duration::from_millis(50)) {
+            ReadyOutcome::TimedOut => {}
+            _ => panic!("expected TimedOut"),
         }
     }
 

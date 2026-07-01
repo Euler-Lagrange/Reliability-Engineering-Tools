@@ -57,8 +57,8 @@
 | Frontend shell-hook install | `frontend/src/app/App.shellHooks.test.tsx` | 1 | Vitest + RTL |
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | **Frontend subtotal** | | **249** | |
-| Rust bridge unit | `src-tauri/src/lib.rs` | 9 | cargo test |
-| **Total** | | **504** | |
+| Rust bridge unit | `src-tauri/src/lib.rs` | 14 | cargo test |
+| **Total** | | **509** | |
 
 ## Backend Tests
 
