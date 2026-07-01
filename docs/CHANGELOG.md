@@ -36,6 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Release gate hardening (Tier-3 #24)** — `scripts/release.bat` now runs the
+  packaged self-tests against the build output and only promotes the exe to
+  `local_build` **after** they pass, so a failed release can no longer clobber
+  the last-good artifact teammates pull from that path. Added `version:check`
+  and `cargo test` to the gate (previously only `cargo check` ran and version
+  consistency across manifests was never verified). Separately, the
+  previously-untagged **v0.4.6** release is now tagged at its version-bump
+  commit.
 - **Tier-1 data-correctness** — circuit/function-block failure-rate roll-up in
   the Failure Rate linker; BOM-Compare blank-ratio FMR poisoning + loose
   base-match residual-digit guard; Excel/CSV `NA`-literal read parity and

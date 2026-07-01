@@ -43,49 +43,57 @@ echo.
 pushd "%ROOT_DIR%"
 if errorlevel 1 goto :fail
 
-echo [1/12] Checking toolchain...
+echo [1/15] Checking toolchain...
 where node >nul 2>&1 || goto :missing_node
 where npm >nul 2>&1 || goto :missing_npm
 echo [INFO] node and npm detected >> "%LOGFILE%"
 
 if not exist "%BACKEND_PYTHON%" goto :missing_backend_python
 
-echo [2/12] Typechecking frontend...
+echo [2/15] Checking version consistency...
+call npm run version:check >> "%LOGFILE%" 2>&1
+if errorlevel 1 goto :version_check_failed
+
+echo [3/15] Typechecking frontend...
 call npm run typecheck >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :typecheck_failed
 
-echo [3/12] Typechecking frontend tests...
+echo [4/15] Typechecking frontend tests...
 call npm run typecheck:tests >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :typecheck_tests_failed
 
-echo [4/12] Typechecking Rust bridge (cargo check)...
+echo [5/15] Typechecking Rust bridge (cargo check)...
 call npm run cargo:check >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :cargo_check_failed
 
-echo [5/12] Running backend security audit...
+echo [6/15] Running Rust bridge tests (cargo test)...
+call npm run cargo:test >> "%LOGFILE%" 2>&1
+if errorlevel 1 goto :cargo_test_failed
+
+echo [7/15] Running backend security audit...
 pushd "%REPO_ROOT%\backend\python"
 "%BACKEND_PYTHON%" -m common.security_audit --strict >> "%LOGFILE%" 2>&1
 set "AUDIT_RC=%ERRORLEVEL%"
 popd
 if not "%AUDIT_RC%"=="0" goto :security_audit_failed
 
-echo [6/12] Running backend tests...
+echo [8/15] Running backend tests...
 "%BACKEND_PYTHON%" -m pytest backend\tests -q >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :backend_tests_failed
 
-echo [7/12] Running frontend tests...
+echo [9/15] Running frontend tests...
 call npm test >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :tests_failed
 
-echo [8/12] Building Python sidecar exe...
+echo [10/15] Building Python sidecar exe...
 "%BACKEND_PYTHON%" scripts\build_sidecar.py >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :sidecar_build_failed
 
-echo [9/12] Building portable desktop exe...
+echo [11/15] Building portable desktop exe...
 call npm run tauri:build:portable >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :build_failed
 
-echo [10/12] Locating packaged executable...
+echo [12/15] Locating packaged executable...
 if exist "%ROOT_DIR%\src-tauri\target\x86_64-pc-windows-msvc\release\%PACKAGED_EXE_NAME%" (
     set "PACKAGED_EXE=%ROOT_DIR%\src-tauri\target\x86_64-pc-windows-msvc\release\%PACKAGED_EXE_NAME%"
 )
@@ -99,17 +107,21 @@ if not defined PACKAGED_EXE (
 )
 if not defined PACKAGED_EXE goto :missing_packaged_exe
 
-copy /y "%PACKAGED_EXE%" "%OUTPUT_EXE%" >nul
-if errorlevel 1 goto :copy_failed
-echo [INFO] Copied packaged exe to %OUTPUT_EXE% >> "%LOGFILE%"
-
-echo [11/12] Running packaged self-test...
-"%OUTPUT_EXE%" --self-test >> "%LOGFILE%" 2>&1
+REM Self-test the BUILD OUTPUT before promoting it. The last-good exe in
+REM local_build must never be overwritten by an exe that hasn't passed its
+REM self-tests (Tier-3 #24) — so the copy is the final step, not step 10.
+echo [13/15] Running packaged self-test...
+"%PACKAGED_EXE%" --self-test >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :selftest_failed
 
-echo [12/12] Running packaged backend self-test...
-"%OUTPUT_EXE%" --self-test-backend >> "%LOGFILE%" 2>&1
+echo [14/15] Running packaged backend self-test...
+"%PACKAGED_EXE%" --self-test-backend >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :backend_selftest_failed
+
+echo [15/15] Promoting verified exe to local_build...
+copy /y "%PACKAGED_EXE%" "%OUTPUT_EXE%" >nul
+if errorlevel 1 goto :copy_failed
+echo [INFO] Promoted verified exe to %OUTPUT_EXE% >> "%LOGFILE%"
 
 echo.
 echo ============================================================
@@ -144,6 +156,12 @@ echo.
 echo [FAILED] Backend Python interpreter was not found.
 goto :fail
 
+:version_check_failed
+echo [ERROR] Version consistency check (bump-version --check) failed. >> "%LOGFILE%"
+echo.
+echo [FAILED] Version numbers are out of sync across manifests. See log for details.
+goto :fail
+
 :typecheck_failed
 echo [ERROR] Frontend typecheck (tsc) reported errors. >> "%LOGFILE%"
 echo.
@@ -160,6 +178,12 @@ goto :fail
 echo [ERROR] Rust bridge `cargo check` reported errors. >> "%LOGFILE%"
 echo.
 echo [FAILED] Rust bridge did not typecheck. See log for details.
+goto :fail
+
+:cargo_test_failed
+echo [ERROR] Rust bridge `cargo test` reported failures. >> "%LOGFILE%"
+echo.
+echo [FAILED] Rust bridge tests failed. See log for details.
 goto :fail
 
 :security_audit_failed
