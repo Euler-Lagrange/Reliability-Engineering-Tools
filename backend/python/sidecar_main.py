@@ -18,7 +18,7 @@ except ImportError:  # pragma: no cover - covered in runtime environments with d
     load_workbook = None
 
 from common.cancellation import CancellationError
-from common.utils import ensure_file_available
+from common.utils import ensure_file_available, ensure_file_size_within
 from common.logger import get_log_directory, write_crash_dump
 from fmea.runtime import execute_run_request as fmea_execute, validate_run_request as fmea_validate
 from bom_compare.runtime import execute_run_request as bom_execute, validate_run_request as bom_validate
@@ -60,6 +60,10 @@ ACTIVE_RUN: "ActiveRun | None" = None
 MAX_INSPECTION_COLUMNS = 100
 MAX_INSPECTION_DATA_ROWS = 20_000
 MAX_HEADER_SEARCH_ROWS = 1_000
+# Decision C: analyze_template opens the whole workbook (read_only=False) for
+# merged-cell / freeze-pane inspection, so a pathologically large template could
+# OOM the sidecar. Cap the file size with a clear error before loading.
+MAX_TEMPLATE_FILE_BYTES = 50 * 1024 * 1024  # 50 MB
 
 
 @dataclass
@@ -299,6 +303,8 @@ def analyze_template(path: Path, requested_sheet: str | None) -> dict[str, Any]:
     # Parity with list_sheets: hydrate OneDrive "cloud-only" placeholders before
     # opening, so template analysis doesn't fail where the real run would.
     path = ensure_file_available(path)
+    # Decision C: guard the full (read_only=False) load against OOM on a huge file.
+    ensure_file_size_within(path, MAX_TEMPLATE_FILE_BYTES, what="template workbook")
     workbook = load_workbook(path, read_only=False, data_only=False)
     try:
         worksheet = _select_sheet(workbook, requested_sheet)

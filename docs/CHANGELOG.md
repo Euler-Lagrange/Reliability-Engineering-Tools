@@ -44,6 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **analyze_template guarded against OOM (Decision C)** — the template-analysis
+  command opens the whole workbook (`read_only=False`) for merged-cell and
+  freeze-pane inspection, so a pathologically large template could exhaust
+  memory. It now rejects a file over 50 MB with a clear error before loading,
+  via a shared `ensure_file_size_within` helper. +3 tests.
 - **OneDrive detection prefers the OneDrive env vars (Decision A)** — cloud-file
   detection/hydration now checks the `%OneDrive%` / `%OneDriveCommercial%` /
   `%OneDriveConsumer%` roots first (normalized directory-boundary match),

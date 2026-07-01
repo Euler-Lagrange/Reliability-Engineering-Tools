@@ -18,7 +18,8 @@
 | Backend RefDes BOM-coverage | `backend/tests/test_coverage_report.py` | 19 | pytest |
 | Backend BOM-loader metadata | `backend/tests/test_bom_loader.py` | 5 | pytest |
 | Backend OneDrive detection | `backend/tests/test_onedrive_detection.py` | 5 | pytest |
-| **Backend subtotal** | | **258** | |
+| Backend file-size guard | `backend/tests/test_file_guards.py` | 3 | pytest |
+| **Backend subtotal** | | **261** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 4 | Vitest + RTL |
 | Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 1 | Vitest + RTL |
@@ -59,7 +60,7 @@
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | **Frontend subtotal** | | **249** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 16 | cargo test |
-| **Total** | | **523** | |
+| **Total** | | **526** | |
 
 ## Backend Tests
 
