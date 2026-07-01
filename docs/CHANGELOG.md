@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Continuous integration** — new `.github/workflows/ci.yml` runs on every
+  push/PR to `main` (windows-latest, the only supported target): frontend
+  typecheck ×2 + Vitest, version-consistency check, backend pytest, sidecar
+  self-test + security audit, and Rust `cargo check` + `cargo test`. Catches
+  the cross-machine drift that the pinned deps and lockfiles guard against.
+  (Tier-3 #23.)
 - **Pinned Python dependencies** — new `requirements.txt` (runtime: pandas,
   openpyxl, PyMuPDF) and `requirements-dev.txt` (adds pytest, pyinstaller),
   pinned to the tested-green set so both dev machines and the build host
