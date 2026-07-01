@@ -50,13 +50,15 @@ Only `_find_missing_in_bom` guards `c[len(base):].isdigit()`; the other three di
 
 ## TIER 2 — Lost feedback or stuck UI (confirmed; no wrong numbers, but real run-integrity failures)
 
-> **Status (2026-06-26):** **Tier 1 is now fully complete** — #1 (Part Usage)
-> ships in this commit; #5 (Custom BOM column-value diff) shipped in `e724856`;
-> #2–#4 and #6–#9 shipped in `66e507b`. Tier 2 #10, #11, #12, #16, #17 are FIXED
-> (`useDesktopRunController.ts`, `runLifecycle.ts`, `notificationStore.ts`,
-> `FmeaTool.tsx`, `BomCompareTool.tsx`); the remaining Tier-2 items
-> (#13–#15, #18–#21) are still open. The RefDes BOM-coverage feature shipped in
-> `4ce9bc3`. The findings below are preserved as the original 2026-06-24 review.
+> **Status (2026-06-26):** **Tier 1 fully complete** (#1 in `7ee1697`; #5 in
+> `e724856`; #2–#4, #6–#9 in `66e507b`). **Tier 3 fully complete** — #22/#27
+> requirements.txt + setup docs, #23 windows CI, #24 release.bat gate + the
+> v0.4.6 tag, #25 security_audit blind spots, #26 describeBackendError at the 7
+> reveal sites, #28 test gaps. **Tier 2:** #10, #11, #12, #16, #17 fixed earlier;
+> #13 (stdout NDJSON resync) now fixed; #14, #15, #18–#21 in progress. The
+> **A–E** possibly-intentional items are all being implemented (user chose to
+> fix each). The RefDes BOM-coverage feature shipped in `4ce9bc3`. The findings
+> below are preserved as the original 2026-06-24 review.
 
 **10. Every successful desktop run silently loses its success toast + "saved to…" message** · `useDesktopRunController.ts:208-226`
 The sidecar emits `status:success` then `result` as two separate events. The terminal handler marks the run "handled" on the first one — when `result` is still null — so the success branch (toast + shell "Generated workbook at…" message) never fires. The Run panel still shows the result, so it's silent UX loss, not a hang — but it happens on *every* successful run. (High frequency; the tests jump straight to `result` and never replay the real two-event ordering, so it's uncaught.)

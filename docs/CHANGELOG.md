@@ -44,6 +44,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Sidecar stdout resilience (Tier-2 #13)** — a single unparseable line on the
+  sidecar's stdout (e.g. a stray write to fd 1 from a C extension like PyMuPDF
+  or openpyxl) no longer tears down the whole session and fails every pending
+  request. The Rust stdout reader now skips-and-continues on a non-JSON line
+  (matching the Python command loop, which already does), while EOF and real
+  read errors stay fatal and the 15s heartbeat supervisor still catches a truly
+  dead sidecar. +3 cargo tests.
 - **Backend-error surfacing at folder/reveal sites (Tier-3 #26)** — the seven
   folder-picker / reveal-in-folder catch blocks (FMEA ×2, BOM Compare, Failure
   Rate, RefDes, Settings, and the shared `OutputFolderPicker`) used the banned

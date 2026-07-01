@@ -611,6 +611,31 @@ fn spawn_stderr_logger(stderr: ChildStderr) {
     });
 }
 
+/// Disposition of a single line read from the sidecar's stdout.
+#[derive(Debug)]
+enum StdoutLine {
+    /// Blank / whitespace-only line — ignore.
+    Empty,
+    /// A line that is not valid JSON. Tier-2 #13: this is SKIPPED, not fatal —
+    /// a stray non-JSON write to fd 1 (e.g. from a C extension such as PyMuPDF
+    /// or openpyxl) must not tear down a healthy in-flight run. Mirrors the
+    /// Python command loop, which also skips a bad inbound line and continues.
+    Unparseable(String),
+    /// A parsed NDJSON envelope.
+    Frame(Value),
+}
+
+fn classify_stdout_line(raw: &str) -> StdoutLine {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return StdoutLine::Empty;
+    }
+    match serde_json::from_str::<Value>(trimmed) {
+        Ok(value) => StdoutLine::Frame(value),
+        Err(error) => StdoutLine::Unparseable(error.to_string()),
+    }
+}
+
 fn spawn_stdout_reader(stdout: ChildStdout, shared: Arc<SessionShared>, session: SessionSlot) {
     thread::spawn(move || {
         let mut reader = BufReader::new(stdout);
@@ -628,23 +653,21 @@ fn spawn_stdout_reader(stdout: ChildStdout, shared: Arc<SessionShared>, session:
                     break;
                 }
                 Ok(_) => {
-                    let trimmed = line.trim();
-                    if trimmed.is_empty() {
-                        continue;
-                    }
-
-                    let mut parsed: Value = match serde_json::from_str(trimmed) {
-                        Ok(value) => value,
-                        Err(error) => {
-                            disconnect_managed_session(
-                                &session,
-                                &shared,
-                                format!(
-                                "Python sidecar emitted invalid JSON: {error}. Line: {trimmed}"
-                                ),
+                    let mut parsed: Value = match classify_stdout_line(&line) {
+                        StdoutLine::Empty => continue,
+                        StdoutLine::Unparseable(error) => {
+                            // Tier-2 #13: skip a stray non-JSON line instead of
+                            // killing the session. A single malformed write to
+                            // fd 1 from a C extension must not fail a healthy,
+                            // in-flight run. EOF (Ok(0)) and real read errors
+                            // below remain fatal — those are genuine failures.
+                            eprintln!(
+                                "reliability-tools: skipping unparseable sidecar stdout line: {error}. Line: {}",
+                                line.trim()
                             );
-                            break;
+                            continue;
                         }
+                        StdoutLine::Frame(value) => value,
                     };
 
                     let kind = parsed
@@ -1487,8 +1510,8 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        correlation_id, enrich_run_event_for_frontend, merge_disconnect_message,
-        should_forward_run_event,
+        classify_stdout_line, correlation_id, enrich_run_event_for_frontend,
+        merge_disconnect_message, should_forward_run_event, StdoutLine,
     };
     use serde_json::json;
 
@@ -1516,6 +1539,35 @@ mod tests {
             message,
             "Python sidecar closed stdout. Details: Unhandled exception: RuntimeError: boom"
         );
+    }
+
+    #[test]
+    fn classify_stdout_line_skips_non_json() {
+        // Tier-2 #13: a stray non-JSON line (e.g. a C extension writing to fd 1)
+        // must classify as Unparseable so the reader SKIPS it and keeps the
+        // session alive, rather than tearing down a healthy in-flight run.
+        assert!(matches!(
+            classify_stdout_line("this is not json"),
+            StdoutLine::Unparseable(_)
+        ));
+    }
+
+    #[test]
+    fn classify_stdout_line_ignores_blank_line() {
+        assert!(matches!(classify_stdout_line("   \n"), StdoutLine::Empty));
+    }
+
+    #[test]
+    fn classify_stdout_line_parses_a_valid_frame() {
+        match classify_stdout_line("{\"kind\":\"heartbeat\"}") {
+            StdoutLine::Frame(value) => {
+                assert_eq!(
+                    value.get("kind").and_then(|k| k.as_str()),
+                    Some("heartbeat")
+                );
+            }
+            other => panic!("expected a parsed frame, got {other:?}"),
+        }
     }
 
     #[test]
