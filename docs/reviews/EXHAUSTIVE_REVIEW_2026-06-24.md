@@ -57,7 +57,8 @@ Only `_find_missing_in_bom` guards `c[len(base):].isdigit()`; the other three di
 > reveal sites, #28 test gaps. **Tier 2:** #10, #11, #12, #16, #17 fixed earlier;
 > #13 (stdout resync) and #14 (bounded readiness) + decision D (exe-adjacent
 > resolution) now fixed, plus #15 (bounded command replies) and #18/#19 (output folder honored +
-> validated) and #20 (pinlist failures surfaced); #21 in progress.
+> validated), #20 (pinlist failures surfaced), and #21 (run-event parse
+> guarded) — **Tier 2 is now fully complete.**
 > The
 > **A–E** possibly-intentional items are all being implemented (user chose to
 > fix each). The RefDes BOM-coverage feature shipped in `4ce9bc3`. The findings

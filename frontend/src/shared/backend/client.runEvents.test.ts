@@ -63,36 +63,47 @@ describe("backendClient run-event subscription", () => {
     );
   });
 
-  it("throws before the handler when a streamed ack is missing session_generation", async () => {
+  it("does not throw on a schema-drifted event; forwards the raw payload (Tier-2 #21)", async () => {
+    // Schema drift (a newer sidecar, an older bundled frontend) must NOT throw
+    // inside the listen callback and drop the event — that stranded a run in
+    // "running" forever if it was the terminal event. The client now logs and
+    // forwards the raw payload so the subscription's own result guard can still
+    // terminate the run.
     let tauriCallback: ((event: { payload: unknown }) => void) | null = null;
     listenMock.mockImplementationOnce(async (_eventName, callback) => {
       tauriCallback = callback as (event: { payload: unknown }) => void;
       return () => {};
     });
 
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const handler = vi.fn();
     const { backendClient } = await import("./client");
 
     await backendClient.subscribeToRunEvents(handler);
     const emitRunEvent = requireRunEventCallback(tauriCallback);
 
-    expect(() =>
-      emitRunEvent({
+    const driftedEvent = {
+      payload: {
+        protocol_version: "0.1.0",
+        id: "evt_ack_001",
+        kind: "ack",
+        request_id: "req_001",
+        run_id: "run_001",
+        timestamp: "2026-05-18T00:00:00Z",
         payload: {
-          protocol_version: "0.1.0",
-          id: "evt_ack_001",
-          kind: "ack",
-          request_id: "req_001",
+          accepted: true,
           run_id: "run_001",
-          timestamp: "2026-05-18T00:00:00Z",
-          payload: {
-            accepted: true,
-            run_id: "run_001",
-            mode: "desktop-bridge",
-          },
+          mode: "desktop-bridge",
+          // session_generation missing -> fails the strict envelope schema
         },
-      }),
-    ).toThrow();
-    expect(handler).not.toHaveBeenCalled();
+      },
+    };
+
+    expect(() => emitRunEvent(driftedEvent)).not.toThrow();
+    // Best-effort: the raw payload is forwarded so the run can still terminate.
+    expect(handler).toHaveBeenCalledWith(driftedEvent.payload);
+    expect(consoleErrorSpy).toHaveBeenCalled();
+
+    consoleErrorSpy.mockRestore();
   });
 });

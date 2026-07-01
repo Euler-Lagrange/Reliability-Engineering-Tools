@@ -269,7 +269,24 @@ export const backendClient: BackendClient = {
   async subscribeToRunEvents(handler) {
     ensureDesktopRuntime("subscribe_run_events");
     return listen(BACKEND_RUN_EVENT, (event) => {
-      handler(sidecarRunEventSchema.parse(event.payload));
+      // Tier-2 #21: guard the envelope parse. On schema drift (a newer sidecar
+      // emitting a field/enum an older bundled frontend's schema rejects — very
+      // plausible on the two-machine build setup), an unguarded .parse() throws
+      // inside this listen callback and drops the event, stranding a run in
+      // "running" forever if it was the terminal event. Log and forward the raw
+      // payload so the subscription's own result guard can still terminate the
+      // run (an unknown result shape drives a terminal failure downstream).
+      let runEvent: SidecarRunEvent;
+      try {
+        runEvent = sidecarRunEventSchema.parse(event.payload);
+      } catch (error) {
+        console.error(
+          "Run event failed envelope validation (schema drift?); forwarding raw payload.",
+          error,
+        );
+        runEvent = event.payload as SidecarRunEvent;
+      }
+      handler(runEvent);
     });
   },
   async subscribeToSessionEvents(handler) {

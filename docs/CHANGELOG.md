@@ -44,6 +44,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Run-event envelope parse guarded (Tier-2 #21)** — the run-event listener's
+  envelope `sidecarRunEventSchema.parse` had no try/catch (unlike the guarded
+  inner result parse), so a schema drift — plausible on the two-machine build
+  setup where a newer sidecar outruns an older bundled frontend — would throw
+  in the Tauri listener, drop a terminal event, and strand the run in "running"
+  forever. The parse is now guarded: on failure it logs and forwards the raw
+  payload so the subscription's own result guard can still drive the run to a
+  terminal state.
 - **Pinlist failures surfaced (Tier-2 #20)** — when per-page pinlist
   pin-qualification fails, the page's qualified-pin set is emptied; that
   failure was logged only to the rotating file log, so the output looked
