@@ -7,7 +7,7 @@
 | Backend integration | `backend/tests/test_sidecar_main.py` | 44 | pytest |
 | Backend security audit | `backend/tests/test_security_audit.py` | 27 | pytest |
 | Backend cancel bridge | `backend/tests/test_cancel_bridge.py` | 12 | pytest |
-| Backend output-directory helpers | `backend/tests/test_output_directory_helpers.py` | 4 | pytest |
+| Backend output-directory helpers | `backend/tests/test_output_directory_helpers.py` | 10 | pytest |
 | Backend FMEA Phase D | `backend/tests/test_fmea_phase_d.py` | 58 | pytest |
 | Backend Failure-Rate logic | `backend/tests/test_failure_rate_logic.py` | 24 | pytest |
 | Backend RefDes extraction-engine | `backend/tests/test_extraction_engine.py` | 6 | pytest |
@@ -17,7 +17,7 @@
 | Backend read-layer (NA + header dedup) | `backend/tests/test_read_layer.py` | 6 | pytest |
 | Backend RefDes BOM-coverage | `backend/tests/test_coverage_report.py` | 19 | pytest |
 | Backend BOM-loader metadata | `backend/tests/test_bom_loader.py` | 5 | pytest |
-| **Backend subtotal** | | **246** | |
+| **Backend subtotal** | | **252** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 4 | Vitest + RTL |
 | Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 1 | Vitest + RTL |
@@ -58,7 +58,7 @@
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | **Frontend subtotal** | | **249** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 16 | cargo test |
-| **Total** | | **511** | |
+| **Total** | | **517** | |
 
 ## Backend Tests
 

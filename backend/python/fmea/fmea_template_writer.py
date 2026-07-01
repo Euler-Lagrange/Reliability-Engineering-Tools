@@ -730,7 +730,9 @@ def _write_processor_summaries(wb, processor, log_func: Callable[[str], None]) -
         log_func(f"Wrote {len(sheets_to_write)} processor summary sheet(s)")
 
 
-def build_template_output_path(original_path: str, mode: str = "Generated") -> str:
+def build_template_output_path(
+    original_path: str, mode: str = "Generated", output_directory=None
+) -> str:
     """Auto-suffix an output path: ``FMEA_v3.xlsx`` -> ``FMEA_v3_Generated_20260325.xlsx``.
 
     Parameters
@@ -739,6 +741,13 @@ def build_template_output_path(original_path: str, mode: str = "Generated") -> s
         The original template file path.
     mode : str
         A label to include in the suffix (default ``"Generated"``).
+    output_directory : str | os.PathLike | None
+        Directory to write the suffixed file into. When provided, it overrides
+        the template's own folder — Tier-2 #18: preserve-formatting mode must
+        honor the user's chosen output folder instead of silently landing the
+        merged workbook next to the template. When ``None`` the file stays in
+        the template's parent (the historical default, which is also what the
+        FMEA resolver falls back to via the target workbook).
 
     Returns
     -------
@@ -748,4 +757,5 @@ def build_template_output_path(original_path: str, mode: str = "Generated") -> s
     p = Path(original_path)
     date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     new_name = f"{p.stem}_{mode}_{date_str}{p.suffix}"
-    return str(p.parent / new_name)
+    parent = Path(output_directory) if output_directory else p.parent
+    return str(parent / new_name)

@@ -19,6 +19,7 @@ from common import (
 )
 from common.exceptions import ValidationError
 from shared.pre_run_validation import (
+    append_output_directory_warning,
     DO_NOT_MAP_SENTINEL,
     LabeledState,
     LabeledValue,
@@ -241,6 +242,8 @@ def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
         "validations": messages,
         "mode": "desktop-bridge",
     }
+    # Tier-2 #19: surface an unusable explicit output folder at validate time.
+    append_output_directory_warning(response, body.get("outputDirectory"))
     if result.ok:
         preview = _build_bom_compare_output_preview(workflow_id, inputs_by_role)
         if preview is not None:

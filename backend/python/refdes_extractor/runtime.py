@@ -22,7 +22,12 @@ from common import (
     validate_explicit_output_directory,
 )
 from common.exceptions import ValidationError, ProcessingError
-from shared.pre_run_validation import LabeledState, LabeledValue, validate_pre_run_state
+from shared.pre_run_validation import (
+    LabeledState,
+    LabeledValue,
+    append_output_directory_warning,
+    validate_pre_run_state,
+)
 from shared.output_preview import build_preview_from_file
 
 _logger = get_tool_logger("refdes_extractor_runtime")
@@ -239,6 +244,8 @@ def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
         "validations": messages,
         "mode": "desktop-bridge",
     }
+    # Tier-2 #19: surface an unusable explicit output folder at validate time.
+    append_output_directory_warning(response, body.get("outputDirectory"))
     if result.ok:
         preview = _build_refdes_output_preview(inputs_by_role)
         if preview is not None:

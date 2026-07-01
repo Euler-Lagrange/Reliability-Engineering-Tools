@@ -44,6 +44,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Output folder honored in preserve mode + validated up front (Tier-2 #18,
+  #19)** — FMEA preserve-formatting mode now writes the merged workbook to the
+  chosen output folder instead of silently landing it next to the template
+  (#18). And an unusable explicit output folder is now flagged as a warning at
+  *validate* time across all four tools (FMEA, BOM Compare, Failure Rate,
+  RefDes) via the shared `output_directory_validation` helper — instead of
+  passing validation green and then silently relocating the output at execute
+  time (#19). +6 backend tests.
 - **Bounded command replies (Tier-2 #15)** — a command whose file I/O stalls on
   a dead/slow network path (a stale `\\server\share` existence check can block
   the OS call 30-120s) no longer hangs the UI with zero feedback. The bridge's

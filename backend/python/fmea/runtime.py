@@ -16,6 +16,7 @@ from common import (
 )
 
 from shared.pre_run_validation import (
+    append_output_directory_warning,
     DO_NOT_MAP_SENTINEL,
     LabeledState,
     LabeledValue,
@@ -482,6 +483,8 @@ def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
         ),
         "mode": "desktop-bridge",
     }
+    # Tier-2 #19: surface an unusable explicit output folder at validate time.
+    append_output_directory_warning(response, body.get("outputDirectory"))
     # Attach output_preview on success only (design handoff principle D /
     # phase 4a). Preview failures never fail validation — the helper
     # swallows exceptions and returns None.
@@ -940,7 +943,13 @@ def execute_run_request(
 
         target_path = str((inputs_by_role.get("targetWorkbook") or {}).get("path", "")).strip()
         target_sheet = _selected_sheet(inputs_by_role, "targetWorkbook")
-        output_path = Path(build_template_output_path(target_path, mode="DarkStar"))
+        # Tier-2 #18: honor the resolved output directory (the user's picker, or
+        # the resolver's fallback) instead of always writing next to the template.
+        output_path = Path(
+            build_template_output_path(
+                target_path, mode="DarkStar", output_directory=output_directory
+            )
+        )
 
         # Phase D: thread the selected FMD standard through to the template
         # analyzer + writer so the column map, synonym lookups, and appended

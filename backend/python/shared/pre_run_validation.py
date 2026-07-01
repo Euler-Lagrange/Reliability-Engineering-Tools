@@ -44,6 +44,45 @@ class LabeledState:
     ready: bool
 
 
+def output_directory_validation(explicit_directory) -> dict[str, Any] | None:
+    """Return a WARNING validation message when an explicit output directory is
+    set but is not a usable (writable) directory, else ``None``.
+
+    Tier-2 #19: an invalid ``outputDirectory`` used to pass validate green and
+    then silently relocate the output at execute time (the resolver falls back
+    to the first input file's folder). Surfacing it at validate time lets the
+    user fix the path — or knowingly accept the fallback — before running.
+    """
+    # Local import: ``common`` is self-contained and this is a validate-time
+    # (cold) path, so we avoid pulling it into module import.
+    from common.utils import validate_explicit_output_directory
+
+    candidate = str(explicit_directory).strip() if explicit_directory else ""
+    if not candidate:
+        return None  # No explicit directory — the default heuristic applies.
+    if validate_explicit_output_directory(candidate, log_func=None) is not None:
+        return None  # A real, writable directory.
+    return {
+        "id": "output_directory_unwritable",
+        "severity": "warning",
+        "area": "Output",
+        "title": "Output folder not usable",
+        "detail": (
+            f"The chosen output folder '{candidate}' is not a writable "
+            f"directory. The run will save next to the first input file "
+            f"instead — update the folder if that isn't what you want."
+        ),
+    }
+
+
+def append_output_directory_warning(response: dict, explicit_directory) -> None:
+    """Append the Tier-2 #19 output-directory warning to a validate response's
+    ``validations`` list, in place, when the explicit directory is unusable."""
+    warning = output_directory_validation(explicit_directory)
+    if warning is not None:
+        response.setdefault("validations", []).append(warning)
+
+
 def _has_value(value: Any) -> bool:
     if value is None:
         return False
