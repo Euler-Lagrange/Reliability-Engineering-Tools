@@ -42,6 +42,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   BOM), and `Extracted Not In BOM`. Component-level matching; failure-isolated
   so a coverage defect can never lose the extraction output.
 
+### Changed
+
+- **OneDrive detection prefers the OneDrive env vars (Decision A)** — cloud-file
+  detection/hydration now checks the `%OneDrive%` / `%OneDriveCommercial%` /
+  `%OneDriveConsumer%` roots first (normalized directory-boundary match),
+  falling back to the historical `"onedrive"` substring heuristic. This
+  correctly detects OneDrive mounted at a non-standard location and avoids a
+  false hit on a folder merely named "onedrive". +5 tests.
+
 ### Fixed
 
 - **Run-event envelope parse guarded (Tier-2 #21)** — the run-event listener's

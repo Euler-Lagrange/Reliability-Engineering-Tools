@@ -159,6 +159,29 @@ def _hydrate_onedrive_file(path: Path, log_func=None, cancel_check=None) -> bool
     return False
 
 
+def _is_onedrive_path(path: Path) -> bool:
+    r"""True when ``path`` lives under a OneDrive root.
+
+    Decision A: prefer the OneDrive environment variables Windows sets
+    (``%OneDrive%``, ``%OneDriveCommercial%``, ``%OneDriveConsumer%``) so we
+    detect OneDrive mounted at a non-standard location and avoid a false hit on
+    a folder merely *named* "onedrive". Falls back to the historical substring
+    heuristic when none of the env vars are set (or the path is outside them).
+
+    Uses a normalized directory-boundary prefix match (no filesystem access) so
+    ``C:\OneDriveX`` does not match a ``C:\OneDrive`` root.
+    """
+    path_norm = os.path.normcase(os.path.abspath(str(path)))
+    for env_name in ("OneDrive", "OneDriveCommercial", "OneDriveConsumer"):
+        root = os.environ.get(env_name)
+        if not root:
+            continue
+        root_norm = os.path.normcase(os.path.abspath(root))
+        if path_norm == root_norm or path_norm.startswith(root_norm + os.sep):
+            return True
+    return "onedrive" in str(path).lower()
+
+
 def ensure_file_available(path: Path, log_func=None, cancel_check=None) -> Path:
     """
     Ensure a file is available for reading, handling OneDrive cloud files.
@@ -200,7 +223,7 @@ def ensure_file_available(path: Path, log_func=None, cancel_check=None) -> Path:
 
     # Check cloud-only state first.
     is_cloud = _is_onedrive_cloud_only(path)
-    is_onedrive_hint = "onedrive" in str(path).lower()
+    is_onedrive_hint = _is_onedrive_path(path)
 
     # Non-OneDrive unreadable files should not run attrib +P hydration.
     # Let downstream read logic report the actual read error context.
