@@ -295,6 +295,15 @@ impl SessionShared {
         false
     }
 
+    /// Drop a pending request's registry entry without resolving it. Used when
+    /// the caller has given up waiting (Tier-2 #15 command timeout) so a late
+    /// reply from the sidecar is discarded rather than left dangling.
+    fn discard_pending(&self, request_id: &str) {
+        if let Ok(mut pending) = self.pending.lock() {
+            pending.remove(request_id);
+        }
+    }
+
     fn fail_all_pending(&self, message: &str) {
         if let Ok(mut pending) = self.pending.lock() {
             for (_, sender) in pending.drain() {
@@ -500,9 +509,24 @@ impl SidecarState {
             return Err(message);
         }
 
-        let response = receiver
-            .recv()
-            .map_err(|_| "Managed python sidecar stopped before replying.".to_string())??;
+        let response = match receiver.recv_timeout(command_timeout()) {
+            Ok(inner) => inner?,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                // Tier-2 #15: the reply is stuck (most often a file existence
+                // check on a dead/slow \\server\share). Discard the pending
+                // entry so a late reply is dropped, and surface an actionable
+                // error instead of hanging the UI forever.
+                self.shared.discard_pending(&request_id);
+                return Err(format!(
+                    "The '{command_name}' command timed out after {}s. An input file may be on a \
+                     disconnected or slow network drive — check the path and try again.",
+                    command_timeout().as_secs()
+                ));
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err("Managed python sidecar stopped before replying.".to_string());
+            }
+        };
 
         if response.kind != expected_kind {
             return Err(format!(
@@ -935,11 +959,32 @@ fn resolve_bundled_sidecar() -> Option<PathBuf> {
 /// supervisor started) hung the whole bootstrap forever if the sidecar stalled
 /// during import (Tier-2 #14).
 fn ready_timeout() -> Duration {
-    env::var("RELIABILITY_TOOLS_READY_TIMEOUT_SECS")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
+    parse_timeout_secs(
+        env::var("RELIABILITY_TOOLS_READY_TIMEOUT_SECS").ok().as_deref(),
+        60,
+    )
+}
+
+/// Parse a `u64` seconds value, falling back to `default_secs` when the value
+/// is absent or unparseable. Shared by the readiness and per-command timeouts.
+fn parse_timeout_secs(raw: Option<&str>, default_secs: u64) -> Duration {
+    raw.and_then(|value| value.parse::<u64>().ok())
         .map(Duration::from_secs)
-        .unwrap_or_else(|| Duration::from_secs(60))
+        .unwrap_or_else(|| Duration::from_secs(default_secs))
+}
+
+/// Bounded wait for a single awaited command's reply. Tier-2 #15: a command
+/// whose file I/O is stuck on a dead/slow network path (a stale
+/// `\\server\share` existence check can block the OS call 30-120s) must not
+/// hang the UI with zero feedback — the heartbeat keeps flowing on its own
+/// thread, so the 15s supervisor never fires. Bounding the reply wait surfaces
+/// an actionable error instead. Generous default; legitimate reads are capped
+/// and far faster.
+fn command_timeout() -> Duration {
+    parse_timeout_secs(
+        env::var("RELIABILITY_TOOLS_COMMAND_TIMEOUT_SECS").ok().as_deref(),
+        60,
+    )
 }
 
 enum ReadyOutcome<R> {
@@ -1603,8 +1648,8 @@ pub fn run() {
 mod tests {
     use super::{
         await_ready, candidate_bases, classify_stdout_line, correlation_id,
-        enrich_run_event_for_frontend, merge_disconnect_message, should_forward_run_event,
-        ReadyOutcome, StdoutLine,
+        enrich_run_event_for_frontend, merge_disconnect_message, parse_timeout_secs,
+        should_forward_run_event, ReadyOutcome, StdoutLine,
     };
     use serde_json::json;
     use std::path::PathBuf;
@@ -1719,6 +1764,21 @@ mod tests {
             ReadyOutcome::TimedOut => {}
             _ => panic!("expected TimedOut"),
         }
+    }
+
+    #[test]
+    fn parse_timeout_secs_uses_default_when_absent_or_invalid() {
+        assert_eq!(parse_timeout_secs(None, 60), Duration::from_secs(60));
+        assert_eq!(
+            parse_timeout_secs(Some("not-a-number"), 60),
+            Duration::from_secs(60)
+        );
+        assert_eq!(parse_timeout_secs(Some(""), 45), Duration::from_secs(45));
+    }
+
+    #[test]
+    fn parse_timeout_secs_parses_a_valid_override() {
+        assert_eq!(parse_timeout_secs(Some("120"), 60), Duration::from_secs(120));
     }
 
     #[test]

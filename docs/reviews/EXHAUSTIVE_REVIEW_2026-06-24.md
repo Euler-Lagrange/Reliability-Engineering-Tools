@@ -56,7 +56,8 @@ Only `_find_missing_in_bom` guards `c[len(base):].isdigit()`; the other three di
 > v0.4.6 tag, #25 security_audit blind spots, #26 describeBackendError at the 7
 > reveal sites, #28 test gaps. **Tier 2:** #10, #11, #12, #16, #17 fixed earlier;
 > #13 (stdout resync) and #14 (bounded readiness) + decision D (exe-adjacent
-> resolution) now fixed; #15, #18–#21 in progress. The
+> resolution) now fixed, plus #15 (bounded command replies); #18–#21 in progress.
+> The
 > **A–E** possibly-intentional items are all being implemented (user chose to
 > fix each). The RefDes BOM-coverage feature shipped in `4ce9bc3`. The findings
 > below are preserved as the original 2026-06-24 review.

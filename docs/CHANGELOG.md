@@ -44,6 +44,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Bounded command replies (Tier-2 #15)** — a command whose file I/O stalls on
+  a dead/slow network path (a stale `\\server\share` existence check can block
+  the OS call 30-120s) no longer hangs the UI with zero feedback. The bridge's
+  awaited reply now uses a bounded `recv_timeout` (default 60s,
+  `RELIABILITY_TOOLS_COMMAND_TIMEOUT_SECS`) and returns an actionable
+  "check the path" error instead of blocking forever — the heartbeat runs on
+  its own Python thread, so the 15s supervisor never caught this. (The Python
+  command loop still processes commands inline, so a stuck check self-recovers
+  on the OS timeout; the UI is now responsive with feedback throughout.)
+  +2 cargo tests.
 - **Bounded sidecar startup + release-safe resolution (Tier-2 #14, decision
   D)** — the `ready` handshake is now read on a worker thread with a BOUNDED
   wait (default 60s, `RELIABILITY_TOOLS_READY_TIMEOUT_SECS`); a sidecar that
