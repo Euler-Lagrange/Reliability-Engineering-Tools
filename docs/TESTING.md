@@ -23,6 +23,7 @@
 | Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 1 | Vitest + RTL |
 | Frontend mapping table | `frontend/src/components/MappingTable.test.tsx` | 11 | Vitest + RTL |
 | Frontend run state panel | `frontend/src/components/RunStatePanel.test.tsx` | 6 | Vitest + RTL |
+| Frontend output folder picker | `frontend/src/components/OutputFolderPicker.test.tsx` | 2 | Vitest + RTL |
 | Frontend log panel resize | `frontend/src/components/GlobalLogPanel.resize.test.tsx` | 13 | Vitest + RTL |
 | Frontend command palette | `frontend/src/components/primitives/CommandPalette.test.tsx` | 5 | Vitest + RTL |
 | Frontend hold button | `frontend/src/components/primitives/HoldButton.test.tsx` | 5 | Vitest + RTL |
@@ -53,9 +54,9 @@
 | Frontend number field | `frontend/src/components/primitives/NumberField.test.tsx` | 6 | Vitest + RTL |
 | Frontend mapping derivation | `frontend/src/shared/mapping/deriveMappingRows.test.ts` | 6 | Vitest |
 | Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 6 | Vitest + RTL |
-| **Frontend subtotal** | | **243** | |
+| **Frontend subtotal** | | **245** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 6 | cargo test |
-| **Total** | | **495** | |
+| **Total** | | **497** | |
 
 ## Backend Tests
 

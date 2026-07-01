@@ -650,7 +650,7 @@ export function FmeaTool() {
     try {
       await backendClient.revealInFileManager(parentDirectoryForPath(path));
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "Failed to open output folder";
+      const detail = describeBackendError(error, "Failed to open output folder");
       pushNotification({ tone: "error", title: "Open output folder failed", detail });
     }
   }
@@ -711,7 +711,7 @@ export function FmeaTool() {
         setFmeaOutputDirectory(picked);
       }
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "Unknown folder picker failure";
+      const detail = describeBackendError(error, "Unknown folder picker failure");
       pushNotification({
         tone: "error",
         title: "Folder picker failed",

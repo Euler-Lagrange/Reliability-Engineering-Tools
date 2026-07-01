@@ -178,7 +178,7 @@ export function FailureRateTool() {
     try {
       await backendClient.revealInFileManager(parentDirectoryForPath(path));
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "Failed to open output folder";
+      const detail = describeBackendError(error, "Failed to open output folder");
       pushNotification({ tone: "error", title: "Open output folder failed", detail });
     }
   }

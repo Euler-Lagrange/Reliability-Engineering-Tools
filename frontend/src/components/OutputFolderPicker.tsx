@@ -1,6 +1,7 @@
 import { FolderOpen } from "@phosphor-icons/react";
 
 import { backendClient } from "../shared/backend/client";
+import { describeBackendError } from "../shared/backend/cancelError";
 import { useNotificationStore } from "../stores/notificationStore";
 
 import { OptionsField } from "./primitives/OptionsField";
@@ -45,8 +46,7 @@ export function OutputFolderPicker({
         onChange(picked);
       }
     } catch (error) {
-      const detail =
-        error instanceof Error ? error.message : "Unknown folder picker failure";
+      const detail = describeBackendError(error, "Unknown folder picker failure");
       pushNotification({
         tone: "error",
         title: "Folder picker failed",

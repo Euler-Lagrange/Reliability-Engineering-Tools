@@ -126,8 +126,7 @@ export function SettingsTool() {
     try {
       await backendClient.revealInFileManager(logDirectory);
     } catch (error) {
-      const detail =
-        error instanceof Error ? error.message : "Failed to open log folder";
+      const detail = describeBackendError(error, "Failed to open log folder");
       pushNotification({ tone: "error", title: "Open log folder failed", detail });
     }
   }

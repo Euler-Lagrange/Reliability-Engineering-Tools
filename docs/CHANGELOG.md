@@ -36,6 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Backend-error surfacing at folder/reveal sites (Tier-3 #26)** — the seven
+  folder-picker / reveal-in-folder catch blocks (FMEA ×2, BOM Compare, Failure
+  Rate, RefDes, Settings, and the shared `OutputFolderPicker`) used the banned
+  `error instanceof Error ? … : <generic>` ternary, which discarded the real
+  message on Tauri's raw-string rejections and showed only a generic fallback.
+  All now route through `describeBackendError` (Wiring Invariant #5), so a
+  native-dialog error surfaces its actual text. +2 regression tests on the
+  shared picker.
 - **Security-audit blind spots (Tier-3 #25)** — the static audit now catches
   command execution through an aliased or bare import (`import subprocess as
   sp`, `from subprocess import run`) and via `os.system` / `os.popen` /
