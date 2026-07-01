@@ -496,7 +496,10 @@ def _check_fmr(
         # Guard against NaN values to prevent "NAN" key pollution
         if pd.isna(ref_val):
             continue
-        ref_raw = str(ref_val).strip().upper()
+        # Tier-4 pd-checkfmr-key: canonicalize the key (not a raw strip/upper) so
+        # a PDF-pasted RefDes carrying invisible characters groups with its clean
+        # twin instead of splitting the sum into a false-positive "FMR != 1.0".
+        ref_raw = canonicalize_refdes(str(ref_val))
         if not ref_raw:
             continue
         raw_ratio = row[ratio_idx] if ratio_idx is not None else None
@@ -617,6 +620,12 @@ def _check_part_usage(
                     f"Detected FMEA row scope for Part Usage validation: "
                     f"{cb_rows} circuit-block rows, {pp_rows} piece-part rows"
                 )
+        except CancellationError:
+            # Tier-4 new-cancellation-1: CancellationError -> InterruptedError ->
+            # OSError -> Exception, so it would be swallowed by the broad handler
+            # below (the exact gotcha CLAUDE.md warns about). Re-raise so a cancel
+            # during FMEA classification propagates immediately.
+            raise
         except Exception as ex:
             log_func(f"Warning: could not classify FMEA row scope for part usage filtering: {ex}")
 

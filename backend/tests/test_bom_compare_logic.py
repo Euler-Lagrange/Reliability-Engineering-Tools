@@ -499,6 +499,32 @@ def test_analyze_check_fmr_text_ratio_flagged_blank_skipped_group_path() -> None
     assert "non-numeric" in flagged["U2"].lower()
 
 
+def test_analyze_check_fmr_canonicalizes_refdes_key_group_path() -> None:
+    """Tier-4 pd-checkfmr-key: a PDF-pasted RefDes carrying an invisible char
+    (zero-width space) must group with its clean twin, not split the FMR sum
+    into a false-positive 'FMR != 1.0'."""
+    group_df = pd.DataFrame({
+        "Group": ["G", "G"],
+        "RefDes": ["U1", "U1​"],   # second cell carries a zero-width space
+        "Ratio": [0.5, 0.5],
+    })
+    bom_df = pd.DataFrame({"RefDes": ["U1"], "Description": [""]})
+    mapping = ColumnMapping(
+        grouping_group_col="Group", grouping_refdes_col="RefDes",
+        bom_refdes_col="RefDes", bom_desc_col="Description",
+    )
+    options = AnalyzeOptions(
+        run_warning_checks=False, run_duplicate_checks=False,
+        check_part_usage=False, check_fmr=True,
+    )
+    results = analyze(
+        group_df, bom_df, mapping, options,
+        file_paths=("grouping.xlsx", "bom.xlsx"),
+    )
+    # Both rows are the same physical U1 (0.5 + 0.5 = 1.0) -> no FMR warning.
+    assert list(results.fmr_warnings["RefDes"]) == []
+
+
 # ---------------------------------------------------------------------------
 # Tier-1 #5: custom (BOM-vs-BOM) per-column VALUE diff. With ``compare_columns``
 # supplied, a RefDes present in BOTH files whose mapped column values differ is

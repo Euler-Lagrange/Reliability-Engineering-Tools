@@ -73,7 +73,7 @@ npm run tauri:build:portable  # Release build → src-tauri/target/.../release/
 npm run cargo:test       # Rust bridge unit tests via the repo runner
 
 # Python sidecar (use project venv)
-.venv\Scripts\python.exe -m pytest backend/tests -v    # 264 backend tests (44 sidecar + 27 audit + 12 cancel bridge + 10 output-directory helper + 58 FMEA phase D + 24 failure-rate logic + 7 RefDes extraction-engine + 30 BOM-compare logic + 9 BOM-compare runtime + 2 failure-rate runtime + 6 read-layer + 19 RefDes BOM-coverage + 5 BOM-loader metadata + 5 OneDrive detection + 3 file-size guard + 3 crash-dump)
+.venv\Scripts\python.exe -m pytest backend/tests -v    # 265 backend tests (44 sidecar + 27 audit + 12 cancel bridge + 10 output-directory helper + 58 FMEA phase D + 24 failure-rate logic + 7 RefDes extraction-engine + 31 BOM-compare logic + 9 BOM-compare runtime + 2 failure-rate runtime + 6 read-layer + 19 RefDes BOM-coverage + 5 BOM-loader metadata + 5 OneDrive detection + 3 file-size guard + 3 crash-dump)
 .venv\Scripts\python.exe backend/python/sidecar_main.py --self-test
 
 # Full release
@@ -170,7 +170,7 @@ The audit runs:
 
 ## Testing
 
-### Backend Tests (264 total)
+### Backend Tests (265 total)
 - 44 sidecar integration tests in `test_sidecar_main.py` (incl. the RefDes BOM-coverage sheet emission)
 - 27 security-audit tests in `test_security_audit.py` (synthetic positives + live tree scan; incl. subprocess via alias/from-import, os.system/popen/startfile, and ctypes native-import detection)
 - 12 cancel-bridge tests in `test_cancel_bridge.py` (BOM Compare + RefDes bridges plus Failure Rate `FMEALinkerLogic.cancel` binding through `ActiveRun`)
@@ -178,7 +178,7 @@ The audit runs:
 - 58 FMEA Phase D tests in `test_fmea_phase_d.py` (incl. the hdaSource contract, fill_gaps no-count-source flagging, and Tier-1 Part Usage compute-or-blank+flag: instance-count 1/N derivation counting distinct physical instances not occurrences, blank+PU_GUESSED flag, explicit-value preservation)
 - 24 Failure-Rate logic tests in `test_failure_rate_logic.py` (incl. circuit-block roll-up, leaf-block preservation, prediction-FR coercion flagging, and Tier-1 genuine-gap Part Usage: blank usage with real FR → NaN Mode_FR, formula-cell-as-NaN, unmatched-RefDes zero preserved, roll-up skips blank child, all-gap-children block blanks to NaN)
 - 7 RefDes extraction-engine tests in `test_extraction_engine.py` (NextGen pin-disambiguation + Tier-2 #20 pinlist-failure surfaced to the streamed run log)
-- 30 BOM-compare logic tests in `test_bom_compare_logic.py` (incl. custom-path option semantics, residual-digit guard, non-numeric FMR flagging, per-column value-diff contract)
+- 31 BOM-compare logic tests in `test_bom_compare_logic.py` (incl. custom-path option semantics, residual-digit guard, non-numeric FMR flagging, per-column value-diff contract, and Tier-4 FMR-key canonicalization against invisible-char RefDes)
 - 9 BOM-compare runtime tests in `test_bom_compare_runtime.py` (dnp_regex default, Do-Not-Map sentinel validation, custom option wiring, compare_columns forwarding)
 - 2 Failure-Rate runtime tests in `test_failure_rate_runtime.py` (Do-Not-Map sentinel validation)
 - 6 read-layer tests in `test_read_layer.py` (Excel/CSV NA-literal parity, duplicate-header dedup matching pandas)

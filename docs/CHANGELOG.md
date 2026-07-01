@@ -68,6 +68,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Tier-4 hardening** — (1) a broad `except Exception` in BOM-Compare
+  part-usage classification no longer swallows `CancellationError`
+  (`new-cancellation-1`; it re-raises, per the documented gotcha); (2) the FMR
+  sum check keys on `canonicalize_refdes` instead of a raw strip/upper
+  (`pd-checkfmr-key`), so a PDF-pasted RefDes with invisible characters no
+  longer splits the sum into a false-positive "FMR != 1.0". +1 test.
 - **Run-event envelope parse guarded (Tier-2 #21)** — the run-event listener's
   envelope `sidecarRunEventSchema.parse` had no try/catch (unlike the guarded
   inner result parse), so a schema drift — plausible on the two-machine build
