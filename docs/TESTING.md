@@ -53,10 +53,12 @@
 | Frontend RefDes Extractor tool | `frontend/src/features/refdes-extractor/RefDesExtractorTool.test.tsx` | 10 | Vitest + RTL |
 | Frontend number field | `frontend/src/components/primitives/NumberField.test.tsx` | 6 | Vitest + RTL |
 | Frontend mapping derivation | `frontend/src/shared/mapping/deriveMappingRows.test.ts` | 6 | Vitest |
-| Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 6 | Vitest + RTL |
-| **Frontend subtotal** | | **245** | |
+| Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 7 | Vitest + RTL |
+| Frontend shell-hook install | `frontend/src/app/App.shellHooks.test.tsx` | 1 | Vitest + RTL |
+| Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
+| **Frontend subtotal** | | **249** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 6 | cargo test |
-| **Total** | | **497** | |
+| **Total** | | **501** | |
 
 ## Backend Tests
 
@@ -239,7 +241,7 @@ neither of which exists under jsdom, so the client returns mock data from
 | `frontend/src/app/App.keepalive.test.tsx` | 2 — keep-alive shell: tool-local state survives a tool-switch round-trip, only visited tools mount |
 | `frontend/src/features/fmea/FmeaTool.test.tsx` | 9 — FMEA tool rendering, workflow selection, input validation, run integration, mapping-override survival across output-strategy and FMD-standard changes |
 | `frontend/src/features/fmea/FmeaTool.inspection.test.tsx` | 5 — sheet selection interactivity during background aggregation, inspection cap warning display, stale-validation clears on browse/sheet change, orphaned-override pruning |
-| `frontend/src/features/toolRunDispatch.test.tsx` | 6 — BOM Compare, Failure Rate, and RefDes workflow dispatch from React tools, validation-failure (execute_run skipped), all six BOM Compare options reach the backend, and Custom Compare column pairs reach `options.compare_columns` |
+| `frontend/src/features/toolRunDispatch.test.tsx` | 7 — FMEA (option-key payload incl. hdaSource), BOM Compare, Failure Rate, and RefDes workflow dispatch from React tools, validation-failure (execute_run skipped), all six BOM Compare options reach the backend, and Custom Compare column pairs reach `options.compare_columns` |
 | `frontend/src/features/bom-compare/BomCompareTool.test.tsx` | 14 — custom-compare slots, pristine exit, workflow round-trip cache, interrupted-inspection recovery, double-start guard, raw-string error surfacing, real-header mapping derivation, dispatch payloads, group-only prov checkbox disabled in custom, column-pair picker auto-pairs in custom / hidden in group |
 | `frontend/src/features/failure-rate/FailureRateTool.test.tsx` | 2 — stale-validation clears on browse, real-header mapping derivation |
 | `frontend/src/features/refdes-extractor/RefDesExtractorTool.test.tsx` | 9 — piece-part pinlist slot, pristine behavior, empty-input dispatch, adaptive-geometry gating, numeric tuning fields (render, dispatch, geometry gating) |

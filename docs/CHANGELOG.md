@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   self-test + security audit, and Rust `cargo check` + `cargo test`. Catches
   the cross-machine drift that the pinned deps and lockfiles guard against.
   (Tier-3 #23.)
+- **Test coverage (Tier-3 #28)** — closed the cheap test gaps: the FMEA
+  execute payload's option keys are now asserted in `toolRunDispatch` (guards
+  the `hdaSource`-drop bug class); a new `App.shellHooks` test fails if the
+  shell-level backend bootstrap / run-subscription hooks are ever deleted from
+  `App`; and a registry-wide `scenarios` completeness test guards the Custom
+  Compare zero-file-slots regression (Wiring Invariant #4). +4 frontend tests.
+  (The fourth gap — a regression test for the success-toast race #10 — already
+  shipped with that fix.)
 - **Pinned Python dependencies** — new `requirements.txt` (runtime: pandas,
   openpyxl, PyMuPDF) and `requirements-dev.txt` (adds pytest, pyinstaller),
   pinned to the tested-green set so both dev machines and the build host

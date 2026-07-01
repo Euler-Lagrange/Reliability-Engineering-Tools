@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BomCompareTool } from "./bom-compare/BomCompareTool";
 import { FailureRateTool } from "./failure-rate/FailureRateTool";
+import { FmeaTool } from "./fmea/FmeaTool";
 import { RefDesExtractorTool } from "./refdes-extractor/RefDesExtractorTool";
 import { useRunStore } from "../stores/runStore";
 import { useShellStore } from "../stores/shellStore";
@@ -153,6 +154,27 @@ describe("tool run dispatch", () => {
       { col_a: "Part Number", col_b: "Part Number", rule: "Text (ignore case)" },
       { col_a: "Description", col_b: "Description", rule: "Text (ignore case)" },
     ]);
+  });
+
+  it("dispatches the FMEA workflow with the option keys the backend reads", async () => {
+    // Regression guard for the hdaSource bug class (Tier-3 #28): the FMEA
+    // execute payload's option keys were asserted nowhere frontend-side, so a
+    // silently-dropped key — like hdaSource, which the backend now reads to
+    // pick the HDA source — could ship again unnoticed. Pin the payload shape.
+    render(<FmeaTool />);
+    await runTool("Start real run");
+
+    await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
+    const body = backendMocks.executeRun.mock.calls[0][0];
+    expect(body).toMatchObject({
+      workflowId: expect.any(String),
+      outputStrategyId: expect.any(String),
+      options: {
+        hdaSource: expect.any(String),
+        failureModesStandard: expect.any(String),
+      },
+    });
+    expect(Array.isArray(body.mappings)).toBe(true);
   });
 
   it("dispatches the Failure Rate workflow", async () => {
