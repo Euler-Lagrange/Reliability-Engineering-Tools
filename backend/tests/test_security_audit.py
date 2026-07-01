@@ -186,6 +186,158 @@ def test_relative_imports_are_ignored(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Broadened subprocess detection — the command-head check must survive an
+# aliased import or a bare ``from subprocess import run`` (Tier-3 #25). These
+# were the realistic accidental-introduction bypasses of the original audit.
+# ---------------------------------------------------------------------------
+
+
+def test_detects_subprocess_command_via_alias(tmp_path: Path) -> None:
+    target = _write(
+        tmp_path,
+        "aliased_subprocess.py",
+        """
+        import subprocess as sp
+        sp.run(["curl", "https://example.com"])
+        """,
+    )
+    violations = audit_file(target)
+    assert len(violations) == 1
+    assert violations[0].kind == "subprocess_command"
+    assert "curl" in violations[0].detail
+
+
+def test_detects_subprocess_command_via_from_import(tmp_path: Path) -> None:
+    target = _write(
+        tmp_path,
+        "from_subprocess.py",
+        """
+        from subprocess import run
+        run(["curl", "https://example.com"])
+        """,
+    )
+    violations = audit_file(target)
+    assert len(violations) == 1
+    assert violations[0].kind == "subprocess_command"
+    assert "curl" in violations[0].detail
+
+
+def test_allows_attrib_via_from_import(tmp_path: Path) -> None:
+    target = _write(
+        tmp_path,
+        "from_subprocess_attrib.py",
+        """
+        from subprocess import run
+        run(["attrib", "+P", "foo.xlsx"])
+        """,
+    )
+    violations = audit_file(target)
+    assert violations == []
+
+
+# ---------------------------------------------------------------------------
+# os.system / os.popen / os.startfile — alternative shell-out primitives the
+# original audit ignored entirely (Tier-3 #25).
+# ---------------------------------------------------------------------------
+
+
+def test_detects_os_system_outside_allowlist(tmp_path: Path) -> None:
+    target = _write(
+        tmp_path,
+        "os_system.py",
+        """
+        import os
+        os.system("curl https://example.com")
+        """,
+    )
+    violations = audit_file(target)
+    assert len(violations) == 1
+    assert violations[0].kind == "os_exec"
+    assert "curl" in violations[0].detail
+
+
+def test_detects_os_popen_outside_allowlist(tmp_path: Path) -> None:
+    target = _write(
+        tmp_path,
+        "os_popen.py",
+        """
+        import os
+        os.popen("wget https://example.com")
+        """,
+    )
+    violations = audit_file(target)
+    assert len(violations) == 1
+    assert violations[0].kind == "os_exec"
+    assert "wget" in violations[0].detail
+
+
+def test_detects_os_startfile(tmp_path: Path) -> None:
+    target = _write(
+        tmp_path,
+        "os_startfile.py",
+        """
+        import os
+        os.startfile("C:/Windows/System32/calc.exe")
+        """,
+    )
+    violations = audit_file(target)
+    assert len(violations) == 1
+    assert violations[0].kind == "os_exec"
+    assert "startfile" in violations[0].detail
+
+
+def test_allows_os_system_attrib(tmp_path: Path) -> None:
+    """os.system/os.popen honor the same command allowlist as subprocess."""
+    target = _write(
+        tmp_path,
+        "os_system_attrib.py",
+        """
+        import os
+        os.system("attrib +P foo.xlsx")
+        """,
+    )
+    violations = audit_file(target)
+    assert violations == []
+
+
+def test_detects_os_exec_via_from_import(tmp_path: Path) -> None:
+    target = _write(
+        tmp_path,
+        "from_os_system.py",
+        """
+        from os import system
+        system("curl https://example.com")
+        """,
+    )
+    violations = audit_file(target)
+    assert len(violations) == 1
+    assert violations[0].kind == "os_exec"
+    assert "curl" in violations[0].detail
+
+
+# ---------------------------------------------------------------------------
+# ctypes — native code execution capability with no legitimate use in the
+# offline sidecar (Tier-3 #25).
+# ---------------------------------------------------------------------------
+
+
+def test_detects_ctypes_import(tmp_path: Path) -> None:
+    target = _write(tmp_path, "uses_ctypes.py", "import ctypes\n")
+    violations = audit_file(target)
+    assert len(violations) == 1
+    assert violations[0].kind == "native_import"
+    assert "ctypes" in violations[0].detail
+
+
+def test_detects_ctypes_from_import(tmp_path: Path) -> None:
+    target = _write(tmp_path, "from_ctypes.py", "from ctypes import windll\n")
+    violations = audit_file(target)
+    assert len(violations) == 1
+    assert violations[0].kind == "native_import"
+    assert "ctypes" in violations[0].detail
+
+
+# ---------------------------------------------------------------------------
 # CLI smoke test
 # ---------------------------------------------------------------------------
 

@@ -36,6 +36,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Security-audit blind spots (Tier-3 #25)** — the static audit now catches
+  command execution through an aliased or bare import (`import subprocess as
+  sp`, `from subprocess import run`) and via `os.system` / `os.popen` /
+  `os.startfile`, plus `ctypes` native imports — all previously invisible to
+  the `subprocess.<name>`-only matcher. The command allowlist (`attrib`) is
+  unchanged. CLAUDE.md's "enforced statically" wording is softened to reflect
+  that this is a regression net against accidental introductions, not an
+  adversarial sandbox (dynamic `importlib`/`eval` escapes remain out of scope
+  by design).
 - **Release gate hardening (Tier-3 #24)** — `scripts/release.bat` now runs the
   packaged self-tests against the build output and only promotes the exe to
   `local_build` **after** they pass, so a failed release can no longer clobber

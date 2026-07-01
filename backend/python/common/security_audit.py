@@ -89,6 +89,11 @@ FORBIDDEN_DATABASE_MODULES: frozenset[str] = frozenset(
     }
 )
 
+#: Modules that grant native / arbitrary-code execution. ``ctypes`` can call
+#: into any DLL and would bypass every other rule in this file; the offline
+#: sidecar has no legitimate use for it, so its import is a hard violation.
+FORBIDDEN_NATIVE_MODULES: frozenset[str] = frozenset({"ctypes"})
+
 #: Subprocess executables we have vetted as safe to invoke.
 #:
 #: - ``attrib`` — Windows file-attribute query/set, used by
@@ -105,6 +110,13 @@ _SUBPROCESS_CALL_NAMES: frozenset[str] = frozenset(
     {"run", "Popen", "call", "check_call", "check_output", "getoutput", "getstatusoutput"}
 )
 
+#: ``os`` functions that execute a command or launch a file. ``system`` and
+#: ``popen`` take a command line and are checked against the same allowlist as
+#: subprocess; ``startfile`` launches an arbitrary file with its default app
+#: (no command head to vet) and is flagged on any use.
+_OS_EXEC_NAMES: frozenset[str] = frozenset({"system", "popen", "startfile"})
+_OS_EXEC_ALWAYS_FLAG: frozenset[str] = frozenset({"startfile"})
+
 #: Directory names skipped during a tree walk.
 _SKIP_DIR_NAMES: frozenset[str] = frozenset(
     {"__pycache__", ".venv", "venv", ".git", "node_modules", "build", "dist", ".mypy_cache"}
@@ -115,7 +127,13 @@ _SKIP_DIR_NAMES: frozenset[str] = frozenset(
 # Data model
 # ---------------------------------------------------------------------------
 
-ViolationKind = Literal["network_import", "database_import", "subprocess_command"]
+ViolationKind = Literal[
+    "network_import",
+    "database_import",
+    "native_import",
+    "subprocess_command",
+    "os_exec",
+]
 
 
 @dataclass(frozen=True)
@@ -155,12 +173,51 @@ def _module_matches(module_name: str, forbidden: Iterable[str]) -> str | None:
     return None
 
 
-def _is_subprocess_call(node: ast.Call) -> bool:
-    """True iff ``node`` is a call to ``subprocess.<allowed-name>``."""
+@dataclass
+class _ExecBindings:
+    """Local names bound to the ``subprocess`` / ``os`` modules and their
+    exec-related functions within a single source file.
+
+    Collected in a first pass so the call check works regardless of import
+    form: ``import subprocess as sp`` (module alias) or ``from subprocess
+    import run`` (bare-name import) both resolve back to the real function.
+    """
+
+    subprocess_modules: set[str]      # names bound to the subprocess module
+    subprocess_funcs: dict[str, str]  # local name -> original subprocess func
+    os_modules: set[str]              # names bound to the os module
+    os_funcs: dict[str, str]          # local name -> original os func
+
+
+def _classify_exec_call(
+    node: ast.Call, bindings: _ExecBindings
+) -> tuple[str, str | None] | None:
+    """Classify a call node as command execution, honoring import aliases.
+
+    Returns ``("subprocess", None)`` for a subprocess call,
+    ``("os", <func>)`` for ``os.system``/``popen``/``startfile``, or ``None``
+    when the call is not a monitored exec primitive.
+    """
     func = node.func
+    # Attribute form: ``<name>.<attr>(...)`` — e.g. subprocess.run, sp.run,
+    # os.system.
     if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
-        return func.value.id == "subprocess" and func.attr in _SUBPROCESS_CALL_NAMES
-    return False
+        recv, attr = func.value.id, func.attr
+        if recv in bindings.subprocess_modules and attr in _SUBPROCESS_CALL_NAMES:
+            return ("subprocess", None)
+        if recv in bindings.os_modules and attr in _OS_EXEC_NAMES:
+            return ("os", attr)
+        return None
+    # Bare-name form: ``<name>(...)`` — e.g. run(...) after ``from subprocess
+    # import run``, or system(...) after ``from os import system``.
+    if isinstance(func, ast.Name):
+        origin = bindings.subprocess_funcs.get(func.id)
+        if origin is not None and origin in _SUBPROCESS_CALL_NAMES:
+            return ("subprocess", None)
+        origin = bindings.os_funcs.get(func.id)
+        if origin is not None and origin in _OS_EXEC_NAMES:
+            return ("os", origin)
+    return None
 
 
 def _resolve_command_head(arg: ast.AST) -> str | None:
@@ -181,6 +238,89 @@ def _resolve_command_head(arg: ast.AST) -> str | None:
         if first:
             return Path(first).name.lower().removesuffix(".exe")
     return None
+
+
+def _collect_bindings_and_imports(
+    tree: ast.AST, path: Path, violations: list[Violation]
+) -> _ExecBindings:
+    """Report forbidden imports and record subprocess/os exec bindings."""
+    subprocess_modules: set[str] = set()
+    subprocess_funcs: dict[str, str] = {}
+    os_modules: set[str] = set()
+    os_funcs: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                _check_import(path, node.lineno, alias.name, violations)
+                if alias.name == "subprocess":
+                    subprocess_modules.add(alias.asname or "subprocess")
+                elif alias.name == "os":
+                    os_modules.add(alias.asname or "os")
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            # ``from urllib.request import foo`` imports ``urllib.request``
+            # (level 0). Relative imports (level>0) are internal-only.
+            if node.level == 0 and module:
+                _check_import(path, node.lineno, module, violations)
+                if module == "subprocess":
+                    for alias in node.names:
+                        subprocess_funcs[alias.asname or alias.name] = alias.name
+                elif module == "os":
+                    for alias in node.names:
+                        os_funcs[alias.asname or alias.name] = alias.name
+    return _ExecBindings(subprocess_modules, subprocess_funcs, os_modules, os_funcs)
+
+
+def _check_exec_calls(
+    tree: ast.AST, path: Path, bindings: _ExecBindings, violations: list[Violation]
+) -> None:
+    """Flag command-execution calls whose command is not in the allowlist."""
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        classified = _classify_exec_call(node, bindings)
+        if classified is None:
+            continue
+        category, os_func = classified
+        # os.startfile launches an arbitrary file — there is no command head
+        # to vet, so any use is a violation.
+        if os_func in _OS_EXEC_ALWAYS_FLAG:
+            violations.append(
+                Violation(
+                    file=path,
+                    line=node.lineno,
+                    kind="os_exec",
+                    detail=(
+                        f"os.{os_func}(...) launches an arbitrary file and is "
+                        f"not part of the vetted subprocess flow"
+                    ),
+                )
+            )
+            continue
+        if not node.args:
+            continue
+        head = _resolve_command_head(node.args[0])
+        if head is None:
+            continue  # Dynamic call — out of static-audit scope.
+        if head in SUBPROCESS_ALLOWLIST:
+            continue
+        if category == "subprocess":
+            kind: ViolationKind = "subprocess_command"
+            via = "subprocess"
+        else:
+            kind = "os_exec"
+            via = f"os.{os_func}"
+        violations.append(
+            Violation(
+                file=path,
+                line=node.lineno,
+                kind=kind,
+                detail=(
+                    f"{via} command '{head}' is not in the allowlist "
+                    f"{sorted(SUBPROCESS_ALLOWLIST)}"
+                ),
+            )
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -215,35 +355,10 @@ def audit_file(path: Path) -> list[Violation]:
         ]
 
     violations: list[Violation] = []
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                _check_import(path, node.lineno, alias.name, violations)
-        elif isinstance(node, ast.ImportFrom):
-            module = node.module or ""
-            # Treat ``from urllib.request import foo`` as importing
-            # ``urllib.request`` (level=0). Relative imports (level>0) are
-            # internal-only and need no policy check.
-            if node.level == 0 and module:
-                _check_import(path, node.lineno, module, violations)
-        elif isinstance(node, ast.Call) and _is_subprocess_call(node):
-            if not node.args:
-                continue
-            head = _resolve_command_head(node.args[0])
-            if head is None:
-                continue  # Dynamic call — out of static-audit scope.
-            if head not in SUBPROCESS_ALLOWLIST:
-                violations.append(
-                    Violation(
-                        file=path,
-                        line=node.lineno,
-                        kind="subprocess_command",
-                        detail=(
-                            f"subprocess command '{head}' is not in the allowlist "
-                            f"{sorted(SUBPROCESS_ALLOWLIST)}"
-                        ),
-                    )
-                )
+    # First pass: report forbidden imports and record how subprocess/os are
+    # bound in this file. Second pass: check exec calls against those bindings.
+    bindings = _collect_bindings_and_imports(tree, path, violations)
+    _check_exec_calls(tree, path, bindings, violations)
     return violations
 
 
@@ -269,6 +384,17 @@ def _check_import(
                 line=line,
                 kind="database_import",
                 detail=f"import of '{module_name}' matches forbidden database module '{database}'",
+            )
+        )
+        return
+    native = _module_matches(module_name, FORBIDDEN_NATIVE_MODULES)
+    if native is not None:
+        violations.append(
+            Violation(
+                file=path,
+                line=line,
+                kind="native_import",
+                detail=f"import of '{module_name}' matches forbidden native module '{native}'",
             )
         )
 

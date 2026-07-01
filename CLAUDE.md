@@ -73,7 +73,7 @@ npm run tauri:build:portable  # Release build → src-tauri/target/.../release/
 npm run cargo:test       # Rust bridge unit tests via the repo runner
 
 # Python sidecar (use project venv)
-.venv\Scripts\python.exe -m pytest backend/tests -v    # 236 backend tests (44 sidecar + 17 audit + 12 cancel bridge + 4 output-directory helper + 58 FMEA phase D + 24 failure-rate logic + 6 RefDes extraction-engine + 30 BOM-compare logic + 9 BOM-compare runtime + 2 failure-rate runtime + 6 read-layer + 19 RefDes BOM-coverage + 5 BOM-loader metadata)
+.venv\Scripts\python.exe -m pytest backend/tests -v    # 246 backend tests (44 sidecar + 27 audit + 12 cancel bridge + 4 output-directory helper + 58 FMEA phase D + 24 failure-rate logic + 6 RefDes extraction-engine + 30 BOM-compare logic + 9 BOM-compare runtime + 2 failure-rate runtime + 6 read-layer + 19 RefDes BOM-coverage + 5 BOM-loader metadata)
 .venv\Scripts\python.exe backend/python/sidecar_main.py --self-test
 
 # Full release
@@ -129,23 +129,36 @@ Each tool component uses:
 
 ## Security
 
-The sidecar is offline / air-gapped and the policy is enforced statically by
-`backend/python/common/security_audit.py`, which AST-walks every `.py` file
-under `backend/python/` and reports:
+The sidecar is offline / air-gapped. `backend/python/common/security_audit.py`
+AST-walks every `.py` file under `backend/python/` as a **static regression net
+against accidental introductions** (not an adversarial sandbox — see the scope
+note below) and reports:
 
 1. Imports of network modules (`socket`, `urllib.request`, `http.client`,
    `requests`, `httpx`, ...). Pure-string helpers like `urllib.parse` are
    intentionally permitted.
 2. Imports of database modules (`sqlite3`, `psycopg`, `pymongo`,
    `sqlalchemy`, ...).
-3. `subprocess.*` calls whose statically-resolvable command head is not in
-   the allowlist below.
+3. Imports of native-code modules (`ctypes`) — arbitrary DLL calls that would
+   bypass every other rule here.
+4. Command execution whose statically-resolvable command head is not in the
+   allowlist below. This covers `subprocess.*` under any import form
+   (`import subprocess`, `import subprocess as sp`, `from subprocess import
+   run`) and `os.system` / `os.popen` (same allowlist); `os.startfile` is
+   flagged on any use.
 
 **Subprocess allowlist:** `attrib` (only). The list is intentionally
 minimal — the only command invoked today is `attrib` (in
 `common/utils.py`, for OneDrive cloud-file detection and hydration).
 Extending the allowlist requires adding the command here AND updating
 `SUBPROCESS_ALLOWLIST` in `common/security_audit.py`.
+
+**Scope:** the audit resolves command heads and import names *statically*. It
+deliberately does **not** chase dynamic escapes — `importlib.import_module("soc"
++ "ket")`, `eval`, or a module rebound to a local variable — which are out of
+scope by design (the sidecar is in-house and non-adversarial). It catches the
+accidental `import requests` / stray `subprocess.run(["curl", ...])`, not a
+determined bypass.
 
 The audit runs:
 
@@ -157,9 +170,9 @@ The audit runs:
 
 ## Testing
 
-### Backend Tests (236 total)
+### Backend Tests (246 total)
 - 44 sidecar integration tests in `test_sidecar_main.py` (incl. the RefDes BOM-coverage sheet emission)
-- 17 security-audit tests in `test_security_audit.py` (synthetic positives + live tree scan)
+- 27 security-audit tests in `test_security_audit.py` (synthetic positives + live tree scan; incl. subprocess via alias/from-import, os.system/popen/startfile, and ctypes native-import detection)
 - 12 cancel-bridge tests in `test_cancel_bridge.py` (BOM Compare + RefDes bridges plus Failure Rate `FMEALinkerLogic.cancel` binding through `ActiveRun`)
 - 4 output-directory helper tests in `test_output_directory_helpers.py`
 - 58 FMEA Phase D tests in `test_fmea_phase_d.py` (incl. the hdaSource contract, fill_gaps no-count-source flagging, and Tier-1 Part Usage compute-or-blank+flag: instance-count 1/N derivation counting distinct physical instances not occurrences, blank+PU_GUESSED flag, explicit-value preservation)
