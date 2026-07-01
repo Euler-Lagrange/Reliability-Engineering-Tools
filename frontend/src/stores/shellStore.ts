@@ -44,6 +44,34 @@ interface ShellState {
   toggleContext: () => void;
 }
 
+export const SHELL_PERSIST_VERSION = 1;
+
+type PersistedShell = Pick<
+  ShellState,
+  | "fmeaOutputDirectory"
+  | "bomCompareOutputDirectory"
+  | "failureRateOutputDirectory"
+  | "refdesExtractorOutputDirectory"
+  | "contextOpen"
+>;
+
+/**
+ * Decision E: sanitize the persisted subset so a stale/invalid value or a shape
+ * change rehydrates cleanly rather than verbatim.
+ */
+export function migrateShellState(persisted: unknown): PersistedShell {
+  const state = (persisted ?? {}) as Record<string, unknown>;
+  const pathOrNull = (value: unknown) =>
+    typeof value === "string" && value.length > 0 ? value : null;
+  return {
+    fmeaOutputDirectory: pathOrNull(state.fmeaOutputDirectory),
+    bomCompareOutputDirectory: pathOrNull(state.bomCompareOutputDirectory),
+    failureRateOutputDirectory: pathOrNull(state.failureRateOutputDirectory),
+    refdesExtractorOutputDirectory: pathOrNull(state.refdesExtractorOutputDirectory),
+    contextOpen: state.contextOpen === true,
+  };
+}
+
 export const useShellStore = create<ShellState>()(
   persist(
     (set) => ({
@@ -71,6 +99,7 @@ export const useShellStore = create<ShellState>()(
       // persisted. Transient backend status/message must NOT be persisted —
       // they would stick as "connecting" or stale messages on the next boot.
       name: "reliability-tools-tauri-shell",
+      version: SHELL_PERSIST_VERSION,
       partialize: (state) => ({
         fmeaOutputDirectory: state.fmeaOutputDirectory,
         bomCompareOutputDirectory: state.bomCompareOutputDirectory,
@@ -78,6 +107,7 @@ export const useShellStore = create<ShellState>()(
         refdesExtractorOutputDirectory: state.refdesExtractorOutputDirectory,
         contextOpen: state.contextOpen,
       }),
+      migrate: (persisted) => migrateShellState(persisted) as unknown as ShellState,
     },
   ),
 );

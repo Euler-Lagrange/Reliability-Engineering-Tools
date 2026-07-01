@@ -44,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Persisted prefs are versioned + migrated (Decision E)** — the theme and
+  shell Zustand stores now carry a persist `version` and a `migrate` hook, so a
+  stale or invalid persisted value (a removed theme id, a wrong-typed output
+  directory) is sanitized on rehydrate instead of restored verbatim. +7 tests.
 - **analyze_template guarded against OOM (Decision C)** — the template-analysis
   command opens the whole workbook (`read_only=False`) for merged-cell and
   freeze-pane inspection, so a pathologically large template could exhaust

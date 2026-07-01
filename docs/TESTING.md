@@ -45,6 +45,7 @@
 | Frontend copy to clipboard | `frontend/src/shared/hooks/useCopyToClipboard.test.ts` | 3 | Vitest |
 | Frontend global log store | `frontend/src/stores/globalLogStore.test.ts` | 6 | Vitest |
 | Frontend notification store | `frontend/src/stores/notificationStore.test.ts` | 3 | Vitest |
+| Frontend store migrations | `frontend/src/stores/storeMigrations.test.ts` | 7 | Vitest |
 | Frontend keep-alive shell | `frontend/src/app/App.keepalive.test.tsx` | 2 | Vitest + RTL |
 | Frontend FMEA tool | `frontend/src/features/fmea/FmeaTool.test.tsx` | 11 | Vitest + RTL |
 | Frontend FMEA inspection | `frontend/src/features/fmea/FmeaTool.inspection.test.tsx` | 5 | Vitest + RTL |
@@ -58,9 +59,9 @@
 | Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 7 | Vitest + RTL |
 | Frontend shell-hook install | `frontend/src/app/App.shellHooks.test.tsx` | 1 | Vitest + RTL |
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
-| **Frontend subtotal** | | **249** | |
+| **Frontend subtotal** | | **256** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 16 | cargo test |
-| **Total** | | **526** | |
+| **Total** | | **533** | |
 
 ## Backend Tests
 
