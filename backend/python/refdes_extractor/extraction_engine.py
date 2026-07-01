@@ -400,6 +400,22 @@ def _format_results(grouped_data: dict) -> List[dict]:
     return sorted(rows, key=sort_key)
 
 
+def _report_pinlist_failure(page_idx, exc, log) -> None:
+    """Report a pinlist pin-qualification failure to BOTH logs (Tier-2 #20).
+
+    The page's qualified-pin set is emptied on failure, so logging only to the
+    rotating file log left the output looking complete while it silently had no
+    qualified pins for that page. Surface it on the streamed run log too so the
+    user knows to check the pinlist / that page.
+    """
+    _logger.error(f"Pinlist clustering failed on page {page_idx}: {exc}")
+    if log:
+        log(
+            f"WARNING: Pinlist pin-qualification failed on page {page_idx} "
+            f"({exc}); this page has NO qualified pins — verify the pinlist and this page."
+        )
+
+
 def _format_functional_results(grouped_data: dict, log_func: Callable = None) -> List[dict]:
     """
     Format results for Functional FMEA mode.
@@ -1218,7 +1234,10 @@ def harvest_hybrid(
                         except CancellationError:
                             raise  # Re-raise cancellation to propagate up
                         except Exception as e:
-                            _logger.error(f"Pinlist clustering failed on page {page_idx}: {e}")
+                            # Tier-2 #20: surface on the streamed run log too, not
+                            # just the rotating file log — emptying this page's
+                            # qualified set silently made the output look complete.
+                            _report_pinlist_failure(page_idx, e, log)
                             pinlist_qualified_pins = {}
 
                 # Parent RefDes lookup for Piece-Part groups (used when geometry mapping is unavailable).

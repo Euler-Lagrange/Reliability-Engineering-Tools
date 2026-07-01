@@ -27,6 +27,19 @@ from refdes_extractor.extraction_engine import (  # noqa: E402
 from refdes_extractor.geometry_analyzer import PinMapping  # noqa: E402
 
 
+def test_report_pinlist_failure_streams_to_run_log() -> None:
+    # Tier-2 #20: a pinlist qualification failure empties the page's qualified
+    # set. It must reach the STREAMED run log (not just the rotating file log),
+    # with the page number and cause, so a silently-emptied page is visible.
+    from refdes_extractor.extraction_engine import _report_pinlist_failure
+
+    lines: list[str] = []
+    _report_pinlist_failure(3, ValueError("bad cluster"), lines.append)
+
+    assert any("WARNING" in line and "page 3" in line for line in lines)
+    assert any("bad cluster" in line for line in lines)
+
+
 def _mapping(refdes: str, pin_label: str = "P1") -> PinMapping:
     """Build a minimal PinMapping; only ``refdes`` drives body_rects lookup."""
     return PinMapping(

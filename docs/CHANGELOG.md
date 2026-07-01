@@ -44,6 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Pinlist failures surfaced (Tier-2 #20)** — when per-page pinlist
+  pin-qualification fails, the page's qualified-pin set is emptied; that
+  failure was logged only to the rotating file log, so the output looked
+  complete while silently having no qualified pins for the page. It is now also
+  emitted on the streamed run log with the page number and cause. +1 test.
 - **Output folder honored in preserve mode + validated up front (Tier-2 #18,
   #19)** — FMEA preserve-formatting mode now writes the merged workbook to the
   chosen output folder instead of silently landing it next to the template

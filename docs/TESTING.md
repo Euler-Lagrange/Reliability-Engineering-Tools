@@ -10,14 +10,14 @@
 | Backend output-directory helpers | `backend/tests/test_output_directory_helpers.py` | 10 | pytest |
 | Backend FMEA Phase D | `backend/tests/test_fmea_phase_d.py` | 58 | pytest |
 | Backend Failure-Rate logic | `backend/tests/test_failure_rate_logic.py` | 24 | pytest |
-| Backend RefDes extraction-engine | `backend/tests/test_extraction_engine.py` | 6 | pytest |
+| Backend RefDes extraction-engine | `backend/tests/test_extraction_engine.py` | 7 | pytest |
 | Backend BOM-compare logic | `backend/tests/test_bom_compare_logic.py` | 30 | pytest |
 | Backend BOM-compare runtime | `backend/tests/test_bom_compare_runtime.py` | 9 | pytest |
 | Backend Failure-Rate runtime | `backend/tests/test_failure_rate_runtime.py` | 2 | pytest |
 | Backend read-layer (NA + header dedup) | `backend/tests/test_read_layer.py` | 6 | pytest |
 | Backend RefDes BOM-coverage | `backend/tests/test_coverage_report.py` | 19 | pytest |
 | Backend BOM-loader metadata | `backend/tests/test_bom_loader.py` | 5 | pytest |
-| **Backend subtotal** | | **252** | |
+| **Backend subtotal** | | **253** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 4 | Vitest + RTL |
 | Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 1 | Vitest + RTL |
@@ -58,7 +58,7 @@
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | **Frontend subtotal** | | **249** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 16 | cargo test |
-| **Total** | | **517** | |
+| **Total** | | **518** | |
 
 ## Backend Tests
 
@@ -202,7 +202,7 @@ new FMEA tests must do the same or validation will reject the request.
 | FMEA Phase D (in-process, 58 tests) | BOM inheritance, variant handling, failure modes standard filtering, fill-gaps validation, usage fraction calculations, legacy enrichment rejection, functional-to-piecepart preservation, CCA prefix handling, output directory configuration (including unwritable-directory fallback), Part Usage (PU) column logic incl. Tier-1 compute-or-blank+flag (instance-count 1/N derivation, blank+PU_GUESSED flag, explicit-value preservation), column override modes, union merge strategies, FMC mapping, bijective FMEA-ID suffix |
 | Inspection caps (subprocess, 4 tests) | `inspect_input` row cap at 20 000 rows, column cap at 100 columns, sparse-sheet row cap by physical rows scanned, header-search cap failure within 1 000 rows |
 | Failure-Rate logic (in-process, 24 tests) | Failure Rate (FR) linker math driven through `FMEALinkerLogic.process`: per-mode `Mode_FR = Part_FR * Usage * Corrected_Ratio` arithmetic, unit-mode scaling to per-hour space, RefDes lookup normalization, and Tier-1 genuine-gap Part Usage handling (blank usage with real FR → NaN Mode_FR, "=1/N" formula-cell-as-NaN, unmatched-RefDes zero preserved, circuit-block roll-up skips blank children) — asserts exact computed numbers |
-| RefDes extraction-engine (in-process, 6 tests) | NextGen `_disambiguate_pin_mapping` pin-label collision resolution across the three-tier priority (body center inside group rect → body overlaps rect → nearest body by distance) when multiple components share a pin label |
+| RefDes extraction-engine (in-process, 7 tests) | NextGen `_disambiguate_pin_mapping` pin-label collision resolution across the three-tier priority (body center inside group rect → body overlaps rect → nearest body by distance) when multiple components share a pin label; plus the Tier-2 #20 pinlist-failure surfacing to the streamed run log |
 | BOM-compare logic (in-process, 30 tests) | BOM Compare range/set math: opt-in RefDes range expansion (`R200-R205` → R200..R205) while the `analyze` orchestrator never expands by default (hyphens denote pins, e.g. `U200-1` reduces to base `U200`), zero-pad preservation, `analyze` set math (Missing in BOM / BOM Not in Groups, both directions), and the custom per-column value-diff contract (`compare_columns` flags a changed value, omitting it reports none, Numeric rule ignores text formatting) |
 | Read layer (in-process, 6 tests) | Excel/CSV `NA`/`N/A` literal-text read parity and duplicate-header dedup matching pandas' `.1`/`.2` scheme |
 | RefDes BOM-coverage (in-process, 19 tests) | Reverse-diff of extracted RefDes vs a loaded BOM: `BOM Not Grouped` (Not Extracted / Extracted-Ungrouped / Extracted-Provisional, with Part#/Description), `Extracted Not In BOM`, `Coverage Summary` counts, component-level normalization, unparented-pin rejection, and the sheet writer |
