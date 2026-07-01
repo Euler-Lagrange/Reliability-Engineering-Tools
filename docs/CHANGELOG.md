@@ -44,6 +44,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Crash dumps carry a review-before-sharing banner + truncate embedded values
+  (Decision B)** — a crash can echo a BOM / part value into an exception or
+  panic message, and the docs tell users to zip the crashes folder to share.
+  The Python and Rust crash dumps now open with a "may contain source data —
+  review before sharing" banner and bound any single embedded value (per-line +
+  total caps) so it can neither leak in full nor balloon the file. +4 tests.
 - **Persisted prefs are versioned + migrated (Decision E)** — the theme and
   shell Zustand stores now carry a persist `version` and a `migrate` hook, so a
   stale or invalid persisted value (a removed theme id, a wrong-typed output

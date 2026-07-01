@@ -53,7 +53,7 @@ npm run tauri:dev              # Desktop with hot reload
 npm run typecheck              # TypeScript type checking
 npm run typecheck:tests        # TypeScript type checking for Vitest files
 npm test                       # Frontend tests (256 tests across 39 test suites)
-.venv\Scripts\python.exe -m pytest backend\tests -v   # Backend tests (261 tests across sidecar, audit, cancel bridge, output-directory helpers, FMEA phase D, failure-rate logic, RefDes extraction-engine, BOM-compare logic, read-layer, RefDes BOM-coverage, BOM-loader metadata, OneDrive detection, file-size guard)
+.venv\Scripts\python.exe -m pytest backend\tests -v   # Backend tests (264 tests across sidecar, audit, cancel bridge, output-directory helpers, FMEA phase D, failure-rate logic, RefDes extraction-engine, BOM-compare logic, read-layer, RefDes BOM-coverage, BOM-loader metadata, OneDrive detection, file-size guard)
 ```
 
 ### Build
@@ -91,7 +91,7 @@ NDJSON over stdio between Rust and Python. Commands: `health_check`, `list_sheet
 - **Atomic stdin writes** — payload + newline + flush under a single mutex lock
 - **PyMuPDF** required for RefDes Extractor (PDF processing)
 - **CancellationError** propagates through `InterruptedError → OSError → Exception` chain
-- **Crash dumps** — unhandled Python exceptions (main + worker threads) and Rust panics write timestamped files to `~/.reliability_tools/logs/crashes/`
+- **Crash dumps** — unhandled Python exceptions (main + worker threads) and Rust panics write timestamped files to `~/.reliability_tools/logs/crashes/`; each dump carries a review-before-sharing banner and truncates embedded values (may contain source data)
 - **Content Security Policy** — production builds ship a conservative CSP (`default-src 'self' ipc:`, `script-src 'self'`, `object-src 'none'`, etc.); dev mode is unaffected
 
 ## Project Status

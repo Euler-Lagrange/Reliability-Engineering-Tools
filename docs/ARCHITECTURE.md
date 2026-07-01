@@ -424,7 +424,10 @@ in `shared/backend/runLifecycle.ts`.
 ## Crash Reporting
 
 Three independent crash-capture paths write into the same
-`<log_dir>/crashes/` directory so a user can zip one folder to share.
+`<log_dir>/crashes/` directory so a user can zip one folder to share. Each
+dump opens with a **review-before-sharing** banner and truncates any embedded
+value (Decision B), since a crash can echo a BOM / part value into an
+exception or panic message.
 
 | Layer | Hook | Output |
 |-------|------|--------|

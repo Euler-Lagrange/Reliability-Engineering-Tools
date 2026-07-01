@@ -1523,6 +1523,22 @@ fn resolve_log_directory() -> Option<PathBuf> {
     Some(PathBuf::from(home).join(".reliability_tools").join("logs"))
 }
 
+/// Decision B: crash dumps can embed source data (a value echoed in a panic
+/// message). Warn before sharing and bound any embedded value.
+const CRASH_DUMP_BANNER: &str = "*** WARNING: this crash dump may contain source data (e.g. BOM / part\n\
+     *** values echoed in a panic message). Review it before sharing.\n\
+     ------------------------------------------------------------\n";
+
+/// Bound a value in a crash dump so an embedded data value can't leak in full
+/// (Decision B). Truncates on a char boundary.
+fn truncate_crash_value(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+    let truncated: String = text.chars().take(max_chars).collect();
+    format!("{truncated}... [truncated]")
+}
+
 /// Install a panic hook that writes a crash dump alongside the Python
 /// sidecar's crash dumps so a user hitting a Rust-side panic can share a
 /// single folder with us. Best-effort — if the filesystem write fails we
@@ -1555,10 +1571,11 @@ fn install_rust_panic_hook() {
                 .unwrap_or_else(|| "<unknown>".to_string());
 
             let contents = format!(
-                "Crash dump: rust\nTimestamp:  {ts}ms since epoch\nLocation:   {loc}\nPayload:    {payload}\n",
+                "{banner}Crash dump: rust\nTimestamp:  {ts}ms since epoch\nLocation:   {loc}\nPayload:    {payload}\n",
+                banner = CRASH_DUMP_BANNER,
                 ts = timestamp,
                 loc = location,
-                payload = payload,
+                payload = truncate_crash_value(&payload, 500),
             );
 
             if let Ok(mut f) = std::fs::File::create(&dump_path) {
@@ -1649,7 +1666,7 @@ mod tests {
     use super::{
         await_ready, candidate_bases, classify_stdout_line, correlation_id,
         enrich_run_event_for_frontend, merge_disconnect_message, parse_timeout_secs,
-        should_forward_run_event, ReadyOutcome, StdoutLine,
+        should_forward_run_event, truncate_crash_value, ReadyOutcome, StdoutLine,
     };
     use serde_json::json;
     use std::path::PathBuf;
@@ -1779,6 +1796,16 @@ mod tests {
     #[test]
     fn parse_timeout_secs_parses_a_valid_override() {
         assert_eq!(parse_timeout_secs(Some("120"), 60), Duration::from_secs(120));
+    }
+
+    #[test]
+    fn truncate_crash_value_bounds_a_long_payload() {
+        // Decision B: an embedded value in a crash dump must not leak in full.
+        assert_eq!(truncate_crash_value("short", 100), "short");
+        let out = truncate_crash_value(&"z".repeat(1000), 100);
+        assert!(out.starts_with(&"z".repeat(100)));
+        assert!(out.contains("truncated"));
+        assert!(out.chars().count() < 1000);
     }
 
     #[test]

@@ -60,7 +60,9 @@ Only `_find_missing_in_bom` guards `c[len(base):].isdigit()`; the other three di
 > validated), #20 (pinlist failures surfaced), and #21 (run-event parse
 > guarded) — **Tier 2 is now fully complete.**
 > The
-> **A–E** possibly-intentional items are all being implemented (user chose to
+> **A–E** possibly-intentional items are now all implemented (A OneDrive env-var
+> detection, B crash-dump banner + truncation, C analyze_template size cap, D
+> exe-adjacent release resolution, E prefs version/migration) — user chose to
 > fix each). The RefDes BOM-coverage feature shipped in `4ce9bc3`. The findings
 > below are preserved as the original 2026-06-24 review.
 

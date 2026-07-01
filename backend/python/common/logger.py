@@ -158,6 +158,27 @@ def log_error(tool_name: str, error: Exception, context: Optional[str] = None) -
 # =============================================================================
 # Crash dumps
 # =============================================================================
+# Decision B: crash dumps can embed source data (e.g. a BOM / part value echoed
+# in an exception message or traceback). Warn the user before they share the
+# folder, and bound any single embedded value so it can neither leak in full nor
+# balloon the file.
+CRASH_DUMP_BANNER = (
+    "*** WARNING: this crash dump may contain source data (e.g. BOM / part\n"
+    "*** values echoed in an error message or traceback). Review it before\n"
+    "*** sharing.\n"
+)
+_CRASH_VALUE_MAX = 500          # per-value / per-line cap
+_CRASH_TRACEBACK_MAX = 20_000   # total traceback cap
+
+
+def _truncate_for_crash(text: str, max_len: int) -> str:
+    """Bound a string for a crash dump so an embedded DataFrame / cell value
+    can't balloon the file or leak in full (Decision B)."""
+    if len(text) <= max_len:
+        return text
+    return text[:max_len] + f"... [truncated {len(text) - max_len} chars]"
+
+
 def write_crash_dump(
     source: str,
     exc_type: type,
@@ -195,6 +216,8 @@ def write_crash_dump(
         dump_path = crash_dir / f"crash_{source}_{timestamp}.log"
 
         with dump_path.open("w", encoding="utf-8") as fh:
+            fh.write(CRASH_DUMP_BANNER)
+            fh.write("-" * 60 + "\n")
             fh.write(f"Crash dump: {source}\n")
             fh.write(f"Timestamp:  {datetime.now().isoformat()}\n")
             fh.write(f"Python:     {sys.version.splitlines()[0]}\n")
@@ -202,9 +225,21 @@ def write_crash_dump(
             fh.write(f"Frozen:     {getattr(sys, 'frozen', False)}\n")
             if thread_name:
                 fh.write(f"Thread:     {thread_name}\n")
-            fh.write(f"Exception:  {exc_type.__name__}: {exc_value}\n")
+            fh.write(
+                f"Exception:  {exc_type.__name__}: "
+                f"{_truncate_for_crash(str(exc_value), _CRASH_VALUE_MAX)}\n"
+            )
             fh.write("-" * 60 + "\n")
-            _traceback.print_exception(exc_type, exc_value, exc_traceback, file=fh)
+            # Truncate each traceback line (bounds a message that echoes a value)
+            # then cap the total length.
+            tb_text = "".join(
+                _traceback.format_exception(exc_type, exc_value, exc_traceback)
+            )
+            tb_bounded = "".join(
+                _truncate_for_crash(line, _CRASH_VALUE_MAX)
+                for line in tb_text.splitlines(keepends=True)
+            )
+            fh.write(_truncate_for_crash(tb_bounded, _CRASH_TRACEBACK_MAX))
 
         return dump_path
     except Exception:  # noqa: BLE001 — last-resort writer must not raise
