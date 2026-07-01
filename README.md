@@ -37,7 +37,7 @@ The frontend communicates with the Rust bridge via Tauri IPC. The Rust bridge ma
 ```powershell
 npm install
 python -m venv .venv
-.venv\Scripts\pip install pandas openpyxl pymupdf pytest
+.venv\Scripts\pip install -r requirements-dev.txt
 ```
 
 ### Development

@@ -1,0 +1,12 @@
+# Development + build tooling. Pulls in the runtime deps too, so this is the
+# single command for a full local setup:
+#
+#   .venv\Scripts\pip install -r requirements-dev.txt
+#
+# pytest      — backend test suite (backend/tests)
+# pyinstaller — packages the sidecar for the portable release build
+
+-r requirements.txt
+
+pytest==9.0.2
+pyinstaller==6.19.0

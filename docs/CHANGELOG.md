@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Pinned Python dependencies** — new `requirements.txt` (runtime: pandas,
+  openpyxl, PyMuPDF) and `requirements-dev.txt` (adds pytest, pyinstaller),
+  pinned to the tested-green set so both dev machines and the build host
+  resolve identical versions (closes the cross-machine version drift). README
+  and DEVELOPMENT setup now install from them, and the `pip install` line that
+  silently omitted pyinstaller is fixed. (Tier-3 #22, #27.)
 - **BOM Compare — Custom column-value diff** — Custom Compare now diffs column
   *values* (not just RefDes presence/absence) for RefDes present in both files,
   via a column-pair picker that auto-pairs matching headers (RefDes key

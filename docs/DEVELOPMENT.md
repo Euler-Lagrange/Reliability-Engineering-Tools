@@ -4,7 +4,7 @@
 
 - **Node.js** 18 or newer (for Vite, Vitest, and the Tauri CLI)
 - **Rust** stable, installed via `rustup` (any version that supports Tauri 2)
-- **Python** 3.10 or newer (development is on 3.12)
+- **Python** 3.10 or newer (tested on 3.12-3.14; pinned in `requirements.txt`)
 - **Windows 10 or 11** with the Microsoft Visual C++ Build Tools (MSVC) —
   required for the `x86_64-pc-windows-msvc` Rust target
 
@@ -24,8 +24,8 @@ npm install
 python -m venv .venv
 .venv/Scripts/python.exe -m pip install --upgrade pip
 
-# 4. Backend dependencies
-.venv/Scripts/python.exe -m pip install pandas openpyxl pymupdf pytest pyinstaller
+# 4. Backend dependencies (runtime + test/build tooling, pinned)
+.venv/Scripts/python.exe -m pip install -r requirements-dev.txt
 ```
 
 `pymupdf` is the package name; the import is `import fitz`.
