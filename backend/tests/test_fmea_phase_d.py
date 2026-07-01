@@ -3400,3 +3400,289 @@ def test_hda_source_absent_legacy_no_hda_path_uses_inline(tmp_path: Path) -> Non
     joined = " ".join(logs)
     assert "Detecting inline HDA columns" in joined, logs
     assert "Loading dedicated HDA file" not in joined, logs
+
+
+# ----- Tier-1 #1: Part Usage compute-or-blank+flag ----------------------------
+#
+# Decision: Part Usage = 1 / (number of INSTANCES of the part), where instances
+# are distinct RefDes sharing a usage-base. When the BOM carries NO explicit,
+# parseable Part Usage value for a row, the generator MUST compute 1/N from the
+# instance count in the source-of-truth (grouping/BOM/functional) rather than
+# silently defaulting to 1 (which overstates multi-instance parts). When the
+# count is unknown (count==0), the cell is left BLANK and flagged.
+
+
+def _process_piecepart(proc: FMEAProcessor, paths: dict, tmp_path: Path, **overrides):
+    """Run a standard piece_part_generate process() with sensible defaults."""
+    request = {
+        "group": str(paths["grouping"]) if "grouping" in paths else None,
+        "bom": str(paths["bom"]),
+        "fm": str(paths["fm"]),
+        "hda": None,
+        "func": None,
+        "piecepart_fmea": None,
+        "out_folder": str(tmp_path),
+        "out_name": "out",
+        "bom_only_mode": False,
+        "use_func": False,
+        "use_piecepart_merge": False,
+        "verbose": False,
+        "column_overrides": {},
+        "failure_modes_standard": "FMD-2016",
+        "group_sheet": "Sheet1",
+        "bom_sheet": "Sheet1",
+        "hda_sheet": None,
+        "fm_sheet": "Sheet1",
+        "func_sheet": None,
+        "piecepart_fmea_sheet": None,
+    }
+    request.update(overrides)
+    return proc.process(request)
+
+
+def _usage_cells_for(df: pd.DataFrame, refdes: str) -> list:
+    """Return the Part Usage cell value(s) for every PIECE-PART row whose cause
+    is refdes (excludes circuit-block / group-header rows)."""
+    pp_types = ("piece_part", "validation_warning", "piece_part_no_match")
+    rows = df[
+        (df["Failure Mode Causes"] == refdes)
+        & (df["_row_type"].isin(pp_types))
+    ]
+    return list(rows["Part Usage"])
+
+
+def test_multi_instance_base_no_explicit_usage_computes_one_over_n(tmp_path: Path) -> None:
+    """U200-1 and U200-2 are distinct BOM instances of base U200 with NO
+    explicit Part Usage. Every generated row for both instances must get
+    Part Usage 1/2 (the Excel ratio formula "=1/2"), NOT the silent default 1.
+    """
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            # NOTE: no "Part Usage" column at all -> absent/blank path.
+            {
+                "Reference Designator": "U200-1",
+                "Part Number": "IC-1234",
+                "Description": "Microcontroller",
+                "BAE HDA Commodity I": "Microcircuit",
+                "BAE HDA Commodity II": "Digital",
+            },
+            {
+                "Reference Designator": "U200-2",
+                "Part Number": "IC-1234",
+                "Description": "Microcontroller",
+                "BAE HDA Commodity I": "Microcircuit",
+                "BAE HDA Commodity II": "Digital",
+            },
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "CPU-001",
+                "Reference Designator": "U200-1, U200-2",
+                "Function Description": "Processor instances",
+                "Schematic Page": "12",
+            }
+        ],
+    )
+    proc = FMEAProcessor()
+    df = _process_piecepart(proc, paths, tmp_path)
+
+    u1_cells = _usage_cells_for(df, "U200-1")
+    u2_cells = _usage_cells_for(df, "U200-2")
+    assert u1_cells, df["Failure Mode Causes"].tolist()
+    assert u2_cells
+    # Both instances -> 1/2, rendered as the Excel ratio formula "=1/2".
+    assert set(u1_cells) == {"=1/2"}, u1_cells
+    assert set(u2_cells) == {"=1/2"}, u2_cells
+    # This is a real instance count, NOT a guess -> no PU_GUESSED flag.
+    guessed = [
+        w for w in proc.usage_warnings
+        if w.get("ReasonCode") == "PU_GUESSED_NO_COUNT_SOURCE"
+    ]
+    assert guessed == [], guessed
+
+
+def test_part_usage_counts_distinct_instances_not_occurrences(tmp_path: Path) -> None:
+    """A RefDes appearing in MULTIPLE source rows must count as ONE instance,
+    not once per occurrence. U200-1 (listed in two groups) + U200-2 = 2 DISTINCT
+    instances of base U200 -> Part Usage 1/2, NOT 1/3 (the occurrence count 3).
+    """
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {"Reference Designator": "U200-1", "Part Number": "IC-1234", "Description": "MCU",
+             "BAE HDA Commodity I": "Microcircuit", "BAE HDA Commodity II": "Digital"},
+            {"Reference Designator": "U200-2", "Part Number": "IC-1234", "Description": "MCU",
+             "BAE HDA Commodity I": "Microcircuit", "BAE HDA Commodity II": "Digital"},
+        ],
+        grouping_rows=[
+            {"Component Group": "CPU-001", "Reference Designator": "U200-1, U200-2",
+             "Function Description": "Processor", "Schematic Page": "12"},
+            # U200-1 ALSO appears in a second group -> 3 OCCURRENCES of base U200,
+            # but still only 2 DISTINCT instances.
+            {"Component Group": "CPU-002", "Reference Designator": "U200-1",
+             "Function Description": "Processor support", "Schematic Page": "13"},
+        ],
+    )
+    proc = FMEAProcessor()
+    df = _process_piecepart(proc, paths, tmp_path)
+
+    u1_cells = _usage_cells_for(df, "U200-1")
+    u2_cells = _usage_cells_for(df, "U200-2")
+    assert u1_cells and u2_cells
+    assert set(u1_cells) == {"=1/2"}, u1_cells   # distinct instances = 2, NOT "=1/3"
+    assert set(u2_cells) == {"=1/2"}, u2_cells
+
+
+def test_single_instance_base_no_explicit_usage_computes_one(tmp_path: Path) -> None:
+    """A lone instance of a base (count==1) with no explicit Part Usage gets 1."""
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "R10",
+                "Part Number": "RES-1",
+                "Description": "Resistor",
+                "BAE HDA Commodity I": "Microcircuit",
+                "BAE HDA Commodity II": "Digital",
+            }
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "G-001",
+                "Reference Designator": "R10",
+                "Function Description": "Single resistor",
+                "Schematic Page": "1",
+            }
+        ],
+    )
+    proc = FMEAProcessor()
+    df = _process_piecepart(proc, paths, tmp_path)
+
+    cells = _usage_cells_for(df, "R10")
+    assert cells, df["Failure Mode Causes"].tolist()
+    assert set(cells) == {1}, cells
+
+
+def test_uncountable_base_no_explicit_usage_blanks_and_flags(tmp_path: Path) -> None:
+    """fill_gaps-style: a RefDes whose base is NOT in the source-of-truth count
+    (count==0) and that has no explicit Part Usage must leave Part Usage BLANK
+    and emit a PU_GUESSED_NO_COUNT_SOURCE flag, rather than asserting usage 1.
+
+    Trigger (matches "fill_gaps without a grouping file"): the variant U900-7 is
+    absent from the BOM but its base U900 is present, so it hits the inheritance
+    path. With NO grouping/count source, variant_counts_by_base has no entry for
+    U900, so the usage-read site sees count==0 and must blank+flag instead of
+    asserting 1. We drive _generate_component_rows directly with that exact
+    state (empty variant_counts_by_base) to prove the branch deterministically.
+    """
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "U900",
+                "Part Number": "IC-9",
+                "Description": "FPGA",
+                "BAE HDA Commodity I": "Microcircuit",
+                "BAE HDA Commodity II": "Digital",
+                # No Part Usage column at all.
+            }
+        ],
+    )
+
+    proc = FMEAProcessor()
+    # Build the BOM/HDA/FM indexes the way process_gaps does, then run the
+    # union-merge component generator with NO grouping count source.
+    import pandas as _pd
+    from common.utils import normalize_df_columns as _norm  # noqa: F401
+
+    bom_raw = _pd.read_excel(paths["bom"])
+    fm_df = _pd.read_excel(paths["fm"])
+    # Map BOM/FM columns to canonical names exactly like process_gaps.
+    from fmea.fmea_generator_logic import HEADER_CONFIG, REQUIRED_COLS
+
+    # Resolve inline HDA from the BOM's commodity columns (no dedicated HDA file).
+    hda_df = proc._resolve_hda_dataframe(None, bom_raw, None, None)
+    b_map = proc.map_columns(
+        bom_raw, HEADER_CONFIG["BOM"], REQUIRED_COLS["BOM"], source_name="BOM file",
+    )
+    bom_df = bom_raw.rename(columns={v: k for k, v in b_map.items()})
+    f_map = proc.map_columns(
+        fm_df, HEADER_CONFIG["FAILURE_MODES"], REQUIRED_COLS["FAILURE_MODES"],
+        source_name="Failure Modes file",
+    )
+    fm_df = fm_df.rename(columns={v: k for k, v in f_map.items()})
+    proc.failure_modes_standard = "FMD-2016"
+    proc.column_overrides = {}
+    proc._build_indexes(bom_df, hda_df, fm_df)
+    # CRITICAL: no grouping file -> variant_counts_by_base has NO entry for U900.
+    proc.variant_counts_by_base.clear()
+
+    group_stub = {
+        "component_group": "GAP-001",
+        "description": "fill gap",
+        "schematic_page": "1",
+    }
+    rows = proc._generate_component_rows(
+        "U900-7", group_stub, fm_df, mode="standard", source_workflow="fill_gaps",
+    )
+    assert rows, "expected at least one generated row for U900-7"
+    usage_cells = [r.get("Part Usage") for r in rows]
+    # Uncountable -> blank cell on every generated row.
+    assert all((c == "" or c is None) for c in usage_cells), usage_cells
+    # And a PU_GUESSED flag was recorded.
+    guessed = [
+        w for w in proc.usage_warnings
+        if w.get("ReasonCode") == "PU_GUESSED_NO_COUNT_SOURCE"
+    ]
+    assert guessed, proc.usage_warnings
+
+
+def test_explicit_bom_usage_is_preserved_not_overridden_by_count(tmp_path: Path) -> None:
+    """When the BOM carries an EXPLICIT Part Usage value, the data-file value
+    WINS — the computed instance count must NOT override it. U200-1/U200-2 are
+    two instances (count 2 -> would compute 1/2) but the BOM says 1/4, so every
+    row must show the explicit 1/4 ("=1/4"), not 1/2.
+    """
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "U200-1",
+                "Part Number": "IC-1234",
+                "Description": "Microcontroller",
+                "BAE HDA Commodity I": "Microcircuit",
+                "BAE HDA Commodity II": "Digital",
+                "Part Usage": "1/4",
+            },
+            {
+                "Reference Designator": "U200-2",
+                "Part Number": "IC-1234",
+                "Description": "Microcontroller",
+                "BAE HDA Commodity I": "Microcircuit",
+                "BAE HDA Commodity II": "Digital",
+                "Part Usage": "1/4",
+            },
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "CPU-001",
+                "Reference Designator": "U200-1, U200-2",
+                "Function Description": "Processor instances",
+                "Schematic Page": "12",
+            }
+        ],
+    )
+    proc = FMEAProcessor()
+    df = _process_piecepart(proc, paths, tmp_path)
+
+    u1_cells = _usage_cells_for(df, "U200-1")
+    u2_cells = _usage_cells_for(df, "U200-2")
+    assert set(u1_cells) == {"=1/4"}, u1_cells
+    assert set(u2_cells) == {"=1/4"}, u2_cells
+    # No PU_GUESSED flag — the value was explicit.
+    guessed = [
+        w for w in proc.usage_warnings
+        if w.get("ReasonCode") == "PU_GUESSED_NO_COUNT_SOURCE"
+    ]
+    assert guessed == [], guessed

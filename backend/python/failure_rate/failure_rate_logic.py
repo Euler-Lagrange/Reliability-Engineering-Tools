@@ -310,13 +310,29 @@ class FMEALinkerLogic:
                 validation_refdes_list.append("")
 
             # Validate and convert usage value (C10 fix: check for inf/huge values)
+            # Tier-1 #1 (Side B): a GENUINELY MISSING Part Usage (NaN/blank,
+            # INCLUDING a "=1/N" formula cell that openpyxl/pandas read with no
+            # cached value -> pd.to_numeric -> NaN) must NOT be silently
+            # defaulted to 1.0 when the part has a real failure rate — that
+            # overstated Mode_FR. Instead the gap is propagated as a NaN Mode_FR
+            # (a blank cell in the output) and the row is flagged.
+            usage_is_gap = False
             usage_val = pd.to_numeric(row[usage_idx], errors='coerce')
             if pd.isna(usage_val):
                 usage = 1.0
-                notes.append("Invalid Usage (NaN, defaulted 1.0)")
+                # Only a real failure rate makes this a meaningful gap; for an
+                # unmatched RefDes (part_fr == 0) we keep Mode_FR 0 below so a
+                # "not in Prediction" zero is never turned into a blank. The note
+                # reflects the actual outcome — blanked, NOT defaulted to 1.0.
+                if part_fr > 0:
+                    usage_is_gap = True
+                    notes.append("Part Usage missing — Mode_FR left blank; verify")
+                else:
+                    notes.append("Invalid Usage (NaN, defaulted 1.0)")
             else:
                 usage = float(usage_val)
-                # C10: Validate finite and reasonable range
+                # C10: Validate finite and reasonable range. An out-of-range
+                # value HAS a (bad) value, not a gap, so keep defaulting to 1.0.
                 if not math.isfinite(usage) or usage <= 0 or usage > 1e6:
                     notes.append(f"Invalid Usage ({usage}, defaulted 1.0)")
                     usage = 1.0
@@ -335,8 +351,14 @@ class FMEALinkerLogic:
 
             corrected_ratio_list.append(ratio)
 
-            # Calculate mode failure rate
-            mode_fr = part_fr * usage * ratio
+            # Calculate mode failure rate. Tier-1 #1 (Side B): when usage is a
+            # genuine gap (NaN/blank) AND the part has a real rate, emit NaN
+            # (rendered as a blank cell by the writer) instead of part_fr * 1.0
+            # * ratio. Keep the column float dtype by using float('nan').
+            if usage_is_gap:
+                mode_fr = float('nan')
+            else:
+                mode_fr = part_fr * usage * ratio
             mode_fr_list.append(mode_fr)
 
             # Format validation notes with trailing semicolon/space for consistency
@@ -515,12 +537,26 @@ class FMEALinkerLogic:
         for bp in block_positions:
             kids = children[bp]
             if kids:
-                r = sum(mode_fr[j] for j in kids)
+                # Tier-1 #1 (Side B): a child whose Part Usage was a genuine gap
+                # carries a NaN Mode_FR. Summing it would POISON the whole block
+                # FR (NaN propagates). SKIP blank children from the sum and flag
+                # the block so the user knows the block FR may be understated.
+                present = [mode_fr[j] for j in kids if pd.notna(mode_fr[j])]
+                skipped = len(kids) - len(present)
+                # When EVERY child was a gap (present empty) the block FR is
+                # entirely unknown — leave it BLANK (NaN) rather than a definitive
+                # 0.0 that would read as "this block contributes nothing".
+                r = sum(present) if present else float('nan')
                 part_fr[bp] = r
                 mode_fr[bp] = r
                 notes[bp] = (notes[bp] or "") + (
                     f"Circuit-block roll-up of {len(kids)} piece-part row(s); "
                 )
+                if skipped:
+                    notes[bp] = (notes[bp] or "") + (
+                        f"{skipped} child usage(s) unknown — block FR may be "
+                        f"understated; "
+                    )
                 rolled.add(bp)
             else:
                 leaf_blocks += 1

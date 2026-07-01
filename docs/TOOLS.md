@@ -168,6 +168,14 @@ mapped column from the BOM, HDA, and failure-modes library carried through.
 The execution log records the row count, how many parts matched a failure
 mode, and how many parts had no match.
 
+The **Part Usage** column is resolved per part: an explicit, parseable value in
+the BOM is used as-is; otherwise it is computed as `1/N`, where N is the number
+of physical instances of the part (distinct RefDes sharing a usage-base — so a
+part with five failure modes across two instances is `1/2`, not `1/5`). When the
+instance count cannot be determined (no grouping/count source), the cell is left
+**blank and flagged for verification** rather than defaulting to `1`, so a
+multi-instance part is never silently reported as single-use.
+
 ### Review drawer (⌘R / Ctrl+R)
 
 After running Validate, open the Review drawer from the topbar (or press
@@ -339,6 +347,12 @@ Mode_FR column (the failure rate for that specific failure mode, computed as
 prediction failure rate times Failure Mode Ratio times Part Usage). If the
 Failure Mode Ratio validator is on, a warnings sheet lists any instances
 where the sums are out of tolerance.
+
+When a row's Part Usage is a genuine gap — blank, or an uncached `=1/N` formula
+cell that reads as no value — on a part that has a real failure rate, `Mode_FR`
+is left **blank** (not defaulted to `1.0`, which would overstate it) and the row
+is flagged in `Validation_Notes`. Circuit-block roll-ups skip such blank
+children and note that the block failure rate may be understated.
 
 ### Review drawer (⌘R / Ctrl+R)
 

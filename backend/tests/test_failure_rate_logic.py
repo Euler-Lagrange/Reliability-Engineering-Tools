@@ -481,3 +481,152 @@ def test_fmr_validation_groups_by_instance_not_base() -> None:
     assert all("FMR Sum" not in n for n in notes[result["Validation_RefDes"] == "U200-1"])
     # U200-2 ratios sum to 0.8 -> FMR warning on its rows.
     assert all("FMR Sum" in n for n in notes[result["Validation_RefDes"] == "U200-2"])
+
+
+# ----- Tier-1 #1 (Side B): genuine-gap Part Usage -> blank Mode_FR -------------
+#
+# Decision: a genuinely missing Part Usage (NaN/blank, INCLUDING a "=1/N"
+# formula cell with no cached value -> pd.to_numeric NaN) on a row that HAS a
+# real failure rate (part_fr > 0) must NOT be silently defaulted to usage 1.0.
+# Defaulting overstated the rate. Instead Mode_FR becomes NaN (blank cell) and
+# the row is flagged. A part_fr == 0 (unmatched RefDes) keeps Mode_FR 0 — a
+# meaningful "not in Prediction", not a gap. The circuit-block roll-up must SKIP
+# blank children rather than propagating NaN into the whole block.
+
+
+def test_blank_usage_with_real_fr_yields_nan_mode_fr_and_flag() -> None:
+    """A linked row (part_fr > 0) whose Part Usage is blank/NaN must produce a
+    NaN Mode_FR (blank cell) + an "Invalid Usage" flag — NOT part_fr * 1.0 * ratio.
+    """
+    pred = pd.DataFrame([{"Reference Designator": "R1", "Failure Rate": 0.001}])
+    fmea = pd.DataFrame(
+        [
+            # blank Part Usage, real FR -> genuine gap
+            {"Failure Mode Causes": "R1", "Failure Mode Ratio": 1.0, "Part Usage": ""},
+        ]
+    )
+    result = _make_logic(pred, fmea).process(COL_MAP)
+
+    # part_fr links fine.
+    assert result["Part_FR"].iloc[0] == pytest.approx(0.001)
+    # Mode_FR is NaN (blank), NOT 0.001 * 1.0 * 1.0.
+    assert pd.isna(result["Mode_FR"].iloc[0]), result["Mode_FR"].iloc[0]
+    # The gap is flagged — the note reflects the blanked outcome (not a default).
+    assert "left blank" in result["Validation_Notes"].iloc[0].lower()
+
+
+def test_formula_usage_cell_with_no_cached_value_is_treated_as_gap() -> None:
+    """A "=1/250" formula string that openpyxl/pandas reads with no cached
+    numeric value (pd.to_numeric -> NaN) must be treated as a genuine gap:
+    Mode_FR blank, NOT part_fr * 1.0 * ratio (which overstated the rate).
+    """
+    pred = pd.DataFrame([{"Reference Designator": "U7", "Failure Rate": 0.5}])
+    fmea = pd.DataFrame(
+        [
+            {"Failure Mode Causes": "U7", "Failure Mode Ratio": 1.0, "Part Usage": "=1/250"},
+        ]
+    )
+    result = _make_logic(pred, fmea).process(COL_MAP)
+
+    assert result["Part_FR"].iloc[0] == pytest.approx(0.5)
+    # Must be blank, not 0.5 (which is what the old usage=1.0 default produced).
+    assert pd.isna(result["Mode_FR"].iloc[0]), result["Mode_FR"].iloc[0]
+    assert "left blank" in result["Validation_Notes"].iloc[0].lower()
+
+
+def test_unmatched_refdes_keeps_zero_mode_fr_not_blank() -> None:
+    """A RefDes absent from the Prediction (part_fr == 0) must keep Mode_FR 0 —
+    a meaningful "not in Prediction", never turned into a blank — even when its
+    Part Usage is also blank.
+    """
+    pred = pd.DataFrame([{"Reference Designator": "R1", "Failure Rate": 0.001}])
+    fmea = pd.DataFrame(
+        [
+            # R99 is not in the prediction -> part_fr 0; usage also blank.
+            {"Failure Mode Causes": "R99", "Failure Mode Ratio": 1.0, "Part Usage": ""},
+        ]
+    )
+    result = _make_logic(pred, fmea).process(COL_MAP)
+
+    assert result["Part_FR"].iloc[0] == 0.0
+    # Mode_FR stays 0 (not NaN) — the part has no rate, this is not a usage gap.
+    assert result["Mode_FR"].iloc[0] == 0.0
+    assert not pd.isna(result["Mode_FR"].iloc[0])
+
+
+def test_block_rollup_skips_blank_child_and_flags_block() -> None:
+    """Circuit-block roll-up must SKIP a blank-usage child rather than
+    propagating its NaN Mode_FR into the whole block. The block FR must equal
+    the sum of the PRESENT children, and the block row must be flagged that a
+    child usage was unknown.
+
+    Block CPU-001 owns R201 (real FR, usage 1.0 -> 1e-6) and C5 (real FR, BLANK
+    usage -> NaN Mode_FR). The block FR must be 1e-6 (R201 only), not NaN.
+    """
+    pred = pd.DataFrame(
+        [
+            {"Reference Designator": "R201", "Failure Rate": 1e-6},
+            {"Reference Designator": "C5", "Failure Rate": 4e-7},
+        ]
+    )
+    fmea = pd.DataFrame(
+        [
+            {"FMEA-ID": "CPU-001", "FMEA Level": "Circuit Block",
+             "Failure Mode Causes": "R201, C5", "Failure Mode Ratio": "",
+             "Part Usage": "", "Function": "CPU power"},
+            {"FMEA-ID": "CPU-001-R201-A", "FMEA Level": "Piece-Part",
+             "Failure Mode Causes": "R201", "Failure Mode Ratio": 1.0,
+             "Part Usage": 1.0, "Function": "CPU power"},
+            # C5 child: real FR but BLANK usage -> NaN Mode_FR.
+            {"FMEA-ID": "CPU-001-C5-A", "FMEA Level": "Piece-Part",
+             "Failure Mode Causes": "C5", "Failure Mode Ratio": 1.0,
+             "Part Usage": "", "Function": "CPU power"},
+        ]
+    )
+    result = _make_logic(pred, fmea).process(dict(COL_MAP, fmea_func="Function"))
+
+    # The R201 child is a clean 1e-6.
+    assert result["Mode_FR"].iloc[1] == pytest.approx(1e-6)
+    # The C5 child is a genuine gap -> NaN.
+    assert pd.isna(result["Mode_FR"].iloc[2]), result["Mode_FR"].iloc[2]
+    # The block roll-up SKIPS the blank child: block FR == present child (1e-6),
+    # NOT NaN.
+    assert not pd.isna(result["Mode_FR"].iloc[0]), result["Mode_FR"].iloc[0]
+    assert result["Mode_FR"].iloc[0] == pytest.approx(1e-6)
+    # The block row is flagged that a child usage was unknown.
+    block_notes = str(result["Validation_Notes"].iloc[0]).lower()
+    assert "unknown" in block_notes, result["Validation_Notes"].iloc[0]
+
+
+def test_block_rollup_all_gap_children_blanks_block_fr() -> None:
+    """When EVERY child of a circuit block has a usage gap (all NaN Mode_FR),
+    the block FR is entirely unknown and must be left BLANK (NaN), not a
+    definitive 0.0 that reads as 'this block contributes nothing'.
+    """
+    pred = pd.DataFrame(
+        [
+            {"Reference Designator": "R201", "Failure Rate": 1e-6},
+            {"Reference Designator": "C5", "Failure Rate": 4e-7},
+        ]
+    )
+    fmea = pd.DataFrame(
+        [
+            {"FMEA-ID": "CPU-001", "FMEA Level": "Circuit Block",
+             "Failure Mode Causes": "R201, C5", "Failure Mode Ratio": "",
+             "Part Usage": "", "Function": "CPU power"},
+            # BOTH children: real FR but BLANK usage -> NaN Mode_FR.
+            {"FMEA-ID": "CPU-001-R201-A", "FMEA Level": "Piece-Part",
+             "Failure Mode Causes": "R201", "Failure Mode Ratio": 1.0,
+             "Part Usage": "", "Function": "CPU power"},
+            {"FMEA-ID": "CPU-001-C5-A", "FMEA Level": "Piece-Part",
+             "Failure Mode Causes": "C5", "Failure Mode Ratio": 1.0,
+             "Part Usage": "", "Function": "CPU power"},
+        ]
+    )
+    result = _make_logic(pred, fmea).process(dict(COL_MAP, fmea_func="Function"))
+
+    assert pd.isna(result["Mode_FR"].iloc[1])
+    assert pd.isna(result["Mode_FR"].iloc[2])
+    # Block FR is entirely unknown -> BLANK (NaN), not 0.0.
+    assert pd.isna(result["Mode_FR"].iloc[0]), result["Mode_FR"].iloc[0]
+    assert "unknown" in str(result["Validation_Notes"].iloc[0]).lower()

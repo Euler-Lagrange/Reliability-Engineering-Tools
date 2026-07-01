@@ -53,6 +53,29 @@ from common.validation_utils import USAGE_TOLERANCE, FMR_TOLERANCE
 # Initialize module logger
 _logger = get_tool_logger("fmea_generator")
 
+# Sentinel distinguishing "Part Usage key absent from the BOM row" from
+# "key present but blank". Used at the usage-read site in
+# _generate_component_rows (Tier-1 #1: compute-or-blank+flag).
+_USAGE_ABSENT = object()
+
+
+def _distinct_instance_counts(refdes_tokens) -> Dict[str, int]:
+    """Count DISTINCT instance RefDes per usage-base (NOT raw occurrences).
+
+    Part Usage = 1/N where N is the number of physical INSTANCES of the part
+    (distinct RefDes sharing a usage-base), per the user's decision. A RefDes
+    listed in several source rows — e.g. the same part under multiple grouping
+    rows, or the same physical RefDes under several functional blocks — is ONE
+    instance, so counting raw occurrences would inflate N and understate
+    (or, in the functional workflow, wrongly fractionalize) the emitted usage.
+    """
+    instances_by_base: Dict[str, set] = defaultdict(set)
+    for ref in refdes_tokens:
+        base = canonicalize_refdes(get_usage_base_refdes(ref))
+        if base:
+            instances_by_base[base].add(canonicalize_refdes(ref))
+    return {base: len(instances) for base, instances in instances_by_base.items()}
+
 # ==================== CONFIGURATION & CONSTANTS ====================
 
 # HEADER_CONFIG now uses centralized synonyms from common.column_synonyms
@@ -702,18 +725,12 @@ class FMEAProcessor:
         # should differ from the advice for a user running Generate-from-
         # Grouping.
         self.variant_counts_by_base.clear()
-        if group_df is not None:
-            for _, grow in group_df.iterrows():
-                for ref in split_ref_designators(grow.get("ref_des", "")):
-                    base = canonicalize_refdes(get_usage_base_refdes(ref))
-                    if base:
-                        self.variant_counts_by_base[base] += 1
-        else:
-            for _, brow in bom_df.iterrows():
-                for ref in split_ref_designators(brow.get("ref_des", "")):
-                    base = canonicalize_refdes(get_usage_base_refdes(ref))
-                    if base:
-                        self.variant_counts_by_base[base] += 1
+        _count_source = group_df if group_df is not None else bom_df
+        self.variant_counts_by_base.update(_distinct_instance_counts(
+            ref
+            for _, _row in _count_source.iterrows()
+            for ref in split_ref_designators(_row.get("ref_des", ""))
+        ))
 
         source_workflow_tag = "bom_only" if self.bom_only_mode else "piece_part_generate"
 
@@ -1425,11 +1442,11 @@ class FMEAProcessor:
             # inherited variant encountered during merge gets the right
             # 1/N fraction on its BOM_Additions entry.
             self.variant_counts_by_base.clear()
-            for _, grow in group_df.iterrows():
-                for ref in split_refdes_list(grow.get('ref_des', '')):
-                    base = canonicalize_refdes(get_usage_base_refdes(ref))
-                    if base:
-                        self.variant_counts_by_base[base] += 1
+            self.variant_counts_by_base.update(_distinct_instance_counts(
+                ref
+                for _, grow in group_df.iterrows()
+                for ref in split_refdes_list(grow.get('ref_des', ''))
+            ))
 
         # 4. Build BOM / HDA / FM indexes
         self._build_indexes(bom_df, hda_df, fm_df)
@@ -1641,6 +1658,7 @@ class FMEAProcessor:
         # picks its own source and why that's intentional — not a bug to
         # reconcile across workflows).
         self.variant_counts_by_base.clear()
+        _instances_by_base: Dict[str, set] = defaultdict(set)
         for pos, (_, row_series) in enumerate(func_raw.iterrows()):
             # Cooperative cancellation during the scan pass
             if pos % INDEX_CANCEL_CHECK_INTERVAL == 0:
@@ -1653,10 +1671,14 @@ class FMEAProcessor:
                     continue
             except (TypeError, ValueError):
                 pass
+            # DISTINCT instances per usage-base (not occurrences): a physical
+            # RefDes listed under multiple functional rows is ONE instance.
             for ref in split_refdes_list(str(val)):
                 base = canonicalize_refdes(get_usage_base_refdes(ref))
                 if base:
-                    self.variant_counts_by_base[base] += 1
+                    _instances_by_base[base].add(canonicalize_refdes(ref))
+        for base, _insts in _instances_by_base.items():
+            self.variant_counts_by_base[base] = len(_insts)
 
         if status_callback:
             status_callback("Generating piece-part rows under blocks...")
@@ -1943,20 +1965,102 @@ class FMEAProcessor:
             self.group_missing_in_bom.append((group_row.get('component_group'), ref_des))
             return []
         pn = clean_string(bom_row.get('part_number'))
-        _usage_value, usage_excel = parse_usage(bom_row.get('part_usage', 1))
-        if _usage_value is None:
-            raw_usage = bom_row.get('part_usage', 1)
-            _logger.warning(f"Part Usage '{raw_usage}' for '{ref_des}' could not be parsed. Defaulting to 1.0.")
-            _usage_value, usage_excel = 1.0, 1
-            self.usage_warnings.append({
-                'RefDes': ref_des,
-                'Base': get_usage_base_refdes(ref_des),
-                'Usage': 1.0,
-                'Expected': 'N/A',
-                'Count': 0,
-                'ReasonCode': 'PU_PARSE_DEFAULTED',
-                'Reason': f"Part Usage value '{raw_usage}' could not be parsed. Defaulted to 1.0.",
-            })
+        # ---- Part Usage resolution (Tier-1 #1: compute-or-blank+flag) --------
+        # Decision: Part Usage = 1 / (number of INSTANCES of the part), where
+        # instances are distinct RefDes sharing a usage-base. The data-file
+        # value WINS when present and parseable; only when the BOM has NO
+        # explicit/parseable value do we compute 1/N from the instance count,
+        # and when that count is unknown (count==0) we leave the cell BLANK
+        # and flag it rather than silently asserting usage 1 (which overstates
+        # multi-instance parts).
+        raw_usage = bom_row.get('part_usage', _USAGE_ABSENT)
+        usage_is_explicit = (
+            raw_usage is not _USAGE_ABSENT and clean_string(raw_usage) != ''
+        )
+        # Tracks whether _usage_value was DERIVED from the instance count (vs.
+        # taken from an explicit, parseable BOM value). A computed value is
+        # consistent-by-construction, so the mapped-vs-computed Part Usage
+        # diagnostics must NOT fire on it (spec #3).
+        usage_computed = False
+        if usage_is_explicit:
+            _usage_value, usage_excel = parse_usage(raw_usage)
+        else:
+            # Blank/absent -> treat as "no explicit value", compute below.
+            _usage_value, usage_excel = None, None
+
+        if usage_is_explicit and _usage_value is None:
+            # An explicit value was present but could NOT be parsed. Per the
+            # decision, fall back to the instance count (and note the
+            # replacement) rather than silently defaulting to 1.0.
+            usage_base = canonicalize_refdes(get_usage_base_refdes(ref_des))
+            count = self.variant_counts_by_base.get(usage_base, 0)
+            if count >= 1:
+                _usage_value = 1.0 / count
+                usage_excel = 1 if count == 1 else f"=1/{count}"
+                usage_computed = True
+                _logger.warning(
+                    f"Part Usage '{raw_usage}' for '{ref_des}' could not be "
+                    f"parsed. Replaced with instance count 1/{count}."
+                )
+                self.usage_warnings.append({
+                    'RefDes': ref_des,
+                    'Base': get_usage_base_refdes(ref_des),
+                    'Usage': round(_usage_value, 4),
+                    'Expected': round(1.0 / count, 4),
+                    'Count': count,
+                    'ReasonCode': 'PU_PARSE_DEFAULTED',
+                    'Reason': (
+                        f"Part Usage value '{raw_usage}' could not be parsed. "
+                        f"Replaced with instance count 1/{count}."
+                    ),
+                })
+            else:
+                # Unparseable AND uncountable -> blank + flag.
+                _usage_value, usage_excel = None, ''
+                _logger.warning(
+                    f"Part Usage '{raw_usage}' for '{ref_des}' could not be "
+                    f"parsed and no instance count is available; left blank."
+                )
+                self.usage_warnings.append({
+                    'RefDes': ref_des,
+                    'Base': get_usage_base_refdes(ref_des),
+                    'Usage': '',
+                    'Expected': 'N/A',
+                    'Count': 0,
+                    'ReasonCode': 'PU_GUESSED_NO_COUNT_SOURCE',
+                    'Reason': (
+                        f"Part Usage value '{raw_usage}' could not be parsed "
+                        f"and the instance count for base "
+                        f"'{get_usage_base_refdes(ref_des)}' is unknown "
+                        f"(no grouping/count source). Left blank — verify."
+                    ),
+                })
+        elif not usage_is_explicit:
+            # No explicit BOM value: compute from the instance count.
+            usage_base = canonicalize_refdes(get_usage_base_refdes(ref_des))
+            count = self.variant_counts_by_base.get(usage_base, 0)
+            if count >= 1:
+                _usage_value = 1.0 / count
+                usage_excel = 1 if count == 1 else f"=1/{count}"
+                usage_computed = True
+                # NO flag: this is a real, derived instance count.
+            else:
+                # Not countable -> blank cell + flag (do not assert usage 1).
+                _usage_value, usage_excel = None, ''
+                self.usage_warnings.append({
+                    'RefDes': ref_des,
+                    'Base': get_usage_base_refdes(ref_des),
+                    'Usage': '',
+                    'Expected': 'N/A',
+                    'Count': 0,
+                    'ReasonCode': 'PU_GUESSED_NO_COUNT_SOURCE',
+                    'Reason': (
+                        f"Part Usage could not be determined for '{ref_des}': "
+                        f"no explicit value in the BOM and the instance count "
+                        f"for base '{get_usage_base_refdes(ref_des)}' is unknown "
+                        f"(no grouping/count source). Left blank — verify."
+                    ),
+                })
         desc_bom = clean_string(bom_row.get('description'))
         c1, c2 = clean_string(bom_row.get('hda_level1')), clean_string(bom_row.get('hda_level2'))
         canon = canonical_pn(pn)
@@ -1973,7 +2077,21 @@ class FMEAProcessor:
         # standard check on an inherited variant produces a false-positive
         # "Usage mismatch" on every inherited row, which makes the main
         # FMEA sheet look broken in the BOM Additions case.
-        if inherited_from_base is not None:
+        if _usage_value is None:
+            # Tier-1 #1: the Part Usage cell was left BLANK (uncountable). There
+            # is no value to validate, so do NOT emit a "usage mismatch" warning
+            # that would contradict the blank cell. The blank was already flagged
+            # at the usage-read site (PU_GUESSED_NO_COUNT_SOURCE).
+            usage_warning = None
+        elif usage_computed:
+            # Tier-1 #1: the value was DERIVED from the instance count, so it is
+            # consistent-by-construction (computed == count). Do not run the
+            # mapped-vs-computed mismatch check on it — it would always agree
+            # for a non-inherited row and would falsely fire for an inherited
+            # one whose BOM-derived usage_base_count differs from the grouping
+            # count it was computed against.
+            usage_warning = None
+        elif inherited_from_base is not None:
             variant_count = self.variant_counts_by_base.get(inherited_from_base, 0) or 1
             expected = 1.0 / variant_count
             if abs(_usage_value - expected) > USAGE_TOLERANCE:

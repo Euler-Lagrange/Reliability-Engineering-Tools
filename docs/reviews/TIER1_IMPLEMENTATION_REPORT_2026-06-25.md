@@ -4,6 +4,13 @@
 > `fix/tier1-data-correctness` branch no longer exists (review with
 > `git show 66e507b`). The 195/226/427 counts below are the point-in-time
 > snapshot from when this report was written.
+>
+> **Update (2026-06-26):** the two items listed below (§"Not done this round")
+> as "your call / not done" are now resolved — **#5** (Custom BOM column picker)
+> shipped in `e724856`, and **#1** (FMEA-gen blank-usage) was decided (compute
+> `1/N` by distinct instance count; leave the cell blank + flag when uncountable;
+> the Failure Rate side blanks `Mode_FR` on genuine usage gaps) and implemented
+> in the Part Usage commit. **All Tier-1 items are now shipped.**
 
 ## Bottom line
 

@@ -30,6 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   duplicate-header dedup; FMEA fill-gaps `1/1` usage flagged as a best-guess;
   RefDes BOM-load failure surfaced prominently instead of a silent "all
   unverified".
+- **Part Usage (Tier-1 #1)** — Part Usage is no longer silently defaulted to
+  `1`. The FMEA Generator now derives it as `1/N` from the part's instance
+  count (N = distinct RefDes sharing a usage-base; explicit BOM values still
+  win) and leaves the cell **blank + flagged** (`PU_GUESSED_NO_COUNT_SOURCE`)
+  when the count is unknown — fixing the overstatement where multi-instance
+  parts got `1`. The Failure Rate linker now leaves `Mode_FR` **blank +
+  flagged** when usage is a genuine gap (incl. an uncached `=1/N` formula cell)
+  on a real-rate row instead of overstating with `1.0`; the circuit-block
+  roll-up skips blank children and flags the block as possibly understated.
 - **Tier-2 run-lifecycle** — the success toast + "saved to…" message is no
   longer lost on every successful run (#10); a late `cancelling` no longer
   strands the UI in "Cancelling…" (#11); a new toast behind 5 sticky errors no

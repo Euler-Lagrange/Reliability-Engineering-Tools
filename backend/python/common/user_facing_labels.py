@@ -22,6 +22,7 @@ REASON_CODE_LABELS = {
     "FMR_SUM_MISMATCH": "Failure Mode Ratio Sum Mismatch",
     "FMR_USAGE_PRODUCT_MISMATCH": "Failure Mode Ratio and Part Usage Product Mismatch",
     "PU_PARSE_DEFAULTED": "Part Usage Parse Failed and Was Defaulted to 1.0",
+    "PU_GUESSED_NO_COUNT_SOURCE": "Part Usage Could Not Be Determined (No Instance Count Source)",
     "SCOPE_CB_ONLY": "Scope Mismatch: Circuit Block Only",
     "SCOPE_PP_ONLY": "Scope Mismatch: Piece-Part Only",
     "SCOPE_UNCLASSIFIED_ONLY": "Scope Mismatch: Unclassified Row Type Only",
