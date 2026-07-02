@@ -77,6 +77,7 @@
      allowed only with an inline comment explaining the deviation. */
   --space-1: 4px;     /* micro: icon gaps, fine adjustments */
   --space-2: 8px;     /* tight: within components */
+  --space-2-5: 10px;  /* dense: table-cell rhythm, segment padding (promoted from repeated off-grid 10px) */
   --space-3: 12px;    /* standard: between related elements */
   --space-4: 16px;    /* comfortable: section padding */
   --space-5: 20px;    /* relaxed: rail padding, chrome */
@@ -131,8 +132,13 @@
   --shadow-rail-active: 0 0 0 1px rgba(35, 94, 231, 0.04), 0 6px 18px rgba(35, 94, 231, 0.08);
   --shadow-toast: 0 8px 24px rgba(15, 23, 42, 0.08);
 
-  /* Motion */
+  /* Motion. One easing curve, three durations — micro-interactions use
+     fast, standard control transitions use base, larger reveals use slow.
+     Never write a raw ms literal in a transition/animation shorthand. */
   --ease: cubic-bezier(0.25, 1, 0.5, 1);
+  --duration-fast: 120ms;
+  --duration-base: 160ms;
+  --duration-slow: 220ms;
   --border-subtle: var(--line);
 
   /* ============================================================
@@ -492,7 +498,7 @@ button:disabled {
   max-width: 1480px;
   margin: 0 auto;
   padding: var(--space-5) var(--space-6) var(--space-7);
-  animation: fade-rise 220ms var(--ease);
+  animation: fade-rise var(--duration-slow) var(--ease);
 }
 
 .topbar {
@@ -588,7 +594,7 @@ button:disabled {
   gap: var(--space-4);
   overflow-y: auto;
   transform: translateX(100%);
-  transition: transform 220ms var(--ease);
+  transition: transform var(--duration-slow) var(--ease);
   pointer-events: none;
 }
 
@@ -624,8 +630,8 @@ button:disabled {
   color: var(--text-secondary);
   cursor: pointer;
   transition:
-    border-color 160ms var(--ease),
-    color 160ms var(--ease);
+    border-color var(--duration-base) var(--ease),
+    color var(--duration-base) var(--ease);
 }
 
 .context-drawer__close:hover {
@@ -889,8 +895,8 @@ button:disabled {
   color: inherit;
   text-align: left;
   transition:
-    border-color 160ms var(--ease),
-    background 160ms var(--ease);
+    border-color var(--duration-base) var(--ease),
+    background var(--duration-base) var(--ease);
 }
 
 .choice-card:focus-visible {
@@ -1086,10 +1092,10 @@ button:disabled {
   color: var(--text-secondary);
   white-space: nowrap;
   transition:
-    border-color 160ms var(--ease),
-    background 160ms var(--ease),
-    color 160ms var(--ease),
-    box-shadow 160ms var(--ease);
+    border-color var(--duration-base) var(--ease),
+    background var(--duration-base) var(--ease),
+    color var(--duration-base) var(--ease),
+    box-shadow var(--duration-base) var(--ease);
 }
 
 .toggle-chip:focus-visible,
@@ -1123,9 +1129,9 @@ button:disabled {
   gap: var(--space-2);
   padding: var(--space-3);
   transition:
-    background 160ms var(--ease),
-    border-color 160ms var(--ease),
-    opacity 160ms var(--ease);
+    background var(--duration-base) var(--ease),
+    border-color var(--duration-base) var(--ease),
+    opacity var(--duration-base) var(--ease);
 }
 
 /* ============================================================
@@ -1356,7 +1362,7 @@ table {
 
 th,
 td {
-  padding: 10px var(--space-3); /* 10px off-grid: cell vertical density tighter than space-3 */
+  padding: var(--space-2-5) var(--space-3); /* dense cell vertical rhythm */
   border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: top;
@@ -1394,7 +1400,7 @@ tbody tr:hover {
 .validation-card {
   display: grid;
   gap: 6px; /* off-grid */
-  padding: 10px var(--space-3); /* 10px off-grid: matches table cell density */
+  padding: var(--space-2-5) var(--space-3); /* matches table cell density */
 }
 
 .validation-card__body {
@@ -1431,15 +1437,15 @@ tbody tr:hover {
   height: 100%;
   border-radius: inherit;
   background: var(--accent);
-  transition: width 200ms var(--ease);
+  transition: width var(--duration-slow) var(--ease);
 }
 
 .timeline__item {
   display: grid;
   grid-template-columns: var(--space-2) minmax(0, 1fr) auto;
-  gap: 10px; /* off-grid: timeline column gap */
+  gap: var(--space-2-5); /* timeline column gap */
   align-items: start;
-  padding: 10px var(--space-3); /* 10px off-grid: matches table density */
+  padding: var(--space-2-5) var(--space-3); /* matches table cell density */
 }
 
 .timeline__item[data-status="active"] {
@@ -1524,7 +1530,7 @@ tbody tr:hover {
 .run-log-panel__toggle {
   display: inline-flex;
   align-items: center;
-  gap: 10px; /* off-grid: tight icon-text gap inside the toggle */
+  gap: var(--space-2-5); /* tight icon-text gap inside the toggle */
   padding: 6px var(--space-3); /* 6px vertical off-grid */
   margin: -6px calc(var(--space-3) * -1); /* off-grid negative margin: hit-area expansion without affecting layout */
   border: 0;
@@ -1534,8 +1540,8 @@ tbody tr:hover {
   font-size: var(--text-xs);
   cursor: pointer;
   transition:
-    background 160ms var(--ease),
-    color 160ms var(--ease);
+    background var(--duration-base) var(--ease),
+    color var(--duration-base) var(--ease);
 }
 
 .run-log-panel__toggle:hover {
@@ -1611,7 +1617,7 @@ tbody tr:hover {
   color: var(--warning);
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 10px; /* off-grid: smaller than --text-2xs for chip density */
+  font-size: var(--text-2xs);
   letter-spacing: 0.03em;
 }
 
@@ -1631,7 +1637,7 @@ tbody tr:hover {
 }
 
 .run-log-panel__filter-option {
-  padding: var(--space-1) 10px; /* 10px horizontal off-grid: tighter than space-3 for segment-control feel */
+  padding: var(--space-1) var(--space-2-5); /* segment-control feel */
   border: 0;
   background: transparent;
   color: var(--text-muted);
@@ -1642,8 +1648,8 @@ tbody tr:hover {
   text-transform: uppercase;
   cursor: pointer;
   transition:
-    background 140ms var(--ease),
-    color 140ms var(--ease);
+    background var(--duration-base) var(--ease),
+    color var(--duration-base) var(--ease);
 }
 
 .run-log-panel__filter-option + .run-log-panel__filter-option {
@@ -1669,7 +1675,7 @@ tbody tr:hover {
   display: inline-flex;
   align-items: center;
   gap: 6px; /* off-grid: tight icon-text gap */
-  padding: var(--space-1) 10px; /* matches filter-option */
+  padding: var(--space-1) var(--space-2-5); /* matches filter-option */
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--surface);
@@ -1681,9 +1687,9 @@ tbody tr:hover {
   text-transform: uppercase;
   cursor: pointer;
   transition:
-    border-color 140ms var(--ease),
-    color 140ms var(--ease),
-    background 140ms var(--ease);
+    border-color var(--duration-base) var(--ease),
+    color var(--duration-base) var(--ease),
+    background var(--duration-base) var(--ease);
 }
 
 .run-log-panel__action:hover:not(:disabled) {
@@ -1768,7 +1774,7 @@ tbody tr:hover {
   padding: 2px 0; /* off-grid: extreme-tight log-line vertical padding */
   font-variant-numeric: tabular-nums;
   border-radius: 3px; /* off-grid: micro radius for hover feedback only */
-  transition: background 100ms var(--ease);
+  transition: background var(--duration-fast) var(--ease);
 }
 
 .run-log-panel__line:hover {
@@ -1781,7 +1787,7 @@ tbody tr:hover {
 }
 
 .run-log-panel__level {
-  font-size: 10px; /* off-grid: smaller than --text-2xs for level token compactness */
+  font-size: var(--text-2xs);
   font-weight: var(--weight-bold);
   letter-spacing: var(--tracking-uppercase);
   text-transform: uppercase;
@@ -1816,7 +1822,7 @@ tbody tr:hover {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 10px; /* off-grid */
+  font-size: var(--text-2xs);
   font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-uppercase);
   text-transform: uppercase;
@@ -1830,7 +1836,7 @@ tbody tr:hover {
 .execution-log {
   display: grid;
   gap: var(--space-2);
-  padding: 10px var(--space-3); /* 10px off-grid: matches table cell density */
+  padding: var(--space-2-5) var(--space-3); /* matches table cell density */
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface-muted);
@@ -1898,7 +1904,7 @@ tbody tr:hover {
 
 .run-result {
   display: grid;
-  gap: 10px; /* off-grid: tighter than space-3 for result body density */
+  gap: var(--space-2-5); /* result body density */
   padding: var(--space-3);
 }
 
@@ -1916,7 +1922,7 @@ tbody tr:hover {
 .run-result__metric {
   display: grid;
   gap: 2px; /* off-grid: extreme-tight metric stack */
-  padding: var(--space-2) 10px; /* 10px horizontal off-grid */
+  padding: var(--space-2) var(--space-2-5);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--surface-muted);
@@ -2104,8 +2110,8 @@ tbody tr:hover {
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   transition:
-    border-color 140ms var(--ease),
-    box-shadow 140ms var(--ease);
+    border-color var(--duration-base) var(--ease),
+    box-shadow var(--duration-base) var(--ease);
 }
 
 .number-field__input:hover:not(:focus):not(:disabled) {
@@ -2150,9 +2156,9 @@ tbody tr:hover {
   font-weight: var(--weight-medium);
   cursor: pointer;
   transition:
-    background 140ms var(--ease),
-    color 140ms var(--ease),
-    box-shadow 140ms var(--ease);
+    background var(--duration-base) var(--ease),
+    color var(--duration-base) var(--ease),
+    box-shadow var(--duration-base) var(--ease);
 }
 
 .context-tabs__tab:hover:not(.is-active) {
@@ -2204,10 +2210,10 @@ tbody tr:hover {
   overflow: hidden;
   cursor: pointer;
   transition:
-    border-color 160ms var(--ease),
-    background 160ms var(--ease),
-    color 160ms var(--ease),
-    box-shadow 160ms var(--ease);
+    border-color var(--duration-base) var(--ease),
+    background var(--duration-base) var(--ease),
+    color var(--duration-base) var(--ease),
+    box-shadow var(--duration-base) var(--ease);
 }
 
 .hold-button:hover:not(:disabled) {
@@ -2336,9 +2342,9 @@ tbody tr:hover {
   color: var(--text-muted);
   cursor: pointer;
   transition:
-    color 140ms var(--ease),
-    border-color 140ms var(--ease),
-    background 140ms var(--ease);
+    color var(--duration-base) var(--ease),
+    border-color var(--duration-base) var(--ease),
+    background var(--duration-base) var(--ease);
 }
 
 .input-card__path-copy:hover:not(:disabled) {
@@ -2450,9 +2456,9 @@ tbody tr:hover {
   color: var(--text-muted);
   cursor: pointer;
   transition:
-    color 150ms cubic-bezier(0.25, 1, 0.5, 1),
-    background 150ms cubic-bezier(0.25, 1, 0.5, 1),
-    border-color 150ms cubic-bezier(0.25, 1, 0.5, 1);
+    color var(--duration-base) var(--ease),
+    background var(--duration-base) var(--ease),
+    border-color var(--duration-base) var(--ease);
 }
 
 .column-pair-picker__remove:hover {
@@ -2508,8 +2514,8 @@ tbody tr:hover {
   cursor: pointer;
   font-family: inherit;
   transition:
-    border-color 140ms var(--ease),
-    background 140ms var(--ease);
+    border-color var(--duration-base) var(--ease),
+    background var(--duration-base) var(--ease);
 }
 
 .mapping-table__use-recommendation:hover:not(:disabled) {
@@ -2607,10 +2613,10 @@ tbody tr:hover {
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition:
-    background 140ms var(--ease),
-    color 140ms var(--ease),
-    border-color 140ms var(--ease),
-    box-shadow 140ms var(--ease);
+    background var(--duration-base) var(--ease),
+    color var(--duration-base) var(--ease),
+    border-color var(--duration-base) var(--ease),
+    box-shadow var(--duration-base) var(--ease);
 }
 
 .empty-state__action--primary {
@@ -2692,10 +2698,10 @@ tbody tr:hover {
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition:
-    background 140ms var(--ease),
-    color 140ms var(--ease),
-    border-color 140ms var(--ease),
-    box-shadow 140ms var(--ease);
+    background var(--duration-base) var(--ease),
+    color var(--duration-base) var(--ease),
+    border-color var(--duration-base) var(--ease),
+    box-shadow var(--duration-base) var(--ease);
 }
 
 .error-boundary__action--primary {
@@ -2752,10 +2758,10 @@ tbody tr:hover {
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition:
-    background 140ms var(--ease),
-    color 140ms var(--ease),
-    border-color 140ms var(--ease),
-    box-shadow 140ms var(--ease);
+    background var(--duration-base) var(--ease),
+    color var(--duration-base) var(--ease),
+    border-color var(--duration-base) var(--ease),
+    box-shadow var(--duration-base) var(--ease);
 }
 
 .validation-preview__export-button:hover {
@@ -2863,9 +2869,9 @@ tbody tr:hover {
   font-weight: var(--weight-medium);
   cursor: pointer;
   transition:
-    border-color 160ms var(--ease),
-    background 160ms var(--ease),
-    color 160ms var(--ease);
+    border-color var(--duration-base) var(--ease),
+    background var(--duration-base) var(--ease),
+    color var(--duration-base) var(--ease);
 }
 
 .topbar__review-toggle:hover {
@@ -3023,7 +3029,7 @@ tbody tr:hover {
   font-size: var(--text-sm);
   text-align: left;
   cursor: pointer;
-  transition: background 120ms var(--ease), color 120ms var(--ease);
+  transition: background var(--duration-fast) var(--ease), color var(--duration-fast) var(--ease);
 }
 
 .command-palette__action:hover {
@@ -3129,8 +3135,8 @@ tbody tr:hover {
   color: var(--text-muted);
   cursor: pointer;
   transition:
-    background 140ms var(--ease),
-    color 140ms var(--ease);
+    background var(--duration-base) var(--ease),
+    color var(--duration-base) var(--ease);
 }
 
 .mapping-table__help-button:hover {
@@ -3220,8 +3226,8 @@ tbody tr:hover {
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   transition:
-    border-color 140ms var(--ease),
-    box-shadow 140ms var(--ease);
+    border-color var(--duration-base) var(--ease),
+    box-shadow var(--duration-base) var(--ease);
 }
 
 .fmea-cca-input::placeholder {

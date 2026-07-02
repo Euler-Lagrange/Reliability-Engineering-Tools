@@ -147,6 +147,7 @@ and `min-height`.
 |-------|-------|--------------|
 | `--space-1` | 4 px | Micro: icon gaps, fine adjustments |
 | `--space-2` | 8 px | Tight: within components |
+| `--space-2-5` | 10 px | Dense: table-cell rhythm, segment padding (promoted from repeated off-grid 10px) |
 | `--space-3` | 12 px | Standard: between related elements |
 | `--space-4` | 16 px | Comfortable: section padding |
 | `--space-5` | 20 px | Relaxed: rail padding, chrome |
@@ -211,9 +212,15 @@ needs a glow or halo effect, scope it inside that theme's override block
 
 ## Motion
 
-| Token | Value |
-|-------|-------|
-| `--ease` | `cubic-bezier(0.25, 1, 0.5, 1)` |
+One easing curve, three durations. Never write a raw `ms` literal in a
+transition/animation shorthand — reach for a duration token.
+
+| Token | Value | Use |
+|-------|-------|-----|
+| `--ease` | `cubic-bezier(0.25, 1, 0.5, 1)` | Every transition/animation |
+| `--duration-fast` | `120ms` | Micro-interactions: dense-row hovers, filters |
+| `--duration-base` | `160ms` | Standard control transitions |
+| `--duration-slow` | `220ms` | Larger reveals: drawers, panels, progress |
 
 ## Icon Size Conventions
 

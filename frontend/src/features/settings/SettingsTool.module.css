@@ -15,7 +15,7 @@
   background: var(--surface);
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+  transition: border-color var(--duration-base) var(--ease), background var(--duration-base) var(--ease);
   font-family: inherit;
   color: inherit;
 }
@@ -113,7 +113,7 @@
   font-weight: var(--weight-medium);
   font-family: inherit;
   align-self: flex-start;
-  transition: border-color 0.15s var(--ease), background 0.15s var(--ease);
+  transition: border-color var(--duration-base) var(--ease), background var(--duration-base) var(--ease);
 }
 
 .healthButton:hover:not(:disabled) {
