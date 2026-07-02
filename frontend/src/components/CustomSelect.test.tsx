@@ -24,4 +24,32 @@ describe("CustomSelect", () => {
 
     expect(selections).toEqual(["B"]);
   });
+
+  test("shows the opt-in placeholder when the value is empty", () => {
+    render(
+      <CustomSelect
+        label="Mapping select"
+        value=""
+        options={[{ value: "A", label: "Alpha" }]}
+        placeholder="Select column…"
+      />,
+    );
+
+    expect(screen.getByText("Select column…")).toBeInTheDocument();
+  });
+
+  test("renders an empty trigger without a placeholder unless opted in", () => {
+    render(
+      <CustomSelect
+        label="Sheet select"
+        value=""
+        options={[{ value: "A", label: "Alpha" }]}
+      />,
+    );
+
+    // Input-card sheet pickers legitimately render empty while sheets
+    // resolve — no placeholder text may leak in without the opt-in prop.
+    expect(screen.queryByText("Select column…")).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Sheet select" })).toHaveTextContent("");
+  });
 });

@@ -116,6 +116,12 @@ export interface OutputStrategy {
 
 export interface ColumnMappingRow {
   canonical: string;
+  /**
+   * Human-readable field name rendered by the MappingTable. The canonical
+   * key is a backend payload contract (e.g. `pred_ref`) and must never be
+   * renamed — this label only changes what the operator reads.
+   */
+  displayLabel?: string;
   mappedTo: string;
   status: MappingStatus;
   recommendation: string;

@@ -190,7 +190,8 @@ export const outputStrategies: OutputStrategy[] = [
   {
     id: "new_workbook_standard",
     title: "New Workbook",
-    summary: "Generate a fresh output workbook with all generator columns and summary sheets.",
+    summary:
+      "Generate a fresh output workbook with all generator columns and summary sheets. Simplest to review, diff, and archive — nothing is carried over.",
     badge: "Clean export",
   },
   {
@@ -534,9 +535,12 @@ export const bomCompareWorkflowOptions: WorkflowOption[] = [
   },
 ];
 
+// displayLabel = what the operator reads; canonical = the backend payload
+// contract (never rename it — execute payloads and deriveMappingRows key on it).
 export const bomCompareGroupMappings: ColumnMappingRow[] = [
   {
     canonical: "grouping_group_col",
+    displayLabel: "Grouping: group column",
     mappedTo: "Component Group",
     status: "mapped",
     recommendation: "Exact match",
@@ -544,6 +548,7 @@ export const bomCompareGroupMappings: ColumnMappingRow[] = [
   },
   {
     canonical: "grouping_refdes_col",
+    displayLabel: "Grouping: RefDes column",
     mappedTo: "Reference Designator",
     status: "mapped",
     recommendation: "Exact match",
@@ -551,6 +556,7 @@ export const bomCompareGroupMappings: ColumnMappingRow[] = [
   },
   {
     canonical: "bom_refdes_col",
+    displayLabel: "BOM: RefDes column",
     mappedTo: "Reference Designator",
     status: "mapped",
     recommendation: "Exact match",
@@ -558,6 +564,7 @@ export const bomCompareGroupMappings: ColumnMappingRow[] = [
   },
   {
     canonical: "bom_desc_col",
+    displayLabel: "BOM: description column",
     mappedTo: "Description",
     status: "mapped",
     recommendation: "Optional",
@@ -582,6 +589,7 @@ export const bomCompareCustomColumns = [
 export const bomCompareCustomMappings: ColumnMappingRow[] = [
   {
     canonical: "refdes_col_a",
+    displayLabel: "File 1: RefDes column",
     mappedTo: "Reference Designator",
     status: "mapped",
     recommendation: "Exact match",
@@ -589,6 +597,7 @@ export const bomCompareCustomMappings: ColumnMappingRow[] = [
   },
   {
     canonical: "refdes_col_b",
+    displayLabel: "File 2: RefDes column",
     mappedTo: "Reference Designator",
     status: "mapped",
     recommendation: "Exact match",
@@ -694,9 +703,12 @@ export const failureRateInputs: Record<string, InputFileState> = {
   },
 };
 
+// displayLabel = what the operator reads; canonical = the backend payload
+// contract (never rename it — execute payloads and deriveMappingRows key on it).
 export const failureRateMappings: ColumnMappingRow[] = [
   {
     canonical: "pred_ref",
+    displayLabel: "Prediction: RefDes column",
     mappedTo: "Reference Designator",
     status: "mapped",
     recommendation: "Exact match",
@@ -704,6 +716,7 @@ export const failureRateMappings: ColumnMappingRow[] = [
   },
   {
     canonical: "pred_fr",
+    displayLabel: "Prediction: failure rate column",
     mappedTo: "Failure Rate",
     status: "mapped",
     recommendation: "Exact match",
@@ -711,6 +724,7 @@ export const failureRateMappings: ColumnMappingRow[] = [
   },
   {
     canonical: "fmea_cause",
+    displayLabel: "FMEA: failure mode causes",
     mappedTo: "Failure Mode Causes",
     status: "mapped",
     recommendation: "Exact match",
@@ -718,6 +732,7 @@ export const failureRateMappings: ColumnMappingRow[] = [
   },
   {
     canonical: "fmea_ratio",
+    displayLabel: "FMEA: failure mode ratio",
     mappedTo: "Failure Mode Ratio",
     status: "mapped",
     recommendation: "Exact match",
@@ -725,6 +740,7 @@ export const failureRateMappings: ColumnMappingRow[] = [
   },
   {
     canonical: "fmea_usage",
+    displayLabel: "FMEA: part usage",
     mappedTo: "Part Usage",
     status: "mapped",
     recommendation: "Exact match",
@@ -732,6 +748,7 @@ export const failureRateMappings: ColumnMappingRow[] = [
   },
   {
     canonical: "fmea_func",
+    displayLabel: "FMEA: function column",
     mappedTo: "",
     status: "attention",
     recommendation: "Optional. Select a Function column for FR rollup.",

@@ -1330,6 +1330,10 @@ button:disabled {
   text-overflow: ellipsis;
 }
 
+.custom-select__placeholder {
+  color: var(--text-faint);
+}
+
 .custom-select__chevron {
   color: var(--text-faint);
   flex-shrink: 0;

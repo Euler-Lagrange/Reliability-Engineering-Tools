@@ -25,7 +25,7 @@
 | **Backend subtotal** | | **299** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 4 | Vitest + RTL |
-| Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 1 | Vitest + RTL |
+| Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 3 | Vitest + RTL |
 | Frontend mapping table | `frontend/src/components/MappingTable.test.tsx` | 11 | Vitest + RTL |
 | Frontend run state panel | `frontend/src/components/RunStatePanel.test.tsx` | 6 | Vitest + RTL |
 | Frontend output folder picker | `frontend/src/components/OutputFolderPicker.test.tsx` | 2 | Vitest + RTL |
@@ -63,9 +63,9 @@
 | Frontend shell-hook install | `frontend/src/app/App.shellHooks.test.tsx` | 1 | Vitest + RTL |
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
-| **Frontend subtotal** | | **266** | |
+| **Frontend subtotal** | | **268** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 17 | cargo test |
-| **Total** | | **582** | |
+| **Total** | | **584** | |
 
 ## Backend Tests
 
@@ -227,7 +227,7 @@ neither of which exists under jsdom, so the client returns mock data from
 |------|-------|
 | `frontend/src/app/App.test.tsx` | 11 — shell render, tool switching, theme application, notification dismissal, workflow switching, CCA visibility, HDA source toggle, output folder, focus management |
 | `frontend/src/contracts/sidecar.test.ts` | 4 — protocol schema gates for run ack, inspect metadata, and nullable Flet config |
-| `frontend/src/components/CustomSelect.test.tsx` | 1 — keyboard navigation |
+| `frontend/src/components/CustomSelect.test.tsx` | 3 — keyboard navigation, opt-in empty-value placeholder, no-placeholder default |
 | `frontend/src/components/MappingTable.test.tsx` | 11 — column mapping display, selection, validation, sync, source-aware option labels |
 | `frontend/src/components/RunStatePanel.test.tsx` | 6 — run state display, progress, result, cancel, error |
 | `frontend/src/components/GlobalLogPanel.resize.test.tsx` | 13 — log panel drag-to-resize, collapse, expand, boundary constraints |

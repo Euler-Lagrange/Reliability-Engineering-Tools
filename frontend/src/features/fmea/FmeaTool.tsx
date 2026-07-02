@@ -1420,11 +1420,6 @@ export function FmeaTool() {
                 ? `Mapping options are currently informed by ${inspectedSourceLabel}.`
                 : "Default profile behavior. Select files above to enable column mapping."
             }
-            actions={
-              <button className="ghost-button" type="button" disabled>
-                Profile editor later
-              </button>
-            }
           >
             {inspectedColumns.length > 0 ? (
               <div className="analysis-summary">

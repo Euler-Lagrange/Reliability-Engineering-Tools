@@ -213,7 +213,7 @@ export function MappingTable({
               <tr key={row.canonical}>
                 <td>
                   <div className="mapping-field">
-                    <span className="mapping-field__name">{row.canonical}</span>
+                    <span className="mapping-field__name">{row.displayLabel ?? row.canonical}</span>
                     {hasHelp ? (
                       <button
                         type="button"
@@ -248,6 +248,7 @@ export function MappingTable({
                       value={mappedValue}
                       options={dropdownOptions}
                       onChange={(value) => onOverride(row.canonical, value)}
+                      placeholder="Select column…"
                     />
                   </div>
                 </td>

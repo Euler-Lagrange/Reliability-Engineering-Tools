@@ -20,6 +20,13 @@ interface CustomSelectProps {
    * control is inert instead of just skipping it.
    */
   disabledReason?: string;
+  /**
+   * Muted hint shown when `value` is empty — a blank trigger reads as
+   * broken. Opt-in per call site: mapping dropdowns want "Select column…",
+   * but input-card sheet pickers legitimately render empty while sheets
+   * resolve and must NOT claim a selection is expected yet.
+   */
+  placeholder?: string;
 }
 
 export function CustomSelect({
@@ -30,6 +37,7 @@ export function CustomSelect({
   disabled = false,
   compact = false,
   disabledReason,
+  placeholder,
 }: CustomSelectProps) {
   // If `value` is not among `options`, show the raw value rather than silently
   // masquerading it as options[0] (which also desynced Radix's displayed value
@@ -46,7 +54,13 @@ export function CustomSelect({
           aria-label={label}
           aria-describedby={showReason ? reasonId : undefined}
         >
-          <span className="custom-select__value">{selected?.label ?? value}</span>
+          <span className="custom-select__value">
+            {(selected?.label ?? value) === "" && placeholder ? (
+              <span className="custom-select__placeholder">{placeholder}</span>
+            ) : (
+              selected?.label ?? value
+            )}
+          </span>
           <Select.Icon className="custom-select__chevron">
             <CaretDown size={12} weight="bold" />
           </Select.Icon>

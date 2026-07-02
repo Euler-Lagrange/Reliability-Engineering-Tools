@@ -21,9 +21,11 @@ export function StrategySelector({
           onClick={() => onSelect(strategy.id)}
           type="button"
         >
+          {/* The badge IS the eyebrow — a literal "Output strategy" eyebrow
+              on every card tripled the phrase within one viewport (section
+              label + two cards). */}
           <div className="choice-card__header">
-            <span className="choice-card__eyebrow">Output strategy</span>
-            <span className="choice-card__badge">{strategy.badge}</span>
+            <span className="choice-card__eyebrow">{strategy.badge}</span>
           </div>
           <h3>{strategy.title}</h3>
           <p>{strategy.summary}</p>
