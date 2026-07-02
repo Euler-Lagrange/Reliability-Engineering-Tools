@@ -568,6 +568,18 @@ button:disabled {
   line-height: 1.1;
 }
 
+/* Spin utility — in-flight refresh affordance (Settings health check).
+   The reduced-motion override at the end of this sheet neutralizes it. */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin 900ms linear infinite;
+}
+
 /* ============================================================
    ContextDrawer — right-anchored Review drawer (design handoff
    principle D). Overlay only, not a grid column; slides in from

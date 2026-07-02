@@ -154,11 +154,7 @@ export function SettingsTool() {
                       data-selected={isSelected || undefined}
                       onClick={() => setThemeMode(option.id)}
                     >
-                      <Icon
-                        size={20}
-                        weight={isSelected ? "fill" : "regular"}
-                        style={{ color: isSelected ? "var(--accent)" : "var(--text-secondary)" }}
-                      />
+                      <Icon size={20} weight={isSelected ? "fill" : "regular"} />
                       <span className={styles.themeOptionLabel}>{option.label}</span>
                       <span className={styles.themeOptionDesc}>{option.description}</span>
                     </button>
@@ -177,14 +173,14 @@ export function SettingsTool() {
                   <code title={displayedLogPath}>{displayedLogPath}</code>
                   <button
                     type="button"
-                    className={styles.healthButton}
+                    className="ghost-button"
                     onClick={handleCopyLogPath}
                   >
                     Copy path
                   </button>
                   <button
                     type="button"
-                    className={styles.healthButton}
+                    className="ghost-button"
                     onClick={() => {
                       void handleOpenLogDir();
                     }}
@@ -209,10 +205,7 @@ export function SettingsTool() {
                   </div>
                   <div className={styles.diagnosticField}>
                     <p className={styles.diagnosticLabel}>Last ping latency</p>
-                    <p
-                      className={styles.diagnosticValue}
-                      style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)" }}
-                    >
+                    <p className={`${styles.diagnosticValue} ${styles.diagnosticValueInline}`}>
                       <span className={latency.dotClass} aria-hidden="true" />
                       {latency.display}
                     </p>
@@ -230,7 +223,7 @@ export function SettingsTool() {
                 </div>
                 <button
                   type="button"
-                  className={styles.healthButton}
+                  className="ghost-button"
                   onClick={handleHealthCheck}
                   disabled={isCheckingHealth}
                 >
