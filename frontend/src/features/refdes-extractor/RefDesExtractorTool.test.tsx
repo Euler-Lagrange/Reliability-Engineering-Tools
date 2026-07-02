@@ -292,6 +292,104 @@ describe("RefDesExtractorTool numeric tuning fields", () => {
   });
 });
 
+describe("RefDesExtractorTool advanced engine controls", () => {
+  // Every control carries a hover-tooltip affordance (InfoTip = role="img"
+  // whose accessible name is the tooltip copy). This proves the main-area
+  // controls expose one without opening the advanced disclosure.
+  it("exposes a hover tooltip on the primary controls", () => {
+    render(<RefDesExtractorTool />);
+
+    expect(
+      screen.getByRole("img", { name: /Functional groups components/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: /Use vector geometry/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the advanced controls collapsed by default and reveals them on expand", async () => {
+    const user = userEvent.setup();
+    render(<RefDesExtractorTool />);
+
+    // Collapsed by default: the toggle reports its collapsed state and none of
+    // the advanced fields are mounted.
+    const toggle = screen.getByRole("button", { name: /Advanced controls/i });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(
+      screen.queryByRole("spinbutton", { name: "Pin assignment threshold (pt)" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", { name: "Geometry subprocess isolation" }),
+    ).not.toBeInTheDocument();
+
+    // Expand -> the advanced fields mount and the toggle flips.
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(
+      screen.getByRole("spinbutton", { name: "Pin assignment threshold (pt)" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: "Geometry subprocess isolation" }),
+    ).toBeInTheDocument();
+  });
+
+  it("ships untouched advanced defaults in the run request options", async () => {
+    const user = userEvent.setup();
+    render(<RefDesExtractorTool />);
+
+    // Never open the advanced section: because the whole options object is
+    // spread into the payload, the defaults must still ride along.
+    await user.click(screen.getByRole("tab", { name: /^Run$/i }));
+    await user.click(screen.getByRole("button", { name: "Extract" }));
+
+    await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
+    const request = backendMocks.executeRun.mock.calls[0][0];
+    expect(request.options.geometry_subprocess_enabled).toBe(false);
+    expect(request.options.geometry_batch_timeout_seconds).toBe(240);
+    expect(request.options.geometry_batch_checkpoint_enabled).toBe(true);
+    expect(request.options.pin_assignment_threshold).toBe(50);
+    expect(request.options.refdes_search_radius).toBe(100);
+    expect(request.options.adaptive_orphan_threshold).toBe(5);
+    expect(request.options.adaptive_orphan_ratio).toBe(0.3);
+    expect(request.options.adaptive_max_pages).toBe(10);
+    expect(request.options.pinlist_prefers_annotation_mode).toBe(true);
+  });
+
+  it("dispatches edited advanced params in the run request options", async () => {
+    const user = userEvent.setup();
+    render(<RefDesExtractorTool />);
+
+    await user.click(screen.getByRole("button", { name: /Advanced controls/i }));
+
+    const pinThreshold = screen.getByRole("spinbutton", {
+      name: "Pin assignment threshold (pt)",
+    });
+    fireEvent.change(pinThreshold, { target: { value: "75" } });
+    expect(pinThreshold).toHaveValue(75);
+
+    const searchRadius = screen.getByRole("spinbutton", {
+      name: "RefDes search radius (pt)",
+    });
+    fireEvent.change(searchRadius, { target: { value: "150" } });
+    expect(searchRadius).toHaveValue(150);
+
+    const subprocess = screen.getByRole("checkbox", {
+      name: "Geometry subprocess isolation",
+    });
+    await user.click(subprocess);
+    expect(subprocess).toBeChecked();
+
+    await user.click(screen.getByRole("tab", { name: /^Run$/i }));
+    await user.click(screen.getByRole("button", { name: "Extract" }));
+
+    await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
+    const request = backendMocks.executeRun.mock.calls[0][0];
+    expect(request.options.pin_assignment_threshold).toBe(75);
+    expect(request.options.refdes_search_radius).toBe(150);
+    expect(request.options.geometry_subprocess_enabled).toBe(true);
+  });
+});
+
 describe("RefDesExtractorTool adaptive geometry gating", () => {
   // Regression (BUG 2): the backend returns from the annotation-only branch
   // before reading `adaptive_geometry_enabled` when geometry analysis is off,

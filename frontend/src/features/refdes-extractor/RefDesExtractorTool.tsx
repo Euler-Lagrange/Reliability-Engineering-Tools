@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CustomSelect } from "../../components/CustomSelect";
 import { InputGrid } from "../../components/InputGrid";
 import { RunStatePanel } from "../../components/RunStatePanel";
@@ -12,7 +12,7 @@ import { OptionsField } from "../../components/primitives/OptionsField";
 import { OptionsSection } from "../../components/primitives/OptionsSection";
 import { OutputFolderPicker } from "../../components/OutputFolderPicker";
 import { ToggleChip } from "../../components/primitives/ToggleChip";
-import { MagnifyingGlass } from "@phosphor-icons/react";
+import { CaretDown, CaretRight, Info, MagnifyingGlass } from "@phosphor-icons/react";
 import {
   refdesDemoScenarios,
 } from "../../mocks/scenarios";
@@ -49,7 +49,94 @@ interface RefDesOptions {
   geometry_batch_size: number;
   max_pin_label_length: number;
   prov_distance: number;
+  // Advanced engine-tuning parameters. These mirror the backend
+  // ``RefDesConfig`` field names 1:1 (see refdes_extractor/runtime.py), so the
+  // whole options object spreads straight into the run payload and the config
+  // reads each key by name. Defaults MUST match the backend dataclass defaults.
+  geometry_subprocess_enabled: boolean;
+  geometry_batch_timeout_seconds: number;
+  geometry_batch_checkpoint_enabled: boolean;
+  pin_assignment_threshold: number;
+  refdes_search_radius: number;
+  adaptive_orphan_threshold: number;
+  adaptive_orphan_ratio: number;
+  adaptive_max_pages: number;
+  pinlist_prefers_annotation_mode: boolean;
   [key: string]: unknown;
+}
+
+// Hover-tooltip copy for every control. Kept beside the type so the option
+// keys and their explanations stay in lockstep.
+const OPTION_TOOLTIPS: Record<string, string> = {
+  extraction_mode:
+    "Functional groups components by schematic annotation boxes; Piece-part additionally qualifies individual pins (uses a pinlist if one is provided).",
+  backend_mode:
+    "Auto runs the NextGen engine first and falls back to Legacy only on error. Force NextGen or Legacy only for troubleshooting.",
+  geometry_analysis_enabled:
+    "Use vector geometry (component bodies, pins, wires) to qualify and parent pins. Disable for annotation-text-only extraction.",
+  adaptive_geometry_enabled:
+    "Only run full geometry on pages that need it (smart gating) instead of every page — faster on large documents.",
+  geometry_batch_size: "How many pages to process per geometry batch.",
+  max_pin_label_length:
+    "Maximum characters for a token to be treated as a pin label (filters out long text).",
+  prov_distance:
+    "Distance in points used to associate PROV/provenance markers with components.",
+  geometry_subprocess_enabled:
+    "Run geometry analysis in a separate process for crash isolation (slightly slower). Off by default.",
+  geometry_batch_timeout_seconds:
+    "Maximum seconds spent on one geometry batch before those pages degrade to annotation-only extraction.",
+  geometry_batch_checkpoint_enabled:
+    "Checkpoint between geometry batches so a long run is more robust and resumable.",
+  pin_assignment_threshold:
+    "Maximum distance in points for assigning a detected pin to a component body (larger captures more pins but risks wrong parents).",
+  refdes_search_radius:
+    "Search radius in points for associating a RefDes label with its component body.",
+  adaptive_orphan_threshold:
+    "Minimum number of unqualified (orphan) pins on a page before adaptive mode runs full geometry on it.",
+  adaptive_orphan_ratio:
+    "Minimum fraction of pins that are orphans (0-1) before adaptive mode runs full geometry on a page.",
+  adaptive_max_pages:
+    "In adaptive mode, the maximum number of pages to run full geometry on (highest-need pages first).",
+  pinlist_prefers_annotation_mode:
+    "When a pinlist is provided, prefer fast annotation-first pin qualification over full geometry.",
+};
+
+// Minimal accessible hover-tooltip affordance. No dedicated tooltip primitive
+// exists in components/primitives, so this reuses the project's established
+// pattern: a Phosphor ``Info`` icon (as in MappingTable) carrying a native
+// ``title`` (hover tooltip) plus an ``aria-label`` (screen-reader text). It is
+// non-interactive by design — never triggers a native alert/confirm.
+function InfoTip({ text }: { text: string }) {
+  return (
+    <span
+      className="refdes-infotip"
+      role="img"
+      aria-label={text}
+      title={text}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        flexShrink: 0,
+        marginTop: "2px",
+        color: "var(--text-faint)",
+        cursor: "help",
+      }}
+    >
+      <Info size={14} weight="regular" aria-hidden="true" />
+    </span>
+  );
+}
+
+// Lays out a control alongside its InfoTip so every option — existing or
+// advanced — gets the same hover-tooltip affordance without modifying the
+// shared field primitives.
+function OptionRow({ info, children }: { info: string; children: ReactNode }) {
+  return (
+    <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-2)" }}>
+      <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
+      <InfoTip text={info} />
+    </div>
+  );
 }
 
 export function RefDesExtractorTool() {
@@ -71,7 +158,21 @@ export function RefDesExtractorTool() {
     geometry_batch_size: 10,
     max_pin_label_length: 4,
     prov_distance: 15.0,
+    // Advanced engine tuning — defaults mirror the backend RefDesConfig.
+    geometry_subprocess_enabled: false,
+    geometry_batch_timeout_seconds: 240.0,
+    geometry_batch_checkpoint_enabled: true,
+    pin_assignment_threshold: 50.0,
+    refdes_search_radius: 100.0,
+    adaptive_orphan_threshold: 5,
+    adaptive_orphan_ratio: 0.3,
+    adaptive_max_pages: 10,
+    pinlist_prefers_annotation_mode: true,
   });
+  // Advanced controls are collapsed by default; their defaults still ship in
+  // the payload because ``options`` (spread into the run request) holds them
+  // whether or not the disclosure is open.
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [validations, setValidations] = useState<ValidationMessage[]>(baseScenario.validations);
   const [contextView, setContextView] = useState<"preview" | "run">("preview");
   const [runMode, setRunMode] = useState<RunMode>("idle");
@@ -520,13 +621,13 @@ export function RefDesExtractorTool() {
             <SectionCard
               title="Input Files"
               eyebrow="Data Sources"
-              description="Load the schematic PDF and the BOM. The pinlist is required for piece-part extraction."
+              description="Load the schematic PDF and the BOM. A pinlist is optional for piece-part extraction — the pin data usually already lives in the BOM."
             >
               {isPristine ? (
                 <EmptyState
                   icon={MagnifyingGlass}
                   headline="Extract reference designators"
-                  body="Pick a schematic PDF and BOM to extract reference designators. Piece-part extraction also requires a pinlist."
+                  body="Pick a schematic PDF and BOM to extract reference designators. Piece-part extraction can also use an optional pinlist."
                   primaryAction={{
                     label: "Browse for schematic",
                     onClick: () => {
@@ -550,107 +651,307 @@ export function RefDesExtractorTool() {
               eyebrow="Extraction Settings"
               description="Pick the extraction strategy and backend."
             >
-              <OptionsField label="Extraction mode">
-                <ToggleChip<ExtractionMode>
-                  ariaLabel="Extraction mode"
-                  value={options.extraction_mode}
+              <OptionRow info={OPTION_TOOLTIPS.extraction_mode}>
+                <OptionsField label="Extraction mode">
+                  <ToggleChip<ExtractionMode>
+                    ariaLabel="Extraction mode"
+                    value={options.extraction_mode}
+                    onChange={(next) =>
+                      setOptions((prev) => ({ ...prev, extraction_mode: next as ExtractionMode }))
+                    }
+                    options={[
+                      { value: "functional", label: "Functional" },
+                      { value: "piece_part", label: "Piece-Part" },
+                    ]}
+                  />
+                </OptionsField>
+              </OptionRow>
+
+              <OptionRow info={OPTION_TOOLTIPS.backend_mode}>
+                <OptionsField label="Backend">
+                  <CustomSelect
+                    label="Backend mode"
+                    value={options.backend_mode}
+                    options={[
+                      { value: "auto", label: "Auto (recommended)" },
+                      { value: "nextgen", label: "NextGen only" },
+                      { value: "legacy", label: "Legacy only" },
+                    ]}
+                    onChange={(v) =>
+                      setOptions((prev) => ({ ...prev, backend_mode: v as BackendMode }))
+                    }
+                  />
+                </OptionsField>
+              </OptionRow>
+
+              <OptionRow info={OPTION_TOOLTIPS.geometry_analysis_enabled}>
+                <CheckboxField
+                  id="refdes-geometry-analysis"
+                  label="Enable geometry analysis"
+                  checked={options.geometry_analysis_enabled}
                   onChange={(next) =>
-                    setOptions((prev) => ({ ...prev, extraction_mode: next as ExtractionMode }))
-                  }
-                  options={[
-                    { value: "functional", label: "Functional" },
-                    { value: "piece_part", label: "Piece-Part" },
-                  ]}
-                />
-              </OptionsField>
-
-              <OptionsField label="Backend">
-                <CustomSelect
-                  label="Backend mode"
-                  value={options.backend_mode}
-                  options={[
-                    { value: "auto", label: "Auto (recommended)" },
-                    { value: "nextgen", label: "NextGen only" },
-                    { value: "legacy", label: "Legacy only" },
-                  ]}
-                  onChange={(v) =>
-                    setOptions((prev) => ({ ...prev, backend_mode: v as BackendMode }))
+                    setOptions((prev) => ({ ...prev, geometry_analysis_enabled: next }))
                   }
                 />
-              </OptionsField>
+              </OptionRow>
 
-              <CheckboxField
-                id="refdes-geometry-analysis"
-                label="Enable geometry analysis"
-                checked={options.geometry_analysis_enabled}
-                onChange={(next) =>
-                  setOptions((prev) => ({ ...prev, geometry_analysis_enabled: next }))
-                }
-              />
+              <OptionRow info={OPTION_TOOLTIPS.adaptive_geometry_enabled}>
+                <CheckboxField
+                  id="refdes-adaptive-geometry"
+                  label="Adaptive geometry (smart page gating)"
+                  checked={options.adaptive_geometry_enabled}
+                  // Presentation-only gate: the backend returns from the
+                  // annotation-only branch before reading adaptive_geometry_enabled
+                  // when geometry analysis is off, so the option is silently inert.
+                  // Disable (don't mutate) the value to reflect that.
+                  disabled={!options.geometry_analysis_enabled}
+                  hint={
+                    !options.geometry_analysis_enabled
+                      ? "Requires geometry analysis"
+                      : undefined
+                  }
+                  onChange={(next) =>
+                    setOptions((prev) => ({ ...prev, adaptive_geometry_enabled: next }))
+                  }
+                />
+              </OptionRow>
 
-              <CheckboxField
-                id="refdes-adaptive-geometry"
-                label="Adaptive geometry (smart page gating)"
-                checked={options.adaptive_geometry_enabled}
-                // Presentation-only gate: the backend returns from the
-                // annotation-only branch before reading adaptive_geometry_enabled
-                // when geometry analysis is off, so the option is silently inert.
-                // Disable (don't mutate) the value to reflect that.
-                disabled={!options.geometry_analysis_enabled}
-                hint={
-                  !options.geometry_analysis_enabled
-                    ? "Requires geometry analysis"
-                    : undefined
-                }
-                onChange={(next) =>
-                  setOptions((prev) => ({ ...prev, adaptive_geometry_enabled: next }))
-                }
-              />
+              <OptionRow info={OPTION_TOOLTIPS.geometry_batch_size}>
+                <NumberField
+                  id="refdes-geometry-batch-size"
+                  label="Geometry batch size"
+                  value={options.geometry_batch_size}
+                  min={1}
+                  step={1}
+                  // Consumed only on the geometry path (_run_geometry_in_batches);
+                  // the backend never reads it when geometry analysis is off, so
+                  // disable (don't mutate) the field to mirror the adaptive
+                  // checkbox gate.
+                  disabled={!options.geometry_analysis_enabled}
+                  hint={
+                    options.geometry_analysis_enabled
+                      ? "Pages per geometry batch"
+                      : "Requires geometry analysis"
+                  }
+                  onChange={(next) =>
+                    setOptions((prev) => ({ ...prev, geometry_batch_size: next }))
+                  }
+                />
+              </OptionRow>
 
-              <NumberField
-                id="refdes-geometry-batch-size"
-                label="Geometry batch size"
-                value={options.geometry_batch_size}
-                min={1}
-                step={1}
-                // Consumed only on the geometry path (_run_geometry_in_batches);
-                // the backend never reads it when geometry analysis is off, so
-                // disable (don't mutate) the field to mirror the adaptive
-                // checkbox gate.
-                disabled={!options.geometry_analysis_enabled}
-                hint={
-                  options.geometry_analysis_enabled
-                    ? "Pages per geometry batch"
-                    : "Requires geometry analysis"
-                }
-                onChange={(next) =>
-                  setOptions((prev) => ({ ...prev, geometry_batch_size: next }))
-                }
-              />
+              <OptionRow info={OPTION_TOOLTIPS.max_pin_label_length}>
+                <NumberField
+                  id="refdes-max-pin-label-length"
+                  label="Max pin label length"
+                  value={options.max_pin_label_length}
+                  min={1}
+                  step={1}
+                  hint="Longest token treated as a pin label"
+                  onChange={(next) =>
+                    setOptions((prev) => ({ ...prev, max_pin_label_length: next }))
+                  }
+                />
+              </OptionRow>
 
-              <NumberField
-                id="refdes-max-pin-label-length"
-                label="Max pin label length"
-                value={options.max_pin_label_length}
-                min={1}
-                step={1}
-                hint="Longest token treated as a pin label"
-                onChange={(next) =>
-                  setOptions((prev) => ({ ...prev, max_pin_label_length: next }))
-                }
-              />
+              <OptionRow info={OPTION_TOOLTIPS.prov_distance}>
+                <NumberField
+                  id="refdes-prov-distance"
+                  label="Provenance distance"
+                  value={options.prov_distance}
+                  min={0.5}
+                  step={0.5}
+                  hint="Max distance for designator-annotation pairing"
+                  onChange={(next) =>
+                    setOptions((prev) => ({ ...prev, prov_distance: next }))
+                  }
+                />
+              </OptionRow>
 
-              <NumberField
-                id="refdes-prov-distance"
-                label="Provenance distance"
-                value={options.prov_distance}
-                min={0.5}
-                step={0.5}
-                hint="Max distance for designator-annotation pairing"
-                onChange={(next) =>
-                  setOptions((prev) => ({ ...prev, prov_distance: next }))
-                }
-              />
+              <div className="refdes-advanced">
+                <button
+                  type="button"
+                  className="refdes-advanced__toggle"
+                  aria-expanded={advancedOpen}
+                  aria-controls="refdes-advanced-panel"
+                  onClick={() => setAdvancedOpen((open) => !open)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "var(--space-2)",
+                    appearance: "none",
+                    border: "none",
+                    background: "transparent",
+                    padding: "var(--space-1) 0",
+                    color: "var(--text-secondary)",
+                    fontFamily: "inherit",
+                    fontSize: "var(--text-xs)",
+                    fontWeight: "var(--weight-semibold)",
+                    letterSpacing: "var(--tracking-uppercase)",
+                    textTransform: "uppercase",
+                    cursor: "pointer",
+                  }}
+                >
+                  {advancedOpen ? (
+                    <CaretDown size={12} weight="bold" />
+                  ) : (
+                    <CaretRight size={12} weight="bold" />
+                  )}
+                  Advanced controls
+                </button>
+
+                {advancedOpen ? (
+                  <div
+                    id="refdes-advanced-panel"
+                    className="options-section__grid"
+                    style={{ marginTop: "var(--space-3)" }}
+                  >
+                    <OptionRow info={OPTION_TOOLTIPS.geometry_subprocess_enabled}>
+                      <CheckboxField
+                        id="refdes-geometry-subprocess"
+                        label="Geometry subprocess isolation"
+                        checked={options.geometry_subprocess_enabled}
+                        onChange={(next) =>
+                          setOptions((prev) => ({
+                            ...prev,
+                            geometry_subprocess_enabled: next,
+                          }))
+                        }
+                      />
+                    </OptionRow>
+
+                    <OptionRow info={OPTION_TOOLTIPS.geometry_batch_timeout_seconds}>
+                      <NumberField
+                        id="refdes-geometry-batch-timeout"
+                        label="Geometry batch timeout (s)"
+                        value={options.geometry_batch_timeout_seconds}
+                        min={1}
+                        step={10}
+                        hint="Seconds before a batch degrades to annotation-only"
+                        onChange={(next) =>
+                          setOptions((prev) => ({
+                            ...prev,
+                            geometry_batch_timeout_seconds: next,
+                          }))
+                        }
+                      />
+                    </OptionRow>
+
+                    <OptionRow info={OPTION_TOOLTIPS.geometry_batch_checkpoint_enabled}>
+                      <CheckboxField
+                        id="refdes-geometry-batch-checkpoint"
+                        label="Checkpoint between geometry batches"
+                        checked={options.geometry_batch_checkpoint_enabled}
+                        onChange={(next) =>
+                          setOptions((prev) => ({
+                            ...prev,
+                            geometry_batch_checkpoint_enabled: next,
+                          }))
+                        }
+                      />
+                    </OptionRow>
+
+                    <OptionRow info={OPTION_TOOLTIPS.pin_assignment_threshold}>
+                      <NumberField
+                        id="refdes-pin-assignment-threshold"
+                        label="Pin assignment threshold (pt)"
+                        value={options.pin_assignment_threshold}
+                        min={1}
+                        step={1}
+                        hint="Max pin-to-body distance for assignment"
+                        onChange={(next) =>
+                          setOptions((prev) => ({
+                            ...prev,
+                            pin_assignment_threshold: next,
+                          }))
+                        }
+                      />
+                    </OptionRow>
+
+                    <OptionRow info={OPTION_TOOLTIPS.refdes_search_radius}>
+                      <NumberField
+                        id="refdes-search-radius"
+                        label="RefDes search radius (pt)"
+                        value={options.refdes_search_radius}
+                        min={1}
+                        step={1}
+                        hint="Radius for pairing a RefDes label to its body"
+                        onChange={(next) =>
+                          setOptions((prev) => ({
+                            ...prev,
+                            refdes_search_radius: next,
+                          }))
+                        }
+                      />
+                    </OptionRow>
+
+                    <OptionRow info={OPTION_TOOLTIPS.adaptive_orphan_threshold}>
+                      <NumberField
+                        id="refdes-adaptive-orphan-threshold"
+                        label="Adaptive orphan threshold"
+                        value={options.adaptive_orphan_threshold}
+                        min={0}
+                        step={1}
+                        hint="Min orphan pins on a page to trigger full geometry"
+                        onChange={(next) =>
+                          setOptions((prev) => ({
+                            ...prev,
+                            adaptive_orphan_threshold: next,
+                          }))
+                        }
+                      />
+                    </OptionRow>
+
+                    <OptionRow info={OPTION_TOOLTIPS.adaptive_orphan_ratio}>
+                      <NumberField
+                        id="refdes-adaptive-orphan-ratio"
+                        label="Adaptive orphan ratio"
+                        value={options.adaptive_orphan_ratio}
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        hint="Min orphan fraction (0-1) to trigger full geometry"
+                        onChange={(next) =>
+                          setOptions((prev) => ({
+                            ...prev,
+                            adaptive_orphan_ratio: next,
+                          }))
+                        }
+                      />
+                    </OptionRow>
+
+                    <OptionRow info={OPTION_TOOLTIPS.adaptive_max_pages}>
+                      <NumberField
+                        id="refdes-adaptive-max-pages"
+                        label="Adaptive max pages"
+                        value={options.adaptive_max_pages}
+                        min={1}
+                        step={1}
+                        hint="Cap on pages that run full geometry in adaptive mode"
+                        onChange={(next) =>
+                          setOptions((prev) => ({
+                            ...prev,
+                            adaptive_max_pages: next,
+                          }))
+                        }
+                      />
+                    </OptionRow>
+
+                    <OptionRow info={OPTION_TOOLTIPS.pinlist_prefers_annotation_mode}>
+                      <CheckboxField
+                        id="refdes-pinlist-prefers-annotation"
+                        label="Pinlist prefers annotation-first qualification"
+                        checked={options.pinlist_prefers_annotation_mode}
+                        onChange={(next) =>
+                          setOptions((prev) => ({
+                            ...prev,
+                            pinlist_prefers_annotation_mode: next,
+                          }))
+                        }
+                      />
+                    </OptionRow>
+                  </div>
+                ) : null}
+              </div>
 
               <OutputFolderPicker
                 value={refdesExtractorOutputDirectory}
