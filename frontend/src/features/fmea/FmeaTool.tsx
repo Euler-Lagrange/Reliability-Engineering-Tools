@@ -1219,7 +1219,9 @@ export function FmeaTool() {
                 </span>
                 <span className="header-metric">
                   <span>Auto-mapped</span>
-                  <strong>{mappingCoverageLabel}</strong>
+                  {/* The one hero metric for this tool (design-system
+                      .hero-metric, shipped 0.4.5, first adopted here). */}
+                  <strong className="hero-metric">{mappingCoverageLabel}</strong>
                 </span>
               </div>
             }

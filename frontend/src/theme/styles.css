@@ -850,7 +850,7 @@ button:disabled {
   text-transform: uppercase;
 }
 
-.header-metric strong {
+.header-metric strong:not(.hero-metric) {
   font-size: var(--text-base);
   font-weight: var(--weight-semibold);
 }
@@ -1913,7 +1913,7 @@ tbody tr:hover {
   background: var(--surface-muted);
 }
 
-.run-result__metric strong {
+.run-result__metric strong:not(.hero-metric) {
   font-size: var(--text-base);
   font-weight: var(--weight-semibold);
 }

@@ -265,7 +265,7 @@ export function RunStatePanel({
           <div className="run-result__metrics">
             <div className="run-result__metric">
               <span>Primary</span>
-              <strong>{result.primaryMetric}</strong>
+              <strong className="hero-metric">{result.primaryMetric}</strong>
             </div>
             <div className="run-result__metric">
               <span>Secondary</span>
