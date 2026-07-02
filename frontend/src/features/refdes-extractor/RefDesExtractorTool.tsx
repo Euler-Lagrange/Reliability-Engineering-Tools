@@ -176,7 +176,6 @@ export function RefDesExtractorTool() {
   // launch a second run whose rejection (single-active-run guard) would clear
   // the first, live run's session.
   const isStartingRef = useRef(false);
-  const backendMode = useShellStore((state) => state.backendMode);
   const setBackendState = useShellStore((state) => state.setBackendState);
   const refdesExtractorOutputDirectory = useShellStore(
     (state) => state.refdesExtractorOutputDirectory,
@@ -593,18 +592,6 @@ export function RefDesExtractorTool() {
       detail="An error occurred in the RefDes Extractor."
     >
       <div className="tool-workspace">
-        <section className="tool-banner">
-          <div>
-            <p className="eyebrow">RefDes Extractor</p>
-            <h2 className="tool-banner__title">RefDes Extractor</h2>
-          </div>
-          <div className="tool-banner__chips">
-            <span className={`status-chip status-chip--${backendMode === "desktop-bridge" ? "success" : "pending"}`}>
-              {backendMode === "desktop-bridge" ? "Desktop bridge" : "Browser preview"}
-            </span>
-          </div>
-        </section>
-
         <section className="workspace-grid workspace-grid--single">
           <div className="workspace-grid__main">
             <SectionCard

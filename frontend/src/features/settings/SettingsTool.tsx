@@ -134,11 +134,6 @@ export function SettingsTool() {
   return (
     <ErrorBoundary title="Settings error" detail="An error occurred in the Settings panel.">
       <div className="tool-workspace">
-        <header className="tool-banner">
-          <p className="tool-banner__eyebrow">Platform</p>
-          <h1 className="tool-banner__title">Settings</h1>
-        </header>
-
         <section className="workspace-grid workspace-grid--single">
           <div className="workspace-grid__main">
             <SectionCard title="Theme" eyebrow="Appearance">

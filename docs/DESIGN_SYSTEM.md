@@ -100,7 +100,7 @@ Both fonts are OFL-licensed; the license text travels in
 | `--text-base`| 13 px | Body, button labels |
 | `--text-md`  | 16 px | Section card titles |
 | `--text-lg`  | 18 px | Subsection headlines |
-| `--text-xl`  | 20 px | Tool banner title |
+| `--text-xl`  | 20 px | Prominent in-page headlines |
 | `--text-2xl` | 24 px | Legacy headline size; retained for unchanged consumers |
 | `--text-xxl` | 28 px | Topbar `<h1>` (bumped in 0.4.5) |
 | `--text-3xl` | 32 px | Hero metric utility (opt-in, see below) |
@@ -404,10 +404,9 @@ keeps these restrained:
   font-feature-settings: "tnum" 1, "zero" 1, "cv11" 1;
 }
 
-/* Eyebrows, status chips, banner: uppercase + medium weight */
+/* Eyebrows, status chips: uppercase + medium weight */
 :root[data-theme="mission_control"] .eyebrow,
 :root[data-theme="mission_control"] .section-card__eyebrow,
-:root[data-theme="mission_control"] .tool-banner__eyebrow,
 :root[data-theme="mission_control"] .status-chip {
   text-transform: uppercase;
   letter-spacing: var(--tracking-uppercase);

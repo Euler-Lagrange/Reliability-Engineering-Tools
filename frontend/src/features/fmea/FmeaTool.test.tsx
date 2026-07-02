@@ -35,12 +35,13 @@ function renderApp() {
 }
 
 async function waitForFmeaTool() {
-  // The Suspense fallback ALSO renders a level-2 heading named "FMEA
-  // Generator" while the lazy chunk loads, so waiting on the heading
-  // alone resolves too early. The Workflow card's mode selector is only
-  // rendered by the real `FmeaTool`, so we wait on one of its workflow
-  // buttons instead. This also guarantees the mapping table below has
-  // finished its first render by the time tests query it.
+  // The Suspense fallback renders a transient "Preparing FMEA Generator"
+  // heading while the lazy chunk loads (and the tool itself no longer has
+  // a banner heading at all), so heading queries are the wrong sentinel.
+  // The Workflow card's mode selector is only rendered by the real
+  // `FmeaTool`, so we wait on one of its workflow buttons instead. This
+  // also guarantees the mapping table below has finished its first render
+  // by the time tests query it.
   await screen.findByRole(
     "button",
     { name: /piece-part from grouping file/i },

@@ -414,7 +414,6 @@ export function FmeaTool() {
   // launch a second run whose rejection (single-active-run guard) would clear
   // the first, live run's session.
   const isStartingRef = useRef(false);
-  const backendMode = useShellStore((state) => state.backendMode);
   const setBackendState = useShellStore((state) => state.setBackendState);
   const fmeaOutputDirectory = useShellStore((state) => state.fmeaOutputDirectory);
   const setFmeaOutputDirectory = useShellStore((state) => state.setFmeaOutputDirectory);
@@ -1203,21 +1202,8 @@ export function FmeaTool() {
 
   return (
     <div className="tool-workspace">
-      <section className="tool-banner">
-        <div>
-          <p className="eyebrow">FMEA Generator</p>
-          <h2 className="tool-banner__title">FMEA Generator</h2>
-          <p className="section-card__description">
-            Generate piece-part FMEA workbooks from grouping, BOM, and failure mode sources.
-          </p>
-        </div>
-        <div className="tool-banner__chips">
-          <span className={`status-chip status-chip--${backendMode === "desktop-bridge" ? "success" : "pending"}`}>
-            {backendMode === "desktop-bridge" ? "Desktop" : "Browser preview"}
-          </span>
-        </div>
-      </section>
-
+      {/* No per-tool banner: the shell topbar is the single title block
+          (title + description + backend-mode chip live there). */}
       <section className="workspace-grid workspace-grid--single">
         <div className="workspace-grid__main">
           <SectionCard

@@ -21,10 +21,11 @@ function renderApp() {
 }
 
 async function waitForFmeaTool() {
-  await screen.findByRole("heading", {
-    name: /fmea generator/i,
-    level: 2,
-  });
+  // Wait on the FMEA pane's own workflow card, not a heading: the per-tool
+  // banner heading was removed (the shell topbar is the single title), and
+  // the Suspense fallback renders a transient "Preparing FMEA Generator"
+  // heading that a name-based heading query could race against.
+  await screen.findByRole("button", { name: /piece-part from grouping file/i });
 }
 
 describe("tauri_build shell", () => {
@@ -37,7 +38,8 @@ describe("tauri_build shell", () => {
     await user.click(screen.getByRole("button", { name: /compare/i }));
 
     expect(screen.getByRole("button", { name: /compare/i })).toHaveAttribute("aria-current", "page");
-    expect(await screen.findByRole("heading", { name: /bom comparison tool/i })).toBeInTheDocument();
+    // Label-independent sentinel: the tool's own "Run Setup" section heading.
+    expect(await screen.findByRole("heading", { name: /run setup/i })).toBeInTheDocument();
   });
 
   test("switches theme modes from the shell rail", async () => {
@@ -109,7 +111,7 @@ describe("tauri_build shell", () => {
 
     await user.click(screen.getByRole("button", { name: /compare/i }));
 
-    await screen.findByRole("heading", { name: /bom comparison tool/i });
+    await screen.findByRole("heading", { name: /run setup/i });
 
     await waitFor(() => {
       const main = document.querySelector("main[aria-label='Cross Compare workspace']");

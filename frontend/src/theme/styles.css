@@ -468,30 +468,6 @@ button:disabled {
   gap: var(--space-4);
 }
 
-.tool-banner {
-  display: flex;
-  justify-content: space-between;
-  align-items: start;
-  gap: var(--space-4);
-  padding: var(--space-4);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-}
-
-.tool-banner__title {
-  margin: 0 0 6px; /* off-grid: tight inter-line gap inside the banner */
-  font-size: var(--text-xl);
-  line-height: 1.1;
-  letter-spacing: -0.02em;
-}
-
-.tool-banner__chips {
-  display: flex;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
 .app-main {
   display: grid;
   gap: var(--space-4);
@@ -1981,7 +1957,6 @@ tbody tr:hover {
     padding: var(--space-4);
   }
 
-  .tool-banner,
   .topbar,
   .input-card__footer {
     flex-direction: column;
@@ -3376,16 +3351,10 @@ tbody tr:hover {
 
 :root[data-theme="mission_control"] .eyebrow,
 :root[data-theme="mission_control"] .section-card__eyebrow,
-:root[data-theme="mission_control"] .tool-banner__eyebrow,
 :root[data-theme="mission_control"] .status-chip {
   text-transform: uppercase;
   letter-spacing: var(--tracking-uppercase);
   font-weight: var(--weight-medium);
-}
-
-:root[data-theme="mission_control"] .tool-banner__title {
-  font-weight: var(--weight-medium);
-  letter-spacing: var(--tracking-wide);
 }
 
 /* Subtle cyan glow on "ready" status chips. Uses theme-specific
