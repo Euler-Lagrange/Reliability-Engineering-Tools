@@ -19,15 +19,15 @@
 }
 
 .toast[data-tone="success"] {
-  border-color: rgba(27, 135, 88, 0.24);
+  border-color: color-mix(in srgb, var(--success) 24%, transparent);
 }
 
 .toast[data-tone="warning"] {
-  border-color: rgba(148, 97, 0, 0.24);
+  border-color: color-mix(in srgb, var(--warning) 24%, transparent);
 }
 
 .toast[data-tone="error"] {
-  border-color: rgba(177, 68, 51, 0.24);
+  border-color: color-mix(in srgb, var(--danger) 24%, transparent);
 }
 
 .header {
