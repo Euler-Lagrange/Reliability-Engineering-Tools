@@ -315,7 +315,7 @@ export function App() {
                     key={tool.id}
                     type="button"
                     className={styles.toolButton}
-                    data-active={isActive}
+                    data-selected={isActive}
                     onClick={() => setActiveToolId(tool.id)}
                     aria-current={isActive ? "page" : undefined}
                     aria-label={`${tool.label} (${index + 1})`}
@@ -339,7 +339,7 @@ export function App() {
                         key={theme.id}
                         type="button"
                         className={styles.themeButton}
-                        data-active={themeMode === theme.id}
+                        data-selected={themeMode === theme.id}
                         onClick={() => setThemeMode(theme.id)}
                         aria-label={`Switch to ${theme.shortLabel.toLowerCase()} theme`}
                         title={theme.label}
@@ -402,7 +402,7 @@ export function App() {
                     <button
                       type="button"
                       className="topbar__review-toggle"
-                      data-active={contextOpen}
+                      data-selected={contextOpen}
                       onClick={toggleContext}
                       aria-pressed={contextOpen}
                       aria-label={contextOpen ? "Close Review drawer" : "Open Review drawer"}

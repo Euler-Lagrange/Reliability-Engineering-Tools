@@ -280,7 +280,6 @@ export function CommandPalette({ actions, open, onClose }: CommandPaletteProps) 
                       className={className}
                       role="option"
                       aria-selected={isActive}
-                      data-active={isActive || undefined}
                       onMouseEnter={() => setActiveIndex(indexInFlat)}
                       onClick={() => activateAction(action)}
                     >

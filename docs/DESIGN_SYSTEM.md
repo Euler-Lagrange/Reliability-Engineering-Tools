@@ -542,11 +542,14 @@ when selected:
 }
 ```
 
-`StrategySelector`, `WorkflowSelector`, `ToggleChip`, and the Settings
-theme tiles emit both `data-selected={isSelected}` and the pre-existing
-`data-active={isSelected}`. The two attributes coexist during the
-migration — component CSS still keys off `data-active` where it already
-does; new surfaces should prefer `data-selected`.
+The migration is complete: `data-selected` is the only selection
+attribute. `StrategySelector`, `WorkflowSelector`, `ToggleChip`, the
+Settings theme tiles, the rail tool/theme buttons, the panel toggles,
+the run-log filter, and the topbar Review toggle all emit it, and every
+selection selector in CSS keys off it. Do not reintroduce
+`data-active` — the command palette's transient keyboard highlight uses
+the `.is-active` class and `aria-selected`, which is a different job
+(highlight, not selection).
 
 ## Hero Metric Utility (0.4.5)
 

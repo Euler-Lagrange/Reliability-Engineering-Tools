@@ -17,7 +17,6 @@ export function StrategySelector({
         <button
           key={strategy.id}
           className="choice-card choice-card--strategy"
-          data-active={strategy.id === selectedStrategyId}
           data-selected={strategy.id === selectedStrategyId}
           onClick={() => onSelect(strategy.id)}
           type="button"

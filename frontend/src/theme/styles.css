@@ -541,8 +541,8 @@ button:disabled {
    Unified selection rule — per design handoff principle F.
    One pattern applies everywhere a user has picked one of N:
    choice cards, strategy cards, workflow cards, theme tiles,
-   radio chips. Existing `data-active="true"` selectors remain
-   for backwards-compatibility while call sites migrate.
+   radio chips. Migration complete: `data-selected` is the only
+   selection attribute; do not reintroduce `data-active`.
    ============================================================ */
 [data-selected="true"] {
   border-color: var(--accent);
@@ -905,11 +905,6 @@ button:disabled {
   border-color: var(--accent);
 }
 
-.choice-card[data-active="true"] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
 .choice-card[data-disabled="true"] {
   opacity: 0.55;
   cursor: not-allowed;
@@ -1109,8 +1104,8 @@ button:disabled {
   border-color: var(--accent);
 }
 
-.toggle-chip[data-active="true"],
-.panel-toggle__button[data-active="true"] {
+.toggle-chip[data-selected="true"],
+.panel-toggle__button[data-selected="true"] {
   color: var(--accent);
   border-color: var(--accent);
   background: var(--accent-soft);
@@ -1663,12 +1658,12 @@ tbody tr:hover {
   box-shadow: inset var(--shadow-focus-ring);
 }
 
-.run-log-panel__filter-option[data-active="true"] {
+.run-log-panel__filter-option[data-selected="true"] {
   background: var(--accent-soft);
   color: var(--accent);
 }
 
-.run-log-panel__filter-option:not([data-active="true"]):hover {
+.run-log-panel__filter-option:not([data-selected="true"]):hover {
   background: var(--surface-muted);
   color: var(--text);
 }
@@ -2926,7 +2921,7 @@ tbody tr:hover {
   box-shadow: var(--shadow-focus-ring);
 }
 
-.topbar__review-toggle[data-active="true"] {
+.topbar__review-toggle[data-selected="true"] {
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent);

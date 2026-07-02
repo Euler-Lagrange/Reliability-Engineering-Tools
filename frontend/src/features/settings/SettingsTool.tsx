@@ -146,14 +146,11 @@ export function SettingsTool() {
                 {themeOptions.map((option) => {
                   const isSelected = themeMode === option.id;
                   const Icon = option.icon;
-                  const classes = isSelected
-                    ? `${styles.themeOption} ${styles.themeOptionSelected}`
-                    : styles.themeOption;
                   return (
                     <button
                       key={option.id}
                       type="button"
-                      className={classes}
+                      className={styles.themeOption}
                       data-selected={isSelected || undefined}
                       onClick={() => setThemeMode(option.id)}
                     >

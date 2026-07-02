@@ -9,8 +9,8 @@ import type { ReactNode } from "react";
  * the existing `.toggle-chip` base class plus the `.toggle-chip-group`
  * namespace classes added in `theme/styles.css`.
  *
- * Backwards-compat: each chip carries BOTH `data-active="true"` (matched by
- * the existing project-wide `.toggle-chip[data-active="true"]` rule) and the
+ * Selection state: each chip carries `data-selected` (matched by the
+ * project-wide `.toggle-chip[data-selected="true"]` rule) and the
  * `is-selected` modifier class. New consumers can rely on either selector.
  */
 
@@ -63,7 +63,6 @@ export function ToggleChip<T extends string = string>({
             className={className}
             role="radio"
             aria-checked={selected}
-            data-active={selected}
             data-selected={selected}
             data-value={option.value}
             disabled={optionDisabled}

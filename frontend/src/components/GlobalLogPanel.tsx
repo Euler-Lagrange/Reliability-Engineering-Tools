@@ -498,7 +498,7 @@ function FilterToggle({ filterMode, onChange, allCounts, activeCounts }: FilterT
       <button
         type="button"
         className="run-log-panel__filter-option"
-        data-active={filterMode === "all"}
+        data-selected={filterMode === "all"}
         onClick={() => onChange("all")}
       >
         <span>All tools</span>
@@ -507,7 +507,7 @@ function FilterToggle({ filterMode, onChange, allCounts, activeCounts }: FilterT
       <button
         type="button"
         className="run-log-panel__filter-option"
-        data-active={filterMode === "active"}
+        data-selected={filterMode === "active"}
         onClick={() => onChange("active")}
       >
         <span>Current only</span>

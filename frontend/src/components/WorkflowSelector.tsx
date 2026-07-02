@@ -17,7 +17,6 @@ export function WorkflowSelector({
         <button
           key={workflow.id}
           className="choice-card"
-          data-active={workflow.id === selectedWorkflowId}
           data-selected={workflow.id === selectedWorkflowId}
           onClick={() => onSelect(workflow.id)}
           type="button"

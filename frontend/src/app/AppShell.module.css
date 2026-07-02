@@ -90,7 +90,7 @@
   box-shadow: var(--shadow-focus-ring);
 }
 
-.toolButton[data-active="true"] {
+.toolButton[data-selected="true"] {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 22%, transparent);
   background: var(--accent-soft);
@@ -166,7 +166,7 @@
   box-shadow: var(--shadow-focus-ring);
 }
 
-.themeButton[data-active="true"] {
+.themeButton[data-selected="true"] {
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent);

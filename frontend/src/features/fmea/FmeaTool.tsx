@@ -1505,7 +1505,7 @@ export function FmeaTool() {
                 <button
                   type="button"
                   className="panel-toggle__button"
-                  data-active={contextView === "preview"}
+                  data-selected={contextView === "preview"}
                   role="tab"
                   aria-selected={contextView === "preview"}
                   onClick={() => setContextView("preview")}
@@ -1515,7 +1515,7 @@ export function FmeaTool() {
                 <button
                   type="button"
                   className="panel-toggle__button"
-                  data-active={contextView === "run"}
+                  data-selected={contextView === "run"}
                   role="tab"
                   aria-selected={contextView === "run"}
                   onClick={() => setContextView("run")}

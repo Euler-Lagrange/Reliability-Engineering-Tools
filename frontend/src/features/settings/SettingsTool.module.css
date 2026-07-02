@@ -29,11 +29,6 @@
   box-shadow: var(--shadow-focus-ring);
 }
 
-.themeOptionSelected {
-  border: 2px solid var(--accent);
-  background: var(--surface-muted);
-}
-
 .themeOptionLabel {
   font-size: var(--text-base);
   font-weight: var(--weight-semibold);
