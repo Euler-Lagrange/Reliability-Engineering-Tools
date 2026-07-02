@@ -306,8 +306,12 @@ export const demoScenarios: DemoScenario[] = [
         id: "v-1",
         severity: "info",
         area: "Preview",
-        title: "92% of canonical columns auto-mapped",
-        detail: "Only operator-sensitive fields remain in manual review status.",
+        // Demo copy must describe the DEMO, not claim live state — a "92%
+        // auto-mapped" chip beside a mapping table showing 10 unmapped
+        // fields read as a contradiction.
+        title: "Example preview seeded",
+        detail:
+          "Preview rows below come from the demo scenario. Live mapping status appears under Column Mapping.",
       },
     ],
     previewRows,
@@ -606,8 +610,8 @@ export const bomCompareDemoScenarios: DemoScenario[] = [
         id: "ready",
         severity: "info",
         area: "Run State",
-        title: "Ready to run",
-        detail: "All inputs loaded and mapped.",
+        title: "Example data staged",
+        detail: "A demo grouping + BOM pair is pre-wired. Browse for real files to replace it.",
       },
     ],
     previewRows: [],
@@ -641,8 +645,8 @@ export const bomCompareDemoScenarios: DemoScenario[] = [
         id: "ready",
         severity: "info",
         area: "Run State",
-        title: "Ready to run",
-        detail: "Both BOMs loaded and RefDes columns mapped.",
+        title: "Example data staged",
+        detail: "A demo BOM pair is pre-wired with RefDes columns mapped.",
       },
     ],
     previewRows: [],
@@ -749,8 +753,8 @@ export const failureRateDemoScenarios: DemoScenario[] = [
         id: "ready",
         severity: "info",
         area: "Run State",
-        title: "Ready to run",
-        detail: "All inputs loaded and mapped.",
+        title: "Example data staged",
+        detail: "A demo prediction + FMEA pair is pre-wired. Mapping status lives in Column Mapping.",
       },
     ],
     previewRows: [],
@@ -822,7 +826,7 @@ export const refdesDemoScenarios: DemoScenario[] = [
     // entry here would silently drop the pinlist picker.
     inputs: [refdesInputs.pdf, refdesInputs.bom, refdesInputs.pinlist],
     mappings: [],
-    validations: [{ id: "ready", severity: "info", area: "Run State", title: "Ready to run", detail: "PDF loaded and ready for extraction." }],
+    validations: [{ id: "ready", severity: "info", area: "Run State", title: "Example data staged", detail: "A demo schematic + BOM pair is pre-wired for extraction." }],
     previewRows: [],
     runSequence: {
       events: [

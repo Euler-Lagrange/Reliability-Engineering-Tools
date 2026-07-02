@@ -911,7 +911,7 @@ export function BomCompareTool() {
                 <EmptyState
                   icon={GitDiff}
                   headline="Compare two BOMs"
-                  body="Load the workbooks you want to compare. Group mode aligns a grouping sheet to a BOM; custom mode compares two BOMs directly."
+                  body="Browse for your files, or load the example pair to explore the workflow first."
                   primaryAction={{
                     label: "Browse for first BOM",
                     onClick: () => {

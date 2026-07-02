@@ -91,15 +91,15 @@ describe("FailureRateTool stale validation handling", () => {
     const user = userEvent.setup();
     render(<FailureRateTool />);
 
-    // The seeded "Ready to run" validation card is visible up front.
-    expect(screen.getByText("Ready to run")).toBeInTheDocument();
+    // The seeded demo validation card is visible up front.
+    expect(screen.getByText("Example data staged")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Browse for parts list" }));
 
     // Once the new file lands the stale card is gone (neutral empty state).
     await screen.findByText("C:\\real\\Predictions.xlsx");
     await waitFor(() =>
-      expect(screen.queryByText("Ready to run")).not.toBeInTheDocument(),
+      expect(screen.queryByText("Example data staged")).not.toBeInTheDocument(),
     );
   });
 });
