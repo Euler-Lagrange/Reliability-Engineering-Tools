@@ -76,18 +76,25 @@ describe("RefDesExtractorTool piece-part mode", () => {
   // Regression: refdesInputs.pinlist existed in the mocks but was never
   // seeded into the demo scenario, so piece_part mode computed roles
   // ["pdf", "bom", "pinlist"] yet the pinlist picker never rendered —
-  // there was no way to attach a pinlist from the UI.
-  it("reveals the pinlist slot after switching to Piece-Part mode", async () => {
+  // there was no way to attach a pinlist from the UI. The pinlist must be
+  // reachable in Piece-Part mode once the user engages (browses a file);
+  // the mode toggle itself keeps the onboarding EmptyState in BOTH modes.
+  it("shows the pinlist slot in Piece-Part mode after the first browse", async () => {
+    backendMocks.openPdfFile.mockResolvedValue("C:\\real\\Schematic.pdf");
     const user = userEvent.setup();
     render(<RefDesExtractorTool />);
 
     // Pristine first contact shows the empty state, no pinlist yet.
     expect(screen.getByText("Extract reference designators")).toBeInTheDocument();
 
+    // Toggling the extraction mode is a light option choice, NOT
+    // engagement — the pretty EmptyState must persist in Piece-Part too.
     await user.click(screen.getByRole("radio", { name: "Piece-Part" }));
+    expect(screen.getByText("Extract reference designators")).toBeInTheDocument();
 
-    // Switching extraction mode is engagement: the grid must appear with
-    // all three piece-part slots, including the pinlist.
+    // Browsing the schematic is engagement: the grid appears with all
+    // three piece-part slots, including the pinlist.
+    await user.click(screen.getByRole("button", { name: "Browse for schematic" }));
     expect(await screen.findByText("Schematic PDF")).toBeInTheDocument();
     expect(screen.getByText("BOM workbook (optional)")).toBeInTheDocument();
     expect(screen.getByText("Pinlist file (optional)")).toBeInTheDocument();
@@ -110,12 +117,13 @@ describe("RefDesExtractorTool piece-part mode", () => {
     expect(screen.getAllByRole("button", { name: "Browse" })).toHaveLength(2);
   });
 
-  // Regression (BUG 1): loading only a pinlist in Piece-Part mode is real
-  // engagement, but the pinlist is filtered out of `visibleInputs` in
-  // Functional mode. `isPristine` evaluated against `visibleInputs` lost that
-  // engagement on toggle-back, replacing the InputGrid with the pristine
-  // EmptyState even though no data was lost.
-  it("keeps the input grid after loading only a pinlist then toggling back to Functional", async () => {
+  // Regression (BUG 1): the pinlist is filtered out of `visibleInputs` in
+  // Functional mode. `isPristine` evaluated against `visibleInputs` lost
+  // pinlist engagement on toggle-back, replacing the InputGrid with the
+  // pristine EmptyState even though no data was lost. The pinlist's loaded
+  // state must survive a Piece-Part -> Functional -> Piece-Part round-trip.
+  it("keeps pinlist state across a mode round-trip", async () => {
+    backendMocks.openPdfFile.mockResolvedValue("C:\\real\\Schematic.pdf");
     backendMocks.openExcelFile.mockResolvedValue("C:\\real\\Pinlist.xlsx");
     backendMocks.listSheets.mockResolvedValue({
       path: "C:\\real\\Pinlist.xlsx",
@@ -125,14 +133,16 @@ describe("RefDesExtractorTool piece-part mode", () => {
     const user = userEvent.setup();
     render(<RefDesExtractorTool />);
 
-    // Switch to Piece-Part to reveal the pinlist slot (3 Browse buttons).
+    // Engage in Piece-Part mode: browse the schematic via the EmptyState,
+    // which reveals the grid with the pinlist slot.
     await user.click(screen.getByRole("radio", { name: "Piece-Part" }));
+    await user.click(screen.getByRole("button", { name: "Browse for schematic" }));
     const pinlistCard = (await screen.findByText("Pinlist file (optional)")).closest(
       "article",
     ) as HTMLElement;
     expect(pinlistCard).not.toBeNull();
 
-    // Browse only the pinlist (Excel branch -> listSheets resolution).
+    // Browse the pinlist (Excel branch -> listSheets resolution).
     await user.click(within(pinlistCard).getByRole("button", { name: "Browse" }));
     const loadedChip = await within(pinlistCard).findByText("Loaded");
     expect(loadedChip).toBeInTheDocument();
@@ -147,11 +157,18 @@ describe("RefDesExtractorTool piece-part mode", () => {
     // Toggle back to Functional: the pinlist is filtered out of the visible
     // inputs, but it remains loaded engagement — the InputGrid must stay.
     await user.click(screen.getByRole("radio", { name: "Functional" }));
-
     expect(screen.getByText("Schematic PDF")).toBeInTheDocument();
     expect(
       screen.queryByText("Extract reference designators"),
     ).not.toBeInTheDocument();
+    expect(screen.queryByText("Pinlist file (optional)")).not.toBeInTheDocument();
+
+    // Round-trip forward: the pinlist card returns still loaded.
+    await user.click(screen.getByRole("radio", { name: "Piece-Part" }));
+    const pinlistCardAgain = (await screen.findByText("Pinlist file (optional)")).closest(
+      "article",
+    ) as HTMLElement;
+    expect(within(pinlistCardAgain).getByText("Loaded")).toBeInTheDocument();
   });
 
   // Regression (#17): a finished run's terminal phase lingers in the store, so

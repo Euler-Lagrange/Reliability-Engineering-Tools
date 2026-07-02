@@ -290,8 +290,11 @@ export function RefDesExtractorTool() {
   // mode and survives in state still counts as engagement. Scoping to
   // visibleInputs would lose that engagement on toggle-back and wrongly
   // revert the InputGrid to the pristine EmptyState.
+  // Pristine is mode-independent: toggling Functional/Piece-Part is a light
+  // option choice, not engagement, so BOTH modes get the onboarding
+  // EmptyState until a real file is browsed. (The pinlist slot appears in
+  // the InputGrid as soon as any browse exits pristine.)
   const isPristine =
-    options.extraction_mode === "functional" &&
     inputStates.every((input) => input.isExample === true) &&
     panelRunMode === "idle";
 
