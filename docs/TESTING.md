@@ -62,9 +62,10 @@
 | Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 7 | Vitest + RTL |
 | Frontend shell-hook install | `frontend/src/app/App.shellHooks.test.tsx` | 1 | Vitest + RTL |
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
-| **Frontend subtotal** | | **262** | |
+| Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
+| **Frontend subtotal** | | **266** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 17 | cargo test |
-| **Total** | | **578** | |
+| **Total** | | **582** | |
 
 ## Backend Tests
 

@@ -577,8 +577,11 @@ button:disabled {
   border-left: 1px solid var(--line);
   background: var(--surface);
   box-shadow: var(--shadow-popover);
-  display: grid;
-  grid-template-rows: auto auto 1fr;
+  /* Top-aligned flow — the old `grid-template-rows: auto auto 1fr`
+     stretched the preview section across all remaining height, scattering
+     its children (eyebrow / caption / table) across a giant void. */
+  display: flex;
+  flex-direction: column;
   gap: var(--space-4);
   overflow-y: auto;
   transform: translateX(100%);
@@ -694,6 +697,24 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--section-surface-decoration);
+}
+
+/* Compact side-panel preview: two columns, single-line cells with
+   ellipsis. Full text is one click away in the Review drawer (and on
+   the cell tooltip). */
+.preview-table--compact th,
+.preview-table--compact td {
+  white-space: nowrap;
+}
+
+.preview-table--compact td {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.validation-layout__full-preview {
+  align-self: start;
 }
 
 .context-drawer__preview-table {

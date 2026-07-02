@@ -1,5 +1,8 @@
+import { Table } from "@phosphor-icons/react";
+import { EmptyState } from "./primitives/EmptyState";
 import { useCopyToClipboard } from "../shared/hooks/useCopyToClipboard";
 import { useNotificationStore } from "../stores/notificationStore";
+import { useShellStore } from "../stores/shellStore";
 import type { AnalysisContextCard, PreviewRow, ValidationMessage } from "../app/types";
 
 interface ValidationPreviewProps {
@@ -65,6 +68,7 @@ export function ValidationPreview({
 }: ValidationPreviewProps) {
   const { copy } = useCopyToClipboard();
   const pushNotification = useNotificationStore((state) => state.push);
+  const setContextOpen = useShellStore((state) => state.setContextOpen);
 
   const issueCount = validations.length;
   const hasIssues = issueCount > 0;
@@ -158,28 +162,45 @@ export function ValidationPreview({
         ))}
       </div>
 
-      <div className="table-shell">
-        <table className="preview-table">
-          <thead>
-            <tr>
-              <th>RefDes</th>
-              <th>Failure mode</th>
-              <th>Local effect</th>
-              <th>Next higher effect</th>
-            </tr>
-          </thead>
-          <tbody>
-            {previewRows.map((row) => (
-              <tr key={row.id}>
-                <td>{row.refdes}</td>
-                <td>{row.failureMode}</td>
-                <td>{row.localEffect}</td>
-                <td>{row.nextHigherEffect}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {previewRows.length > 0 ? (
+        <>
+          {/* Two columns only — four text columns hard-clipped mid-word in
+              the ~430px side panel. The full row (local / next-higher
+              effect) lives in the Review drawer, one click away. */}
+          <div className="table-shell">
+            <table className="preview-table preview-table--compact">
+              <thead>
+                <tr>
+                  <th>RefDes</th>
+                  <th>Failure mode</th>
+                </tr>
+              </thead>
+              <tbody>
+                {previewRows.map((row) => (
+                  <tr key={row.id}>
+                    <td>{row.refdes}</td>
+                    <td title={`${row.failureMode} — ${row.localEffect}`}>{row.failureMode}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <button
+            type="button"
+            className="ghost-button validation-layout__full-preview"
+            onClick={() => setContextOpen(true)}
+          >
+            Full preview
+          </button>
+        </>
+      ) : (
+        <EmptyState
+          compact
+          icon={Table}
+          headline="No preview rows yet"
+          body="Load inputs and run validation to see output rows here."
+        />
+      )}
     </div>
   );
 }
