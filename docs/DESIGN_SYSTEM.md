@@ -331,7 +331,7 @@ specific theme, scope it inside that theme's
 
 Every interactive element in the shell now has a consistent
 `:focus-visible` style using `var(--shadow-focus-ring)`. The audit covers:
-`.toggle-chip`, `.panel-toggle__button`, `.primary-button`, `.ghost-button`,
+`.toggle-chip`, `.context-tabs__tab`, `.primary-button`, `.ghost-button`,
 `.scenario-pill`, `.choice-card`, `.run-log-panel__action`,
 `.run-log-panel__filter-option`, `.toolButton`, `.themeButton`,
 `.themeOption`, and `.healthButton`.

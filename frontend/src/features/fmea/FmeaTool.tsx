@@ -6,6 +6,7 @@ import { SectionCard } from "../../components/SectionCard";
 import { StrategySelector } from "../../components/StrategySelector";
 import { ValidationPreview } from "../../components/ValidationPreview";
 import { WorkflowSelector } from "../../components/WorkflowSelector";
+import { ContextTabs } from "../../components/primitives/ContextTabs";
 import { OptionsField } from "../../components/primitives/OptionsField";
 import { ToggleChip } from "../../components/primitives/ToggleChip";
 import { FolderOpen } from "@phosphor-icons/react";
@@ -1487,28 +1488,15 @@ export function FmeaTool() {
                 : "Run feedback stays isolated so it does not compete with setup."
             }
             actions={
-              <div className="panel-toggle" role="tablist" aria-label="Context panel">
-                <button
-                  type="button"
-                  className="panel-toggle__button"
-                  data-selected={contextView === "preview"}
-                  role="tab"
-                  aria-selected={contextView === "preview"}
-                  onClick={() => setContextView("preview")}
-                >
-                  Preview
-                </button>
-                <button
-                  type="button"
-                  className="panel-toggle__button"
-                  data-selected={contextView === "run"}
-                  role="tab"
-                  aria-selected={contextView === "run"}
-                  onClick={() => setContextView("run")}
-                >
-                  Run
-                </button>
-              </div>
+              <ContextTabs
+                ariaLabel="Context panel"
+                tabs={[
+                  { id: "preview", label: "Preview" },
+                  { id: "run", label: "Run" },
+                ]}
+                activeId={contextView}
+                onChange={setContextView}
+              />
             }
           >
             <h3 className="sr-only-focusable" ref={contextHeadingRef} tabIndex={-1}>
@@ -1535,7 +1523,7 @@ export function FmeaTool() {
                   truncatedLogCount={panelTruncatedLogCount}
                   errorCode={panelErrorCode}
                   errorTraceback={panelErrorTraceback}
-                  startLabel={backendClient.runtimeMode === "desktop-bridge" ? "Start real run" : "Start demo run"}
+                  startLabel={backendClient.runtimeMode === "desktop-bridge" ? "Generate FMEA" : "Start demo run"}
                   runId={panelRunId}
                   statusMessage={panelStatusMessage}
                   startDisabled={bomOnlyBlockedReason !== null}

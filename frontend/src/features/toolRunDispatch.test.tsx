@@ -162,7 +162,7 @@ describe("tool run dispatch", () => {
     // silently-dropped key — like hdaSource, which the backend now reads to
     // pick the HDA source — could ship again unnoticed. Pin the payload shape.
     render(<FmeaTool />);
-    await runTool("Start real run");
+    await runTool("Generate FMEA");
 
     await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
     const body = backendMocks.executeRun.mock.calls[0][0];

@@ -100,7 +100,7 @@ const STALE_VALIDATION = {
 async function seedValidationCard(user: ReturnType<typeof userEvent.setup>) {
   mockBackendClient.validateRun.mockResolvedValueOnce(STALE_VALIDATION);
   await user.click(screen.getByRole("tab", { name: /^Run$/i }));
-  await user.click(screen.getByRole("button", { name: "Start real run" }));
+  await user.click(screen.getByRole("button", { name: "Generate FMEA" }));
   expect(await screen.findByText("Stale configuration card")).toBeInTheDocument();
 }
 

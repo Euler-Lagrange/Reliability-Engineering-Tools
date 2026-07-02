@@ -1076,7 +1076,6 @@ button:disabled {
 }
 
 .toggle-chip,
-.panel-toggle__button,
 .primary-button,
 .ghost-button,
 .custom-select__trigger {
@@ -1099,7 +1098,6 @@ button:disabled {
 }
 
 .toggle-chip:focus-visible,
-.panel-toggle__button:focus-visible,
 .primary-button:focus-visible,
 .ghost-button:focus-visible {
   outline: none;
@@ -1107,16 +1105,10 @@ button:disabled {
   border-color: var(--accent);
 }
 
-.toggle-chip[data-selected="true"],
-.panel-toggle__button[data-selected="true"] {
+.toggle-chip[data-selected="true"] {
   color: var(--accent);
   border-color: var(--accent);
   background: var(--accent-soft);
-}
-
-.panel-toggle {
-  display: inline-flex;
-  gap: 6px; /* off-grid: tight gap between paired toggle buttons */
 }
 
 .input-grid {
@@ -1421,6 +1413,16 @@ tbody tr:hover {
   display: flex;
   gap: var(--space-2);
   flex-wrap: wrap;
+}
+
+/* The Start button is the tool's single most important control — it gets
+   dominant width and height so it can never be mistaken for a chip.
+   Cancel stays compact beside it. */
+.run-state__controls .primary-button {
+  flex: 1;
+  min-height: 44px; /* off-grid: primary CTA height, deliberately above the 36px control row */
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
 }
 
 .primary-button {
@@ -2161,12 +2163,17 @@ tbody tr:hover {
   color: var(--text-muted);
 }
 
+/* Preview/Run segmented control — the ONE tab pattern for context panels
+   (FMEA included; the parallel .panel-toggle system was folded in here).
+   The track carries a real border and the inactive tab keeps readable
+   contrast: an invisible "Run" tab hid the whole run panel from users. */
 .context-tabs {
   display: flex;
   flex-direction: row;
   gap: var(--space-1);
   padding: var(--space-1);
   background: var(--surface-muted);
+  border: 1px solid var(--line);
   border-radius: var(--radius-md);
 }
 
@@ -2176,7 +2183,7 @@ tbody tr:hover {
   padding: var(--space-1) var(--space-3);
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-family: inherit;
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
@@ -2193,8 +2200,11 @@ tbody tr:hover {
 
 .context-tabs__tab.is-active {
   background: var(--surface);
-  color: var(--text);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04); /* off-grid: lift the active tab off the muted track */
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+  /* Accent hairline instead of a black drop shadow — visible on dark
+     themes too, and matches the unified selection language. */
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 .context-tabs__tab:focus-visible {
