@@ -602,6 +602,10 @@ def execute_run_request(
     doc = fitz.open(str(pdf_path))
     try:
         stream_log(f"Opened PDF: {Path(pdf_path).name} ({len(doc)} pages)")
+        # Close each stage with a completed-phrase message: the frontend
+        # timeline keeps a stage's LAST message, so without this the step
+        # reads "Opening PDF..." forever next to a completed chip.
+        emit_progress("Opening PDF", "PDF opened.", 10)
 
         emit_status("running", "Extracting annotations", "Extracting annotations from PDF...")
         emit_progress("Extracting annotations", "Extracting annotations...", 10)
@@ -609,6 +613,7 @@ def execute_run_request(
             doc, stop_event=bridge.stop_event, log_func=stream_log,
         )
         stream_log(f"Found {len(annotations)} annotations.")
+        emit_progress("Extracting annotations", "Annotations extracted.", 13)
 
         bridge.cancel.check()
 
@@ -723,6 +728,8 @@ def execute_run_request(
         except OSError:
             pass
         raise
+    # Close the write stage before the terminal step (see "Opening PDF" note).
+    emit_progress("Writing workbook", "Workbook written.", 98)
 
     emit_progress("Complete", "Extraction complete.", 100)
 

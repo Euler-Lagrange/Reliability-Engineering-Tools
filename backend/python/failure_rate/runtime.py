@@ -307,10 +307,15 @@ def execute_run_request(
     emit_status("running", "Loading prediction", "Loading prediction workbook...")
     emit_progress("Loading prediction", "Loading...", 3)
     logic.load_prediction(pred_path, sheet_name=pred_sheet)
+    # Close each stage with a completed-phrase message: the frontend
+    # timeline keeps a stage's LAST message, so without this the step
+    # reads "Loading..." forever next to a completed chip.
+    emit_progress("Loading prediction", "Prediction workbook loaded.", 5)
 
     emit_status("running", "Loading FMEA", "Loading FMEA workbook...")
     emit_progress("Loading FMEA", "Loading...", 7)
     logic.load_fmea(fmea_path, sheet_name=fmea_sheet)
+    emit_progress("Loading FMEA", "FMEA workbook loaded.", 9)
 
     # Build column map from mappings
     col_map = {
@@ -328,6 +333,7 @@ def execute_run_request(
     emit_progress("Processing", "Linking...", 10)
 
     result_df = logic.process(col_map=col_map, check_fmr=check_fmr)
+    emit_progress("Processing", "Failure rates linked.", 88)
 
     emit_status("running", "Writing workbook", "Writing Excel report...")
     emit_progress("Writing workbook", "Writing...", 90)
@@ -346,6 +352,7 @@ def execute_run_request(
         except OSError:
             pass
         raise
+    emit_progress("Writing workbook", "Workbook written.", 98)
     emit_progress("Complete", "Failure rate linking complete.", 100)
 
     # Count warnings from Validation_Notes column

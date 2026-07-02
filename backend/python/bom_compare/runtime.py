@@ -435,6 +435,10 @@ def _run_group_compare(
         (group_path or "", bom_path or ""),
         stop_event=bridge.stop_event,
     )
+    # Close each stage with a completed-phrase message: the frontend
+    # timeline keeps a stage's LAST message, so without this the step
+    # reads "Comparing..." forever next to a completed chip.
+    emit_progress("Running comparison", "Comparison finished.", 80)
 
     emit_status("running", "Writing workbook", "Writing Excel report...")
     emit_progress("Writing workbook", "Writing...", 85)
@@ -456,6 +460,7 @@ def _run_group_compare(
         except OSError:
             pass
         raise
+    emit_progress("Writing workbook", "Workbook written.", 98)
     emit_progress("Complete", "BOM comparison complete.", 100)
 
     missing_count = len(results.missing_in_bom)
@@ -557,6 +562,8 @@ def _run_custom_compare(
         ignore_dnp=options.get("ignore_dnp", True),
         check_fmr=options.get("check_fmr", False),
     )
+    # Close the comparison stage (see the group path's note above).
+    emit_progress("Comparing entries", "Comparison finished.", 80)
 
     emit_status("running", "Writing workbook", "Writing Excel report...")
     emit_progress("Writing workbook", "Writing...", 85)
@@ -575,6 +582,7 @@ def _run_custom_compare(
         except OSError:
             pass
         raise
+    emit_progress("Writing workbook", "Workbook written.", 98)
     emit_progress("Complete", "Custom comparison complete.", 100)
 
     only_a = len(result.only_in_a)
