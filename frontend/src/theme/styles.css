@@ -816,6 +816,30 @@ button:disabled {
   margin-bottom: var(--space-3);
 }
 
+/* Heading block grows; the step chip and actions keep natural width. */
+.section-card__heading {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Section-level workflow-step marker — same visual language as
+   .input-card__step-indicator, scaled up for section headers. */
+.section-card__step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+
 .section-card h2 {
   font-size: var(--text-md);
   line-height: 1.2;

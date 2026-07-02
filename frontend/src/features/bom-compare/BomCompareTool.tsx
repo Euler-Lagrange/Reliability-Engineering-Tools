@@ -889,6 +889,7 @@ export function BomCompareTool() {
         <section className="workspace-grid workspace-grid--single">
           <div className="workspace-grid__main">
             <SectionCard
+              step={1}
               title="Run Setup"
               eyebrow="Workflow"
               description="Pick the BOM comparison style. Group mode compares a grouping sheet to a BOM; custom mode compares two BOMs directly."
@@ -901,6 +902,7 @@ export function BomCompareTool() {
             </SectionCard>
 
             <SectionCard
+              step={2}
               title="Input Files"
               eyebrow="Data Sources"
               description="Load the workbooks you want to compare."
@@ -945,6 +947,7 @@ export function BomCompareTool() {
             </SectionCard>
 
             <SectionCard
+              step={3}
               title="Column Mapping"
               eyebrow="Field Assignment"
               description="Map columns between the two BOMs to align rows."

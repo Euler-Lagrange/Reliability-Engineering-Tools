@@ -13,6 +13,8 @@ export interface OptionsSectionProps {
   eyebrow?: string;
   actions?: ReactNode;
   variant?: SectionCardVariant;
+  /** Workflow-spine position marker — passed through to SectionCard. */
+  step?: number;
   children: ReactNode;
 }
 
@@ -22,6 +24,7 @@ export function OptionsSection({
   eyebrow,
   actions,
   variant,
+  step,
   children,
 }: OptionsSectionProps) {
   return (
@@ -31,6 +34,7 @@ export function OptionsSection({
       description={description}
       actions={actions}
       variant={variant}
+      step={step}
     >
       <div className="options-section__grid">{children}</div>
     </SectionCard>

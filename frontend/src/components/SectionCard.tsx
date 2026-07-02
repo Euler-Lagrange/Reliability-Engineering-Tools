@@ -19,6 +19,13 @@ interface SectionCardProps {
   actions?: ReactNode;
   className?: string;
   variant?: SectionCardVariant;
+  /**
+   * Workflow-spine position marker (1-based). Extends the InputGrid
+   * step-indicator language to section level so each tool page reads as
+   * a scannable 1-2-3 flow. Decorative (aria-hidden) — accessible names
+   * are unaffected.
+   */
+  step?: number;
   children: ReactNode;
 }
 
@@ -29,6 +36,7 @@ export function SectionCard({
   actions,
   className,
   variant = "outlined",
+  step,
   children,
 }: SectionCardProps) {
   const classes = ["section-card", `section-card--${variant}`];
@@ -36,7 +44,12 @@ export function SectionCard({
   return (
     <section className={classes.join(" ")}>
       <header className="section-card__header">
-        <div>
+        {typeof step === "number" ? (
+          <span className="section-card__step" aria-hidden="true">
+            {step}
+          </span>
+        ) : null}
+        <div className="section-card__heading">
           {eyebrow ? <p className="section-card__eyebrow">{eyebrow}</p> : null}
           <h2>{title}</h2>
           {description ? <p className="section-card__description">{description}</p> : null}

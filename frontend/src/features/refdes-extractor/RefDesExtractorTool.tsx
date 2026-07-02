@@ -595,6 +595,7 @@ export function RefDesExtractorTool() {
         <section className="workspace-grid workspace-grid--single">
           <div className="workspace-grid__main">
             <SectionCard
+              step={1}
               title="Input Files"
               eyebrow="Data Sources"
               description="Load the schematic PDF and the BOM. A pinlist is optional for piece-part extraction — the pin data usually already lives in the BOM."
@@ -623,6 +624,7 @@ export function RefDesExtractorTool() {
             </SectionCard>
 
             <OptionsSection
+              step={2}
               title="Options"
               eyebrow="Extraction Settings"
               description="Pick the extraction strategy and backend."

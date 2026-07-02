@@ -575,6 +575,7 @@ export function FailureRateTool() {
         <section className="workspace-grid workspace-grid--single">
           <div className="workspace-grid__main">
             <SectionCard
+              step={1}
               title="Input Files"
               eyebrow="Data Sources"
               description="Load the parts list to enrich with failure rates."
@@ -619,6 +620,7 @@ export function FailureRateTool() {
             </SectionCard>
 
             <SectionCard
+              step={2}
               title="Column Mapping"
               eyebrow="Field Assignment"
               description="Map the part identifier columns."

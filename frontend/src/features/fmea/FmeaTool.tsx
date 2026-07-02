@@ -1208,6 +1208,7 @@ export function FmeaTool() {
         <div className="workspace-grid__main">
           <SectionCard
             className="section-card--compact"
+            step={1}
             title="Generation Options"
             eyebrow="Configuration"
             description="Choose the generation path, confirm the standards in play, and load the source workbooks this mode needs."
@@ -1339,6 +1340,7 @@ export function FmeaTool() {
 
           <SectionCard
             className="section-card--compact"
+            step={2}
             title="Outputs"
             eyebrow="Workbook & folder"
             description={
@@ -1410,6 +1412,7 @@ export function FmeaTool() {
 
           <SectionCard
             className="section-card--compact"
+            step={3}
             title="Column Mapping"
             eyebrow="Review"
             description={
