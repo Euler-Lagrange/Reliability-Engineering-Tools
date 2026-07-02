@@ -1211,6 +1211,21 @@ def extract_with_geometry_analysis(
     return results
 
 
+def _report_pinlist_failure(page_idx, exc, log) -> None:
+    """Report a pinlist pin-qualification failure to BOTH logs (Tier-2 #20,
+    NextGen twin). The page's qualified-pin set is emptied on failure, so logging
+    only to the rotating file log left the output looking complete while it
+    silently had no qualified pins for that page. Surface it on the streamed run
+    log too so the user knows to check the pinlist / that page.
+    """
+    _logger.error(f"Pinlist clustering failed on page {page_idx}: {exc}")
+    if log:
+        log(
+            f"WARNING: Pinlist pin-qualification failed on page {page_idx} "
+            f"({exc}); this page has NO qualified pins — verify the pinlist and this page."
+        )
+
+
 def harvest_hybrid_nextgen(
     pdf_path: Path,
     groups: list,
@@ -1455,7 +1470,9 @@ def harvest_hybrid_nextgen(
                         except CancellationError:
                             raise
                         except Exception as ex:
-                            _logger.error(f"Pinlist clustering failed on page {page_idx}: {ex}")
+                            # Tier-2 #20 (NextGen twin): surface on the STREAMED
+                            # run log too, not just the rotating file log.
+                            _report_pinlist_failure(page_idx, ex, log)
                             pinlist_qualified_pins = {}
 
                 page_body_candidates = []

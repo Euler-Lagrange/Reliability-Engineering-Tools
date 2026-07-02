@@ -283,6 +283,23 @@ def _build_refdes_output_preview(
 # Execution
 # ---------------------------------------------------------------------------
 
+def _results_dataframe(results) -> pd.DataFrame:
+    """Build the output DataFrame from engine result rows, dropping internal
+    bookkeeping columns.
+
+    Gap-detection rows carry an ``_is_gap`` styling marker (a boolean the
+    standalone tool used for row highlighting). The sidecar writes the frame
+    straight to the sheet with no styling consumer, so that marker would leak
+    into the user-facing "RefDes Extraction" sheet as a stray column. Drop any
+    ``_``-prefixed column so no internal key ever reaches the workbook.
+    """
+    df = pd.DataFrame(results)
+    internal_cols = [col for col in df.columns if str(col).startswith("_")]
+    if internal_cols:
+        df = df.drop(columns=internal_cols)
+    return df
+
+
 def execute_run_request(
     body: dict[str, Any],
     *,
@@ -510,7 +527,7 @@ def execute_run_request(
     tmp_output = atomic_write_path(output_path)
     try:
         if results:
-            df = pd.DataFrame(results)
+            df = _results_dataframe(results)
             from openpyxl import Workbook
             wb = Workbook()
             ws = wb.active

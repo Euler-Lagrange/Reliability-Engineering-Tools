@@ -68,6 +68,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **RefDes Extractor — pinlist failure now surfaced in the default engine** — the
+  NextGen engine (the default extraction path) logged a pinlist pin-qualification
+  failure only to the rotating file log — the un-fixed twin of Tier-2 #20, which
+  had only fixed the legacy fallback engine. A page silently emptied of qualified
+  pins looked complete. It now streams the failure to the run log. +1 test (the
+  first NextGen-engine unit test).
+- **RefDes Extractor — internal `_is_gap` column no longer leaks into output** —
+  sequence-gap rows carry an `_is_gap` styling marker; the sidecar wrote the
+  results frame straight to the sheet, leaking `_is_gap` as a stray column
+  whenever gaps were present. Internal `_`-prefixed columns are now dropped
+  before the workbook write. +2 tests.
 - **Tier-4 hardening** — (1) a broad `except Exception` in BOM-Compare
   part-usage classification no longer swallows `CancellationError`
   (`new-cancellation-1`; it re-raises, per the documented gotcha); (2) the FMR

@@ -20,7 +20,9 @@
 | Backend OneDrive detection | `backend/tests/test_onedrive_detection.py` | 5 | pytest |
 | Backend file-size guard | `backend/tests/test_file_guards.py` | 3 | pytest |
 | Backend crash-dump | `backend/tests/test_crash_dump.py` | 3 | pytest |
-| **Backend subtotal** | | **265** | |
+| Backend NextGen engine | `backend/tests/test_nextgen_engine.py` | 1 | pytest |
+| Backend RefDes runtime | `backend/tests/test_refdes_runtime.py` | 2 | pytest |
+| **Backend subtotal** | | **268** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 4 | Vitest + RTL |
 | Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 1 | Vitest + RTL |
@@ -62,7 +64,7 @@
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | **Frontend subtotal** | | **256** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 17 | cargo test |
-| **Total** | | **538** | |
+| **Total** | | **541** | |
 
 ## Backend Tests
 
