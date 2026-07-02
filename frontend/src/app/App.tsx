@@ -320,23 +320,27 @@ export function App() {
             </nav>
 
             <div className={styles.footer}>
-              <div className={`${styles.themeGroup} rail-footer__themes`} aria-label="Theme">
+              {/* Compact icon row: one small button per rail theme. The
+                  accessible names ("Switch to X theme") are unchanged; the
+                  visible short labels moved into tooltips. Full theme list
+                  lives in Settings and the command palette. */}
+              <div className={styles.themeGroup} aria-label="Theme">
                 <p className={styles.themeLabel}>Theme</p>
                 <div className={styles.themeButtons}>
                   {RAIL_THEMES.map((theme) => {
                     const Icon = theme.icon;
+                    const isSelected = themeMode === theme.id;
                     return (
                       <button
                         key={theme.id}
                         type="button"
                         className={styles.themeButton}
-                        data-selected={themeMode === theme.id}
+                        data-selected={isSelected}
                         onClick={() => setThemeMode(theme.id)}
                         aria-label={`Switch to ${theme.shortLabel.toLowerCase()} theme`}
                         title={theme.label}
                       >
-                        <Icon size={14} weight="bold" />
-                        {theme.shortLabel}
+                        <Icon size={16} weight={isSelected ? "fill" : "bold"} />
                       </button>
                     );
                   })}
