@@ -73,6 +73,22 @@ def test_description_prefers_description_over_name_column(tmp_path):
     assert result.meta["R1"]["description"] == "RES 10K 1%"
 
 
+def test_pin_style_bom_row_counts_as_base_component(tmp_path):
+    # Regression (U7-38): a piece-part BOM listing component-pin rows was
+    # silently dropped by BASE-mode normalization ("U7-38" fails the RefDes
+    # fullmatch), so neither "U7-38" nor "U7" reached the verification set
+    # and every extracted pin of U7 landed in "(Unverified)". A pin-style
+    # row is evidence its parent component exists.
+    bom = tmp_path / "bom.xlsx"
+    _write_bom(bom, {"RefDes": ["U7-38", "R1"]})
+    result = load_bom_data(bom)
+
+    assert "U7" in result.refdes
+    assert "R1" in result.refdes
+    # Garbage tokens must still be dropped (no partial-match laundering).
+    assert "U7-38" not in result.refdes
+
+
 def test_metadata_not_collected_by_default(tmp_path):
     bom = tmp_path / "bom.xlsx"
     _write_bom(bom, {"RefDes": ["R1"], "Description": ["RES"]})

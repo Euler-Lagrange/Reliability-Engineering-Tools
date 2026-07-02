@@ -712,9 +712,22 @@ def _run_geometry_with_batches(
 
 
 def _is_token_bom_member(token: str, normalized_bom: set) -> bool:
-    """Return True when the token's base RefDes exists in the BOM."""
+    """Return True when the token's base RefDes exists in the BOM.
+
+    Pin-aware fallback: a BOM whose set carries pin-level entries
+    ("U7-38") must verify the identical extracted pin token even when the
+    bare base ("U7") is absent — otherwise the loader's normalization and
+    this check disagree and pin tokens can never verify.
+    """
     base = _extract_base_refdes(token)
-    return bool(base and base in normalized_bom)
+    if base and base in normalized_bom:
+        return True
+
+    canon = str(token or "").strip().upper()
+    if canon.endswith("[?]"):
+        canon = canon[:-3].strip()
+    canon = canonicalize_refdes(canon)
+    return bool(canon and canon in normalized_bom)
 
 
 def _get_token_page_mismatch(

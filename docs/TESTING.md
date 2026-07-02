@@ -16,13 +16,13 @@
 | Backend Failure-Rate runtime | `backend/tests/test_failure_rate_runtime.py` | 2 | pytest |
 | Backend read-layer (NA + header dedup) | `backend/tests/test_read_layer.py` | 6 | pytest |
 | Backend RefDes BOM-coverage | `backend/tests/test_coverage_report.py` | 19 | pytest |
-| Backend BOM-loader metadata | `backend/tests/test_bom_loader.py` | 5 | pytest |
+| Backend BOM-loader | `backend/tests/test_bom_loader.py` | 6 | pytest |
 | Backend OneDrive detection | `backend/tests/test_onedrive_detection.py` | 5 | pytest |
 | Backend file-size guard | `backend/tests/test_file_guards.py` | 3 | pytest |
 | Backend crash-dump | `backend/tests/test_crash_dump.py` | 3 | pytest |
-| Backend NextGen engine | `backend/tests/test_nextgen_engine.py` | 2 | pytest |
+| Backend NextGen engine | `backend/tests/test_nextgen_engine.py` | 4 | pytest |
 | Backend RefDes runtime | `backend/tests/test_refdes_runtime.py` | 24 | pytest |
-| **Backend subtotal** | | **299** | |
+| **Backend subtotal** | | **302** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 4 | Vitest + RTL |
 | Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 3 | Vitest + RTL |
@@ -65,7 +65,7 @@
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
 | **Frontend subtotal** | | **268** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 17 | cargo test |
-| **Total** | | **584** | |
+| **Total** | | **587** | |
 
 ## Backend Tests
 

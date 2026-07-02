@@ -15,7 +15,12 @@ import pytest
 pytest.importorskip("fitz")  # PyMuPDF — nextgen_engine imports it at module load
 
 from refdes_test import nextgen_engine  # noqa: E402
-from refdes_test.nextgen_engine import _report_pinlist_failure  # noqa: E402
+from refdes_test.nextgen_engine import (  # noqa: E402
+    _format_hybrid_results_nextgen,
+    _is_token_bom_member,
+    _normalize_bom_set,
+    _report_pinlist_failure,
+)
 
 
 def test_report_pinlist_failure_streams_to_run_log() -> None:
@@ -27,6 +32,36 @@ def test_report_pinlist_failure_streams_to_run_log() -> None:
 
     assert any("WARNING" in line and "page 7" in line for line in lines)
     assert any("bad cluster" in line for line in lines)
+
+
+def test_pin_token_verifies_against_pin_level_bom_entry() -> None:
+    # Regression (U7-38): verification reduced the token to its base ("U7")
+    # while the normalized BOM set preserved pin-level strings ("U7-38"), so
+    # a BOM that listed the pin itself could never verify it. Both shapes
+    # must verify.
+    assert _is_token_bom_member("U7-38", _normalize_bom_set({"U7"}))
+    assert _is_token_bom_member("U7-38", _normalize_bom_set({"U7-38"}))
+    assert not _is_token_bom_member("U7-38", _normalize_bom_set({"U9"}))
+
+
+def test_pin_token_lands_in_verified_row_for_piece_part_group() -> None:
+    # End-to-end formatting twin of the regression above: a piece-part group
+    # whose token is U7-38 must land in the "(Verified)" row when the BOM
+    # lists the pin-level entry.
+    grouped_data = {
+        "DIG-076-PN": {
+            "mode": "piece_part",
+            "tokens": {"U7-38"},
+            "pages": {4},
+            "token_pages": {"U7-38": {4}},
+        }
+    }
+    rows = _format_hybrid_results_nextgen(grouped_data, {"U7-38"}, None)
+    by_group = {row["group"]: row for row in rows}
+
+    assert by_group["DIG-076 (Verified)"]["failure mode causes"] == "U7-38"
+    assert by_group["DIG-076 (Verified)"]["component count"] == 1
+    assert by_group["DIG-076 (Unverified)"]["component count"] == 0
 
 
 def test_nextgen_word_timeout_surfaces_on_run_log() -> None:

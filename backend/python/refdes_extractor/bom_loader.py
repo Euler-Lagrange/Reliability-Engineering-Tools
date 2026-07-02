@@ -267,6 +267,16 @@ def _normalize_token(
     if refdes_pattern is None or prefixes is None:
         raise ValueError("Base-mode token normalization requires regex and prefixes.")
     if not refdes_pattern.fullmatch(normalized):
+        # Pin-style BOM entry ("U7-38"): piece-part BOMs list component-pin
+        # rows. In BASE (component-level) mode such a row is evidence that
+        # its parent component exists — reduce it to the base instead of
+        # dropping the row. Dropping it silently un-verified every extracted
+        # pin of that component (U7-38 landed in "(Unverified)" even though
+        # the BOM listed it).
+        if "-" in normalized:
+            head = normalized.split("-", 1)[0].strip()
+            if head and refdes_pattern.fullmatch(head):
+                return strip_instance_suffix(head, prefixes=prefixes)
         return ""
     return strip_instance_suffix(normalized, prefixes=prefixes)
 
