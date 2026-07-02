@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **RefDes Extractor — advanced engine controls + tooltips** — all 16 extraction
+  tuning parameters are now adjustable in the UI: the 7 primary controls plus a
+  collapsed-by-default "Advanced controls" section exposing the 9
+  previously-backend-only params (subprocess/timeout/checkpoint, pin-assignment
+  threshold, RefDes search radius, the adaptive-orphan trio, pinlist-prefers-
+  annotation), each with a hover tooltip explaining its effect in the engine
+  (defaults unchanged). The pinlist is now consistently labeled optional. All 16
+  options are type/range-validated at validate time, so a wrong-typed or
+  out-of-range value fails visibly instead of misbehaving in the engine.
 - **Continuous integration** — new `.github/workflows/ci.yml` runs on every
   push/PR to `main` (windows-latest, the only supported target): frontend
   typecheck ×2 + Vitest, version-consistency check, backend pytest, sidecar
@@ -79,6 +88,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   results frame straight to the sheet, leaking `_is_gap` as a stray column
   whenever gaps were present. Internal `_`-prefixed columns are now dropped
   before the workbook write. +2 tests.
+- **RefDes Extractor — geometry & harvest robustness (review follow-ups)** — the
+  geometry layer's RefDes check now uses the same prefix-allowlist matcher as
+  the rest of the engine (#6, replacing a broad `[A-Z]{1,4}` pattern that could
+  qualify/parent a token the harvest never validates); a geometry cap being hit
+  now streams a warning to the run log; the `pin_assignment_threshold` config
+  key mismatch is fixed so the user value actually applies; and the per-page
+  word-extraction timeout is surfaced on the run log (#2) instead of silently
+  dropping a page. Blacklist comment/behavior mismatch reconciled.
 - **Tier-4 hardening** — (1) a broad `except Exception` in BOM-Compare
   part-usage classification no longer swallows `CancellationError`
   (`new-cancellation-1`; it re-raises, per the documented gotcha); (2) the FMR

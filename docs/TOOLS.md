@@ -395,11 +395,15 @@ can also verify the extracted list against a BOM.
 
 ### Optional inputs
 
-- **BOM workbook** — used to verify the extracted RefDes against a known
-  part list. When provided, the run summary reports matched, missing, and
-  extra counts.
-- **Pinlist file** — required only for Piece-Part mode. A CSV or single-
-  column list of `RefDes-Pin` pairs (for example, `U1-3`, `J2-10`).
+- **BOM workbook** — used to cross-check the extracted RefDes against a known
+  part list. When provided, the run adds three coverage sheets — **Coverage
+  Summary**, **BOM Not Grouped**, and **Extracted Not In BOM** — reconciling the
+  extracted RefDes against the BOM (the run summary also reports verified /
+  unverified group counts).
+- **Pinlist file** — always optional; the picker only appears in Piece-Part
+  mode. Piece-part pin data is usually already in the BOM, so a separate
+  pinlist is rarely needed. A CSV or single-column list of `RefDes-Pin` pairs
+  (for example, `U1-3`, `J2-10`).
 
 ### Extraction modes
 
@@ -427,9 +431,9 @@ Choose:
   each page (boxes, rectangles, lines) to figure out which RefDes belong to
   which functional group. When off, grouping falls back to text proximity
   only.
-- **Adaptive geometry** — lets the tool try up to four progressively more
-  aggressive passes of geometry analysis per page when the first pass leaves
-  too many RefDes ungrouped.
+- **Adaptive geometry** — runs full geometry analysis only on the pages that
+  need it (those left with many unqualified pins), instead of every page —
+  faster on large documents.
 - **Batch size** — how many pages the geometry engine processes at once.
   Default is 10. Lower this if you run into memory issues on very dense
   schematics.
@@ -437,6 +441,12 @@ Choose:
   can have before it is treated as noise. Default is 4.
 - **PROV distance** — the maximum distance (in PDF points) that a pin label
   can sit from its RefDes and still be attached to it.
+- **Advanced controls** — a collapsed section exposing the remaining engine
+  tuning parameters (geometry subprocess / batch timeout / checkpoint,
+  pin-assignment threshold, RefDes search radius, the adaptive-orphan
+  thresholds, and pinlist-prefers-annotation). Defaults are tuned for typical
+  schematics; each control has a hover tooltip explaining what it does, and
+  every option is type/range-validated at run time.
 
 ### Output
 
@@ -474,8 +484,9 @@ skipped for files larger than 10 MB.
 - Extraction quality depends heavily on how the PDF was produced. Raster
   (scanned) PDFs do not work — the engine needs embedded text.
 - Hand-drawn annotations and rotated text are not always recognized.
-- Piece-Part mode requires a pinlist. Without one, pin information cannot
-  be reconstructed.
+- Piece-Part pin qualification works from the PDF geometry; an optional
+  pinlist can refine it but is not required (piece-part data usually comes
+  from the BOM).
 
 ---
 
