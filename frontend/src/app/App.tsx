@@ -1,13 +1,5 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import {
-  Command,
-  Copy,
-  Eye,
-  Faders,
-  Sparkle,
-  Terminal,
-  WarningCircle,
-} from "@phosphor-icons/react";
+import { Copy, Eye, Faders, Sparkle, Terminal } from "@phosphor-icons/react";
 import styles from "./AppShell.module.css";
 import { toolDefinitions } from "./toolRegistry";
 import { CommandPalette, type CommandPaletteAction } from "../components/primitives/CommandPalette";
@@ -26,8 +18,8 @@ import {
   primaryShortcutLabel,
 } from "../shared/hooks/shortcutUtils";
 import { NotificationCenter } from "../shared/notifications/NotificationCenter";
-import { ThemeController, useResolvedTheme } from "../shared/theme/ThemeController";
-import { RAIL_THEMES, THEME_REGISTRY, labelForTheme } from "../shared/theme/themeRegistry";
+import { ThemeController } from "../shared/theme/ThemeController";
+import { RAIL_THEMES, THEME_REGISTRY } from "../shared/theme/themeRegistry";
 import { useGlobalLogStore } from "../stores/globalLogStore";
 import { useNotificationStore } from "../stores/notificationStore";
 import { useShellStore, type ToolId } from "../stores/shellStore";
@@ -75,7 +67,6 @@ export function App() {
   const backendMessage = useShellStore((state) => state.backendMessage);
   const themeMode = useThemeStore((state) => state.mode);
   const setThemeMode = useThemeStore((state) => state.setMode);
-  const resolvedTheme = useResolvedTheme();
   const toggleLogVisible = useGlobalLogStore((state) => state.toggleVisible);
   const pushNotification = useNotificationStore((state) => state.push);
 
@@ -364,6 +355,10 @@ export function App() {
                 <p className={styles.subtitle}>{activeTool.description}</p>
               </div>
 
+              {/* Deliberately lean: real state only (backend health + mode)
+                  plus the Review toggle. The theme name is visible on the
+                  screen itself, and keyboard hints live in the command
+                  palette and control tooltips — neither earns a chip. */}
               <div className={styles.statusRow}>
                 <div className="topbar__chip-groups">
                   <div className="topbar__chip-group" aria-label="Connection health">
@@ -378,26 +373,6 @@ export function App() {
                     </span>
                   </div>
                   <span className="topbar__chip-divider" aria-hidden="true" />
-                  <div className="topbar__chip-group" aria-label="Theme identity">
-                    <span className="status-chip status-chip--info">
-                      {labelForTheme(resolvedTheme)}
-                    </span>
-                  </div>
-                  <span className="topbar__chip-spacer" aria-hidden="true" />
-                  <span className="topbar__chip-divider" aria-hidden="true" />
-                  <div className="topbar__chip-group" aria-label="Keyboard hint">
-                    <span className="status-chip status-chip--pending">
-                      <Command size={12} weight="bold" />
-                      {navigationShortcutLabel}
-                    </span>
-                    {import.meta.env.DEV && activeTool.status === "placeholder" ? (
-                      <span className="status-chip status-chip--warning">
-                        <WarningCircle size={12} weight="fill" />
-                        Placeholder
-                      </span>
-                    ) : null}
-                  </div>
-                  <span className="topbar__chip-divider" aria-hidden="true" />
                   <div className="topbar__chip-group" aria-label="Review drawer">
                     <button
                       type="button"
@@ -406,7 +381,7 @@ export function App() {
                       onClick={toggleContext}
                       aria-pressed={contextOpen}
                       aria-label={contextOpen ? "Close Review drawer" : "Open Review drawer"}
-                      title={`Review drawer (${primaryShortcutLabel("R")})`}
+                      title={`Review drawer (${primaryShortcutLabel("R")}) — switch tools with ${navigationShortcutLabel}`}
                     >
                       <Eye size={14} weight={contextOpen ? "fill" : "regular"} />
                       <span>Review</span>

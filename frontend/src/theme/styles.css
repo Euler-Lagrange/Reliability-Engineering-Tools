@@ -2872,10 +2872,6 @@ tbody tr:hover {
   flex-shrink: 0;
 }
 
-.topbar__chip-spacer {
-  flex: 1;
-}
-
 /* Review drawer toggle — topbar-embedded button that opens the right-
    anchored ContextDrawer (design handoff principle D). Matches the
    chip heights for visual rhythm but is clearly clickable.  */
