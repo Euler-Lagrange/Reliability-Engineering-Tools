@@ -2,7 +2,7 @@
   position: fixed;
   right: var(--space-5);
   bottom: var(--space-5);
-  z-index: 50;
+  z-index: var(--z-toast);
   display: grid;
   gap: var(--space-2);
   width: min(320px, calc(100vw - var(--space-7)));

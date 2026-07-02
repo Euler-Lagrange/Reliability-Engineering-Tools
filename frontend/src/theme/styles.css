@@ -139,6 +139,14 @@
   --duration-fast: 120ms;
   --duration-base: 160ms;
   --duration-slow: 220ms;
+
+  /* Z-index ladder — one scale for every stacked surface. Never write a
+     raw z-index literal; add a rung here if a new layer is needed. */
+  --z-sticky: 1;
+  --z-menu: 20;
+  --z-drawer: 40;
+  --z-toast: 50;
+  --z-modal: 1000;
   --border-subtle: var(--line);
 
   /* ============================================================
@@ -458,48 +466,16 @@ button:disabled {
   opacity: 0.72;
 }
 
-.app-shell {
-  min-height: 100vh;
-  background: var(--bg);
-}
-
 .tool-workspace {
   display: grid;
   gap: var(--space-4);
 }
 
-.app-main {
-  display: grid;
-  gap: var(--space-4);
-  max-width: 1480px;
-  margin: 0 auto;
-  padding: var(--space-5) var(--space-6) var(--space-7);
-  animation: fade-rise var(--duration-slow) var(--ease);
-}
-
-.topbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: var(--space-4);
-}
-
-.topbar__title {
-  display: grid;
-  gap: 6px; /* off-grid: tight inter-line gap inside the title block */
-}
-
-.topbar h1,
 .section-card h2,
 .choice-card h3,
 .run-result h3 {
   margin: 0;
   letter-spacing: -0.02em;
-}
-
-.topbar h1 {
-  font-size: var(--text-2xl);
-  line-height: 1.08;
 }
 
 .eyebrow,
@@ -567,7 +543,7 @@ button:disabled {
   position: fixed;
   top: 0;
   right: 0;
-  z-index: 40;
+  z-index: var(--z-drawer);
   width: min(360px, 100vw);
   height: 100vh;
   padding: var(--space-5);
@@ -759,12 +735,6 @@ button:disabled {
   color: var(--text-muted);
   font-size: var(--text-base);
   line-height: 1.45;
-}
-
-.topbar__status {
-  display: flex;
-  gap: var(--space-2);
-  flex-wrap: wrap;
 }
 
 .workspace-grid {
@@ -1340,7 +1310,7 @@ button:disabled {
 }
 
 .custom-select__menu {
-  z-index: 20;
+  z-index: var(--z-menu);
   display: grid;
   gap: 2px; /* off-grid: extreme-tight gap between dropdown items */
   /* min-width grows with the trigger but never shrinks below 220px,
@@ -1840,7 +1810,7 @@ tbody tr:hover {
 }
 
 .run-log-panel__level--error {
-  color: var(--danger, #b14433);
+  color: var(--danger);
 }
 
 .run-log-panel__line--warning .run-log-panel__text {
@@ -1848,7 +1818,7 @@ tbody tr:hover {
 }
 
 .run-log-panel__line--error .run-log-panel__text {
-  color: var(--danger, #b14433);
+  color: var(--danger);
 }
 
 .run-log-panel__tool {
@@ -1975,18 +1945,6 @@ tbody tr:hover {
   line-height: 1.45;
 }
 
-@keyframes fade-rise {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 @media (max-width: 1160px) {
   .workspace-grid--single {
     grid-template-columns: 1fr;
@@ -2002,11 +1960,6 @@ tbody tr:hover {
 }
 
 @media (max-width: 720px) {
-  .app-main {
-    padding: var(--space-4);
-  }
-
-  .topbar,
   .input-card__footer {
     flex-direction: column;
     align-items: stretch;
@@ -2337,7 +2290,7 @@ tbody tr:hover {
 
 .hold-button__label {
   position: relative;
-  z-index: 1;
+  z-index: var(--z-sticky);
 }
 
 .hold-button__dialog {
@@ -3015,7 +2968,7 @@ tbody tr:hover {
 .command-palette-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: var(--z-modal);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -3075,7 +3028,7 @@ tbody tr:hover {
 .command-palette__category {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: var(--z-sticky);
   margin: 0;
   padding: var(--space-3) var(--space-4) var(--space-1);
   background: var(--surface);
@@ -3317,13 +3270,13 @@ tbody tr:hover {
 }
 
 .fmea-cca-input[aria-invalid="true"] {
-  border-color: var(--danger, #c33);
+  border-color: var(--danger);
 }
 
 .fmea-cca-input__error {
   margin: var(--space-1) 0 0 0;
   font-size: var(--text-xs);
-  color: var(--danger, #c33);
+  color: var(--danger);
 }
 
 .fmea-output-folder {
