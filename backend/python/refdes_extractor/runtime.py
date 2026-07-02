@@ -1,6 +1,7 @@
 """RefDes Extractor runtime adapter for the Tauri sidecar."""
 from __future__ import annotations
 
+import math
 import threading
 import tempfile
 from dataclasses import dataclass, fields
@@ -166,6 +167,142 @@ class _CancelBridge:
 
 
 # ---------------------------------------------------------------------------
+# Option validation (#5 Stage 2)
+# ---------------------------------------------------------------------------
+# All 16 engine parameters are now user-settable from the frontend and spread
+# straight into the run payload's ``options`` dict. ``RefDesConfig.from_options``
+# performs NO coercion — a wrong-typed or out-of-range value would flow verbatim
+# into the extraction engine and fail late (or silently misbehave). Validate the
+# type/range of every *present* option here so a bad value fails visibly at
+# validate time with a clear, per-option message. Unknown keys are ignored, in
+# lockstep with ``from_options``' silent-drop behavior.
+
+_BOOL_OPTIONS = frozenset({
+    "geometry_analysis_enabled",
+    "adaptive_geometry_enabled",
+    "geometry_subprocess_enabled",
+    "geometry_batch_checkpoint_enabled",
+    "pinlist_prefers_annotation_mode",
+})
+
+# Distances / sizes / timeout — must be a finite number strictly > 0.
+_POSITIVE_NUMBER_OPTIONS = frozenset({
+    "geometry_batch_timeout_seconds",
+    "prov_distance",
+    "pin_assignment_threshold",
+    "refdes_search_radius",
+})
+
+# Counts / sizes / pages — must be a whole number >= 1.
+_POSITIVE_INT_OPTIONS = frozenset({
+    "geometry_batch_size",
+    "max_pin_label_length",
+    "adaptive_max_pages",
+})
+
+# Counts / thresholds that may legitimately be 0 (e.g. "trigger full geometry
+# even with zero orphans"). Whole number >= 0. adaptive_orphan_threshold=0 is
+# the integer analogue of adaptive_orphan_ratio=0.0, and the frontend control
+# allows a minimum of 0 — validating it as >= 1 would hard-block a UI-permitted
+# value.
+_NON_NEGATIVE_INT_OPTIONS = frozenset({
+    "adaptive_orphan_threshold",
+})
+
+# Enum options — must be one of the allowed literal values.
+_ENUM_OPTIONS: dict[str, tuple[str, ...]] = {
+    "extraction_mode": ("functional", "piece_part"),
+    "backend_mode": ("auto", "nextgen", "legacy"),
+}
+
+# adaptive_orphan_ratio is handled specially: a finite number in [0, 1].
+_RATIO_OPTION = "adaptive_orphan_ratio"
+
+
+def _coerce_number(value: Any) -> float:
+    """Return ``value`` as a finite float, or raise ValueError.
+
+    Booleans are rejected outright (``bool`` is an ``int`` subclass, so an
+    unguarded numeric check would silently accept ``True``/``False`` as 1/0).
+    Numeric strings (e.g. "10") parse for tolerance, and non-finite values
+    (NaN / inf) are rejected so they can't slip past a ``> 0`` comparison.
+    """
+    if isinstance(value, bool):
+        raise ValueError("boolean is not a number")
+    if isinstance(value, (int, float)):
+        number = float(value)
+    elif isinstance(value, str):
+        number = float(value.strip())  # may raise ValueError
+    else:
+        raise ValueError("not a number")
+    if not math.isfinite(number):
+        raise ValueError("not a finite number")
+    return number
+
+
+def _coerce_int(value: Any) -> int:
+    """Return ``value`` as an integer, or raise ValueError.
+
+    Accepts whole-valued floats (10.0 -> 10) but rejects fractional values.
+    """
+    number = _coerce_number(value)
+    if number != int(number):
+        raise ValueError("not a whole number")
+    return int(number)
+
+
+def _validate_options(options: Any) -> list[tuple[str, str]]:
+    """Type/range-check every present option; return (name, detail) for each
+    invalid one (empty list when all present options are valid)."""
+    if not isinstance(options, dict):
+        return []
+
+    errors: list[tuple[str, str]] = []
+    for name, value in options.items():
+        if name in _BOOL_OPTIONS:
+            if not isinstance(value, bool):
+                errors.append((name, f"must be true or false (got {value!r})"))
+        elif name in _ENUM_OPTIONS:
+            allowed = _ENUM_OPTIONS[name]
+            if not (isinstance(value, str) and value in allowed):
+                errors.append((name, f"must be one of {', '.join(allowed)} (got {value!r})"))
+        elif name in _POSITIVE_INT_OPTIONS:
+            try:
+                number = _coerce_int(value)
+            except (TypeError, ValueError):
+                errors.append((name, f"must be a whole number >= 1 (got {value!r})"))
+            else:
+                if number < 1:
+                    errors.append((name, f"must be >= 1 (got {value!r})"))
+        elif name in _NON_NEGATIVE_INT_OPTIONS:
+            try:
+                number = _coerce_int(value)
+            except (TypeError, ValueError):
+                errors.append((name, f"must be a whole number >= 0 (got {value!r})"))
+            else:
+                if number < 0:
+                    errors.append((name, f"must be >= 0 (got {value!r})"))
+        elif name in _POSITIVE_NUMBER_OPTIONS:
+            try:
+                number = _coerce_number(value)
+            except (TypeError, ValueError):
+                errors.append((name, f"must be a number > 0 (got {value!r})"))
+            else:
+                if number <= 0:
+                    errors.append((name, f"must be > 0 (got {value!r})"))
+        elif name == _RATIO_OPTION:
+            try:
+                number = _coerce_number(value)
+            except (TypeError, ValueError):
+                errors.append((name, f"must be a number between 0 and 1 (got {value!r})"))
+            else:
+                if not (0.0 <= number <= 1.0):
+                    errors.append((name, f"must be between 0 and 1 (got {value!r})"))
+        # else: unknown key — silently ignored, mirroring from_options.
+    return errors
+
+
+# ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
 
@@ -219,6 +356,24 @@ def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
                 affected_labels=(),
             )
 
+    # #5 Stage 2: type/range-check the engine options so a wrong-typed or
+    # out-of-range value fails visibly here instead of flowing into the engine.
+    # Only run once the setup (files / workflow / dependency) is otherwise
+    # green, so those more fundamental blockers take precedence.
+    option_errors: list[tuple[str, str]] = []
+    if result.ok:
+        option_errors = _validate_options(body.get("options") or {})
+        if option_errors:
+            result = type(result)(
+                ok=False,
+                reason_code="invalid_option",
+                toast_text=(
+                    "Invalid extraction option(s): "
+                    + "; ".join(f"{name} {detail}" for name, detail in option_errors)
+                ),
+                affected_labels=tuple(name for name, _ in option_errors),
+            )
+
     messages: list[dict[str, str]] = []
     if result.ok:
         messages.append({
@@ -236,6 +391,16 @@ def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
             "title": "Run is blocked",
             "detail": result.toast_text or "Resolve the highlighted setup issues before running.",
         })
+        # Surface each offending option as its own entry so the user sees
+        # exactly which control is invalid, not just a concatenated toast.
+        for name, detail in option_errors:
+            messages.append({
+                "id": f"invalid-option-{name}",
+                "severity": "error",
+                "area": "Options",
+                "title": f"Invalid option: {name}",
+                "detail": f"'{name}' {detail}.",
+            })
 
     response: dict[str, Any] = {
         "ok": result.ok,

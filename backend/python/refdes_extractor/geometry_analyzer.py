@@ -90,9 +90,43 @@ MIN_WIRE_LENGTH = 50.0  # pixels
 MIN_WIRE_LENGTH_SQ = MIN_WIRE_LENGTH ** 2  # Pre-computed for sqrt-free comparisons
 
 # Text classification parameters
+# NOTE: REFDES_PATTERN is a BROAD prefix-agnostic fallback that accepts ANY
+# 1-4 letter prefix. It intentionally diverges from the prefix-allowlist regex
+# used by the rest of the engine; geometry classification defers to
+# ``_match_refdes()`` (below) so it never classifies/parents a "RefDes" the
+# harvest never validates. See Issue #6.
 REFDES_PATTERN = re.compile(r'^[A-Z]{1,4}\d+[A-Z]?$', re.IGNORECASE)
 PIN_PATTERN = re.compile(r'^P(?:IN)?[-_]?\d+$', re.IGNORECASE)  # Legacy pattern (strict)
 NET_PATTERN = re.compile(r'^[A-Z0-9_\.\-]+$', re.IGNORECASE)
+
+
+def _match_refdes(text: str):
+    """Return a truthy match iff ``text`` is a RefDes under the prefix allowlist.
+
+    The geometry layer must classify/parent only RefDes tokens that the harvest
+    engine will actually validate. ``refdes_extractor_logic.REFDES_RE`` is built
+    from the configured prefix allowlist (IEEE 315 standard prefixes plus any
+    user-configured extensions), so we defer to it as the single source of truth
+    rather than the broad local :data:`REFDES_PATTERN`, which accepts ANY 1-4
+    letter prefix and therefore diverges from the rest of the engine (Issue #6).
+
+    The import is deferred because ``refdes_extractor_logic`` imports this module
+    at load time; by the time tokens are classified at runtime that module is
+    fully initialised, so a lazy import avoids the circular-import hazard.
+
+    Falls back to the broad local :data:`REFDES_PATTERN` only as a SECONDARY
+    guard if the logic module's pattern cannot be resolved (e.g. an isolated
+    geometry unit test importing this module out of package context).
+    """
+    try:
+        from . import refdes_extractor_logic as _logic
+        pattern = _logic.REFDES_RE
+    except (ImportError, AttributeError):
+        pattern = None
+    if pattern is not None:
+        return pattern.fullmatch(text)
+    # Secondary fallback only: broad, prefix-agnostic pattern.
+    return REFDES_PATTERN.match(text)
 
 # SI unit suffixes that should NOT be treated as pin labels
 # These commonly appear in schematics as component values but look like valid pins
@@ -655,7 +689,13 @@ def extract_page_geometry(
 
     # Limit drawings to prevent memory exhaustion on vector-heavy pages
     if drawing_count > MAX_DRAWINGS_PER_PAGE:
+        # Streamed WARNING (log() → run log) so the truncation is visible to the
+        # user, plus a file-level WARNING for the rotating log.
         log(f"    WARNING: Page has {drawing_count} drawings, limiting to {MAX_DRAWINGS_PER_PAGE}")
+        _logger.warning(
+            f"Page {page_num + 1}: Drawing cap hit - limiting {drawing_count} drawings "
+            f"to {MAX_DRAWINGS_PER_PAGE} (excess primitives dropped)"
+        )
         cached_drawings = cached_drawings[:MAX_DRAWINGS_PER_PAGE]
 
     # ===== Step 1: Detect component bodies (from cached drawings) =====
@@ -744,7 +784,13 @@ def process_page_geometry(
         _logger.debug(msg)
 
     # Step 5: Classify tokens (with spatial context for pin detection)
-    pin_threshold = config.get("pin_threshold", DEFAULT_PIN_THRESHOLD)
+    # The typed config sets "pin_assignment_threshold" (see runtime.py); read that
+    # first so a user-set value actually applies, falling back to the legacy
+    # "pin_threshold" key and then the default (both default to 50.0).
+    pin_threshold = config.get(
+        "pin_assignment_threshold",
+        config.get("pin_threshold", DEFAULT_PIN_THRESHOLD),
+    )
     max_pin_length = config.get("max_pin_label_length", DEFAULT_MAX_PIN_LABEL_LENGTH)
     _classify_tokens(
         geometry.tokens,
@@ -925,8 +971,14 @@ def _deduplicate_bodies(
 
             # Limit unique bodies to prevent O(n²) explosion
             if len(unique) >= MAX_UNIQUE_BODIES:
+                # Streamed WARNING (run log) so the dropped bodies are visible to
+                # the user, plus a file-level WARNING for the rotating log.
                 if log_func:
                     log_func(f"    WARNING: Body count limit ({MAX_UNIQUE_BODIES}) reached, stopping deduplication")
+                _logger.warning(
+                    f"Body count cap hit - stopping deduplication at {MAX_UNIQUE_BODIES} "
+                    f"unique bodies (remaining bodies dropped)"
+                )
                 break
 
     return unique
@@ -1557,8 +1609,10 @@ def _classify_tokens(
             continue
 
         # 3. RefDes pattern detection (U1, R15, J2A, etc.)
+        # Uses the prefix-allowlist matcher (aligned with the harvest engine's
+        # REFDES_RE) so geometry does not classify a prefix the harvest rejects.
         # But first check for spatial ambiguity - tokens like "R25" could be FPGA pins
-        if REFDES_PATTERN.match(token.text):
+        if _match_refdes(token.text):
             # Check if this could be a pin label (short enough and near body edge)
             # FPGA pins often use patterns like R25, A12, B7 that look like RefDes
             if (is_pin_candidate(token.text, max_length=max_pin_length) and
@@ -1714,7 +1768,12 @@ def _create_pins_from_tokens(
             log_func(msg)
         _logger.debug(msg)
 
-    pin_threshold = config.get("pin_threshold", DEFAULT_PIN_THRESHOLD)
+    # Same key-mismatch fix as process_page_geometry (Step 5): honor the
+    # user-set "pin_assignment_threshold" before the legacy "pin_threshold".
+    pin_threshold = config.get(
+        "pin_assignment_threshold",
+        config.get("pin_threshold", DEFAULT_PIN_THRESHOLD),
+    )
     text_pins = []
 
     for idx, token in enumerate(tokens):

@@ -150,7 +150,8 @@ def _ensure_engine_initialized():
 # These are common false positives from PDF annotation extraction.
 #
 # To add new entries:
-#   1. Add the exact text (case-insensitive SUBSTRING matching is applied)
+#   1. Add the exact text (case-insensitive EXACT matching is applied — the
+#      text must equal an entry in full; "GND" filters "GND" but NOT "GND1")
 #   2. Add a comment explaining WHY it's blacklisted
 #   3. Group with similar items for organization
 #

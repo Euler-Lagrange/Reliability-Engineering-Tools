@@ -181,6 +181,31 @@ _words_extraction_threads: list = []
 _words_thread_lock = threading.Lock()
 
 
+def _report_words_timeout(
+    page_num: int,
+    timeout: float,
+    log: Optional[Callable[[str], None]],
+) -> None:
+    """Report a word-extraction timeout to BOTH logs (harvest #2).
+
+    ``page.get_text("words")`` is a PyMuPDF C call that can hang on pathological
+    pages; on timeout we return an empty word list, which silently drops that
+    page's RefDes + pins. Callers cannot tell "timed out" from "genuinely no
+    words". Mirror the ``_report_pinlist_failure`` pattern: log to the rotating
+    file log AND surface the WARNING on the streamed run log so the user knows
+    the page may be incomplete rather than empty. Shared by BOTH the legacy and
+    NextGen harvests because both route page-word extraction through
+    ``_get_words_with_timeout``.
+    """
+    msg = (
+        f"WARNING: Word extraction timed out on page {page_num + 1} after "
+        f"{timeout:.0f}s; that page's RefDes/pins may be missing."
+    )
+    _logger.warning(msg)
+    if log:
+        log(msg)
+
+
 def _get_words_with_timeout(
     page: fitz.Page,
     page_num: int = 0,
@@ -227,11 +252,10 @@ def _get_words_with_timeout(
         return result_container["result"]
     else:
         # Timeout - thread is still running (zombie)
-        # Keep in tracking list for cleanup later
-        msg = f"WARNING: Page {page_num + 1}: get_text('words') timed out after {timeout:.0f}s - skipping page text"
-        _logger.warning(msg)
-        if log_func:
-            log_func(msg)
+        # Keep in tracking list for cleanup later.
+        # Surface on BOTH the file log and the streamed run log (harvest #2) so a
+        # silently-dropped page is visible instead of looking genuinely empty.
+        _report_words_timeout(page_num, timeout, log_func)
         return []
 
 
