@@ -35,9 +35,9 @@ describe("tauri_build shell", () => {
 
     await waitForFmeaTool();
 
-    await user.click(screen.getByRole("button", { name: /compare/i }));
+    await user.click(screen.getByRole("button", { name: /bom comparison tool/i }));
 
-    expect(screen.getByRole("button", { name: /compare/i })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("button", { name: /bom comparison tool/i })).toHaveAttribute("aria-current", "page");
     // Label-independent sentinel: the tool's own "Run Setup" section heading.
     expect(await screen.findByRole("heading", { name: /run setup/i })).toBeInTheDocument();
   });
@@ -109,12 +109,12 @@ describe("tauri_build shell", () => {
 
     await waitForFmeaTool();
 
-    await user.click(screen.getByRole("button", { name: /compare/i }));
+    await user.click(screen.getByRole("button", { name: /bom comparison tool/i }));
 
     await screen.findByRole("heading", { name: /run setup/i });
 
     await waitFor(() => {
-      const main = document.querySelector("main[aria-label='Cross Compare workspace']");
+      const main = document.querySelector("main[aria-label='BOM Comparison Tool workspace']");
       expect(main).not.toBeNull();
       expect(document.activeElement).toBe(main);
     });

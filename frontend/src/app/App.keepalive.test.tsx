@@ -39,7 +39,7 @@ describe("keep-alive shell", () => {
     // waits use tool-internal sentinels — the per-tool banner headings were
     // removed with the banner cards.
     await screen.findByRole("button", { name: /piece-part from grouping file/i });
-    await user.click(screen.getByRole("button", { name: /compare/i }));
+    await user.click(screen.getByRole("button", { name: /bom comparison tool/i }));
     await screen.findByRole("heading", { name: /run setup/i });
 
     // Engage with BOM Compare by selecting the non-default "Custom Compare"
@@ -65,7 +65,7 @@ describe("keep-alive shell", () => {
     });
 
     // Return to BOM Compare.
-    await user.click(screen.getByRole("button", { name: /compare/i }));
+    await user.click(screen.getByRole("button", { name: /bom comparison tool/i }));
     await screen.findByRole("heading", { name: /run setup/i });
 
     // Custom Compare must still be the selected workflow. With the old
@@ -93,7 +93,7 @@ describe("keep-alive shell", () => {
     // Visit BOM Compare, then return to FMEA. Both are now mounted, but only
     // the active one is exposed to the accessibility tree (the inactive tool
     // lives under [hidden], which the a11y tree skips).
-    await user.click(screen.getByRole("button", { name: /compare/i }));
+    await user.click(screen.getByRole("button", { name: /bom comparison tool/i }));
     await screen.findByRole("heading", { name: /run setup/i });
 
     await user.click(screen.getByRole("button", { name: /fmea generator/i }));

@@ -94,7 +94,7 @@ describe("ContextDrawer", () => {
 
     render(<ContextDrawer />);
 
-    expect(screen.getByRole("heading", { name: /cross compare/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /bom comparison tool/i })).toBeInTheDocument();
     expect(screen.getByText("No run has started for this tool yet.")).toBeInTheDocument();
     expect(screen.getByText("R200")).toBeInTheDocument();
     expect(screen.queryByText("success")).not.toBeInTheDocument();

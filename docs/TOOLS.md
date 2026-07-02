@@ -197,8 +197,8 @@ FMEA when the workflow is Merge Functional → Piece-Part), mapped to
 
 ## BOM Compare
 
-> Labeled **Cross Compare** in the app rail. Backend workflow IDs are still
-> `bom_compare_group` and `bom_compare_custom`.
+> Labeled **BOM Comparison Tool** in the app rail. Backend workflow IDs are
+> still `bom_compare_group` and `bom_compare_custom`.
 
 ### What it does
 
@@ -526,7 +526,7 @@ does not produce files or run any analysis.
 A cross-tool run log panel is docked at the bottom of the app shell and is
 visible from every tool tab. It aggregates `log`, `status`, `progress`, and
 terminal events from every run in the current session, so you can start a
-run in FMEA Generator, switch to Cross Compare, and still watch the FMEA
+run in FMEA Generator, switch to the BOM Comparison Tool, and still watch the FMEA
 run finish in the log.
 
 ### Features

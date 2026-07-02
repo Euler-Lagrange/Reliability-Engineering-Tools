@@ -55,7 +55,7 @@ export const toolDefinitions: ToolDefinition[] = [
   },
   {
     id: "bom_compare",
-    label: "Cross Compare",
+    label: "BOM Comparison Tool",
     eyebrow: "Active tool",
     description: "Compare grouping files or two BOMs to find missing, extra, and mismatched RefDes.",
     icon: GitDiff,
