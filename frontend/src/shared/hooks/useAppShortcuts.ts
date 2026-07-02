@@ -1,7 +1,11 @@
 import { useEffect } from "react";
 import { useShellStore, type ToolId } from "../../stores/shellStore";
 import { useThemeStore } from "../../stores/themeStore";
-import { isEditableKeyboardTarget, matchesPrimaryShortcut } from "./shortcutUtils";
+import {
+  isEditableKeyboardTarget,
+  matchesAltShortcut,
+  matchesPrimaryShortcut,
+} from "./shortcutUtils";
 
 const orderedTools: ToolId[] = [
   "dark_star_fmea",
@@ -58,13 +62,16 @@ export function useAppShortcuts() {
         return;
       }
 
-      if (matchesPrimaryShortcut(event, "l", { requireAlt: true })) {
+      // Alt-only, matching the documented ⌥L / ⌥D bindings. The previous
+      // wiring demanded Ctrl+Alt, which contradicted DESIGN_SYSTEM.md and
+      // collided with AltGr on international layouts.
+      if (matchesAltShortcut(event, "l")) {
         event.preventDefault();
         setThemeMode("light_precision");
         return;
       }
 
-      if (matchesPrimaryShortcut(event, "d", { requireAlt: true })) {
+      if (matchesAltShortcut(event, "d")) {
         event.preventDefault();
         setThemeMode("dark_precision");
       }

@@ -113,4 +113,45 @@ describe("useAppShortcuts", () => {
     });
     expect(useShellStore.getState().contextOpen).toBe(true);
   });
+
+  it("switches themes with plain Alt+L / Alt+D as documented", () => {
+    setNavigatorPlatform("Win32");
+    renderHook(() => useAppShortcuts());
+
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "d", altKey: true, bubbles: true }),
+      );
+    });
+    expect(useThemeStore.getState().mode).toBe("dark_precision");
+
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "l", altKey: true, bubbles: true }),
+      );
+    });
+    expect(useThemeStore.getState().mode).toBe("light_precision");
+  });
+
+  it("ignores Ctrl+Alt+D (AltGr guard) and plain D for theme switching", () => {
+    setNavigatorPlatform("Win32");
+    renderHook(() => useAppShortcuts());
+
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "d",
+          altKey: true,
+          ctrlKey: true,
+          bubbles: true,
+        }),
+      );
+    });
+    expect(useThemeStore.getState().mode).toBe("system");
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "d", bubbles: true }));
+    });
+    expect(useThemeStore.getState().mode).toBe("system");
+  });
 });

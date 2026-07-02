@@ -43,7 +43,7 @@
 | Frontend backend bootstrap | `frontend/src/shared/backend/useBackendBootstrap.test.ts` | 2 | Vitest |
 | Frontend run subscription | `frontend/src/shared/backend/useBackendRunSubscription.test.ts` | 3 | Vitest |
 | Frontend theme registry | `frontend/src/shared/theme/themeRegistry.test.ts` | 10 | Vitest |
-| Frontend app shortcuts | `frontend/src/shared/hooks/useAppShortcuts.test.tsx` | 4 | Vitest + RTL |
+| Frontend app shortcuts | `frontend/src/shared/hooks/useAppShortcuts.test.tsx` | 6 | Vitest + RTL |
 | Frontend role-request sequence | `frontend/src/shared/hooks/useRoleRequestSequence.test.ts` | 5 | Vitest |
 | Frontend copy to clipboard | `frontend/src/shared/hooks/useCopyToClipboard.test.ts` | 3 | Vitest |
 | Frontend global log store | `frontend/src/stores/globalLogStore.test.ts` | 6 | Vitest |
@@ -62,9 +62,9 @@
 | Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 7 | Vitest + RTL |
 | Frontend shell-hook install | `frontend/src/app/App.shellHooks.test.tsx` | 1 | Vitest + RTL |
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
-| **Frontend subtotal** | | **260** | |
+| **Frontend subtotal** | | **262** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 17 | cargo test |
-| **Total** | | **576** | |
+| **Total** | | **578** | |
 
 ## Backend Tests
 

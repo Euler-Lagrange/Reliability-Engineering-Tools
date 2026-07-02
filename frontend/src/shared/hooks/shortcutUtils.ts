@@ -45,7 +45,6 @@ export function matchesPrimaryShortcut(
   options?: {
     platform?: string;
     allowShift?: boolean;
-    requireAlt?: boolean;
   },
 ): boolean {
   if (!hasPrimaryModifier(event, options?.platform)) {
@@ -54,7 +53,22 @@ export function matchesPrimaryShortcut(
   if (!options?.allowShift && event.shiftKey) {
     return false;
   }
-  if (Boolean(options?.requireAlt) !== event.altKey) {
+  if (event.altKey) {
+    return false;
+  }
+  return event.key.toLowerCase() === key.toLowerCase();
+}
+
+/**
+ * Alt-only chord (⌥L / Alt+D). Deliberately rejects Ctrl/Cmd so it can
+ * never collide with AltGr (= Ctrl+Alt on many international layouts)
+ * or a primary-modifier shortcut.
+ */
+export function matchesAltShortcut(
+  event: Pick<KeyboardEvent, "ctrlKey" | "metaKey" | "shiftKey" | "altKey" | "key">,
+  key: string,
+): boolean {
+  if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
     return false;
   }
   return event.key.toLowerCase() === key.toLowerCase();

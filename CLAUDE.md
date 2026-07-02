@@ -65,7 +65,7 @@ npm run dev              # Vite dev server (browser preview mode)
 npm run build            # Production build
 npm run typecheck        # TypeScript type checking
 npm run typecheck:tests  # TypeScript type checking for Vitest files
-npm test                 # Vitest (260 tests)
+npm test                 # Vitest (262 tests)
 
 # Desktop (requires Rust toolchain)
 npm run tauri:dev        # Dev mode with hot reload
@@ -197,7 +197,7 @@ The audit runs:
 - `pytest.importorskip("fitz")` for RefDes tests requiring PyMuPDF
 - `backend/tests/conftest.py` installs a `sys.path` shim for in-process unit tests
 
-### Frontend Tests (260 total across 39 test files)
+### Frontend Tests (262 total across 39 test files)
 - Vitest + React Testing Library
 - Browser-mock mode (no Tauri runtime needed)
 - `src/app/App.test.tsx`
@@ -241,7 +241,7 @@ The audit runs:
 - `src/stores/storeMigrations.test.ts` (new — Decision E persist version/migration)
 
 Run `npx vitest run --config frontend/vite.config.ts --reporter=default` to
-see individual counts per file — the suite totals 260 tests and changes
+see individual counts per file — the suite totals 262 tests and changes
 whenever a suite gains or loses cases.
 
 ## Critical Gotchas
