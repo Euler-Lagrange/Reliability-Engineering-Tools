@@ -1292,7 +1292,10 @@ export function FmeaTool() {
                     value={hdaSource}
                     onChange={(next) => setHdaSource(next as HdaSource)}
                     options={[
-                      { value: "inline", label: "HDA columns inline in BOM" },
+                      // Short first label so both chips sit side by side (the
+                      // long "HDA columns inline in BOM" wrapped the group
+                      // into a stack); the OptionsField hint carries context.
+                      { value: "inline", label: "Inline in BOM" },
                       { value: "separate", label: "Separate HDA file" },
                     ]}
                   />

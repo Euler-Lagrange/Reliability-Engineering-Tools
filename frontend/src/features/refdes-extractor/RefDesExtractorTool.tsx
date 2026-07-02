@@ -108,20 +108,7 @@ const OPTION_TOOLTIPS: Record<string, string> = {
 // non-interactive by design — never triggers a native alert/confirm.
 function InfoTip({ text }: { text: string }) {
   return (
-    <span
-      className="refdes-infotip"
-      role="img"
-      aria-label={text}
-      title={text}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        flexShrink: 0,
-        marginTop: "2px",
-        color: "var(--text-faint)",
-        cursor: "help",
-      }}
-    >
+    <span className="refdes-infotip" role="img" aria-label={text} title={text}>
       <Info size={14} weight="regular" aria-hidden="true" />
     </span>
   );
@@ -129,11 +116,13 @@ function InfoTip({ text }: { text: string }) {
 
 // Lays out a control alongside its InfoTip so every option — existing or
 // advanced — gets the same hover-tooltip affordance without modifying the
-// shared field primitives.
+// shared field primitives. Styled via global classes so theme overrides
+// (Mission Control, High Contrast) reach it; the row hugs its content so
+// the icon sits next to the control instead of floating at the far edge.
 function OptionRow({ info, children }: { info: string; children: ReactNode }) {
   return (
-    <div style={{ display: "flex", alignItems: "flex-start", gap: "var(--space-2)" }}>
-      <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
+    <div className="option-row">
+      <div className="option-row__control">{children}</div>
       <InfoTip text={info} />
     </div>
   );

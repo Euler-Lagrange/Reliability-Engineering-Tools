@@ -2060,6 +2060,30 @@ tbody tr:hover {
   font-style: italic;
 }
 
+/* Option row: a field primitive plus its info tip. fit-content keeps the
+   tip adjacent to the control it explains — never floating at the far
+   edge of a full-width row (gestalt proximity). */
+.option-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  width: fit-content;
+  max-width: 100%;
+}
+
+.option-row__control {
+  min-width: 0;
+}
+
+.refdes-infotip {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-top: 2px; /* off-grid: optical alignment with the field label cap-height */
+  color: var(--text-faint);
+  cursor: help;
+}
+
 .checkbox-field {
   display: flex;
   flex-direction: row;

@@ -152,13 +152,13 @@ describe("tauri_build shell", () => {
     renderApp();
     await waitForFmeaTool();
 
-    // Default is "HDA columns inline in BOM" — HDA workbook should be hidden.
+    // Default is "Inline in BOM" — HDA workbook should be hidden.
     expect(screen.queryByText("HDA workbook")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("radio", { name: /separate hda file/i }));
     expect(screen.getByText("HDA workbook")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("radio", { name: /hda columns inline in bom/i }));
+    await user.click(screen.getByRole("radio", { name: /inline in bom/i }));
     expect(screen.queryByText("HDA workbook")).not.toBeInTheDocument();
   });
 
