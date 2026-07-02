@@ -18,6 +18,8 @@ set "LOGS_DIR=%ROOT_DIR%\logs"
 set "OUTPUT_EXE=%OUTPUT_DIR%\ReliabilityToolsDesktop.exe"
 set "PACKAGED_EXE_NAME=reliability-tools-desktop.exe"
 set "PACKAGED_EXE="
+set "SIDECAR_EXE_NAME=reliability-tools-sidecar.exe"
+set "SIDECAR_SRC=%OUTPUT_DIR%\reliability-tools-sidecar.exe"
 set "BACKEND_PYTHON=%REPO_ROOT%\.venv\Scripts\python.exe"
 
 if not exist "%OUTPUT_DIR%" mkdir "%OUTPUT_DIR%"
@@ -43,57 +45,57 @@ echo.
 pushd "%ROOT_DIR%"
 if errorlevel 1 goto :fail
 
-echo [1/15] Checking toolchain...
+echo [1/16] Checking toolchain...
 where node >nul 2>&1 || goto :missing_node
 where npm >nul 2>&1 || goto :missing_npm
 echo [INFO] node and npm detected >> "%LOGFILE%"
 
 if not exist "%BACKEND_PYTHON%" goto :missing_backend_python
 
-echo [2/15] Checking version consistency...
+echo [2/16] Checking version consistency...
 call npm run version:check >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :version_check_failed
 
-echo [3/15] Typechecking frontend...
+echo [3/16] Typechecking frontend...
 call npm run typecheck >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :typecheck_failed
 
-echo [4/15] Typechecking frontend tests...
+echo [4/16] Typechecking frontend tests...
 call npm run typecheck:tests >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :typecheck_tests_failed
 
-echo [5/15] Typechecking Rust bridge (cargo check)...
+echo [5/16] Typechecking Rust bridge (cargo check)...
 call npm run cargo:check >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :cargo_check_failed
 
-echo [6/15] Running Rust bridge tests (cargo test)...
+echo [6/16] Running Rust bridge tests (cargo test)...
 call npm run cargo:test >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :cargo_test_failed
 
-echo [7/15] Running backend security audit...
+echo [7/16] Running backend security audit...
 pushd "%REPO_ROOT%\backend\python"
 "%BACKEND_PYTHON%" -m common.security_audit --strict >> "%LOGFILE%" 2>&1
 set "AUDIT_RC=%ERRORLEVEL%"
 popd
 if not "%AUDIT_RC%"=="0" goto :security_audit_failed
 
-echo [8/15] Running backend tests...
+echo [8/16] Running backend tests...
 "%BACKEND_PYTHON%" -m pytest backend\tests -q >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :backend_tests_failed
 
-echo [9/15] Running frontend tests...
+echo [9/16] Running frontend tests...
 call npm test >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :tests_failed
 
-echo [10/15] Building Python sidecar exe...
+echo [10/16] Building Python sidecar exe...
 "%BACKEND_PYTHON%" scripts\build_sidecar.py >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :sidecar_build_failed
 
-echo [11/15] Building portable desktop exe...
+echo [11/16] Building portable desktop exe...
 call npm run tauri:build:portable >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :build_failed
 
-echo [12/15] Locating packaged executable...
+echo [12/16] Locating packaged executable...
 if exist "%ROOT_DIR%\src-tauri\target\x86_64-pc-windows-msvc\release\%PACKAGED_EXE_NAME%" (
     set "PACKAGED_EXE=%ROOT_DIR%\src-tauri\target\x86_64-pc-windows-msvc\release\%PACKAGED_EXE_NAME%"
 )
@@ -107,18 +109,29 @@ if not defined PACKAGED_EXE (
 )
 if not defined PACKAGED_EXE goto :missing_packaged_exe
 
+REM Stage the freshly built sidecar beside the packaged exe. Release builds
+REM resolve the sidecar exe-adjacent ONLY (never the dev tree), but the sidecar
+REM is built into local_build — so without this copy the backend self-test
+REM below cannot find it and fails "Could not locate ... sidecar_main.py".
+echo [13/16] Staging bundled sidecar beside packaged exe...
+if not exist "%SIDECAR_SRC%" goto :missing_sidecar_exe
+for %%I in ("%PACKAGED_EXE%") do set "PACKAGED_DIR=%%~dpI"
+copy /y "%SIDECAR_SRC%" "%PACKAGED_DIR%%SIDECAR_EXE_NAME%" >nul
+if errorlevel 1 goto :stage_sidecar_failed
+echo [INFO] Staged sidecar beside packaged exe in %PACKAGED_DIR% >> "%LOGFILE%"
+
 REM Self-test the BUILD OUTPUT before promoting it. The last-good exe in
 REM local_build must never be overwritten by an exe that hasn't passed its
 REM self-tests (Tier-3 #24) — so the copy is the final step, not step 10.
-echo [13/15] Running packaged self-test...
+echo [14/16] Running packaged self-test...
 "%PACKAGED_EXE%" --self-test >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :selftest_failed
 
-echo [14/15] Running packaged backend self-test...
+echo [15/16] Running packaged backend self-test...
 "%PACKAGED_EXE%" --self-test-backend >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :backend_selftest_failed
 
-echo [15/15] Promoting verified exe to local_build...
+echo [16/16] Promoting verified exe to local_build...
 copy /y "%PACKAGED_EXE%" "%OUTPUT_EXE%" >nul
 if errorlevel 1 goto :copy_failed
 echo [INFO] Promoted verified exe to %OUTPUT_EXE% >> "%LOGFILE%"
@@ -220,6 +233,18 @@ goto :fail
 echo [ERROR] Could not locate %PACKAGED_EXE_NAME% under src-tauri\target. >> "%LOGFILE%"
 echo.
 echo [FAILED] Build finished but the packaged exe was not found.
+goto :fail
+
+:missing_sidecar_exe
+echo [ERROR] Could not find the built sidecar at %SIDECAR_SRC%. >> "%LOGFILE%"
+echo.
+echo [FAILED] Bundled sidecar exe was not found for staging.
+goto :fail
+
+:stage_sidecar_failed
+echo [ERROR] Could not stage the sidecar beside the packaged exe. >> "%LOGFILE%"
+echo.
+echo [FAILED] Staging the bundled sidecar next to the packaged exe failed.
 goto :fail
 
 :copy_failed

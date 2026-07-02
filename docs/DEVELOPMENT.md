@@ -115,21 +115,25 @@ ancestor directory tree.
 scripts/release.bat
 ```
 
-The script runs the following 12 steps and stops on the first failure
+The script runs the following 16 steps and stops on the first failure
 (logs go to `logs/release_<timestamp>.log`):
 
 1. Toolchain check (node, npm, backend Python)
-2. Frontend production typecheck (`npm run typecheck`)
-3. Frontend test typecheck (`npm run typecheck:tests`)
-4. Rust bridge check (`npm run cargo:check`)
-5. Backend security audit (`python -m common.security_audit --strict` from `backend/python`)
-6. Backend tests (`pytest backend/tests -q`)
-7. Frontend tests (`npm test`)
-8. Sidecar build (`scripts/build_sidecar.py`)
-9. Portable desktop build (`npm run tauri:build:portable`)
-10. Locate the packaged exe under `src-tauri/target/...`
-11. Packaged self-test (`ReliabilityToolsDesktop.exe --self-test`)
-12. Packaged backend self-test (`ReliabilityToolsDesktop.exe --self-test-backend`)
+2. Version consistency check (`npm run version:check`)
+3. Frontend production typecheck (`npm run typecheck`)
+4. Frontend test typecheck (`npm run typecheck:tests`)
+5. Rust bridge check (`npm run cargo:check`)
+6. Rust bridge tests (`npm run cargo:test`)
+7. Backend security audit (`python -m common.security_audit --strict` from `backend/python`)
+8. Backend tests (`pytest backend/tests -q`)
+9. Frontend tests (`npm test`)
+10. Sidecar build (`scripts/build_sidecar.py`)
+11. Portable desktop build (`npm run tauri:build:portable`)
+12. Locate the packaged exe under `src-tauri/target/...`
+13. Stage the bundled sidecar beside the packaged exe (release resolves it exe-adjacent only)
+14. Packaged self-test (`ReliabilityToolsDesktop.exe --self-test`)
+15. Packaged backend self-test (`ReliabilityToolsDesktop.exe --self-test-backend`)
+16. Promote the verified exe to `local_build/ReliabilityToolsDesktop.exe`
 
 The output is `local_build/ReliabilityToolsDesktop.exe`.
 
