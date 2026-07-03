@@ -16,9 +16,18 @@ pytest.importorskip("fitz")  # PyMuPDF — nextgen_engine imports it at module l
 
 from refdes_test import nextgen_engine  # noqa: E402
 from refdes_test.nextgen_engine import (  # noqa: E402
+    ORPHAN_BOX_CONTAINS_BODY,
+    ORPHAN_EXCLUDED,
+    ORPHAN_PASSIVE_PREFIX,
+    ORPHAN_PINLIST_DROP,
+    ORPHAN_PINLIST_FILTERED,
+    ORPHAN_SUPPRESSED_PASSIVE,
+    _fold_token_pages_into_diagnostics,
     _format_hybrid_results_nextgen,
     _is_token_bom_member,
     _normalize_bom_set,
+    _record_orphan,
+    _record_token_diag,
     _report_pinlist_failure,
 )
 
@@ -62,6 +71,66 @@ def test_pin_token_lands_in_verified_row_for_piece_part_group() -> None:
     assert by_group["DIG-076 (Verified)"]["failure mode causes"] == "U7-38"
     assert by_group["DIG-076 (Verified)"]["component count"] == 1
     assert by_group["DIG-076 (Unverified)"]["component count"] == 0
+
+
+def test_diagnostics_recording_is_noop_without_accumulator() -> None:
+    # Every capture site sits in the hot token loop — a None accumulator
+    # (all legacy callers) must cost one truthiness check and mutate nothing.
+    _record_token_diag(None, "U7-38", confidence=0.9)
+    _record_orphan(None, page=1, group="G", pin_text="38", disposition=ORPHAN_EXCLUDED)
+    _fold_token_pages_into_diagnostics({"G": {"token_pages": {"U7": {1}}}}, None)
+
+
+def test_token_diag_accumulates_and_skips_none_fields() -> None:
+    diag: dict = {}
+    _record_token_diag(diag, "U7-38", confidence=0.82, source="geometry", candidates=None)
+    _record_token_diag(diag, "U7-38", candidates=3)
+
+    entry = diag["token_diagnostics"]["U7-38"]
+    assert entry["confidence"] == 0.82
+    assert entry["source"] == "geometry"
+    assert entry["candidates"] == 3
+    # None fields never erase earlier data.
+    _record_token_diag(diag, "U7-38", confidence=None)
+    assert diag["token_diagnostics"]["U7-38"]["confidence"] == 0.82
+
+
+def test_orphan_records_carry_the_pinned_disposition_vocabulary() -> None:
+    # The dispositions are user-facing sheet content (Orphan Pins report);
+    # pin the literals so engine edits can't silently rename them.
+    assert ORPHAN_SUPPRESSED_PASSIVE == "suppressed-passive"
+    assert ORPHAN_PINLIST_DROP == "pinlist-drop"
+    assert ORPHAN_PINLIST_FILTERED == "pinlist-filtered"
+    assert ORPHAN_EXCLUDED == "excluded"
+    assert ORPHAN_PASSIVE_PREFIX == "passive-prefix"
+    assert ORPHAN_BOX_CONTAINS_BODY == "box-contains-body"
+
+    diag: dict = {}
+    _record_orphan(
+        diag, page=7, group="DIG-076", pin_text="38",
+        disposition=ORPHAN_EXCLUDED, detail="No qualified pinlist cluster matched this pin.",
+    )
+    assert diag["orphan_pins"] == [
+        {
+            "page": 7,
+            "group": "DIG-076",
+            "pin_text": "38",
+            "disposition": "excluded",
+            "detail": "No qualified pinlist cluster matched this pin.",
+        }
+    ]
+
+
+def test_token_pages_fold_covers_every_token_and_strips_mode_suffix() -> None:
+    grouped_data = {
+        "DIG-076-PN": {"token_pages": {"U7-38": {4, 9}}},
+        "CPU-001-FN": {"token_pages": {"R1": {2}}},
+    }
+    diag: dict = {}
+    _fold_token_pages_into_diagnostics(grouped_data, diag)
+
+    assert diag["token_diagnostics"]["U7-38"] == {"group": "DIG-076", "pages": [4, 9]}
+    assert diag["token_diagnostics"]["R1"] == {"group": "CPU-001", "pages": [2]}
 
 
 def test_nextgen_word_timeout_surfaces_on_run_log() -> None:

@@ -17,6 +17,7 @@ Key difference vs the legacy harvest_hybrid path:
 
 from __future__ import annotations
 
+import functools
 import json
 import multiprocessing as mp
 import re
@@ -906,6 +907,7 @@ def extract_with_geometry_analysis(
     stop_event=None,
     bom_page_map: Optional[dict] = None,
     doc: Optional[fitz.Document] = None,
+    diagnostics: Optional[dict] = None,
 ) -> list:
     """NextGen extraction entry point with adaptive + batched geometry support."""
     legacy_logic._ensure_engine_initialized()
@@ -944,6 +946,10 @@ def extract_with_geometry_analysis(
     geo_config = _build_geometry_config(config, max_pin_length)
     pdf_path = Path(pdf_path)
 
+    # Every harvest call below shares the same diagnostics accumulator; the
+    # partial keeps the seven call sites signature-stable.
+    _harvest = functools.partial(harvest_hybrid_nextgen, diagnostics=diagnostics)
+
     if doc is None:
         pdf_path = ensure_file_available(pdf_path, log)
 
@@ -952,7 +958,7 @@ def extract_with_geometry_analysis(
         # Fast paths with no geometry.
         if not pn_pages:
             log("[RefDes Test] No piece-part pages detected; skipping geometry.")
-            results = harvest_hybrid_nextgen(
+            results = _harvest(
                 pdf_path=pdf_path,
                 groups=groups,
                 bom_set=bom_set,
@@ -978,7 +984,7 @@ def extract_with_geometry_analysis(
 
         if not geometry_enabled:
             log("[RefDes Test] Geometry disabled; using annotation-only extraction.")
-            results = harvest_hybrid_nextgen(
+            results = _harvest(
                 pdf_path=pdf_path,
                 groups=groups,
                 bom_set=bom_set,
@@ -1004,7 +1010,7 @@ def extract_with_geometry_analysis(
 
         if pinlist_set and pinlist_prefers_annotation:
             log("[RefDes Test] Pinlist present; using lightweight annotation-first pin qualification.")
-            results = harvest_hybrid_nextgen(
+            results = _harvest(
                 pdf_path=pdf_path,
                 groups=groups,
                 bom_set=bom_set,
@@ -1035,7 +1041,7 @@ def extract_with_geometry_analysis(
             log("[RefDes Test] Adaptive geometry enabled.")
             status("Phase 1/4: Fast extraction...")
             progress(0.05)
-            phase1_results, page_metrics = harvest_hybrid_nextgen(
+            phase1_results, page_metrics = _harvest(
                 pdf_path=pdf_path,
                 groups=groups,
                 bom_set=bom_set,
@@ -1130,7 +1136,7 @@ def extract_with_geometry_analysis(
             if not flagged_pages or (not pin_map and not body_rects):
                 results = phase1_results
                 if debug_pdf_path:
-                    _ = harvest_hybrid_nextgen(
+                    _ = _harvest(
                         pdf_path=pdf_path,
                         groups=groups,
                         bom_set=bom_set,
@@ -1151,7 +1157,7 @@ def extract_with_geometry_analysis(
                         normalized_bom_pages=normalized_bom_pages,
                     )
             else:
-                results = harvest_hybrid_nextgen(
+                results = _harvest(
                     pdf_path=pdf_path,
                     groups=groups,
                     bom_set=bom_set,
@@ -1198,7 +1204,7 @@ def extract_with_geometry_analysis(
             )
 
         status("Harvesting components...")
-        results = harvest_hybrid_nextgen(
+        results = _harvest(
             pdf_path=pdf_path,
             groups=groups,
             bom_set=bom_set,
@@ -1239,6 +1245,73 @@ def _report_pinlist_failure(page_idx, exc, log) -> None:
         )
 
 
+def _record_token_diag(diagnostics: Optional[dict], token: str, **fields) -> None:
+    """Accumulate per-token diagnostics (confidence / source / ambiguity).
+
+    ``diagnostics`` is the optional accumulator threaded down from
+    ``extract_with_geometry_analysis_detailed``. When it is ``None`` (every
+    legacy caller), recording is a no-op — hot-loop cost is one truthiness
+    check. ``None``-valued fields are skipped so later sites don't erase
+    earlier data.
+    """
+    if diagnostics is None:
+        return
+    entry = diagnostics.setdefault("token_diagnostics", {}).setdefault(str(token), {})
+    entry.update({key: value for key, value in fields.items() if value is not None})
+
+
+# Stable disposition vocabulary for the Orphan Pins report. Tests pin these
+# strings — they are user-facing sheet content, not internal labels.
+ORPHAN_SUPPRESSED_PASSIVE = "suppressed-passive"
+ORPHAN_PINLIST_DROP = "pinlist-drop"
+ORPHAN_PINLIST_FILTERED = "pinlist-filtered"
+ORPHAN_EXCLUDED = "excluded"
+ORPHAN_PASSIVE_PREFIX = "passive-prefix"
+ORPHAN_BOX_CONTAINS_BODY = "box-contains-body"
+
+
+def _fold_token_pages_into_diagnostics(grouped_data: dict, diagnostics: Optional[dict]) -> None:
+    """Fold per-token page provenance + group identity into the accumulator.
+
+    Runs once at the end of the harvest so EVERY extracted token (functional
+    and piece-part alike) gets a Component Detail entry, not just pins.
+    """
+    if diagnostics is None:
+        return
+    token_diags = diagnostics.setdefault("token_diagnostics", {})
+    for raw_group, data in grouped_data.items():
+        display_group = legacy_logic._strip_mode_suffix(str(raw_group))
+        for token, pages in (data.get("token_pages") or {}).items():
+            entry = token_diags.setdefault(str(token), {})
+            entry["group"] = display_group
+            merged = set(entry.get("pages") or [])
+            merged |= {int(p) for p in pages if isinstance(p, int) or str(p).isdigit()}
+            entry["pages"] = sorted(merged)
+
+
+def _record_orphan(
+    diagnostics: Optional[dict],
+    *,
+    page: int,
+    group: str,
+    pin_text: str,
+    disposition: str,
+    detail: str = "",
+) -> None:
+    """Record a pin dropped before reaching the output rows."""
+    if diagnostics is None:
+        return
+    diagnostics.setdefault("orphan_pins", []).append(
+        {
+            "page": page,
+            "group": group,
+            "pin_text": pin_text,
+            "disposition": disposition,
+            "detail": detail,
+        }
+    )
+
+
 def harvest_hybrid_nextgen(
     pdf_path: Path,
     groups: list,
@@ -1259,6 +1332,7 @@ def harvest_hybrid_nextgen(
     normalized_bom: Optional[set] = None,
     normalized_bom_pages: Optional[dict] = None,
     collect_metrics: bool = False,
+    diagnostics: Optional[dict] = None,
 ) -> list | tuple[list, dict]:
     """
     NextGen hybrid harvester.
@@ -1499,7 +1573,14 @@ def harvest_hybrid_nextgen(
                     parent_refdes_radius = 500.0
                 parent_refdes_radius_sq = parent_refdes_radius ** 2
 
-                def find_parent_refdes(group_rect: tuple, pin_texts: list[str]) -> Optional[str]:
+                def find_parent_refdes(
+                    group_rect: tuple, pin_texts: list[str]
+                ) -> tuple[Optional[str], int]:
+                    """Return (chosen parent RefDes, in-radius candidate count).
+
+                    The count feeds the diagnostics accumulator: >1 means the
+                    parent was chosen among alternatives (ambiguity flag).
+                    """
                     gcx, gcy = center(group_rect)
                     candidates = {}
 
@@ -1528,7 +1609,7 @@ def harvest_hybrid_nextgen(
                             candidates[ref] = {"source": "text", "dist_sq": eff_dist}
 
                     if not candidates:
-                        return None
+                        return None, 0
 
                     if normalized_pinlist and pin_texts:
                         best_ref = None
@@ -1548,7 +1629,7 @@ def harvest_hybrid_nextgen(
                                 best_hits = hits
                                 best_rank = rank
                         if best_ref and best_hits > 0:
-                            return best_ref
+                            return best_ref, len(candidates)
 
                     best_ref = None
                     best_rank = None
@@ -1559,9 +1640,10 @@ def harvest_hybrid_nextgen(
                         if best_rank is None or rank < best_rank:
                             best_rank = rank
                             best_ref = ref
-                    return best_ref
+                    return best_ref, len(candidates)
 
                 parent_refdes_by_group = {}
+                parent_candidates_by_group = {}
                 for g in current_groups:
                     if g["mode"] != "piece_part":
                         continue
@@ -1574,9 +1656,10 @@ def harvest_hybrid_nextgen(
                         is_ref = legacy_logic.REFDES_RE.fullmatch(t) and not legacy_logic.POWER_SOURCE_RE.match(t)
                         if not is_ref and ga.is_pin_candidate(t, max_length=max_pin_length):
                             pin_texts.append(t)
-                    parent = find_parent_refdes(g["rect"], pin_texts)
+                    parent, parent_candidates = find_parent_refdes(g["rect"], pin_texts)
                     if parent:
                         parent_refdes_by_group[g["name"]] = parent
+                        parent_candidates_by_group[g["name"]] = parent_candidates
 
                 qt_lookup_cache = {}
 
@@ -1678,23 +1761,48 @@ def harvest_hybrid_nextgen(
                             if matching_token:
                                 if matching_token.suppressed:
                                     _dbg((page_idx, rect, (0.5, 0.5, 0.5), "PIN_SUPPRESS_PASSIVE"))
+                                    _record_orphan(
+                                        diagnostics, page=page_idx + 1, group=group_name,
+                                        pin_text=text, disposition=ORPHAN_SUPPRESSED_PASSIVE,
+                                        detail="Pinlist cluster suppressed passive-component pins.",
+                                    )
                                     continue
                                 if matching_token.drop_reason:
                                     _dbg((page_idx, rect, (0.7, 0.3, 0.3), f"PIN_DROP:{matching_token.drop_reason}"))
+                                    _record_orphan(
+                                        diagnostics, page=page_idx + 1, group=group_name,
+                                        pin_text=text, disposition=ORPHAN_PINLIST_DROP,
+                                        detail=str(matching_token.drop_reason),
+                                    )
                                     continue
                                 if matching_token.parent_refdes:
                                     val = f"{matching_token.parent_refdes}-{matching_token.text}"
                                     canon = _canonicalize_pin_id(val)
                                     if not canon or canon not in normalized_pinlist:
                                         _dbg((page_idx, rect, (0.6, 0.6, 0.6), "PIN_FILTERED"))
+                                        _record_orphan(
+                                            diagnostics, page=page_idx + 1, group=group_name,
+                                            pin_text=text, disposition=ORPHAN_PINLIST_FILTERED,
+                                            detail=f"{val} is not in the pinlist.",
+                                        )
                                         continue
                                     grouped_data[group_name]["tokens"].add(val)
                                     grouped_data[group_name]["pages"].add(page_idx + 1)
                                     _track_token_page(grouped_data[group_name], val, page_idx + 1)
                                     _dbg((page_idx, rect, (0, 0.8, 0.4), f"PIN_CLUSTER:{matching_token.parent_refdes}"))
+                                    _record_token_diag(
+                                        diagnostics, val,
+                                        source="pinlist-cluster",
+                                        parent=matching_token.parent_refdes,
+                                    )
                                 continue
 
                             _dbg((page_idx, rect, (0.6, 0.6, 0.6), "PIN_EXCLUDED"))
+                            _record_orphan(
+                                diagnostics, page=page_idx + 1, group=group_name,
+                                pin_text=text, disposition=ORPHAN_EXCLUDED,
+                                detail="No qualified pinlist cluster matched this pin.",
+                            )
                             continue
 
                         mapping = None
@@ -1723,35 +1831,74 @@ def harvest_hybrid_nextgen(
                             parent_prefix = get_prefix(parent_refdes)
 
                         if parent_prefix and not should_analyze_pins(parent_prefix):
+                            _record_orphan(
+                                diagnostics, page=page_idx + 1, group=group_name,
+                                pin_text=text, disposition=ORPHAN_PASSIVE_PREFIX,
+                                detail=f"Prefix {parent_prefix} is not analyzed at pin level.",
+                            )
                             continue
+
+                        # Ambiguity for the diagnostics record: how many pin
+                        # mappings competed for this label (after page-match
+                        # narrowing), or how many parent candidates were in
+                        # radius when the group-parent fallback is used.
+                        ambiguity_count = len(candidates) if len(candidates) > 1 else 0
 
                         if mapping:
                             body_key = (page_idx, mapping.refdes)
                             if not normalized_pinlist and body_key in body_rects:
                                 if legacy_logic.annotation_box_contains_body(g["rect"], body_rects[body_key]):
+                                    _record_orphan(
+                                        diagnostics, page=page_idx + 1, group=group_name,
+                                        pin_text=text, disposition=ORPHAN_BOX_CONTAINS_BODY,
+                                        detail=f"Annotation box contains the {mapping.refdes} body; pin treated as internal.",
+                                    )
                                     continue
                             val = mapping.full_identifier
                             _dbg((page_idx, rect, (0, 0.5, 1), "PIN_QUAL"))
+                            _record_token_diag(
+                                diagnostics, val,
+                                confidence=getattr(mapping, "confidence", None),
+                                source="geometry",
+                                candidates=ambiguity_count or None,
+                            )
                         elif parent_refdes:
                             body_key = (page_idx, parent_refdes)
                             if not normalized_pinlist and body_key in body_rects:
                                 if legacy_logic.annotation_box_contains_body(g["rect"], body_rects[body_key]):
+                                    _record_orphan(
+                                        diagnostics, page=page_idx + 1, group=group_name,
+                                        pin_text=text, disposition=ORPHAN_BOX_CONTAINS_BODY,
+                                        detail=f"Annotation box contains the {parent_refdes} body; pin treated as internal.",
+                                    )
                                     continue
                             val = f"{parent_refdes}-{text}"
                             _dbg((page_idx, rect, (0.2, 0.6, 1), "PIN_PARENT"))
+                            _record_token_diag(
+                                diagnostics, val,
+                                source="parent-refdes",
+                                candidates=parent_candidates_by_group.get(group_name, 0) or None,
+                            )
                         else:
                             box_refdes = legacy_logic._find_refdes_in_box(words, g["rect"], (cx, cy))
                             if box_refdes:
                                 val = f"{box_refdes}-{text}"
                                 _dbg((page_idx, rect, (0.5, 0.5, 1), "PIN_BOX"))
+                                _record_token_diag(diagnostics, val, source="box-text")
                             else:
                                 val = f"PIN-{text}"
                                 _dbg((page_idx, rect, (0.5, 0.5, 0.5), "PIN_UNQUAL"))
+                                _record_token_diag(diagnostics, val, source="unqualified")
 
                         if normalized_pinlist:
                             canon = _canonicalize_pin_id(val)
                             if not canon or canon not in normalized_pinlist:
                                 _dbg((page_idx, rect, (0.6, 0.6, 0.6), "PIN_FILTERED"))
+                                _record_orphan(
+                                    diagnostics, page=page_idx + 1, group=group_name,
+                                    pin_text=text, disposition=ORPHAN_PINLIST_FILTERED,
+                                    detail=f"{val} is not in the pinlist.",
+                                )
                                 continue
 
                         grouped_data[group_name]["tokens"].add(val)
@@ -1777,6 +1924,8 @@ def harvest_hybrid_nextgen(
             zombie_count = legacy_engine.cleanup_words_extraction_threads(timeout_per_thread=2.0)
             if zombie_count > 0:
                 log(f"Cleaned up {zombie_count} background word extraction thread(s)")
+
+    _fold_token_pages_into_diagnostics(grouped_data, diagnostics)
 
     results = _format_hybrid_results_nextgen(
         grouped_data, bom_set, bom_page_map, log,

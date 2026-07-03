@@ -253,6 +253,7 @@ def _run_nextgen(
     stop_event,
     bom_page_map: Optional[Dict[str, Set[int]]] = None,
     doc=None,
+    diagnostics: Optional[dict] = None,
 ) -> list:
     nextgen = _get_nextgen_module()
     return nextgen.extract_with_geometry_analysis(
@@ -268,6 +269,7 @@ def _run_nextgen(
         stop_event=stop_event,
         bom_page_map=bom_page_map,
         doc=doc,
+        diagnostics=diagnostics,
     )
 
 
@@ -295,14 +297,26 @@ def extract_with_geometry_analysis_detailed(
             "backend_requested": str,
             "backend_used": str,
             "fallback_reason": str,
+            "token_diagnostics": dict,  # {token: {group, pages, confidence?, source?, candidates?, parent?}}
+            "orphan_pins": list,        # [{page, group, pin_text, disposition, detail}]
         }
+
+    The diagnostics keys are populated only by the NextGen backend; legacy
+    runs (including auto-mode fallback) leave them empty.
     """
     mode = _normalize_backend_mode(config, backend_override=backend_override)
     details = {
         "backend_requested": mode,
         "backend_used": mode,
         "fallback_reason": "",
+        "token_diagnostics": {},
+        "orphan_pins": [],
     }
+    diagnostics_acc: dict = {}
+
+    def _adopt_diagnostics() -> None:
+        details["token_diagnostics"] = diagnostics_acc.get("token_diagnostics", {})
+        details["orphan_pins"] = diagnostics_acc.get("orphan_pins", [])
 
     if mode == "legacy":
         if log_func:
@@ -326,23 +340,23 @@ def extract_with_geometry_analysis_detailed(
     if mode == "nextgen":
         if log_func:
             log_func("[RefDes Test] Backend mode: nextgen")
-        return (
-            _run_nextgen(
-                pdf_path,
-                groups,
-                bom_set,
-                config,
-                pinlist_set,
-                debug_pdf_path,
-                log_func,
-                progress_func,
-                status_func,
-                stop_event,
-                bom_page_map=bom_page_map,
-                doc=doc,
-            ),
-            details,
+        results = _run_nextgen(
+            pdf_path,
+            groups,
+            bom_set,
+            config,
+            pinlist_set,
+            debug_pdf_path,
+            log_func,
+            progress_func,
+            status_func,
+            stop_event,
+            bom_page_map=bom_page_map,
+            doc=doc,
+            diagnostics=diagnostics_acc,
         )
+        _adopt_diagnostics()
+        return results, details
 
     if log_func:
         log_func("[RefDes Test] Backend mode: auto (nextgen with legacy fallback)")
@@ -361,8 +375,10 @@ def extract_with_geometry_analysis_detailed(
             stop_event,
             bom_page_map=bom_page_map,
             doc=doc,
+            diagnostics=diagnostics_acc,
         )
         details["backend_used"] = "nextgen"
+        _adopt_diagnostics()
         return results, details
     except (CancellationError, InterruptedError):
         raise
