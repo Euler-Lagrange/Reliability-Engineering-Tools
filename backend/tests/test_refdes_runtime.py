@@ -50,9 +50,12 @@ def test_every_config_field_is_validated() -> None:
     assert validated == {f.name for f in fields(RefDesConfig)}
 
 
-def test_results_dataframe_drops_internal_gap_column() -> None:
-    # #4: a gap row's internal "_is_gap" styling marker must not leak into the
-    # user-facing "RefDes Extraction" sheet as a stray column.
+def test_results_dataframe_drops_internal_columns_after_annotation() -> None:
+    # #4: internal markers ("_is_gap" from detect_sequence_gaps, "_row_style"
+    # from annotate_results) must not leak into the user-facing sheet — and
+    # the display headers are Title Case with the Validation Notes column.
+    from refdes_extractor.validation_notes import annotate_results
+
     rows = [
         {"group": "U200", "failure mode causes": "Open", "component count": 3, "pages": "1"},
         {
@@ -63,18 +66,25 @@ def test_results_dataframe_drops_internal_gap_column() -> None:
             "_is_gap": True,  # internal styling marker from detect_sequence_gaps
         },
     ]
-    df = _results_dataframe(rows)
+    df = _results_dataframe(annotate_results(rows, bom_provided=True))
     assert "_is_gap" not in df.columns
-    assert list(df.columns) == ["group", "failure mode causes", "component count", "pages"]
-    assert len(df) == 2  # rows preserved; only the internal column dropped
+    assert "_row_style" not in df.columns
+    assert list(df.columns) == [
+        "Group",
+        "Failure Mode Causes",
+        "Component Count",
+        "Pages",
+        "Validation Notes",
+    ]
+    assert len(df) == 2  # rows preserved; only the internal columns dropped
 
 
-def test_results_dataframe_without_internal_columns_is_unchanged() -> None:
+def test_results_dataframe_renames_to_display_headers() -> None:
     rows = [
         {"group": "U200", "failure mode causes": "Open", "component count": 3, "pages": "1"},
     ]
     df = _results_dataframe(rows)
-    assert list(df.columns) == ["group", "failure mode causes", "component count", "pages"]
+    assert list(df.columns) == ["Group", "Failure Mode Causes", "Component Count", "Pages"]
     assert len(df) == 1
 
 

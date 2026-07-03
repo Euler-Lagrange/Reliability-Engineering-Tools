@@ -31,6 +31,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Mapping, Optional, Set
 
+import pandas as pd
+
+from common.excel_styles import (
+    PRESETS,
+    StylePresets,
+    style_header_only,
+    style_worksheet,
+    write_df_to_sheet,
+)
 from common.refdes_utils import get_usage_base_refdes, split_refdes_list
 
 # Status labels for the BOM Not Grouped sheet (kept as module constants so the
@@ -244,24 +253,56 @@ def build_coverage(
     )
 
 
-def write_coverage_sheets(wb, coverage: CoverageResult) -> None:
+def _write_styled_sheet(
+    wb,
+    title: str,
+    df: pd.DataFrame,
+    presets: StylePresets,
+    *,
+    auto_filter: bool = True,
+) -> None:
+    """Create one sheet with the suite's modern styling.
+
+    Headers must stay on row 1 (the sidecar integration test reads coverage
+    cells by position) — both writers keep that invariant.
+    """
+    ws = wb.create_sheet(title)
+    write_df_to_sheet(ws, df)
+    if df.empty:
+        style_header_only(ws, len(df.columns), presets)
+    else:
+        style_worksheet(
+            ws,
+            df,
+            presets=presets,
+            alternate_rows=True,
+            auto_filter=auto_filter,
+        )
+
+
+def write_coverage_sheets(
+    wb, coverage: CoverageResult, presets: StylePresets = None
+) -> None:
     """Append the three coverage sheets to an open openpyxl workbook."""
+    presets = presets or PRESETS
     s = coverage.summary
 
-    ws = wb.create_sheet(SHEET_SUMMARY)
-    ws.append(["Metric", "Count"])
-    ws.append(["BOM components", s.get("bom_count", 0)])
-    ws.append(["Grouped from BOM", s.get("grouped_from_bom", 0)])
-    ws.append(["BOM not grouped", s.get("bom_not_grouped_count", 0)])
-    ws.append(["  - Not extracted", s.get("not_extracted_count", 0)])
-    ws.append(["  - Extracted, ungrouped", s.get("extracted_ungrouped_count", 0)])
-    ws.append(["  - Extracted, provisional", s.get("extracted_provisional_count", 0)])
-    ws.append(["Extracted not in BOM", s.get("extracted_not_in_bom_count", 0)])
+    summary_df = pd.DataFrame(
+        [
+            ["BOM components", s.get("bom_count", 0)],
+            ["Grouped from BOM", s.get("grouped_from_bom", 0)],
+            ["BOM not grouped", s.get("bom_not_grouped_count", 0)],
+            ["  - Not extracted", s.get("not_extracted_count", 0)],
+            ["  - Extracted, ungrouped", s.get("extracted_ungrouped_count", 0)],
+            ["  - Extracted, provisional", s.get("extracted_provisional_count", 0)],
+            ["Extracted not in BOM", s.get("extracted_not_in_bom_count", 0)],
+        ],
+        columns=["Metric", "Count"],
+    )
+    _write_styled_sheet(wb, SHEET_SUMMARY, summary_df, presets, auto_filter=False)
 
-    ws = wb.create_sheet(SHEET_BOM_NOT_GROUPED)
-    ws.append(_BOM_NOT_GROUPED_HEADER)
-    for row in coverage.bom_not_grouped:
-        ws.append(
+    bng_df = pd.DataFrame(
+        [
             [
                 row.get("refdes", ""),
                 row.get("part_number", ""),
@@ -269,9 +310,17 @@ def write_coverage_sheets(wb, coverage: CoverageResult) -> None:
                 row.get("status", ""),
                 row.get("pages", ""),
             ]
-        )
+            for row in coverage.bom_not_grouped
+        ],
+        columns=_BOM_NOT_GROUPED_HEADER,
+    )
+    _write_styled_sheet(wb, SHEET_BOM_NOT_GROUPED, bng_df, presets)
 
-    ws = wb.create_sheet(SHEET_EXTRACTED_NOT_IN_BOM)
-    ws.append(_EXTRACTED_NOT_IN_BOM_HEADER)
-    for row in coverage.extracted_not_in_bom:
-        ws.append([row.get("refdes", ""), row.get("group", ""), row.get("pages", "")])
+    enib_df = pd.DataFrame(
+        [
+            [row.get("refdes", ""), row.get("group", ""), row.get("pages", "")]
+            for row in coverage.extracted_not_in_bom
+        ],
+        columns=_EXTRACTED_NOT_IN_BOM_HEADER,
+    )
+    _write_styled_sheet(wb, SHEET_EXTRACTED_NOT_IN_BOM, enib_df, presets)

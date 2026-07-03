@@ -450,7 +450,8 @@ Choose:
 
 ### Output
 
-An Excel workbook containing:
+A styled Excel workbook (Aptos Narrow, frozen header row, auto-filter,
+content-sized columns, zebra banding) containing:
 
 - **Groups sheet** — one row per functional group, with the group name, the
   page it appeared on, and a comma-separated list of RefDes.
@@ -458,6 +459,11 @@ An Excel workbook containing:
   for pasting into the FMEA as a failure-mode cause.
 - **Component counts** — per-group and total RefDes counts.
 - **Page index** — which PDF page each group was extracted from.
+- **Validation Notes column** — extraction-quality reason notes with row
+  highlighting: a component landing in a second (third, …) group gets an
+  ordinal note naming where it was first seen (amber row), populated
+  Unverified rows get an explicit "Not found in BOM: …" note (grey row),
+  and sequence-gap placeholder rows are explained (yellow row).
 
 When a BOM workbook is loaded, three BOM-coverage sheets are also written:
 

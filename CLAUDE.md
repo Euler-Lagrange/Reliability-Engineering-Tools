@@ -73,7 +73,7 @@ npm run tauri:build:portable  # Release build → src-tauri/target/.../release/
 npm run cargo:test       # Rust bridge unit tests via the repo runner
 
 # Python sidecar (use project venv)
-.venv\Scripts\python.exe -m pytest backend/tests -v    # 302 backend tests (44 sidecar + 27 audit + 12 cancel bridge + 10 output-directory helper + 58 FMEA phase D + 24 failure-rate logic + 15 RefDes extraction-engine + 31 BOM-compare logic + 9 BOM-compare runtime + 2 failure-rate runtime + 6 read-layer + 19 RefDes BOM-coverage + 6 BOM-loader + 5 OneDrive detection + 3 file-size guard + 3 crash-dump + 4 NextGen engine + 24 RefDes runtime)
+.venv\Scripts\python.exe -m pytest backend/tests -v    # 310 backend tests (44 sidecar + 27 audit + 12 cancel bridge + 10 output-directory helper + 58 FMEA phase D + 24 failure-rate logic + 15 RefDes extraction-engine + 31 BOM-compare logic + 9 BOM-compare runtime + 2 failure-rate runtime + 6 read-layer + 19 RefDes BOM-coverage + 6 BOM-loader + 5 OneDrive detection + 3 file-size guard + 3 crash-dump + 4 NextGen engine + 24 RefDes runtime + 8 validation-notes)
 .venv\Scripts\python.exe backend/python/sidecar_main.py --self-test
 
 # Full release
@@ -170,7 +170,7 @@ The audit runs:
 
 ## Testing
 
-### Backend Tests (302 total)
+### Backend Tests (310 total)
 - 44 sidecar integration tests in `test_sidecar_main.py` (incl. the RefDes BOM-coverage sheet emission)
 - 27 security-audit tests in `test_security_audit.py` (synthetic positives + live tree scan; incl. subprocess via alias/from-import, os.system/popen/startfile, and ctypes native-import detection)
 - 12 cancel-bridge tests in `test_cancel_bridge.py` (BOM Compare + RefDes bridges plus Failure Rate `FMEALinkerLogic.cancel` binding through `ActiveRun`)
@@ -188,7 +188,8 @@ The audit runs:
 - 3 file-size guard tests in `test_file_guards.py` (Decision C: `ensure_file_size_within` caps the full analyze_template load against OOM)
 - 3 crash-dump tests in `test_crash_dump.py` (Decision B: review-before-sharing banner + embedded-value truncation)
 - 4 NextGen-engine tests in `test_nextgen_engine.py` (default engine: pinlist-failure streamed to the run log; word-extraction-timeout surfacing; pin-token verification against pin-level BOM entries incl. the Verified-row formatting)
-- 24 RefDes-runtime tests in `test_refdes_runtime.py` (output DataFrame drops the internal `_is_gap` column; blocking type/range validation of all 16 engine options at validate time, incl. the 0-valid adaptive-orphan threshold and a config-field lockstep guard)
+- 24 RefDes-runtime tests in `test_refdes_runtime.py` (output DataFrame drops internal `_is_gap`/`_row_style` columns and renames to Title Case display headers; blocking type/range validation of all 16 engine options at validate time, incl. the 0-valid adaptive-orphan threshold and a config-field lockstep guard)
+- 8 validation-notes tests in `test_validation_notes.py` (cross-group duplicate ordinals by page order, V/U split never self-flags, not-in-BOM notes gated on a provided BOM, gap-row notes, styled-workbook read-back: Aptos Narrow, frozen header, header fill, duplicate-row amber highlight)
 - Sidecar tests are subprocess-based: spawn sidecar, send NDJSON commands, verify responses
 - `stderr=subprocess.DEVNULL` to avoid Windows pipe buffer deadlock
 - `SIDECAR_HEARTBEAT_INTERVAL=9999` suppresses heartbeats during tests

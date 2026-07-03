@@ -22,7 +22,9 @@ from common import (
     verify_excel_readable,
     validate_explicit_output_directory,
 )
+from common.excel_styles import StylePresets, style_header_only, style_worksheet
 from common.exceptions import ValidationError, ProcessingError
+from refdes_extractor.validation_notes import annotate_results
 from shared.pre_run_validation import (
     LabeledState,
     LabeledValue,
@@ -448,20 +450,74 @@ def _build_refdes_output_preview(
 # Execution
 # ---------------------------------------------------------------------------
 
-def _results_dataframe(results) -> pd.DataFrame:
-    """Build the output DataFrame from engine result rows, dropping internal
-    bookkeeping columns.
+# User-facing header text for the extraction sheet. The engines emit
+# lowercase keys; the sheet headers are Title Case (matches the empty-results
+# branch and the coverage sheets).
+_DISPLAY_COLUMNS = {
+    "group": "Group",
+    "failure mode causes": "Failure Mode Causes",
+    "component count": "Component Count",
+    "pages": "Pages",
+    "validation notes": "Validation Notes",
+}
 
-    Gap-detection rows carry an ``_is_gap`` styling marker (a boolean the
-    standalone tool used for row highlighting). The sidecar writes the frame
-    straight to the sheet with no styling consumer, so that marker would leak
-    into the user-facing "RefDes Extraction" sheet as a stray column. Drop any
-    ``_``-prefixed column so no internal key ever reaches the workbook.
+_EMPTY_SHEET_HEADERS = list(_DISPLAY_COLUMNS.values())
+
+
+def _results_dataframe(results) -> pd.DataFrame:
+    """Build the output DataFrame from engine result rows.
+
+    Drops internal bookkeeping columns and renames the engine's lowercase
+    keys to the user-facing Title Case headers.
+
+    Gap-detection rows carry an ``_is_gap`` styling marker, and
+    ``annotate_results`` adds a ``_row_style`` marker for the Excel styler.
+    Drop any ``_``-prefixed column so no internal key ever reaches the
+    workbook.
     """
     df = pd.DataFrame(results)
     internal_cols = [col for col in df.columns if str(col).startswith("_")]
     if internal_cols:
         df = df.drop(columns=internal_cols)
+    return df.rename(columns=_DISPLAY_COLUMNS)
+
+
+# Extractor-scoped presets: Aptos Narrow (user choice) without touching the
+# suite-wide "Aptos" default other tools inherit from the global PRESETS.
+_EXTRACTOR_FONT = "Aptos Narrow"
+_extractor_presets_cache: StylePresets | None = None
+
+
+def _extractor_presets() -> StylePresets:
+    global _extractor_presets_cache
+    if _extractor_presets_cache is None:
+        _extractor_presets_cache = StylePresets(font_name=_EXTRACTOR_FONT)
+    return _extractor_presets_cache
+
+
+def _write_extraction_sheet(ws, results) -> pd.DataFrame:
+    """Write + style the main extraction sheet from annotated result rows.
+
+    ``results`` rows may carry a ``_row_style`` semantic-style marker from
+    ``annotate_results``; it drives per-row highlighting (duplicates = amber,
+    gap placeholders = yellow, populated Unverified rows = grey) and is
+    dropped from the sheet itself by ``_results_dataframe``.
+    """
+    df = _results_dataframe(results)
+    row_styles = [str(row.get("_row_style", "default")) for row in results]
+
+    def _row_style(_row: pd.Series, idx: int) -> str:
+        return row_styles[idx] if 0 <= idx < len(row_styles) else "default"
+
+    write_df_to_sheet(ws, df)
+    style_worksheet(
+        ws,
+        df,
+        presets=_extractor_presets(),
+        row_style_func=_row_style,
+        alternate_rows=True,
+        max_width=60,  # component lists run long; still capped for sanity
+    )
     return df
 
 
@@ -654,6 +710,14 @@ def execute_run_request(
         cleanup_words_extraction_threads()
         doc.close()
 
+    # --- Validation notes (runtime-side annotation; engines untouched) ---
+    # Adds the "validation notes" column (cross-group duplicate ordinals,
+    # not-in-BOM reasons, gap explanations) and the internal _row_style
+    # marker that drives row highlighting in the workbook.
+    results = annotate_results(
+        results, bom_provided=bool(bom_set) and not bom_load_error
+    )
+
     # --- Compute BOM coverage reverse-diff (only meaningful with a real BOM) ---
     # Gated on a non-empty, successfully-loaded BOM: with no BOM the diff is
     # degenerate (everything "unverified"), and a failed load already emits the
@@ -681,7 +745,7 @@ def execute_run_request(
         if coverage is None:
             return
         try:
-            write_coverage_sheets(workbook, coverage)
+            write_coverage_sheets(workbook, coverage, presets=_extractor_presets())
         except (InterruptedError, CancellationError):
             raise
         except Exception as exc:
@@ -696,26 +760,19 @@ def execute_run_request(
 
     tmp_output = atomic_write_path(output_path)
     try:
+        from openpyxl import Workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "RefDes Extraction"
         if results:
-            df = _results_dataframe(results)
-            from openpyxl import Workbook
-            wb = Workbook()
-            ws = wb.active
-            ws.title = "RefDes Extraction"
-            write_df_to_sheet(ws, df)
-            _safe_write_coverage(wb)
-            wb.save(str(tmp_output))
-            wb.close()
+            _write_extraction_sheet(ws, results)
         else:
-            from openpyxl import Workbook
-            wb = Workbook()
-            ws = wb.active
-            ws.title = "RefDes Extraction"
-            ws.append(["Group", "Failure Mode Causes", "Component Count", "Pages"])
-            ws.append(["(No groups extracted)", "", 0, ""])
-            _safe_write_coverage(wb)
-            wb.save(str(tmp_output))
-            wb.close()
+            ws.append(_EMPTY_SHEET_HEADERS)
+            ws.append(["(No groups extracted)", "", 0, "", ""])
+            style_header_only(ws, len(_EMPTY_SHEET_HEADERS), _extractor_presets())
+        _safe_write_coverage(wb)
+        wb.save(str(tmp_output))
+        wb.close()
         if not verify_excel_readable(tmp_output):
             raise IOError(
                 f"Post-write verification failed for {tmp_output}; workbook did not open."

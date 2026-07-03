@@ -22,7 +22,8 @@
 | Backend crash-dump | `backend/tests/test_crash_dump.py` | 3 | pytest |
 | Backend NextGen engine | `backend/tests/test_nextgen_engine.py` | 4 | pytest |
 | Backend RefDes runtime | `backend/tests/test_refdes_runtime.py` | 24 | pytest |
-| **Backend subtotal** | | **302** | |
+| Backend RefDes validation notes | `backend/tests/test_validation_notes.py` | 8 | pytest |
+| **Backend subtotal** | | **310** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 4 | Vitest + RTL |
 | Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 3 | Vitest + RTL |
@@ -65,7 +66,7 @@
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
 | **Frontend subtotal** | | **268** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 17 | cargo test |
-| **Total** | | **587** | |
+| **Total** | | **595** | |
 
 ## Backend Tests
 
