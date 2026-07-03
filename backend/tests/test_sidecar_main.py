@@ -1386,6 +1386,79 @@ def test_sidecar_executes_bom_compare_custom(tmp_path: Path) -> None:
         process.kill()
 
 
+def _build_extraction_compare_body(tmp_path: Path) -> dict:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    rev_a_path = tmp_path / "extract_rev_a.xlsx"
+    rev_b_path = tmp_path / "extract_rev_b.xlsx"
+
+    pd.DataFrame([
+        {"Group": "DIG-076 (Verified)", "Failure Mode Causes": "U7, U9", "Component Count": 2, "Pages": "3"},
+        {"Group": "DIG-081 (Verified)", "Failure Mode Causes": "C1", "Component Count": 1, "Pages": "4"},
+    ]).to_excel(rev_a_path, index=False)
+
+    pd.DataFrame([
+        {"Group": "DIG-076 (Verified)", "Failure Mode Causes": "U7", "Component Count": 1, "Pages": "3"},
+        {"Group": "DIG-081 (Verified)", "Failure Mode Causes": "U9, R5", "Component Count": 2, "Pages": "4"},
+    ]).to_excel(rev_b_path, index=False)
+
+    def input_state(role, label, path):
+        return {
+            "role": role, "label": label, "path": str(path), "selectedSheet": "Sheet1",
+            "source": "desktop-bridge", "isResolvingSheets": False, "isAnalyzing": False,
+            "resolutionError": None, "sheets": [{"id": "s1", "label": "Sheet1"}],
+        }
+
+    return {
+        "workflowId": "extraction_compare",
+        "outputStrategyId": "new_workbook_standard",
+        "enrichments": {"functional": False, "piecePart": False},
+        "inputs": [
+            input_state("extractionA", "Extraction A (older)", rev_a_path),
+            input_state("extractionB", "Extraction B (newer)", rev_b_path),
+        ],
+        "mappings": [],
+        "options": {},
+    }
+
+
+def test_sidecar_validates_extraction_compare(tmp_path: Path) -> None:
+    process = subprocess.Popen(
+        [sys.executable, str(SIDECAR)],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+    )
+    try:
+        _read_ready_line(process)
+        result = _send_command(process, "req_val_exc", "validate_run", _build_extraction_compare_body(tmp_path))
+        assert result["kind"] == "result"
+        assert result["payload"]["ok"] is True
+    finally:
+        process.kill()
+
+
+def test_sidecar_executes_extraction_compare(tmp_path: Path) -> None:
+    process = subprocess.Popen(
+        [sys.executable, str(SIDECAR)],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+    )
+    try:
+        _read_ready_line(process)
+        ack = _send_command(process, "req_exec_exc", "execute_run", _build_extraction_compare_body(tmp_path))
+        assert ack["kind"] == "ack"
+        run_id = ack["payload"]["run_id"]
+
+        result = _read_until(process, run_id=run_id, kind="result", timeout=30.0)
+        assert result["payload"]["status"] == "success"
+        assert "ExtractionCompare" in result["payload"]["output_file"]
+        assert Path(result["payload"]["output_file"]).exists()
+
+        # R5 appeared, C1 disappeared → no_match_count = 2; U9 moved groups
+        # → warning_count = 1.
+        assert result["payload"]["no_match_count"] == 2
+        assert result["payload"]["warning_count"] == 1
+    finally:
+        process.kill()
+
+
 # =========================================================================
 # Failure Rate integration tests
 # =========================================================================

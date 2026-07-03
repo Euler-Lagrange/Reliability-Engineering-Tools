@@ -26,7 +26,7 @@ from failure_rate.runtime import execute_run_request as fr_execute, validate_run
 from refdes_extractor.runtime import execute_run_request as refdes_execute, validate_run_request as refdes_validate
 
 FMEA_WORKFLOWS = {"piece_part_generate", "bom_only", "fill_gaps", "functional_to_piecepart"}
-BOM_COMPARE_WORKFLOWS = {"bom_compare_group", "bom_compare_custom"}
+BOM_COMPARE_WORKFLOWS = {"bom_compare_group", "bom_compare_custom", "extraction_compare"}
 FAILURE_RATE_WORKFLOWS = {"failure_rate_link"}
 REFDES_WORKFLOWS = {"refdes_extract"}
 

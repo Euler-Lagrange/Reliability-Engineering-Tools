@@ -41,7 +41,7 @@ from bom_compare.bom_compare_logic import (
 
 _logger = get_tool_logger("bom_compare_runtime")
 
-SUPPORTED_WORKFLOWS = {"bom_compare_group", "bom_compare_custom"}
+SUPPORTED_WORKFLOWS = {"bom_compare_group", "bom_compare_custom", "extraction_compare"}
 LOG_LIMIT = 120
 
 ROLE_LABELS = {
@@ -49,6 +49,8 @@ ROLE_LABELS = {
     "bom": "BOM workbook",
     "bomA": "File 1",
     "bomB": "File 2",
+    "extractionA": "Extraction A (older)",
+    "extractionB": "Extraction B (newer)",
 }
 
 
@@ -61,6 +63,8 @@ def _required_roles(workflow_id: str) -> list[str]:
         return ["grouping", "bom"]
     elif workflow_id == "bom_compare_custom":
         return ["bomA", "bomB"]
+    elif workflow_id == "extraction_compare":
+        return ["extractionA", "extractionB"]
     return []
 
 
@@ -69,6 +73,8 @@ def _required_mappings(workflow_id: str) -> list[str]:
         return ["grouping_group_col", "grouping_refdes_col", "bom_refdes_col"]
     elif workflow_id == "bom_compare_custom":
         return ["refdes_col_a", "refdes_col_b"]
+    # extraction_compare: the extraction sheet has a fixed schema — no
+    # column mapping is needed (or rendered by the frontend).
     return []
 
 
@@ -146,7 +152,7 @@ def _resolve_output_directory(
     )
     if resolved is not None:
         return resolved
-    for role in ("bom", "grouping", "bomA", "bomB"):
+    for role in ("bom", "grouping", "bomA", "bomB", "extractionA", "extractionB"):
         candidate = _input_path(inputs_by_role, role)
         if candidate:
             return Path(candidate).resolve().parent
@@ -154,8 +160,10 @@ def _resolve_output_directory(
 
 
 def _build_output_name(workflow_id: str) -> str:
-    suffix = "Group" if workflow_id == "bom_compare_group" else "Custom"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if workflow_id == "extraction_compare":
+        return f"ExtractionCompare_{timestamp}.xlsx"
+    suffix = "Group" if workflow_id == "bom_compare_group" else "Custom"
     return f"BomCompare_{suffix}_{timestamp}.xlsx"
 
 
@@ -350,6 +358,11 @@ def execute_run_request(
             body, inputs_by_role, options, output_path,
             bridge, stream_log, emit_status, emit_progress,
         )
+    elif workflow_id == "extraction_compare":
+        result_data = _run_extraction_compare(
+            body, inputs_by_role, options, output_path,
+            bridge, stream_log, emit_status, emit_progress,
+        )
     else:
         result_data = _run_custom_compare(
             body, inputs_by_role, options, output_path,
@@ -480,6 +493,97 @@ def _run_group_compare(
         "row_count": missing_count + extra_count,
         "warning_count": warning_count,
         "no_match_count": missing_count,
+    }
+
+
+def _run_extraction_compare(
+    body: dict[str, Any],
+    inputs_by_role: dict[str, dict[str, Any]],
+    options: dict[str, Any],
+    output_path: Path,
+    bridge: _CancelBridge,
+    log: Callable[[str], None],
+    emit_status: Callable,
+    emit_progress: Callable,
+) -> dict[str, Any]:
+    """Diff two RefDes-extraction workbooks: appeared / disappeared / moved."""
+    from bom_compare.extraction_compare import (
+        compare_extractions,
+        write_extraction_compare_excel,
+    )
+
+    emit_status("running", "Reading input files", "Loading both extraction workbooks...")
+    emit_progress("Reading input files", "Loading workbooks...", 5)
+
+    path_a = _input_path(inputs_by_role, "extractionA")
+    path_b = _input_path(inputs_by_role, "extractionB")
+    df_a = try_read_table(
+        path_a,
+        sheet_name=_selected_sheet(inputs_by_role, "extractionA"),
+        log_func=log,
+        cancel_check=bridge.stop_event.is_set,
+    )
+    df_b = try_read_table(
+        path_b,
+        sheet_name=_selected_sheet(inputs_by_role, "extractionB"),
+        log_func=log,
+        cancel_check=bridge.stop_event.is_set,
+    )
+    emit_progress("Reading input files", "Files loaded.", 15)
+
+    name_a = options.get("display_name_a") or (Path(path_a).stem if path_a else "Extraction A")
+    name_b = options.get("display_name_b") or (Path(path_b).stem if path_b else "Extraction B")
+
+    emit_status("running", "Comparing extractions", "Diffing component groups between revisions...")
+    emit_progress("Comparing extractions", "Comparing...", 30)
+    result = compare_extractions(df_a, df_b)
+    emit_progress("Comparing extractions", "Comparison finished.", 80)
+
+    emit_status("running", "Writing workbook", "Writing Excel report...")
+    emit_progress("Writing workbook", "Writing...", 85)
+    tmp_output = atomic_write_path(output_path)
+    try:
+        from openpyxl import Workbook
+        wb = Workbook()
+        write_extraction_compare_excel(result, wb, name_a=name_a, name_b=name_b)
+        wb.save(str(tmp_output))
+        wb.close()
+        if not verify_excel_readable(tmp_output):
+            raise IOError(
+                f"Post-write verification failed for {tmp_output}; workbook did not open."
+            )
+        atomic_finalize(tmp_output, output_path, log_func=log)
+    except Exception:
+        try:
+            if tmp_output.exists():
+                tmp_output.unlink()
+        except OSError:
+            pass
+        raise
+    emit_progress("Writing workbook", "Workbook written.", 98)
+    emit_progress("Complete", "Extraction comparison complete.", 100)
+
+    appeared = len(result.appeared)
+    disappeared = len(result.disappeared)
+    moved = len(result.moved)
+
+    return {
+        "status": "success",
+        "title": "Extraction comparison complete",
+        "summary": (
+            f"{appeared} appeared, {disappeared} disappeared, {moved} moved groups "
+            f"({result.in_both_count} unchanged)."
+        ),
+        "output_file": str(output_path),
+        "primary_metric": f"{appeared + disappeared + moved} changes",
+        "secondary_metric": f"{moved} moved groups, {result.in_both_count} in both",
+        "notes": [
+            f"Compared {name_a} (rev A) against {name_b} (rev B).",
+            "Group identity ignores the (Verified)/(Unverified) split; gap rows are skipped.",
+        ],
+        "row_count": result.in_both_count + appeared + disappeared,
+        "warning_count": moved,
+        "no_match_count": appeared + disappeared,
     }
 
 

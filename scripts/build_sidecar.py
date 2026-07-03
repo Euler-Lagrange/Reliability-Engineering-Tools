@@ -51,6 +51,7 @@ def main():
         "--hidden-import", "bom_compare.group_analysis",
         "--hidden-import", "bom_compare.fmea_coverage",
         "--hidden-import", "bom_compare.excel_export",
+        "--hidden-import", "bom_compare.extraction_compare",
         "--hidden-import", "failure_rate.runtime",
         "--hidden-import", "failure_rate.failure_rate_logic",
         "--hidden-import", "refdes_extractor.runtime",
