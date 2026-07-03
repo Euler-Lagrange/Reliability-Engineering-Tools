@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 import threading
 import traceback
@@ -499,6 +500,88 @@ def _read_flet_config(body: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# RefDes prefix config — the same file the four prefix loaders read
+# (`~/.refdes_extractor_config.json`, key "ref_prefixes"). This pair is the
+# file's ONLY writer. Engines freeze their prefix-derived regexes at import,
+# so changes take effect on the next app launch (the UI states this).
+REFDES_CONFIG_FILENAME = ".refdes_extractor_config.json"
+REFDES_PREFIX_RE = re.compile(r"^[A-Z]{1,5}$")
+
+
+def _refdes_config_path() -> Path:
+    return Path.home() / REFDES_CONFIG_FILENAME
+
+
+def _read_refdes_prefixes(_body: dict[str, Any]) -> dict[str, Any]:
+    """Read the custom RefDes prefix list (extends the IEEE-315 defaults)."""
+    from common.refdes_utils import IEEE_315_PREFIXES
+
+    path = _refdes_config_path()
+    custom: list[str] = []
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            data = {}
+        raw = data.get("ref_prefixes", []) if isinstance(data, dict) else []
+        seen: set[str] = set()
+        for prefix in raw if isinstance(raw, list) else []:
+            token = str(prefix).strip().upper()
+            if token and token not in seen:
+                seen.add(token)
+                custom.append(token)
+    return {
+        "defaults": sorted(IEEE_315_PREFIXES),
+        "custom": custom,
+        "path": str(path),
+    }
+
+
+def _write_refdes_prefixes(body: dict[str, Any]) -> dict[str, Any]:
+    """Validate + persist the custom prefix list, preserving other keys."""
+    from common.refdes_utils import IEEE_315_PREFIXES
+
+    raw = body.get("prefixes")
+    if not isinstance(raw, list):
+        raise ValueError("'prefixes' must be a list of strings.")
+
+    defaults = {str(p).upper() for p in IEEE_315_PREFIXES}
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for item in raw:
+        token = str(item).strip().upper()
+        if not token:
+            continue
+        if not REFDES_PREFIX_RE.fullmatch(token):
+            raise ValueError(f"Invalid prefix '{item}': prefixes are 1-5 letters (A-Z).")
+        if token in defaults or token in seen:
+            continue  # IEEE-315 defaults need no repeating; dedupe the rest
+        seen.add(token)
+        cleaned.append(token)
+
+    path = _refdes_config_path()
+    data: dict[str, Any] = {}
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(existing, dict):
+                data = existing
+        except (json.JSONDecodeError, OSError):
+            data = {}
+    data["ref_prefixes"] = cleaned
+
+    # Atomic write so a crash mid-save can't corrupt the config file.
+    tmp_path = path.with_name(path.name + ".tmp")
+    tmp_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    os.replace(tmp_path, path)
+
+    return {
+        "custom": cleaned,
+        "path": str(path),
+        "restart_required": True,
+    }
+
+
 def handle_command(message: dict[str, Any]) -> None:
     request_id = message.get("request_id")
     payload = message.get("payload", {})
@@ -642,6 +725,20 @@ def handle_command(message: dict[str, Any]) -> None:
     if command == "read_flet_config":
         try:
             emit("result", _read_flet_config(body), request_id=request_id)
+        except Exception as exc:
+            emit("error", {"message": str(exc)}, request_id=request_id)
+        return
+
+    if command == "read_refdes_prefixes":
+        try:
+            emit("result", _read_refdes_prefixes(body), request_id=request_id)
+        except Exception as exc:
+            emit("error", {"message": str(exc)}, request_id=request_id)
+        return
+
+    if command == "write_refdes_prefixes":
+        try:
+            emit("result", _write_refdes_prefixes(body), request_id=request_id)
         except Exception as exc:
             emit("error", {"message": str(exc)}, request_id=request_id)
         return

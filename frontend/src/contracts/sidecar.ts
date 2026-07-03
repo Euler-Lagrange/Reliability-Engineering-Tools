@@ -36,6 +36,8 @@ export const commandNameSchema = z.enum([
   "execute_run",
   "cancel_run",
   "read_flet_config",
+  "read_refdes_prefixes",
+  "write_refdes_prefixes",
 ]);
 
 export const healthCheckPayloadSchema = z.object({
@@ -303,6 +305,18 @@ export const fletConfigResultSchema = z.object({
   home: z.string(),
 });
 
+export const refdesPrefixesResultSchema = z.object({
+  defaults: z.array(z.string()),
+  custom: z.array(z.string()),
+  path: z.string(),
+});
+
+export const writeRefdesPrefixesResultSchema = z.object({
+  custom: z.array(z.string()),
+  path: z.string(),
+  restart_required: z.boolean(),
+});
+
 export type SidecarEnvelope = z.infer<typeof sidecarEnvelopeSchema>;
 export type SidecarCommand = z.infer<typeof sidecarCommandSchema>;
 export type InspectionResult = z.infer<typeof inspectionResultSchema>;
@@ -317,3 +331,5 @@ export type BackendSessionEvent = z.infer<typeof backendSessionEventSchema>;
 export type ExecuteRunResult = z.infer<typeof executeRunResultSchema>;
 export type SidecarCommandErrorPayload = z.infer<typeof sidecarCommandErrorPayloadSchema>;
 export type FletConfigResult = z.infer<typeof fletConfigResultSchema>;
+export type RefdesPrefixesResult = z.infer<typeof refdesPrefixesResultSchema>;
+export type WriteRefdesPrefixesResult = z.infer<typeof writeRefdesPrefixesResultSchema>;

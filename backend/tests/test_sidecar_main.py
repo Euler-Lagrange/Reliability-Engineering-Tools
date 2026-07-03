@@ -1459,6 +1459,85 @@ def test_sidecar_executes_extraction_compare(tmp_path: Path) -> None:
         process.kill()
 
 
+def _prefix_env(tmp_path: Path) -> dict:
+    """Sidecar env with HOME isolated so prefix tests never touch the real
+    ~/.refdes_extractor_config.json."""
+    return {
+        **SIDECAR_ENV,
+        "HOME": str(tmp_path),
+        "USERPROFILE": str(tmp_path),
+    }
+
+
+def test_sidecar_reads_and_writes_refdes_prefixes(tmp_path: Path) -> None:
+    process = subprocess.Popen(
+        [sys.executable, str(SIDECAR)],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        text=True, env=_prefix_env(tmp_path),
+    )
+    try:
+        _read_ready_line(process)
+
+        # Fresh home: defaults present, no custom prefixes yet.
+        result = _send_command(process, "req_px_read1", "read_refdes_prefixes", {})
+        assert result["kind"] == "result"
+        assert "U" in result["payload"]["defaults"]
+        assert result["payload"]["custom"] == []
+
+        # Write two custom prefixes (lowercase + duplicate + default are cleaned).
+        result = _send_command(
+            process, "req_px_write", "write_refdes_prefixes",
+            {"prefixes": ["ps", "PS", "XU", "U"]},
+        )
+        assert result["kind"] == "result"
+        assert result["payload"]["custom"] == ["PS", "XU"]
+        assert result["payload"]["restart_required"] is True
+
+        # Round-trip: the file persists and read returns the cleaned list.
+        config_path = tmp_path / ".refdes_extractor_config.json"
+        assert config_path.exists()
+        assert json.loads(config_path.read_text(encoding="utf-8"))["ref_prefixes"] == ["PS", "XU"]
+
+        result = _send_command(process, "req_px_read2", "read_refdes_prefixes", {})
+        assert result["payload"]["custom"] == ["PS", "XU"]
+    finally:
+        process.kill()
+
+
+def test_sidecar_write_refdes_prefixes_rejects_invalid_and_preserves_keys(tmp_path: Path) -> None:
+    # Pre-existing config with OTHER keys the writer must preserve.
+    config_path = tmp_path / ".refdes_extractor_config.json"
+    config_path.write_text(json.dumps({"other_setting": 42, "ref_prefixes": ["OLD"]}), encoding="utf-8")
+
+    process = subprocess.Popen(
+        [sys.executable, str(SIDECAR)],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        text=True, env=_prefix_env(tmp_path),
+    )
+    try:
+        _read_ready_line(process)
+
+        # Digits are not a prefix — the write is rejected wholesale.
+        result = _send_command(
+            process, "req_px_bad", "write_refdes_prefixes", {"prefixes": ["P2S"]},
+        )
+        assert result["kind"] == "error"
+        assert "Invalid prefix" in result["payload"]["message"]
+        # Rejected write leaves the file untouched.
+        assert json.loads(config_path.read_text(encoding="utf-8"))["ref_prefixes"] == ["OLD"]
+
+        # A valid write replaces ref_prefixes but preserves other keys.
+        result = _send_command(
+            process, "req_px_good", "write_refdes_prefixes", {"prefixes": ["XU"]},
+        )
+        assert result["kind"] == "result"
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        assert data["ref_prefixes"] == ["XU"]
+        assert data["other_setting"] == 42
+    finally:
+        process.kill()
+
+
 # =========================================================================
 # Failure Rate integration tests
 # =========================================================================

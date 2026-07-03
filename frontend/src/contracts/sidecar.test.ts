@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   fletConfigResultSchema,
   inspectionResultSchema,
+  refdesPrefixesResultSchema,
   sidecarRunEventSchema,
+  writeRefdesPrefixesResultSchema,
 } from "./sidecar";
 
 describe("sidecar protocol schemas", () => {
@@ -88,5 +90,28 @@ describe("sidecar protocol schemas", () => {
         reliability_tools_global: null,
       },
     });
+  });
+
+  it("parses refdes-prefix read and write results", () => {
+    expect(
+      refdesPrefixesResultSchema.parse({
+        defaults: ["C", "R", "U"],
+        custom: ["PS", "XU"],
+        path: "C:\\Users\\Reliability\\.refdes_extractor_config.json",
+      }).custom,
+    ).toEqual(["PS", "XU"]);
+
+    expect(
+      writeRefdesPrefixesResultSchema.parse({
+        custom: ["XU"],
+        path: "C:\\Users\\Reliability\\.refdes_extractor_config.json",
+        restart_required: true,
+      }).restart_required,
+    ).toBe(true);
+
+    // A malformed write result (missing restart_required) must be rejected.
+    expect(() =>
+      writeRefdesPrefixesResultSchema.parse({ custom: [], path: "x" }),
+    ).toThrow();
   });
 });

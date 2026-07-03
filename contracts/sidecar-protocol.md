@@ -44,6 +44,8 @@ All eight commands currently implemented by the sidecar:
 - `execute_run`
 - `cancel_run`
 - `read_flet_config`
+- `read_refdes_prefixes`
+- `write_refdes_prefixes`
 
 ## Transport Rules
 
@@ -185,6 +187,17 @@ All eight commands currently implemented by the sidecar:
     - `namespaces` — list of namespaces that were inspected
     - `home` — user home directory path
   - This command is read-only: the sidecar never writes or mutates the legacy Flet config files (`~/.{namespace}_config.json`). Recognized namespaces: `bom_compare`, `failure_rate`, `fmea_generator`, `refdes_extractor`, `refdes_extractor_darkstar`, `refdes_test`, `reliability_tools_global`.
+- `read_refdes_prefixes`
+  - request body: `{}`
+  - result payload:
+    - `defaults` — sorted IEEE-315 prefix list (read-only in the UI)
+    - `custom` — the `ref_prefixes` array from `~/.refdes_extractor_config.json` (normalized upper-case, de-duplicated)
+    - `path` — absolute path of the config file
+- `write_refdes_prefixes`
+  - request body: `{ "prefixes": ["PS", "XU"] }`
+  - Validation: each entry must match `^[A-Z]{1,5}$` after trim/upper-case; entries duplicating an IEEE-315 default or an earlier entry are dropped silently; any invalid entry rejects the whole write (`error` envelope, file untouched).
+  - Writes `ref_prefixes` into `~/.refdes_extractor_config.json` atomically (temp file + rename), preserving any other keys in the file.
+  - result payload: `{ "custom": [...], "path": "...", "restart_required": true }` — `restart_required` is always true because the extraction engines freeze their prefix-derived regexes at import time; changes apply on the next app launch.
 
 ## Sampling Caps
 

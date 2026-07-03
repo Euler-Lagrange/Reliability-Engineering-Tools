@@ -1503,6 +1503,21 @@ fn backend_read_flet_config(
     state.send_request_command("read_flet_config", body)
 }
 
+#[tauri::command]
+fn backend_read_refdes_prefixes(
+    state: tauri::State<'_, SidecarState>,
+) -> Result<Value, String> {
+    state.send_request_command("read_refdes_prefixes", json!({}))
+}
+
+#[tauri::command]
+fn backend_write_refdes_prefixes(
+    state: tauri::State<'_, SidecarState>,
+    prefixes: Vec<String>,
+) -> Result<Value, String> {
+    state.send_request_command("write_refdes_prefixes", json!({ "prefixes": prefixes }))
+}
+
 /// Resolve the sidecar log directory using the same precedence as the
 /// Python side (``common/logger.py::get_log_directory``): first
 /// ``RELIABILITY_TOOLS_LOG_DIR``, then ``~/.reliability_tools/logs``. Kept
@@ -1642,6 +1657,8 @@ pub fn run() {
             backend_execute_run,
             backend_cancel_run,
             backend_read_flet_config,
+            backend_read_refdes_prefixes,
+            backend_write_refdes_prefixes,
             reveal_in_file_manager
         ])
         .on_window_event(|window, event| {
