@@ -75,13 +75,25 @@ class ExcelColors:
 
 
 class StylePresets:
-    """Pre-configured openpyxl style objects for consistent formatting."""
+    """Pre-configured openpyxl style objects for consistent formatting.
+
+    ``font_name``/``font_size`` allow a tool-scoped variant (e.g. the RefDes
+    extractor's "Aptos Narrow") without touching the suite-wide defaults the
+    global ``PRESETS`` instance carries.
+    """
 
     FONT_NAME = "Aptos"
     FONT_SIZE = 11
 
-    def __init__(self, colors: ExcelColors = None):
+    def __init__(
+        self,
+        colors: ExcelColors = None,
+        font_name: str = None,
+        font_size: int = None,
+    ):
         self.colors = colors or ExcelColors()
+        self.font_name = font_name or self.FONT_NAME
+        self.font_size = font_size or self.FONT_SIZE
         self._build_styles()
 
     def _build_styles(self):
@@ -90,7 +102,7 @@ class StylePresets:
 
         # Header styles
         self.header_font = Font(
-            name=self.FONT_NAME, size=self.FONT_SIZE,
+            name=self.font_name, size=self.font_size,
             bold=True, color=c.HEADER_FG
         )
         self.header_fill = PatternFill(
@@ -102,7 +114,7 @@ class StylePresets:
 
         # Data styles
         self.data_font = Font(
-            name=self.FONT_NAME, size=self.FONT_SIZE, color=c.DATA_TEXT
+            name=self.font_name, size=self.font_size, color=c.DATA_TEXT
         )
         self.data_alignment = Alignment(
             horizontal="left", vertical="top", wrap_text=True
@@ -125,35 +137,35 @@ class StylePresets:
         self._semantic_styles = {
             "error": (
                 PatternFill(start_color=c.ERROR_FILL, end_color=c.ERROR_FILL, fill_type="solid"),
-                Font(name=self.FONT_NAME, size=self.FONT_SIZE, color=c.ERROR_FONT)
+                Font(name=self.font_name, size=self.font_size, color=c.ERROR_FONT)
             ),
             "warning": (
                 PatternFill(start_color=c.WARNING_FILL, end_color=c.WARNING_FILL, fill_type="solid"),
-                Font(name=self.FONT_NAME, size=self.FONT_SIZE, color=c.WARNING_FONT)
+                Font(name=self.font_name, size=self.font_size, color=c.WARNING_FONT)
             ),
             "info": (
                 PatternFill(start_color=c.INFO_FILL, end_color=c.INFO_FILL, fill_type="solid"),
-                Font(name=self.FONT_NAME, size=self.FONT_SIZE, color=c.INFO_FONT)
+                Font(name=self.font_name, size=self.font_size, color=c.INFO_FONT)
             ),
             "success": (
                 PatternFill(start_color=c.SUCCESS_FILL, end_color=c.SUCCESS_FILL, fill_type="solid"),
-                Font(name=self.FONT_NAME, size=self.FONT_SIZE, color=c.SUCCESS_FONT)
+                Font(name=self.font_name, size=self.font_size, color=c.SUCCESS_FONT)
             ),
             "highlight": (
                 PatternFill(start_color=c.HIGHLIGHT_FILL, end_color=c.HIGHLIGHT_FILL, fill_type="solid"),
-                Font(name=self.FONT_NAME, size=self.FONT_SIZE, color=c.HIGHLIGHT_FONT)
+                Font(name=self.font_name, size=self.font_size, color=c.HIGHLIGHT_FONT)
             ),
             "neutral": (
                 PatternFill(start_color=c.NEUTRAL_FILL, end_color=c.NEUTRAL_FILL, fill_type="solid"),
-                Font(name=self.FONT_NAME, size=self.FONT_SIZE, color=c.NEUTRAL_FONT)
+                Font(name=self.font_name, size=self.font_size, color=c.NEUTRAL_FONT)
             ),
             "gap": (
                 PatternFill(start_color=c.GAP_FILL, end_color=c.GAP_FILL, fill_type="solid"),
-                Font(name=self.FONT_NAME, size=self.FONT_SIZE, color=c.GAP_FONT)
+                Font(name=self.font_name, size=self.font_size, color=c.GAP_FONT)
             ),
             "unverified": (
                 PatternFill(start_color=c.UNVERIFIED_FILL, end_color=c.UNVERIFIED_FILL, fill_type="solid"),
-                Font(name=self.FONT_NAME, size=self.FONT_SIZE, color=c.UNVERIFIED_FONT)
+                Font(name=self.font_name, size=self.font_size, color=c.UNVERIFIED_FONT)
             ),
         }
 
@@ -337,6 +349,23 @@ def style_worksheet(
     if auto_filter and num_cols > 0:
         last_col = get_column_letter(num_cols)
         ws.auto_filter.ref = f"A1:{last_col}{num_rows}"
+
+
+def style_header_only(ws: Worksheet, num_cols: int, presets: StylePresets = None) -> None:
+    """Style just the header row (row 1) and freeze it.
+
+    For sheets whose DataFrame is empty: ``style_worksheet`` early-returns on
+    empty frames, which would leave the header unstyled and unfrozen.
+    """
+    if presets is None:
+        presets = PRESETS
+    for col_idx in range(1, max(1, int(num_cols)) + 1):
+        cell = ws.cell(row=1, column=col_idx)
+        cell.font = presets.header_font
+        cell.fill = presets.header_fill
+        cell.alignment = presets.header_alignment
+        cell.border = presets.thin_border
+    ws.freeze_panes = "A2"
 
 
 def write_styled_excel(
