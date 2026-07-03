@@ -11,9 +11,11 @@ import {
   fletConfigResultSchema,
   inspectionResultSchema,
   protocolVersion,
+  refdesPrefixesResultSchema,
   sidecarRunEventSchema,
   templateAnalysisResultSchema,
   validateRunResultSchema,
+  writeRefdesPrefixesResultSchema,
 } from "../../contracts/sidecar";
 import type {
   BackendSessionEvent,
@@ -21,7 +23,9 @@ import type {
   CancelRunResult,
   ExecuteRunAcceptedResult,
   FletConfigResult,
+  RefdesPrefixesResult,
   SidecarRunEvent,
+  WriteRefdesPrefixesResult,
 } from "../../contracts/sidecar";
 import type { BackendMode } from "../../stores/shellStore";
 
@@ -153,7 +157,7 @@ function ensureDesktopRuntime(action: string): asserts action is string {
   }
 }
 
-export type { FletConfigResult };
+export type { FletConfigResult, RefdesPrefixesResult, WriteRefdesPrefixesResult };
 
 export interface BackendClient {
   runtimeMode: BackendMode;
@@ -166,6 +170,8 @@ export interface BackendClient {
   executeRun: (body: RunRequestBody) => Promise<ExecuteRunAcceptedResult>;
   cancelRun: (runId: string) => Promise<CancelRunResult>;
   readFletConfig: (namespace?: string) => Promise<FletConfigResult>;
+  readRefdesPrefixes: () => Promise<RefdesPrefixesResult>;
+  writeRefdesPrefixes: (prefixes: string[]) => Promise<WriteRefdesPrefixesResult>;
   subscribeToRunEvents: (handler: (event: SidecarRunEvent) => void) => Promise<() => void>;
   subscribeToSessionEvents: (handler: (event: BackendSessionEvent) => void) => Promise<() => void>;
   openExcelFile: () => Promise<string | null>;
@@ -265,6 +271,16 @@ export const backendClient: BackendClient = {
     ensureDesktopRuntime("read_flet_config");
     const result = await invoke("backend_read_flet_config", { namespace: namespace ?? null });
     return fletConfigResultSchema.parse(result);
+  },
+  async readRefdesPrefixes() {
+    ensureDesktopRuntime("read_refdes_prefixes");
+    const result = await invoke("backend_read_refdes_prefixes");
+    return refdesPrefixesResultSchema.parse(result);
+  },
+  async writeRefdesPrefixes(prefixes) {
+    ensureDesktopRuntime("write_refdes_prefixes");
+    const result = await invoke("backend_write_refdes_prefixes", { prefixes });
+    return writeRefdesPrefixesResultSchema.parse(result);
   },
   async subscribeToRunEvents(handler) {
     ensureDesktopRuntime("subscribe_run_events");

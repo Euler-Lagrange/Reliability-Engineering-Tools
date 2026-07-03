@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ArrowClockwise, FolderOpen, Heart } from "@phosphor-icons/react";
+import { useEffect, useState } from "react";
+import { ArrowClockwise, FolderOpen, Heart, X } from "@phosphor-icons/react";
 import { SectionCard } from "../../components/SectionCard";
 import { protocolVersion } from "../../contracts/sidecar";
 import { OPEN_FOLDER_LABEL } from "../../shared/backend/fileManager";
@@ -40,6 +40,13 @@ function classifyLatency(latencyMs: number | null): {
 // duplicate this list.
 const themeOptions = THEME_REGISTRY;
 
+// Client-side mirror of the sidecar's write_refdes_prefixes validation
+// (1-5 letters). The backend re-validates; this only gives instant feedback.
+const PREFIX_INPUT_RE = /^[A-Za-z]{1,5}$/;
+
+// How many IEEE-315 default chips to show before the "Show all" expander.
+const DEFAULTS_PREVIEW_COUNT = 14;
+
 export function SettingsTool() {
   const themeMode = useThemeStore((state) => state.mode);
   const setThemeMode = useThemeStore((state) => state.setMode);
@@ -59,6 +66,89 @@ export function SettingsTool() {
   const [logDirectory, setLogDirectory] = useState<string | null>(null);
   const displayedLogPath = logDirectory ?? LOG_DIRECTORY_PLACEHOLDER;
   const latency = classifyLatency(lastLatencyMs);
+
+  // --- RefDes prefix editor state (desktop-only; config lives on this
+  // machine in ~/.refdes_extractor_config.json via the sidecar pair) ---
+  const isDesktop = backendClient.runtimeMode === "desktop-bridge";
+  const [prefixDefaults, setPrefixDefaults] = useState<string[]>([]);
+  const [prefixSaved, setPrefixSaved] = useState<string[]>([]);
+  const [prefixDraft, setPrefixDraft] = useState<string[]>([]);
+  const [prefixLoadError, setPrefixLoadError] = useState<string | null>(null);
+  const [newPrefix, setNewPrefix] = useState("");
+  const [isSavingPrefixes, setIsSavingPrefixes] = useState(false);
+  const [showAllDefaults, setShowAllDefaults] = useState(false);
+  const prefixesDirty =
+    prefixDraft.length !== prefixSaved.length ||
+    prefixDraft.some((p, i) => p !== prefixSaved[i]);
+
+  useEffect(() => {
+    if (!isDesktop) {
+      return;
+    }
+    let cancelled = false;
+    backendClient
+      .readRefdesPrefixes()
+      .then((result) => {
+        if (cancelled) return;
+        setPrefixDefaults(result.defaults);
+        setPrefixSaved(result.custom);
+        setPrefixDraft(result.custom);
+        setPrefixLoadError(null);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setPrefixLoadError(describeBackendError(error, "Could not load RefDes prefixes"));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isDesktop]);
+
+  function handleAddPrefix() {
+    const token = newPrefix.trim().toUpperCase();
+    if (!PREFIX_INPUT_RE.test(token)) {
+      pushNotification({
+        tone: "warning",
+        title: "Invalid prefix",
+        detail: "Prefixes are 1-5 letters (A-Z), e.g. PS or XU.",
+      });
+      return;
+    }
+    if (prefixDefaults.includes(token)) {
+      pushNotification({
+        tone: "info",
+        title: "Already covered",
+        detail: `${token} is an IEEE-315 default — no need to add it.`,
+      });
+      setNewPrefix("");
+      return;
+    }
+    if (prefixDraft.includes(token)) {
+      setNewPrefix("");
+      return;
+    }
+    setPrefixDraft((current) => [...current, token]);
+    setNewPrefix("");
+  }
+
+  async function handleSavePrefixes() {
+    setIsSavingPrefixes(true);
+    try {
+      const result = await backendClient.writeRefdesPrefixes(prefixDraft);
+      setPrefixSaved(result.custom);
+      setPrefixDraft(result.custom);
+      pushNotification({
+        tone: "success",
+        title: "Prefixes saved",
+        detail: "Restart the app to apply them to extraction runs.",
+      });
+    } catch (error: unknown) {
+      const detail = describeBackendError(error, "Saving prefixes failed");
+      pushNotification({ tone: "error", title: "Saving prefixes failed", detail });
+    } finally {
+      setIsSavingPrefixes(false);
+    }
+  }
 
   async function handleHealthCheck() {
     setIsCheckingHealth(true);
@@ -226,6 +316,123 @@ export function SettingsTool() {
                   {isCheckingHealth ? "Checking..." : "Run health check"}
                 </button>
               </div>
+            </SectionCard>
+
+            <SectionCard title="RefDes Prefixes" eyebrow="Extraction">
+              {!isDesktop ? (
+                <p className={styles.prefixMuted}>
+                  Desktop runtime required — prefixes are stored on this machine and
+                  edited in the desktop app.
+                </p>
+              ) : (
+                <div className={styles.prefixStack}>
+                  <p className={styles.prefixIntro}>
+                    Custom prefixes extend the IEEE-315 defaults the extractor uses to
+                    recognize reference designators (U7, R12, ...). Changes apply after
+                    the app restarts.
+                  </p>
+                  {prefixLoadError ? (
+                    <p className={styles.prefixMuted}>{prefixLoadError}</p>
+                  ) : (
+                    <>
+                      <div>
+                        <p className={styles.diagnosticLabel}>
+                          IEEE-315 defaults ({prefixDefaults.length})
+                        </p>
+                        <div className={styles.prefixChips}>
+                          {(showAllDefaults
+                            ? prefixDefaults
+                            : prefixDefaults.slice(0, DEFAULTS_PREVIEW_COUNT)
+                          ).map((prefix) => (
+                            <span key={prefix} className={styles.prefixChip}>
+                              {prefix}
+                            </span>
+                          ))}
+                          {prefixDefaults.length > DEFAULTS_PREVIEW_COUNT && (
+                            <button
+                              type="button"
+                              className="ghost-button"
+                              onClick={() => setShowAllDefaults((v) => !v)}
+                            >
+                              {showAllDefaults
+                                ? "Show fewer"
+                                : `Show all ${prefixDefaults.length}`}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div>
+                        <p className={styles.diagnosticLabel}>Custom prefixes</p>
+                        {prefixDraft.length > 0 ? (
+                          <div className={styles.prefixChips}>
+                            {prefixDraft.map((prefix) => (
+                              <span
+                                key={prefix}
+                                className={`${styles.prefixChip} ${styles.prefixChipCustom}`}
+                              >
+                                {prefix}
+                                <button
+                                  type="button"
+                                  className={styles.prefixChipRemove}
+                                  aria-label={`Remove prefix ${prefix}`}
+                                  onClick={() =>
+                                    setPrefixDraft((current) =>
+                                      current.filter((p) => p !== prefix),
+                                    )
+                                  }
+                                >
+                                  <X size={10} weight="bold" />
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className={styles.prefixMuted}>None defined.</p>
+                        )}
+                        <div className={styles.prefixAddRow}>
+                          <input
+                            className={styles.prefixInput}
+                            value={newPrefix}
+                            maxLength={5}
+                            placeholder="e.g. PS"
+                            aria-label="New custom prefix"
+                            onChange={(e) => setNewPrefix(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleAddPrefix();
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="ghost-button"
+                            onClick={handleAddPrefix}
+                            disabled={!newPrefix.trim()}
+                          >
+                            Add
+                          </button>
+                        </div>
+                      </div>
+                      <div className={styles.prefixActions}>
+                        <button
+                          type="button"
+                          className="ghost-button"
+                          onClick={() => {
+                            void handleSavePrefixes();
+                          }}
+                          disabled={!prefixesDirty || isSavingPrefixes}
+                        >
+                          {isSavingPrefixes ? "Saving..." : "Save prefixes"}
+                        </button>
+                        <p className={styles.prefixCaption}>
+                          Changes apply after the app restarts.
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </SectionCard>
 
             <SectionCard title="About" eyebrow="Application">
