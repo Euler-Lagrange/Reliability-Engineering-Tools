@@ -91,6 +91,25 @@ describe("tool run dispatch", () => {
     });
   });
 
+  it("dispatches Extraction Compare with both roles, no mappings, no options", async () => {
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+    await user.click(screen.getByRole("button", { name: /extraction compare/i }));
+    await runTool("Compare");
+
+    await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
+    const body = backendMocks.executeRun.mock.calls[0][0];
+    expect(body.workflowId).toBe("extraction_compare");
+    expect(body.inputs.map((i: { role: string }) => i.role)).toEqual([
+      "extractionA",
+      "extractionB",
+    ]);
+    // Fixed extraction-sheet schema: no mappings, and none of the BOM
+    // comparison options are read by the backend, so none are sent.
+    expect(body.mappings).toEqual([]);
+    expect(body.options).toEqual({});
+  });
+
   it("forwards the six comparison options to the backend (base_match defaults off)", async () => {
     // All six BOM Compare checkboxes must reach the backend in the run body so
     // the runtime adapter can wire them. base_match defaults to FALSE so a

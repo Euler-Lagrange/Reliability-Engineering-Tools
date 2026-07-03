@@ -516,6 +516,28 @@ export const bomCompareInputs: Record<string, InputFileState> = {
     tag: "Loaded",
     isExample: true,
   },
+  extractionA: {
+    role: "extractionA",
+    label: "Extraction A (older)",
+    path: "DRIVE\\outputs\\RefDesExtract_revA.xlsx",
+    helper: "RefDes extraction output from the earlier schematic revision.",
+    status: "ready",
+    sheets: sheets(["RefDes Extraction"]),
+    selectedSheet: "RefDes Extraction",
+    tag: "Loaded",
+    isExample: true,
+  },
+  extractionB: {
+    role: "extractionB",
+    label: "Extraction B (newer)",
+    path: "DRIVE\\outputs\\RefDesExtract_revB.xlsx",
+    helper: "RefDes extraction output from the newer schematic revision.",
+    status: "ready",
+    sheets: sheets(["RefDes Extraction"]),
+    selectedSheet: "RefDes Extraction",
+    tag: "Loaded",
+    isExample: true,
+  },
 };
 
 export const bomCompareWorkflowOptions: WorkflowOption[] = [
@@ -532,6 +554,13 @@ export const bomCompareWorkflowOptions: WorkflowOption[] = [
     summary: "Compare two arbitrary BOMs to find differences by RefDes key.",
     eyebrow: "Flexible",
     badge: "Delta",
+  },
+  {
+    id: "extraction_compare",
+    title: "Extraction Compare",
+    summary: "Diff two RefDes extraction outputs: appeared, disappeared, and moved groups.",
+    eyebrow: "Revision",
+    badge: "Drift",
   },
 ];
 
@@ -673,6 +702,41 @@ export const bomCompareDemoScenarios: DemoScenario[] = [
         primaryMetric: "7 differences",
         secondaryMetric: "0 warnings",
         notes: ["Custom mode: compared two BOMs directly by RefDes key."],
+      },
+    },
+  },
+  {
+    id: "extraction-compare",
+    label: "Extraction Compare - Rev A vs Rev B",
+    description: "Diff two RefDes extraction outputs across schematic revisions.",
+    workflowId: "extraction_compare",
+    outputStrategyId: "new_workbook_standard",
+    inputs: [bomCompareInputs.extractionA, bomCompareInputs.extractionB],
+    mappings: [],
+    validations: [
+      {
+        id: "ready",
+        severity: "info",
+        area: "Run State",
+        title: "Example data staged",
+        detail: "A demo extraction pair (rev A / rev B) is pre-wired. Browse for real outputs to replace it.",
+      },
+    ],
+    previewRows: [],
+    runSequence: {
+      events: [
+        { id: "exc-1", title: "Read input files", detail: "Loading both extraction workbooks.", progress: 15 },
+        { id: "exc-2", title: "Compare extractions", detail: "Diffing component groups between revisions.", progress: 60 },
+        { id: "exc-3", title: "Write report", detail: "Writing Excel comparison report.", progress: 100 },
+      ],
+      result: {
+        status: "success",
+        title: "Extraction comparison complete",
+        summary: "3 appeared, 1 disappeared, 2 moved groups (240 unchanged).",
+        outputFile: "DRIVE\\outputs\\ExtractionCompare_20260406.xlsx",
+        primaryMetric: "6 changes",
+        secondaryMetric: "2 moved groups, 240 in both",
+        notes: ["Compared RefDesExtract_revA against RefDesExtract_revB."],
       },
     },
   },

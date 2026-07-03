@@ -87,6 +87,25 @@ describe("BomCompareTool custom compare workflow", () => {
     expect(screen.getAllByRole("button", { name: "Browse" })).toHaveLength(2);
   });
 
+  it("Extraction Compare shows its two slots and hides the mapping card", async () => {
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+
+    await user.click(screen.getByRole("button", { name: /Extraction Compare/i }));
+
+    expect(screen.getByText("Extraction A (older)")).toBeInTheDocument();
+    expect(screen.getByText("Extraction B (newer)")).toBeInTheDocument();
+    // Fixed extraction-sheet schema: no Column Mapping card for this
+    // workflow (mirrors the custom-only Column Value Comparison gating).
+    expect(
+      screen.queryByRole("heading", { name: /column mapping/i }),
+    ).not.toBeInTheDocument();
+    // Every comparison checkbox is inert here — disabled with a hint
+    // (Wiring Invariant #2), never silently ignored.
+    expect(screen.getByLabelText(/ignore dnp/i)).toBeDisabled();
+    expect(screen.getAllByText("BOM compare modes only").length).toBeGreaterThan(0);
+  });
+
   // Regression: the browse handlers never cleared `isExample`, so after
   // loading a real workbook `isPristine` stayed true and the EmptyState
   // never yielded to the InputGrid — the second file slot (and the sheet

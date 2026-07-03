@@ -7,6 +7,7 @@ export type WorkflowId =
   | "fill_gaps"
   | "bom_compare_group"
   | "bom_compare_custom"
+  | "extraction_compare"
   | "failure_rate_link"
   | "refdes_extract";
 export type FileRole =
@@ -19,6 +20,8 @@ export type FileRole =
   | "targetWorkbook"
   | "bomA"
   | "bomB"
+  | "extractionA"
+  | "extractionB"
   | "prediction"
   | "fmea"
   | "pdf"

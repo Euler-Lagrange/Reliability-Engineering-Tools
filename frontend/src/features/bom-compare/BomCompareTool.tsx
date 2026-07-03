@@ -50,6 +50,7 @@ import { useShellStore } from "../../stores/shellStore";
 const workflowInputRoles: Partial<Record<WorkflowId, FileRole[]>> = {
   bom_compare_group: ["grouping", "bom"],
   bom_compare_custom: ["bomA", "bomB"],
+  extraction_compare: ["extractionA", "extractionB"],
 };
 
 /**
@@ -72,6 +73,9 @@ const canonicalRolesByWorkflow: Partial<Record<WorkflowId, Record<string, FileRo
     refdes_col_a: "bomA",
     refdes_col_b: "bomB",
   },
+  // extraction_compare: the extraction sheet has a fixed schema — no column
+  // mapping exists for this workflow (the Column Mapping card is hidden).
+  extraction_compare: {},
 };
 
 /**
@@ -389,6 +393,10 @@ export function BomCompareTool() {
   // preview and existing tests are unchanged. Derived from state (not stored
   // in setState) so it can never drift from workbookColumnsByRole.
   const mappingRows = useMemo<ColumnMappingRow[]>(() => {
+    if (workflowId === "extraction_compare") {
+      // Fixed extraction-sheet schema — this workflow has no column mapping.
+      return [];
+    }
     const fixtureRows =
       workflowId === "bom_compare_custom" ? bomCompareCustomMappings : bomCompareGroupMappings;
     const canonicalToRole = canonicalRolesByWorkflow[workflowId] ?? {};
@@ -515,13 +523,17 @@ export function BomCompareTool() {
     // empty File-1 or File-2 column are dropped — the backend reader
     // (_run_custom_compare) also guards this, but pruning here keeps the
     // payload clean.
+    // Extraction Compare sends NO comparison options — the backend's
+    // _run_extraction_compare reads none of them (fixed-schema group diff).
     const runOptions =
-      workflowId === "bom_compare_custom"
-        ? {
-            ...options,
-            compare_columns: comparePairs.filter((pair) => pair.col_a && pair.col_b),
-          }
-        : options;
+      workflowId === "extraction_compare"
+        ? {}
+        : workflowId === "bom_compare_custom"
+          ? {
+              ...options,
+              compare_columns: comparePairs.filter((pair) => pair.col_a && pair.col_b),
+            }
+          : options;
 
     return {
       workflowId,
@@ -946,6 +958,10 @@ export function BomCompareTool() {
               )}
             </SectionCard>
 
+            {/* Extraction Compare reads the fixed extraction-sheet schema —
+                there is nothing to map, so the card is hidden (mirrors the
+                custom-only Column Value Comparison card below). */}
+            {workflowId !== "extraction_compare" ? (
             <SectionCard
               step={3}
               title="Column Mapping"
@@ -992,6 +1008,7 @@ export function BomCompareTool() {
                 }}
               />
             </SectionCard>
+            ) : null}
 
             <OptionsSection
               title="Options"
@@ -1004,16 +1021,27 @@ export function BomCompareTool() {
                 // compare does not have — the backend provably never reads
                 // it on the custom path, so disable it there with a hint
                 // (mirrors the RefDes adaptive-geometry pattern).
+                // Extraction Compare reads NONE of the comparison options
+                // (fixed-schema group diff), so every checkbox is disabled
+                // there with a hint (Wiring Invariant #2 — never render a
+                // silently-ignored control).
+                const extractionMode = workflowId === "extraction_compare";
                 const groupOnly =
                   key === "treat_prov_as_covered" && workflowId === "bom_compare_custom";
+                const disabled = groupOnly || extractionMode;
+                const hint = extractionMode
+                  ? "BOM compare modes only"
+                  : groupOnly
+                    ? "Group vs BOM mode only"
+                    : undefined;
                 return (
                   <CheckboxField
                     key={key}
                     id={`bom-compare-option-${key}`}
                     label={key.replace(/_/g, " ")}
                     checked={value}
-                    disabled={groupOnly}
-                    hint={groupOnly ? "Group vs BOM mode only" : undefined}
+                    disabled={disabled}
+                    hint={hint}
                     onChange={(next) =>
                       setOptions((prev) => ({ ...prev, [key]: next } as typeof prev))
                     }
