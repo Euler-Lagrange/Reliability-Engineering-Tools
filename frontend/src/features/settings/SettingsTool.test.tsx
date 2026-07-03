@@ -111,4 +111,24 @@ describe("SettingsTool — RefDes Prefixes card", () => {
     expect(screen.getByText(/desktop runtime required/i)).toBeInTheDocument();
     expect(mockBackendClient.readRefdesPrefixes).not.toHaveBeenCalled();
   });
+
+  it("offers Retry after a failed load and recovers on success", async () => {
+    // e.g. Settings opened while the sidecar is still reconnecting — the
+    // first read fails; without Retry the card is stuck until app restart.
+    mockBackendClient.readRefdesPrefixes
+      .mockRejectedValueOnce(new Error("sidecar not connected"))
+      .mockResolvedValueOnce({
+        defaults: ["C", "R", "U"],
+        custom: ["PS"],
+        path: "C:\\Users\\test\\.refdes_extractor_config.json",
+      });
+    const user = userEvent.setup();
+    render(<SettingsTool />);
+
+    expect(await screen.findByText(/sidecar not connected/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByText("PS")).toBeInTheDocument();
+    expect(mockBackendClient.readRefdesPrefixes).toHaveBeenCalledTimes(2);
+  });
 });

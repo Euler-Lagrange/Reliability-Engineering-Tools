@@ -93,6 +93,61 @@ def test_identical_revisions_report_zero_churn() -> None:
     assert result.moved == []
 
 
+def test_blank_causes_cell_through_excel_roundtrip_makes_no_phantom_component(tmp_path) -> None:
+    # try_read_table maps blank cells to float('nan') — and nearly every real
+    # sheet has one (the empty half of the Verified/Unverified split).
+    # str(nan) fabricated a phantom "NAN" component that appeared as moved
+    # churn on every run (adversarial-review finding). Must round-trip
+    # through a real .xlsx + try_read_table, not an in-memory "".
+    from common.utils import try_read_table
+
+    def write_rev(path, rows):
+        _sheet(rows).to_excel(path, index=False)
+        return try_read_table(str(path))
+
+    rev_a = write_rev(
+        tmp_path / "rev_a.xlsx",
+        [
+            ("DIG-076 (Verified)", "U7, U9"),
+            ("DIG-076 (Unverified)", ""),  # blank half → NaN after round-trip
+        ],
+    )
+    rev_b = write_rev(
+        tmp_path / "rev_b.xlsx",
+        [
+            ("DIG-076 (Verified)", "U7, U9"),
+            ("DIG-076 (Unverified)", ""),
+            ("AAA-001 (Verified)", "R5"),
+            ("AAA-001 (Unverified)", ""),
+        ],
+    )
+
+    assert "NAN" not in load_component_groups(rev_a)
+    result = compare_extractions(rev_a, rev_b)
+    assert result.appeared == [{"component": "R5", "group": "AAA-001"}]
+    assert result.disappeared == []
+    assert result.moved == []
+    assert result.total_a == 2 and result.total_b == 3
+
+
+def test_cross_group_duplicates_are_order_independent() -> None:
+    # A component genuinely extracted into TWO groups must not have its
+    # membership decided by sheet row order (first-row-wins made the same
+    # data report different "moved" rows depending on ordering).
+    order_1 = _sheet([("DIG-076 (Verified)", "U9"), ("DIG-081 (Verified)", "U9")])
+    order_2 = _sheet([("DIG-081 (Verified)", "U9"), ("DIG-076 (Verified)", "U9")])
+    assert load_component_groups(order_1) == load_component_groups(order_2)
+    assert load_component_groups(order_1) == {"U9": "DIG-076, DIG-081"}
+
+    # De-duplication in rev B reads as one deterministic membership change,
+    # not a bogus single-group "move" chosen by row order.
+    rev_b = _sheet([("DIG-081 (Verified)", "U9")])
+    result = compare_extractions(order_1, rev_b)
+    assert result.moved == [
+        {"component": "U9", "from_group": "DIG-076, DIG-081", "to_group": "DIG-081"}
+    ]
+
+
 def test_missing_columns_raise_a_readable_error() -> None:
     df = pd.DataFrame([{"Something": "else"}])
     try:

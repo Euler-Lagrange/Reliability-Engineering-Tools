@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Adversarial-review findings on the diagnostics/compare/prefix batch** —
+  three parallel adversarial reviews of the five-feature batch surfaced and
+  fixed, same-day: (1) the NextGen adaptive path harvests the PDF twice and
+  both passes wrote the same diagnostics accumulator, duplicating Orphan
+  Pins rows and smearing Component Detail pages — each pass now records into
+  its own dict and only the pass whose results are returned is adopted;
+  (2) blank Failure-Mode-Causes cells (the empty half of every
+  Verified/Unverified split) round-trip through `try_read_table` as NaN and
+  fabricated a phantom `NAN` component in every Extraction Compare run — now
+  `pd.notna`-guarded, pinned by a real Excel round-trip test; (3) Extraction
+  Compare group membership was first-row-wins, so cross-group duplicates
+  produced row-order-dependent "moved" rows — membership is now a sorted
+  set (`"DIG-076, DIG-081"`); (4) a legacy hand-edited prefix that the
+  loaders accept but the new pattern check rejects permanently locked the
+  Settings prefix editor — on-disk tokens are now grandfathered (new tokens
+  still validate); (5) Component Detail listed only the last group for a
+  cross-group duplicate token — now lists all; (6) a failed prefix load left
+  the Settings card stuck with no reload — added Retry.
+
 ### Added
 
 - **RefDes Extractor — Component Detail + Orphan Pins diagnostics sheets** —

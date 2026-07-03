@@ -77,6 +77,9 @@ export function SettingsTool() {
   const [newPrefix, setNewPrefix] = useState("");
   const [isSavingPrefixes, setIsSavingPrefixes] = useState(false);
   const [showAllDefaults, setShowAllDefaults] = useState(false);
+  // Bumped by the Retry button: the load effect re-runs (e.g. Settings was
+  // opened while the sidecar was still reconnecting and the first read failed).
+  const [prefixLoadAttempt, setPrefixLoadAttempt] = useState(0);
   const prefixesDirty =
     prefixDraft.length !== prefixSaved.length ||
     prefixDraft.some((p, i) => p !== prefixSaved[i]);
@@ -102,7 +105,7 @@ export function SettingsTool() {
     return () => {
       cancelled = true;
     };
-  }, [isDesktop]);
+  }, [isDesktop, prefixLoadAttempt]);
 
   function handleAddPrefix() {
     const token = newPrefix.trim().toUpperCase();
@@ -332,7 +335,16 @@ export function SettingsTool() {
                     the app restarts.
                   </p>
                   {prefixLoadError ? (
-                    <p className={styles.prefixMuted}>{prefixLoadError}</p>
+                    <div className={styles.prefixActions}>
+                      <p className={styles.prefixMuted}>{prefixLoadError}</p>
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() => setPrefixLoadAttempt((n) => n + 1)}
+                      >
+                        Retry
+                      </button>
+                    </div>
                   ) : (
                     <>
                       <div>

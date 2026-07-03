@@ -8,6 +8,7 @@ suite's modern styling (Aptos Narrow, frozen header, header fill, banding).
 
 from __future__ import annotations
 
+import pytest
 from openpyxl import Workbook, load_workbook
 
 from refdes_extractor.validation_notes import annotate_results
@@ -163,6 +164,9 @@ def test_annotate_without_ambiguous_param_is_unchanged() -> None:
 # ---------------------------------------------------------------------------
 
 def test_component_detail_sheet_rows_sorted_and_flagged(tmp_path) -> None:
+    # The sheet writer sorts via extraction_engine.natural_key, which imports
+    # fitz at module scope — skip (not error) on PyMuPDF-less environments.
+    pytest.importorskip("fitz")
     details = {
         "token_diagnostics": {
             "U7-38": {"group": "DIG-076", "pages": [4, 9], "confidence": 0.82,

@@ -22,6 +22,7 @@ from refdes_test.nextgen_engine import (  # noqa: E402
     ORPHAN_PINLIST_DROP,
     ORPHAN_PINLIST_FILTERED,
     ORPHAN_SUPPRESSED_PASSIVE,
+    _adopt_harvest_diagnostics,
     _fold_token_pages_into_diagnostics,
     _format_hybrid_results_nextgen,
     _is_token_bom_member,
@@ -129,8 +130,53 @@ def test_token_pages_fold_covers_every_token_and_strips_mode_suffix() -> None:
     diag: dict = {}
     _fold_token_pages_into_diagnostics(grouped_data, diag)
 
-    assert diag["token_diagnostics"]["U7-38"] == {"group": "DIG-076", "pages": [4, 9]}
-    assert diag["token_diagnostics"]["R1"] == {"group": "CPU-001", "pages": [2]}
+    u7 = diag["token_diagnostics"]["U7-38"]
+    assert u7["group"] == "DIG-076"
+    assert u7["pages"] == [4, 9]
+    r1 = diag["token_diagnostics"]["R1"]
+    assert r1["group"] == "CPU-001"
+    assert r1["pages"] == [2]
+
+
+def test_token_pages_fold_lists_every_group_for_cross_group_duplicates() -> None:
+    # A token extracted into two groups (the flagged cross-group duplicate)
+    # must list BOTH groups — not let the last iterated group silently win.
+    grouped_data = {
+        "DIG-076-PN": {"token_pages": {"U9": {3}}},
+        "DIG-081-PN": {"token_pages": {"U9": {7}}},
+    }
+    diag: dict = {}
+    _fold_token_pages_into_diagnostics(grouped_data, diag)
+
+    entry = diag["token_diagnostics"]["U9"]
+    assert entry["group"] == "DIG-076, DIG-081"
+    assert entry["pages"] == [3, 7]
+
+
+def test_adopting_a_harvest_pass_replaces_rather_than_merges() -> None:
+    # The adaptive path harvests more than once (phase-1 metrics pass, then
+    # the final geometry pass). Each adoption must REPLACE the accumulator —
+    # merging across passes double-records orphan pins and inflates the
+    # "pins dropped" note (shipped as an adversarial-review finding).
+    acc: dict = {}
+    phase1 = {
+        "orphan_pins": [{"page": 1, "pin_text": "38"}],
+        "token_diagnostics": {"U7": {"pages": [1]}},
+    }
+    _adopt_harvest_diagnostics(acc, phase1)
+    final = {
+        "orphan_pins": [{"page": 1, "pin_text": "38"}],
+        "token_diagnostics": {"U7": {"pages": [1], "confidence": 0.9}},
+    }
+    _adopt_harvest_diagnostics(acc, final)
+
+    assert len(acc["orphan_pins"]) == 1  # not 2
+    assert acc["token_diagnostics"] == final["token_diagnostics"]
+
+    # None accumulator is a no-op; a None local clears the accumulator.
+    _adopt_harvest_diagnostics(None, final)
+    _adopt_harvest_diagnostics(acc, None)
+    assert acc == {}
 
 
 def test_nextgen_word_timeout_surfaces_on_run_log() -> None:

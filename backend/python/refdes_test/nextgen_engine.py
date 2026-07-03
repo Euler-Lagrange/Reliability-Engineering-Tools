@@ -17,7 +17,6 @@ Key difference vs the legacy harvest_hybrid path:
 
 from __future__ import annotations
 
-import functools
 import json
 import multiprocessing as mp
 import re
@@ -946,9 +945,23 @@ def extract_with_geometry_analysis(
     geo_config = _build_geometry_config(config, max_pin_length)
     pdf_path = Path(pdf_path)
 
-    # Every harvest call below shares the same diagnostics accumulator; the
-    # partial keeps the seven call sites signature-stable.
-    _harvest = functools.partial(harvest_hybrid_nextgen, diagnostics=diagnostics)
+    def _harvest(*args, _adopt_diagnostics: bool = True, **kwargs):
+        """Run one harvest pass with its own fresh diagnostics dict.
+
+        The adaptive path harvests the PDF more than once (phase-1 metrics
+        pass, optional debug-PDF re-run, final geometry pass). Sharing one
+        accumulator across passes double-records orphan pins and smears
+        token pages, so each pass records into a local dict and each
+        adopting pass REPLACES the caller-visible accumulator wholesale —
+        the adopted diagnostics always describe exactly the harvest whose
+        results are returned (the last adopting call). Debug-only re-runs,
+        whose results are discarded, pass ``_adopt_diagnostics=False``.
+        """
+        local = {} if diagnostics is not None else None
+        result = harvest_hybrid_nextgen(*args, diagnostics=local, **kwargs)
+        if _adopt_diagnostics:
+            _adopt_harvest_diagnostics(diagnostics, local)
+        return result
 
     if doc is None:
         pdf_path = ensure_file_available(pdf_path, log)
@@ -1136,7 +1149,10 @@ def extract_with_geometry_analysis(
             if not flagged_pages or (not pin_map and not body_rects):
                 results = phase1_results
                 if debug_pdf_path:
+                    # Debug-PDF re-run: results are discarded, so its
+                    # diagnostics must not replace phase 1's.
                     _ = _harvest(
+                        _adopt_diagnostics=False,
                         pdf_path=pdf_path,
                         groups=groups,
                         bom_set=bom_set,
@@ -1270,6 +1286,18 @@ ORPHAN_PASSIVE_PREFIX = "passive-prefix"
 ORPHAN_BOX_CONTAINS_BODY = "box-contains-body"
 
 
+def _adopt_harvest_diagnostics(diagnostics: Optional[dict], local: Optional[dict]) -> None:
+    """Replace the caller-visible accumulator with one pass's local dict.
+
+    Replace-wholesale (not merge): merging across harvest passes is exactly
+    the double-recording bug this exists to prevent.
+    """
+    if diagnostics is None:
+        return
+    diagnostics.clear()
+    diagnostics.update(local or {})
+
+
 def _fold_token_pages_into_diagnostics(grouped_data: dict, diagnostics: Optional[dict]) -> None:
     """Fold per-token page provenance + group identity into the accumulator.
 
@@ -1283,7 +1311,13 @@ def _fold_token_pages_into_diagnostics(grouped_data: dict, diagnostics: Optional
         display_group = legacy_logic._strip_mode_suffix(str(raw_group))
         for token, pages in (data.get("token_pages") or {}).items():
             entry = token_diags.setdefault(str(token), {})
-            entry["group"] = display_group
+            # A token can legitimately land in several groups (cross-group
+            # duplicate — the main sheet flags it). List every group instead
+            # of letting the last iterated group silently win.
+            groups = entry.setdefault("groups", [])
+            if display_group not in groups:
+                groups.append(display_group)
+            entry["group"] = ", ".join(groups)
             merged = set(entry.get("pages") or [])
             merged |= {int(p) for p in pages if isinstance(p, int) or str(p).isdigit()}
             entry["pages"] = sorted(merged)

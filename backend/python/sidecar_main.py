@@ -512,38 +512,68 @@ def _refdes_config_path() -> Path:
     return Path.home() / REFDES_CONFIG_FILENAME
 
 
+def _load_refdes_config() -> dict[str, Any]:
+    """Read ~/.refdes_extractor_config.json, tolerating absent/corrupt files."""
+    path = _refdes_config_path()
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _configured_prefix_tokens(data: dict[str, Any]) -> list[str]:
+    """Normalized (strip/upper) de-duplicated ref_prefixes from a config dict."""
+    raw = data.get("ref_prefixes", [])
+    tokens: list[str] = []
+    seen: set[str] = set()
+    for prefix in raw if isinstance(raw, list) else []:
+        token = str(prefix).strip().upper()
+        if token and token not in seen:
+            seen.add(token)
+            tokens.append(token)
+    return tokens
+
+
 def _read_refdes_prefixes(_body: dict[str, Any]) -> dict[str, Any]:
     """Read the custom RefDes prefix list (extends the IEEE-315 defaults)."""
     from common.refdes_utils import IEEE_315_PREFIXES
 
-    path = _refdes_config_path()
-    custom: list[str] = []
-    if path.exists():
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            data = {}
-        raw = data.get("ref_prefixes", []) if isinstance(data, dict) else []
-        seen: set[str] = set()
-        for prefix in raw if isinstance(raw, list) else []:
-            token = str(prefix).strip().upper()
-            if token and token not in seen:
-                seen.add(token)
-                custom.append(token)
+    defaults = {str(p).upper() for p in IEEE_315_PREFIXES}
+    custom = [
+        token
+        for token in _configured_prefix_tokens(_load_refdes_config())
+        # A hand-edited file may repeat an IEEE default; it is already
+        # covered, so don't render it as a removable custom chip.
+        if token not in defaults
+    ]
     return {
         "defaults": sorted(IEEE_315_PREFIXES),
         "custom": custom,
-        "path": str(path),
+        "path": str(_refdes_config_path()),
     }
 
 
 def _write_refdes_prefixes(body: dict[str, Any]) -> dict[str, Any]:
-    """Validate + persist the custom prefix list, preserving other keys."""
+    """Validate + persist the custom prefix list, preserving other keys.
+
+    Tokens already present on disk are grandfathered past the pattern check:
+    the extraction loaders accept ANY non-empty string, so a hand-edited
+    legacy prefix (e.g. 6 letters) works today — rejecting the whole write
+    because of it would permanently lock the editor. New tokens must match
+    ``REFDES_PREFIX_RE``.
+    """
     from common.refdes_utils import IEEE_315_PREFIXES
 
     raw = body.get("prefixes")
     if not isinstance(raw, list):
         raise ValueError("'prefixes' must be a list of strings.")
+
+    path = _refdes_config_path()
+    data = _load_refdes_config()
+    grandfathered = set(_configured_prefix_tokens(data))
 
     defaults = {str(p).upper() for p in IEEE_315_PREFIXES}
     cleaned: list[str] = []
@@ -552,22 +582,13 @@ def _write_refdes_prefixes(body: dict[str, Any]) -> dict[str, Any]:
         token = str(item).strip().upper()
         if not token:
             continue
-        if not REFDES_PREFIX_RE.fullmatch(token):
+        if token not in grandfathered and not REFDES_PREFIX_RE.fullmatch(token):
             raise ValueError(f"Invalid prefix '{item}': prefixes are 1-5 letters (A-Z).")
         if token in defaults or token in seen:
             continue  # IEEE-315 defaults need no repeating; dedupe the rest
         seen.add(token)
         cleaned.append(token)
 
-    path = _refdes_config_path()
-    data: dict[str, Any] = {}
-    if path.exists():
-        try:
-            existing = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(existing, dict):
-                data = existing
-        except (json.JSONDecodeError, OSError):
-            data = {}
     data["ref_prefixes"] = cleaned
 
     # Atomic write so a crash mid-save can't corrupt the config file.

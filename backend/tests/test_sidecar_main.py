@@ -1538,6 +1538,46 @@ def test_sidecar_write_refdes_prefixes_rejects_invalid_and_preserves_keys(tmp_pa
         process.kill()
 
 
+def test_sidecar_write_refdes_prefixes_grandfathers_legacy_tokens(tmp_path: Path) -> None:
+    # The extraction loaders accept ANY non-empty string, so a hand-edited
+    # legacy prefix (e.g. 6 letters) works today. It must be grandfathered
+    # past the pattern check — otherwise the editor is permanently locked
+    # for that user (adversarial-review finding). NEW tokens still validate.
+    config_path = tmp_path / ".refdes_extractor_config.json"
+    config_path.write_text(json.dumps({"ref_prefixes": ["CONNXX"]}), encoding="utf-8")
+
+    process = subprocess.Popen(
+        [sys.executable, str(SIDECAR)],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        text=True, env=_prefix_env(tmp_path),
+    )
+    try:
+        _read_ready_line(process)
+
+        # Echoing the legacy token back alongside a new valid one succeeds.
+        result = _send_command(
+            process, "req_px_gf", "write_refdes_prefixes",
+            {"prefixes": ["CONNXX", "PS"]},
+        )
+        assert result["kind"] == "result"
+        assert result["payload"]["custom"] == ["CONNXX", "PS"]
+        data = json.loads(config_path.read_text(encoding="utf-8"))
+        assert data["ref_prefixes"] == ["CONNXX", "PS"]
+
+        # A NEW non-conforming token is still rejected wholesale.
+        result = _send_command(
+            process, "req_px_gf_bad", "write_refdes_prefixes",
+            {"prefixes": ["CONNXX", "TOOLONGX"]},
+        )
+        assert result["kind"] == "error"
+        assert "Invalid prefix" in result["payload"]["message"]
+        assert json.loads(config_path.read_text(encoding="utf-8"))["ref_prefixes"] == [
+            "CONNXX", "PS",
+        ]
+    finally:
+        process.kill()
+
+
 # =========================================================================
 # Failure Rate integration tests
 # =========================================================================

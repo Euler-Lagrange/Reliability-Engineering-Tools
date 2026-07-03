@@ -71,28 +71,46 @@ def _column(df: pd.DataFrame, wanted: str) -> str:
 
 
 def load_component_groups(df: pd.DataFrame) -> Dict[str, str]:
-    """Build ``{component: group}`` from one extraction sheet.
+    """Build ``{component: group membership}`` from one extraction sheet.
 
     Skips gap-placeholder rows; strips the (Verified)/(Unverified) split.
     UNGROUPED/PROVISIONAL rows are kept as named buckets — a component moving
     out of UNGROUPED into a real group is exactly the churn worth seeing.
+
+    Two traps this must guard (both shipped as review findings):
+
+    * ``try_read_table`` maps BLANK cells to ``float('nan')``, and nearly
+      every real sheet has blank causes cells (the empty half of the
+      Verified/Unverified split). ``str(nan)`` would fabricate a phantom
+      ``"NAN"`` component — always ``pd.notna`` before ``str()``.
+    * A component can sit in SEVERAL groups (cross-group duplicate). The
+      value is therefore the sorted, comma-joined membership set — never
+      first-row-wins, which made the moved-group report depend on sheet
+      row order.
     """
     group_col = _column(df, _GROUP_COL)
     causes_col = _column(df, _CAUSES_COL)
 
-    mapping: Dict[str, str] = {}
+    membership: Dict[str, set] = {}
     for _, row in df.iterrows():
-        raw_group = str(row.get(group_col, "") or "")
+        raw_group = row.get(group_col, "")
+        raw_causes = row.get(causes_col, "")
+        if not pd.notna(raw_group) or not pd.notna(raw_causes):
+            continue
+        raw_group = str(raw_group)
         if "GROUP NOT DETECTED" in raw_group:
             continue
         group = _normalize_group(raw_group)
         if not group:
             continue
-        for token in split_refdes_list(str(row.get(causes_col, "") or "")):
+        for token in split_refdes_list(str(raw_causes)):
             if not any(ch.isalnum() for ch in token):
                 continue
-            mapping.setdefault(token, group)
-    return mapping
+            membership.setdefault(token, set()).add(group)
+    return {
+        token: ", ".join(sorted(groups))
+        for token, groups in membership.items()
+    }
 
 
 def compare_extractions(df_a: pd.DataFrame, df_b: pd.DataFrame) -> ExtractionCompareResult:

@@ -4,7 +4,7 @@
 
 | Suite | Path | Count | Framework |
 |-------|------|-------|-----------|
-| Backend integration | `backend/tests/test_sidecar_main.py` | 48 | pytest |
+| Backend integration | `backend/tests/test_sidecar_main.py` | 49 | pytest |
 | Backend security audit | `backend/tests/test_security_audit.py` | 27 | pytest |
 | Backend cancel bridge | `backend/tests/test_cancel_bridge.py` | 12 | pytest |
 | Backend output-directory helpers | `backend/tests/test_output_directory_helpers.py` | 10 | pytest |
@@ -13,7 +13,7 @@
 | Backend RefDes extraction-engine | `backend/tests/test_extraction_engine.py` | 15 | pytest |
 | Backend BOM-compare logic | `backend/tests/test_bom_compare_logic.py` | 31 | pytest |
 | Backend BOM-compare runtime | `backend/tests/test_bom_compare_runtime.py` | 9 | pytest |
-| Backend extraction compare | `backend/tests/test_extraction_compare.py` | 7 | pytest |
+| Backend extraction compare | `backend/tests/test_extraction_compare.py` | 9 | pytest |
 | Backend Failure-Rate runtime | `backend/tests/test_failure_rate_runtime.py` | 2 | pytest |
 | Backend read-layer (NA + header dedup) | `backend/tests/test_read_layer.py` | 6 | pytest |
 | Backend RefDes BOM-coverage | `backend/tests/test_coverage_report.py` | 19 | pytest |
@@ -21,10 +21,10 @@
 | Backend OneDrive detection | `backend/tests/test_onedrive_detection.py` | 5 | pytest |
 | Backend file-size guard | `backend/tests/test_file_guards.py` | 3 | pytest |
 | Backend crash-dump | `backend/tests/test_crash_dump.py` | 3 | pytest |
-| Backend NextGen engine | `backend/tests/test_nextgen_engine.py` | 8 | pytest |
+| Backend NextGen engine | `backend/tests/test_nextgen_engine.py` | 10 | pytest |
 | Backend RefDes runtime | `backend/tests/test_refdes_runtime.py` | 24 | pytest |
 | Backend RefDes validation notes | `backend/tests/test_validation_notes.py` | 12 | pytest |
-| **Backend subtotal** | | **329** | |
+| **Backend subtotal** | | **334** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 4 | Vitest + RTL |
 | Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 3 | Vitest + RTL |
@@ -62,13 +62,13 @@
 | Frontend number field | `frontend/src/components/primitives/NumberField.test.tsx` | 6 | Vitest + RTL |
 | Frontend mapping derivation | `frontend/src/shared/mapping/deriveMappingRows.test.ts` | 6 | Vitest |
 | Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 8 | Vitest + RTL |
-| Frontend Settings tool | `frontend/src/features/settings/SettingsTool.test.tsx` | 4 | Vitest + RTL |
+| Frontend Settings tool | `frontend/src/features/settings/SettingsTool.test.tsx` | 5 | Vitest + RTL |
 | Frontend shell-hook install | `frontend/src/app/App.shellHooks.test.tsx` | 1 | Vitest + RTL |
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
-| **Frontend subtotal** | | **275** | |
+| **Frontend subtotal** | | **276** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 17 | cargo test |
-| **Total** | | **621** | |
+| **Total** | | **627** | |
 
 ## Backend Tests
 
