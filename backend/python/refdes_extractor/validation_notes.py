@@ -24,7 +24,7 @@ the DataFrame reaches the worksheet.
 from __future__ import annotations
 
 import re
-from typing import Iterable, List
+from typing import Iterable, List, Mapping, Optional
 
 from common.refdes_utils import split_refdes_list
 
@@ -81,7 +81,12 @@ def _ordinal(n: int) -> str:
     return f"{n}{suffix}"
 
 
-def annotate_results(results: Iterable[dict], *, bom_provided: bool) -> List[dict]:
+def annotate_results(
+    results: Iterable[dict],
+    *,
+    bom_provided: bool,
+    ambiguous_tokens: Optional[Mapping[str, int]] = None,
+) -> List[dict]:
     """Return copies of ``results`` rows with validation notes attached.
 
     Adds two keys to every row:
@@ -89,7 +94,12 @@ def annotate_results(results: Iterable[dict], *, bom_provided: bool) -> List[dic
     * ``"validation notes"`` — space-joined reason sentences (may be ``""``)
     * ``"_row_style"`` — semantic style name for the Excel styler (internal;
       dropped from the sheet DataFrame by ``_results_dataframe``)
+
+    ``ambiguous_tokens`` maps a component token to its candidate count when
+    the engine chose its parent/mapping among alternatives (NextGen
+    diagnostics); affected rows get an explanatory note + warning highlight.
     """
+    ambiguous_tokens = dict(ambiguous_tokens or {})
     rows = [dict(row) for row in results]
 
     # token -> occurrence sites, ordered by first page then emitted row order.
@@ -129,6 +139,14 @@ def annotate_results(results: Iterable[dict], *, bom_provided: bool) -> List[dic
             dup_notes = duplicate_notes.get(idx, [])
             notes.extend(dup_notes)
 
+            amb_notes = [
+                f"{token} assigned ambiguously ({ambiguous_tokens[token]} candidates) "
+                f"— see Component Detail."
+                for token in _tokens(row)
+                if token in ambiguous_tokens
+            ]
+            notes.extend(amb_notes)
+
             group = str(row.get("group", ""))
             is_unverified = group.rstrip().endswith("(Unverified)")
             tokens = _tokens(row) if is_unverified else []
@@ -138,7 +156,7 @@ def annotate_results(results: Iterable[dict], *, bom_provided: bool) -> List[dic
                 else:
                     notes.append(f"Not found in BOM: {', '.join(tokens)}.")
 
-            if dup_notes:
+            if dup_notes or amb_notes:
                 style = STYLE_DUPLICATE
             elif bom_provided and is_unverified and tokens:
                 style = STYLE_UNVERIFIED

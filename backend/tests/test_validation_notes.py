@@ -11,7 +11,11 @@ from __future__ import annotations
 from openpyxl import Workbook, load_workbook
 
 from refdes_extractor.validation_notes import annotate_results
-from refdes_extractor.runtime import _write_extraction_sheet
+from refdes_extractor.runtime import (
+    _write_component_detail_sheet,
+    _write_extraction_sheet,
+    _write_orphan_pins_sheet,
+)
 
 
 def _row(group: str, causes: str, pages: str = "", **extra) -> dict:
@@ -131,6 +135,83 @@ def test_multiple_notes_join_as_sentences() -> None:
     )
     # Duplicate styling outranks the unverified grey.
     assert rows[1]["_row_style"] == "warning"
+
+
+def test_ambiguous_tokens_get_note_and_warning_style() -> None:
+    rows = annotate_results(
+        [_row("DIG-076 (Verified)", "U7-38, U9", pages="3")],
+        bom_provided=True,
+        ambiguous_tokens={"U7-38": 3},
+    )
+    assert rows[0]["validation notes"] == (
+        "U7-38 assigned ambiguously (3 candidates) — see Component Detail."
+    )
+    assert rows[0]["_row_style"] == "warning"
+
+
+def test_annotate_without_ambiguous_param_is_unchanged() -> None:
+    rows = annotate_results(
+        [_row("DIG-076 (Verified)", "U7-38", pages="3")],
+        bom_provided=True,
+    )
+    assert rows[0]["validation notes"] == ""
+    assert rows[0]["_row_style"] == "default"
+
+
+# ---------------------------------------------------------------------------
+# diagnostics sheets (read-back)
+# ---------------------------------------------------------------------------
+
+def test_component_detail_sheet_rows_sorted_and_flagged(tmp_path) -> None:
+    details = {
+        "token_diagnostics": {
+            "U7-38": {"group": "DIG-076", "pages": [4, 9], "confidence": 0.82,
+                      "source": "geometry", "candidates": 3},
+            "R1": {"group": "CPU-001", "pages": [2]},
+        }
+    }
+    wb = Workbook()
+    _write_component_detail_sheet(wb, details)
+    path = tmp_path / "detail.xlsx"
+    wb.save(path)
+
+    ws = load_workbook(path)["Component Detail"]
+    headers = [ws.cell(row=1, column=c).value for c in range(1, 7)]
+    assert headers == ["Component", "Group", "Pages", "Confidence", "Source", "Flags"]
+    # Sorted by group: CPU-001 first.
+    assert ws.cell(row=2, column=1).value == "R1"
+    assert ws.cell(row=3, column=1).value == "U7-38"
+    assert ws.cell(row=3, column=3).value == "4, 9"
+    assert ws.cell(row=3, column=6).value == "ambiguous (3 candidates)"
+    assert ws.cell(row=1, column=1).font.name == "Aptos Narrow"
+    assert ws.freeze_panes == "A2"
+
+
+def test_orphan_pins_sheet_and_skip_when_empty(tmp_path) -> None:
+    details = {
+        "orphan_pins": [
+            {"page": 7, "group": "DIG-076", "pin_text": "38",
+             "disposition": "excluded", "detail": "No qualified pinlist cluster matched this pin."},
+        ]
+    }
+    wb = Workbook()
+    _write_orphan_pins_sheet(wb, details)
+    path = tmp_path / "orphans.xlsx"
+    wb.save(path)
+
+    ws = load_workbook(path)["Orphan Pins"]
+    assert [ws.cell(row=1, column=c).value for c in range(1, 6)] == [
+        "Pin", "Page", "Group", "Disposition", "Detail",
+    ]
+    assert ws.cell(row=2, column=1).value == "38"
+    assert ws.cell(row=2, column=4).value == "excluded"
+
+    # Empty diagnostics: neither sheet is created (legacy-fallback runs).
+    wb_empty = Workbook()
+    _write_component_detail_sheet(wb_empty, {})
+    _write_orphan_pins_sheet(wb_empty, None)
+    assert "Component Detail" not in wb_empty.sheetnames
+    assert "Orphan Pins" not in wb_empty.sheetnames
 
 
 # ---------------------------------------------------------------------------

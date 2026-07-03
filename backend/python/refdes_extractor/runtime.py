@@ -495,6 +495,69 @@ def _extractor_presets() -> StylePresets:
     return _extractor_presets_cache
 
 
+_COMPONENT_DETAIL_SHEET = "Component Detail"
+_ORPHAN_PINS_SHEET = "Orphan Pins"
+
+
+def _ambiguity_flag(candidates) -> str:
+    try:
+        count = int(candidates or 0)
+    except (TypeError, ValueError):
+        return ""
+    return f"ambiguous ({count} candidates)" if count > 1 else ""
+
+
+def _write_component_detail_sheet(wb, details: dict | None) -> None:
+    """One row per extracted component: pages, confidence, source, flags.
+
+    NextGen-only diagnostics — when the accumulator is empty (legacy
+    fallback, or no diagnostics), the sheet is skipped entirely.
+    """
+    token_diags = (details or {}).get("token_diagnostics") or {}
+    if not token_diags:
+        return
+    from refdes_extractor.extraction_engine import natural_key
+
+    rows = [
+        {
+            "Component": token,
+            "Group": info.get("group", ""),
+            "Pages": ", ".join(str(p) for p in info.get("pages", [])),
+            "Confidence": info.get("confidence", ""),
+            "Source": info.get("source", ""),
+            "Flags": _ambiguity_flag(info.get("candidates")),
+        }
+        for token, info in token_diags.items()
+    ]
+    rows.sort(key=lambda row: (natural_key(row["Group"]), natural_key(row["Component"])))
+    df = pd.DataFrame(rows, columns=["Component", "Group", "Pages", "Confidence", "Source", "Flags"])
+    ws = wb.create_sheet(_COMPONENT_DETAIL_SHEET)
+    write_df_to_sheet(ws, df)
+    style_worksheet(ws, df, presets=_extractor_presets(), alternate_rows=True)
+
+
+def _write_orphan_pins_sheet(wb, details: dict | None) -> None:
+    """One row per pin dropped before the output rows (skipped when none)."""
+    orphans = (details or {}).get("orphan_pins") or []
+    if not orphans:
+        return
+    rows = [
+        {
+            "Pin": o.get("pin_text", ""),
+            "Page": o.get("page", ""),
+            "Group": o.get("group", ""),
+            "Disposition": o.get("disposition", ""),
+            "Detail": o.get("detail", ""),
+        }
+        for o in orphans
+    ]
+    rows.sort(key=lambda row: (row["Page"] if isinstance(row["Page"], int) else 0, str(row["Pin"])))
+    df = pd.DataFrame(rows, columns=["Pin", "Page", "Group", "Disposition", "Detail"])
+    ws = wb.create_sheet(_ORPHAN_PINS_SHEET)
+    write_df_to_sheet(ws, df)
+    style_worksheet(ws, df, presets=_extractor_presets(), alternate_rows=True)
+
+
 def _write_extraction_sheet(ws, results) -> pd.DataFrame:
     """Write + style the main extraction sheet from annotated result rows.
 
@@ -712,10 +775,22 @@ def execute_run_request(
 
     # --- Validation notes (runtime-side annotation; engines untouched) ---
     # Adds the "validation notes" column (cross-group duplicate ordinals,
+    # ambiguous-assignment flags from the diagnostics accumulator,
     # not-in-BOM reasons, gap explanations) and the internal _row_style
     # marker that drives row highlighting in the workbook.
+    _token_diags = (details or {}).get("token_diagnostics") or {}
+    ambiguous_tokens = {}
+    for _token, _info in _token_diags.items():
+        try:
+            _count = int(_info.get("candidates") or 0)
+        except (TypeError, ValueError):
+            _count = 0
+        if _count > 1:
+            ambiguous_tokens[_token] = _count
     results = annotate_results(
-        results, bom_provided=bool(bom_set) and not bom_load_error
+        results,
+        bom_provided=bool(bom_set) and not bom_load_error,
+        ambiguous_tokens=ambiguous_tokens,
     )
 
     # --- Compute BOM coverage reverse-diff (only meaningful with a real BOM) ---
@@ -770,6 +845,18 @@ def execute_run_request(
             ws.append(_EMPTY_SHEET_HEADERS)
             ws.append(["(No groups extracted)", "", 0, "", ""])
             style_header_only(ws, len(_EMPTY_SHEET_HEADERS), _extractor_presets())
+        # Diagnostics sheets are additive (NextGen-only data) — like the
+        # coverage sheets, a failure here must never sink the main save.
+        try:
+            _write_component_detail_sheet(wb, details)
+            _write_orphan_pins_sheet(wb, details)
+        except (InterruptedError, CancellationError):
+            raise
+        except Exception as exc:
+            stream_log(
+                f"WARNING: diagnostics sheets could not be written ({exc}); the "
+                f"main extraction sheet is unaffected."
+            )
         _safe_write_coverage(wb)
         wb.save(str(tmp_output))
         wb.close()
@@ -833,6 +920,18 @@ def execute_run_request(
             f"({cs['not_extracted_count']} never extracted), "
             f"{cs['extracted_not_in_bom_count']} extracted not in BOM — see the "
             f"'Coverage Summary', 'BOM Not Grouped', and 'Extracted Not In BOM' sheets."
+        )
+
+    _orphan_count = len((details or {}).get("orphan_pins") or [])
+    if _orphan_count:
+        notes.append(
+            f"{_orphan_count} pin{'s' if _orphan_count != 1 else ''} dropped before "
+            f"output — see the 'Orphan Pins' sheet."
+        )
+    if ambiguous_tokens:
+        notes.append(
+            f"{len(ambiguous_tokens)} component{'s' if len(ambiguous_tokens) != 1 else ''} "
+            f"assigned ambiguously — see the 'Component Detail' sheet."
         )
 
     return {
