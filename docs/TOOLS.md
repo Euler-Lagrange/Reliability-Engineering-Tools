@@ -220,11 +220,22 @@ diffing two arbitrary BOMs (or BOM-like files such as FMEAs).
   exists in the BOM.
 - **Custom Compare** — generic delta between two files. Works on two BOMs,
   two FMEAs, or a BOM and an FMEA.
+- **Extraction Compare** — diffs two RefDes-extraction output workbooks
+  (rev A vs rev B of a schematic) and reports which components **appeared**,
+  which **disappeared**, and which **moved** to a different group. Group
+  identity ignores the `(Verified)`/`(Unverified)` split and skips
+  `GROUP NOT DETECTED` gap rows, so verification-state changes and missing
+  pages never read as false churn. UNGROUPED / PROVISIONAL are treated as
+  named buckets — a component leaving UNGROUPED for a real group shows up as
+  a move. This workflow has no column mapping (the extraction sheet schema is
+  fixed) and no comparison options.
 
 ### Required inputs
 
 - **Group vs BOM** — a grouping workbook and a BOM workbook.
 - **Custom Compare** — any two Excel files with a RefDes column.
+- **Extraction Compare** — two RefDes Extractor output workbooks (the sheet
+  must carry the `Group` and `Failure Mode Causes` columns).
 
 ### Column mapping
 
@@ -252,6 +263,11 @@ omitted):
   sheet flags any RefDes whose Part Usage does not match the instance count.
 - **Scope_Warnings** — FMEA-aware sanity checks. Only populated when the
   comparison involves FMEA-like content. See below.
+
+Extraction Compare writes its own four-sheet report instead
+(`ExtractionCompare_<timestamp>.xlsx`): **Summary** (counts), **Appeared**,
+**Disappeared**, and **Moved Groups** (component, group in rev A, group in
+rev B).
 
 ### FMEA-aware mode
 
@@ -465,6 +481,23 @@ content-sized columns, zebra banding) containing:
   Unverified rows get an explicit "Not found in BOM: …" note (grey row),
   and sequence-gap placeholder rows are explained (yellow row).
 
+When the default NextGen engine runs, two diagnostics sheets are also
+written (they are omitted on a legacy-engine fallback, which does not
+collect diagnostics):
+
+- **Component Detail** — one row per extracted component: its group, every
+  page it was seen on, the geometry engine's pin-assignment confidence where
+  a pin mapping was chosen, the assignment source (`geometry`,
+  `pinlist-cluster`, `parent-refdes`, `box-text`, `unqualified`), and an
+  `ambiguous (N candidates)` flag when the parent was chosen among
+  alternatives. Ambiguous components also get a Validation Notes entry on
+  the main sheet pointing here.
+- **Orphan Pins** — every pin dropped before reaching the output rows, with
+  its page, group, disposition (`pinlist-filtered`, `excluded`,
+  `pinlist-drop`, `suppressed-passive`, `passive-prefix`,
+  `box-contains-body`), and a human-readable reason. Use this to audit why
+  an expected pin is missing from a group.
+
 When a BOM workbook is loaded, three BOM-coverage sheets are also written:
 
 - **Coverage Summary** — counts of BOM components, how many were grouped, how
@@ -514,6 +547,12 @@ does not produce files or run any analysis.
 - **Connection status** — a live indicator showing whether the backend is
   connected, reconnecting, or disconnected. If it disconnects, the app
   attempts to reconnect automatically.
+- **RefDes prefixes** — view the IEEE-315 default prefix list and maintain
+  custom prefixes (1-5 letters) that extend it for the RefDes Extractor and
+  its BOM/pinlist matching. Saved to `~/.refdes_extractor_config.json`;
+  because the extraction engines compile their recognition patterns at
+  startup, changes apply after the app restarts. Desktop-only (browser
+  preview shows a hint instead).
 - **Application info** — shows the app version and the protocol version in
   use. Useful when filing a bug report.
 

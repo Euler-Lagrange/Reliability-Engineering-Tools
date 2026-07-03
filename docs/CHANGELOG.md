@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **RefDes Extractor — Component Detail + Orphan Pins diagnostics sheets** —
+  the default NextGen engine now records per-token diagnostics during
+  extraction and the output workbook gains two sheets: **Component Detail**
+  (per-component page provenance, pin-assignment confidence, assignment
+  source, and an `ambiguous (N candidates)` flag when the parent was chosen
+  among alternatives — ambiguous components also get a Validation Notes entry
+  on the main sheet) and **Orphan Pins** (every pin dropped before output,
+  with page, group, a stable disposition vocabulary, and a human-readable
+  reason — including two drop paths that were previously invisible even to
+  the debug PDF). Diagnostics ride an optional accumulator threaded through
+  the engine, so legacy-fallback runs simply omit the sheets. The run result
+  reports aggregate counts ("N pins dropped", "N components assigned
+  ambiguously").
+- **BOM Compare — Extraction Compare workflow** — a third workflow card that
+  diffs two RefDes-extraction output workbooks (rev A vs rev B) and writes a
+  four-sheet report (Summary / Appeared / Disappeared / Moved Groups). Group
+  identity strips the `(Verified)`/`(Unverified)` split and skips gap rows so
+  verification-state changes never read as churn; UNGROUPED/PROVISIONAL are
+  named buckets. No column mapping or comparison options apply — the mapping
+  card is hidden and the BOM option checkboxes are disabled with a hint in
+  this mode.
+- **Settings — RefDes prefix editor** — a new "RefDes Prefixes" card shows
+  the IEEE-315 defaults and edits the custom `ref_prefixes` list in
+  `~/.refdes_extractor_config.json` (previously hand-edited only) via a new
+  validated sidecar command pair (`read_refdes_prefixes` /
+  `write_refdes_prefixes`, atomic write, other config keys preserved).
+  Engine recognition patterns compile at startup, so the card states that
+  changes apply after the app restarts.
+
 - **RefDes Extractor — advanced engine controls + tooltips** — all 16 extraction
   tuning parameters are now adjustable in the UI: the 7 primary controls plus a
   collapsed-by-default "Advanced controls" section exposing the 9
