@@ -169,6 +169,8 @@ export function useDesktopRunController(
             primaryMetric: desktopRunSession.result.primary_metric,
             secondaryMetric: desktopRunSession.result.secondary_metric,
             notes: desktopRunSession.result.notes,
+            warningCount: desktopRunSession.result.warning_count,
+            noMatchCount: desktopRunSession.result.no_match_count,
           }
         : null,
     [desktopRunSession.result],
@@ -226,10 +228,17 @@ export function useDesktopRunController(
         backendMessage: options.successMessage(desktopRunSession.result.output_file),
         lastBackendCheckAt: new Date().toISOString(),
       });
+      // A run that "succeeded" with warnings must not toast as an
+      // unqualified success — the count would otherwise live only in the
+      // run panel's secondary metric.
+      const warningCount = desktopRunSession.result.warning_count ?? 0;
       pushNotification({
         tone: "success",
         title: options.successTitle,
-        detail: desktopRunSession.result.output_file,
+        detail:
+          warningCount > 0
+            ? `${desktopRunSession.result.output_file} — ${warningCount} warning(s) captured in the output workbook`
+            : desktopRunSession.result.output_file,
       });
       return;
     }

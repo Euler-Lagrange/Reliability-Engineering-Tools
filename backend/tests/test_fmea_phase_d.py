@@ -490,7 +490,6 @@ def test_validate_run_accepts_fill_gaps_with_preserve_formatting(tmp_path: Path)
         "outputStrategyId": "existing_workbook_preserve_formatting",
         "options": {
             "failureModesStandard": "FMD-2016",
-            "columnSelection": {"mode": "all", "columns": []},
         },
         "inputs": [
             state("existingFmea", existing_fmea),

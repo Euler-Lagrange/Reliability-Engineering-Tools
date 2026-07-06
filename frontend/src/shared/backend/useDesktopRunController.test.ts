@@ -113,6 +113,39 @@ describe("useDesktopRunController terminal handling", () => {
     expect(useShellStore.getState().backendMessage).toBe("Report written to C:\\out\\r.xlsx.");
   });
 
+  it("maps warning counts into the run result and qualifies the success toast", () => {
+    const { result } = renderController();
+
+    act(() => {
+      result.current.armTerminalHandler();
+      result.current.beginAcceptedRun({
+        run_id: "run_w1",
+        mode: "desktop-bridge",
+        session_generation: 1,
+      });
+    });
+
+    act(() => {
+      capturedHandler?.(successStatusEvent("run_w1"));
+    });
+    act(() => {
+      const event = successResultEvent("run_w1");
+      (event.payload as Record<string, unknown>).warning_count = 5;
+      (event.payload as Record<string, unknown>).no_match_count = 2;
+      capturedHandler?.(event);
+    });
+
+    // The run result carries structured counts for the panel...
+    expect(result.current.panelRunResult?.warningCount).toBe(5);
+    expect(result.current.panelRunResult?.noMatchCount).toBe(2);
+    // ...and the success toast is no longer an unqualified file path.
+    const notes = useNotificationStore.getState().notifications;
+    expect(notes).toHaveLength(1);
+    expect(notes[0].tone).toBe("success");
+    expect(notes[0].detail).toContain("C:\\out\\r.xlsx");
+    expect(notes[0].detail).toMatch(/5 warning/i);
+  });
+
   it("fires once across separate status/result events and ignores a duplicate result", () => {
     const { result } = renderController();
 

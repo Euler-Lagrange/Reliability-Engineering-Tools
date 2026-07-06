@@ -93,6 +93,15 @@ function seedInputsForRuntime(inputs: InputFileState[]): InputFileState[] {
 }
 
 /**
+ * M9: sibling of seedInputsForRuntime for scenario validations. The demo
+ * "Example data staged" card is browser-preview content only — the desktop
+ * runtime starts (and re-seeds on workflow switch) with an empty list.
+ */
+function seedValidationsForRuntime(validations: ValidationMessage[]): ValidationMessage[] {
+  return backendClient.runtimeMode === "browser-mock" ? validations : [];
+}
+
+/**
  * Tier-1 #5: browser-mock seed for the ColumnPairPicker. The picker derives its
  * column choices from inspected workbook headers (`workbookColumnsByRole`),
  * which only populate in the desktop runtime. In browser-mock there is no
@@ -157,7 +166,12 @@ export function BomCompareTool() {
   // inspected; the user can add/remove/edit pairs afterward. Stashed per
   // workflow (Wiring Invariant #9) so it survives a Group<->Custom round-trip.
   const [comparePairs, setComparePairs] = useState<ComparePair[]>([]);
-  const [validations, setValidations] = useState<ValidationMessage[]>(baseScenario.validations);
+  // M9: demo validations ("Example data staged") are browser-preview content.
+  // Desktop starts empty (Wiring Invariant #3). The workflow-switch seed
+  // below goes through seedValidationsForRuntime for the same reason.
+  const [validations, setValidations] = useState<ValidationMessage[]>(() =>
+    seedValidationsForRuntime(baseScenario.validations),
+  );
   const [options, setOptions] = useState({
     // "base match" maps to the backend's loose/prefix base-matching mode
     // (AnalyzeOptions.loose_base_match). It defaults to FALSE so a default run
@@ -316,7 +330,7 @@ export function BomCompareTool() {
         // Using cloneInputs here re-introduced the example paths in desktop
         // mode when switching Group <-> Custom for the first time.
         setInputStates(seedInputsForRuntime(scenario.inputs));
-        setValidations(scenario.validations);
+        setValidations(seedValidationsForRuntime(scenario.validations));
         // Tier-1 #5: clear compare pairs for a never-visited workflow. Group
         // mode keeps it empty (no picker); custom mode lets the auto-pair
         // effect populate it once both files are inspected.

@@ -162,7 +162,12 @@ export function RefDesExtractorTool() {
   // the payload because ``options`` (spread into the run request) holds them
   // whether or not the disclosure is open.
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [validations, setValidations] = useState<ValidationMessage[]>(baseScenario.validations);
+  // M9: demo validations ("Example data staged") are browser-preview content.
+  // Desktop starts empty — rendering them there reads as leftover state
+  // from a previous session (Wiring Invariant #3).
+  const [validations, setValidations] = useState<ValidationMessage[]>(() =>
+    backendClient.runtimeMode === "browser-mock" ? baseScenario.validations : [],
+  );
   const [contextView, setContextView] = useState<"preview" | "run">("preview");
   const [runMode, setRunMode] = useState<RunMode>("idle");
   const [runIndex, setRunIndex] = useState(-1);

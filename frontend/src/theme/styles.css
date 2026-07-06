@@ -1381,6 +1381,15 @@ tbody tr:hover {
   cursor: help;
 }
 
+/* Input-card chip row — hosts the optional "Required" chip next to the
+   status chip without disturbing the header layout. */
+.input-card__chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 /* Mapping table "Mapped to" cell — give the dropdown trigger enough
    horizontal room so long source-column names are visible without
    truncation, and so the menu (min-width: max(220px, 100%)) opens

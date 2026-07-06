@@ -88,18 +88,47 @@ describe("FailureRateTool stale validation handling", () => {
       columns: ["Reference Designator", "Failure Rate"],
     });
 
+    // A blocked validate populates real validation cards (M9 removed the
+    // demo-seeded card this test previously used as its stale fixture).
+    backendMocks.validateRun.mockResolvedValue({
+      ok: false,
+      reason_code: "missing_files",
+      toast_text: "Select required files: Parts list.",
+      validations: [
+        {
+          id: "validation-missing_files",
+          severity: "error",
+          area: "Run State",
+          title: "Run is blocked",
+          detail: "Select required files: Parts list.",
+        },
+      ],
+      output_preview: null,
+      mode: "desktop-bridge",
+    });
+
     const user = userEvent.setup();
     render(<FailureRateTool />);
 
-    // The seeded demo validation card is visible up front.
-    expect(screen.getByText("Example data staged")).toBeInTheDocument();
+    // M9: desktop mode seeds NO demo validation card.
+    expect(screen.queryByText("Example data staged")).not.toBeInTheDocument();
+
+    // A blocked start leaves real validation cards behind.
+    await user.click(screen.getByRole("tab", { name: /^Run$/i }));
+    await user.click(screen.getByRole("button", { name: "Link Rates" }));
+    await user.click(screen.getByRole("tab", { name: /preview/i }));
+    expect(
+      await screen.findByText("Select required files: Parts list."),
+    ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Browse for parts list" }));
 
     // Once the new file lands the stale card is gone (neutral empty state).
     await screen.findByText("C:\\real\\Predictions.xlsx");
     await waitFor(() =>
-      expect(screen.queryByText("Example data staged")).not.toBeInTheDocument(),
+      expect(
+        screen.queryByText("Select required files: Parts list."),
+      ).not.toBeInTheDocument(),
     );
   });
 });

@@ -104,7 +104,17 @@ export function InputGrid({ inputs, onBrowse, onSheetChange, getDisabledSheetRea
                   ) : null}
                 </div>
               </div>
-              <span className={`status-chip status-chip--${input.status}`}>{input.tag}</span>
+              <div className="input-card__chips">
+                {input.required && !input.path ? (
+                  <span
+                    className="status-chip status-chip--attention"
+                    title="The run is blocked until this file is loaded."
+                  >
+                    Required
+                  </span>
+                ) : null}
+                <span className={`status-chip status-chip--${input.status}`}>{input.tag}</span>
+              </div>
             </div>
             <p className="input-card__helper">{input.helper}</p>
             <div className="input-card__footer">

@@ -108,6 +108,12 @@ export interface InputFileState {
   resolutionError?: string | null;
   /** Mock/demo placeholder path that should be visually marked as an example. */
   isExample?: boolean;
+  /**
+   * The backend blocks validation when this role has no file. InputGrid
+   * renders a "Required" chip on unloaded required cards so the user can
+   * tell mandatory inputs from optional ones before clicking Run.
+   */
+  required?: boolean;
 }
 
 export interface OutputStrategy {
@@ -235,6 +241,9 @@ export interface RunResult {
   primaryMetric: string;
   secondaryMetric: string;
   notes: string[];
+  /** Structured warning/no-match totals from the backend result payload. */
+  warningCount?: number;
+  noMatchCount?: number;
 }
 
 export interface DemoScenario {

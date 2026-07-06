@@ -78,7 +78,11 @@ export function FailureRateTool() {
     Partial<Record<FileRole, string[]>>
   >({});
   const [options, setOptions] = useState({ unitMode: "per_hour", validateFmr: false });
-  const [validations, setValidations] = useState<ValidationMessage[]>(baseScenario.validations);
+  // M9: demo validations ("Example data staged") are browser-preview content.
+  // Desktop starts empty (Wiring Invariant #3).
+  const [validations, setValidations] = useState<ValidationMessage[]>(() =>
+    backendClient.runtimeMode === "browser-mock" ? baseScenario.validations : [],
+  );
   const [contextView, setContextView] = useState<"preview" | "run">("preview");
   const [runMode, setRunMode] = useState<RunMode>("idle");
   const [runIndex, setRunIndex] = useState(-1);

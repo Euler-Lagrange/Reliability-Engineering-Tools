@@ -255,13 +255,6 @@ body. Currently defined fields:
   field on an FMEA workflow yields validation `reason_code`
   `"missing_failure_modes_standard"` with `toast_text`
   `"Select FMD-91 or FMD-2016 before running."`.
-- `columnSelection` — object, optional. Defaults to
-  `{ "mode": "all", "columns": [] }`. Shape:
-  `{ "mode": "all" | "subset", "columns": string[] }`. When
-  `mode == "subset"`, the backend filters the generated DataFrame to the
-  intersection of requested columns and actual columns; columns that do not
-  exist in the DataFrame are ignored, and an empty intersection is logged as
-  a warning.
 - `hdaSource` — string, `"inline"` or `"separate"`, FMEA workflows,
   optional. **Authoritative when present** (added in 0.4.6): `"separate"`
   with no usable `hda` input path blocks validation with `reason_code`

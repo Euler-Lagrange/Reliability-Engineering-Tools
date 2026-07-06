@@ -65,7 +65,7 @@ npm run dev              # Vite dev server (browser preview mode)
 npm run build            # Production build
 npm run typecheck        # TypeScript type checking
 npm run typecheck:tests  # TypeScript type checking for Vitest files
-npm test                 # Vitest (277 tests)
+npm test                 # Vitest (281 tests)
 
 # Desktop (requires Rust toolchain)
 npm run tauri:dev        # Dev mode with hot reload
@@ -199,7 +199,7 @@ The audit runs:
 - `pytest.importorskip("fitz")` for RefDes tests requiring PyMuPDF
 - `backend/tests/conftest.py` installs a `sys.path` shim for in-process unit tests
 
-### Frontend Tests (277 total across 41 test files)
+### Frontend Tests (281 total across 41 test files)
 - Vitest + React Testing Library
 - Browser-mock mode (no Tauri runtime needed)
 - `src/app/App.test.tsx`
@@ -225,10 +225,10 @@ The audit runs:
 - `src/features/fmea/mappingColumns.test.ts`
 - `src/features/fmea/mappingAnalysis.test.ts`
 - `src/features/settings/SettingsTool.test.tsx` (new — RefDes prefix editor: load/add/remove/save, client-side validation, browser-mode guard, failed-load Retry recovery)
-- `src/features/toolRunDispatch.test.tsx` (now covers the FMEA payload keys + the extraction_compare no-mappings/no-options payload)
+- `src/features/toolRunDispatch.test.tsx` (now covers the FMEA payload keys + the extraction_compare no-mappings/no-options payload + M9 no-demo-content-in-desktop + FMEA Required input chips)
 - `src/mocks/scenarios.test.ts` (new — Tier-3 #28 scenario completeness)
 - `src/shared/backend/runLifecycle.test.ts` (now covers the terminal-status guard)
-- `src/shared/backend/useDesktopRunController.test.ts` (new — success-toast two-event ordering)
+- `src/shared/backend/useDesktopRunController.test.ts` (success-toast two-event ordering + warning-count mapping/qualified toast)
 - `src/shared/backend/cancelError.test.ts`
 - `src/shared/backend/client.cancelRun.test.ts`
 - `src/shared/backend/client.runEvents.test.ts`
@@ -245,7 +245,7 @@ The audit runs:
 - `src/stores/storeMigrations.test.ts` (new — Decision E persist version/migration)
 
 Run `npx vitest run --config frontend/vite.config.ts --reporter=default` to
-see individual counts per file — the suite totals 277 tests and changes
+see individual counts per file — the suite totals 281 tests and changes
 whenever a suite gains or loses cases.
 
 ## Critical Gotchas
@@ -279,11 +279,16 @@ against this list.
    never render it silently ignored.** Pattern: RefDes adaptive-geometry
    checkbox, BOM Compare `treat_prov_as_covered` in custom mode
    (`disabled` + `hint` on `CheckboxField`).
-3. **Never seed example/mock paths into desktop state.** Desktop-bridge
-   seeding goes through `emptyInputsFromScenario` (shared in
-   `useDesktopRunController.ts`); `cloneInputs(scenario.inputs)` is for
-   browser-mock only. Example `DRIVE\inputs\...` paths pass backend
-   validation and then crash mid-run with paths the user never typed.
+3. **Never seed example/mock content into desktop state — paths OR
+   validations.** Desktop-bridge seeding goes through
+   `emptyInputsFromScenario` (shared in `useDesktopRunController.ts`);
+   `cloneInputs(scenario.inputs)` is for browser-mock only. Example
+   `DRIVE\inputs\...` paths pass backend validation and then crash mid-run
+   with paths the user never typed. The same applies to
+   `scenario.validations` (and any other demo pane content): desktop seeds
+   `[]` — the "Example data staged" card rendering in the desktop app reads
+   as leftover state from a previous session (M9, 2026-07). This covers
+   initial `useState` seeds AND workflow-switch re-seed paths.
 4. **Mock scenario data is load-bearing.** Every workflow needs a
    `DemoScenario` whose `inputs` cover ALL of that workflow's roles —
    a missing scenario/role rendered Custom Compare with zero file slots.

@@ -36,7 +36,7 @@
 | Frontend hold button | `frontend/src/components/primitives/HoldButton.test.tsx` | 5 | Vitest + RTL |
 | Frontend empty state | `frontend/src/components/primitives/EmptyState.test.tsx` | 5 | Vitest + RTL |
 | Frontend run lifecycle | `frontend/src/shared/backend/runLifecycle.test.ts` | 9 | Vitest |
-| Frontend desktop run controller | `frontend/src/shared/backend/useDesktopRunController.test.ts` | 2 | Vitest |
+| Frontend desktop run controller | `frontend/src/shared/backend/useDesktopRunController.test.ts` | 3 | Vitest |
 | Frontend cancel error | `frontend/src/shared/backend/cancelError.test.ts` | 18 | Vitest |
 | Frontend cancel run | `frontend/src/shared/backend/client.cancelRun.test.ts` | 2 | Vitest |
 | Frontend run event client | `frontend/src/shared/backend/client.runEvents.test.ts` | 2 | Vitest |
@@ -52,7 +52,7 @@
 | Frontend notification store | `frontend/src/stores/notificationStore.test.ts` | 3 | Vitest |
 | Frontend store migrations | `frontend/src/stores/storeMigrations.test.ts` | 7 | Vitest |
 | Frontend keep-alive shell | `frontend/src/app/App.keepalive.test.tsx` | 2 | Vitest + RTL |
-| Frontend FMEA tool | `frontend/src/features/fmea/FmeaTool.test.tsx` | 11 | Vitest + RTL |
+| Frontend FMEA tool | `frontend/src/features/fmea/FmeaTool.test.tsx` | 12 | Vitest + RTL |
 | Frontend FMEA inspection | `frontend/src/features/fmea/FmeaTool.inspection.test.tsx` | 5 | Vitest + RTL |
 | Frontend mapping columns | `frontend/src/features/fmea/mappingColumns.test.ts` | 27 | Vitest |
 | Frontend mapping analysis | `frontend/src/features/fmea/mappingAnalysis.test.ts` | 7 | Vitest |
@@ -61,14 +61,14 @@
 | Frontend RefDes Extractor tool | `frontend/src/features/refdes-extractor/RefDesExtractorTool.test.tsx` | 14 | Vitest + RTL |
 | Frontend number field | `frontend/src/components/primitives/NumberField.test.tsx` | 6 | Vitest + RTL |
 | Frontend mapping derivation | `frontend/src/shared/mapping/deriveMappingRows.test.ts` | 6 | Vitest |
-| Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 8 | Vitest + RTL |
+| Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 10 | Vitest + RTL |
 | Frontend Settings tool | `frontend/src/features/settings/SettingsTool.test.tsx` | 5 | Vitest + RTL |
 | Frontend shell-hook install | `frontend/src/app/App.shellHooks.test.tsx` | 1 | Vitest + RTL |
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
-| **Frontend subtotal** | | **277** | |
+| **Frontend subtotal** | | **281** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 17 | cargo test |
-| **Total** | | **641** | |
+| **Total** | | **645** | |
 
 ## Backend Tests
 
@@ -188,7 +188,6 @@ the backend hard-fails on any truthy value. FMEA workflows now require an
 
 - `options.failureModesStandard`: `"FMD-91"` or `"FMD-2016"` (required for
   all FMEA workflows)
-- `options.columnSelection`: `{ mode, columns }` (optional)
 
 The FMEA-related test fixtures in `test_sidecar_main.py` send
 `"options": {"failureModesStandard": "FMD-2016"}` in every request body;
@@ -249,9 +248,9 @@ neither of which exists under jsdom, so the client returns mock data from
 | `frontend/src/shared/hooks/useCopyToClipboard.test.ts` | 3 — clipboard write, success feedback, error handling |
 | `frontend/src/stores/globalLogStore.test.ts` | 6 — global log ring buffer: append, clear, toggle, filter, export format, capacity |
 | `frontend/src/app/App.keepalive.test.tsx` | 2 — keep-alive shell: tool-local state survives a tool-switch round-trip, only visited tools mount |
-| `frontend/src/features/fmea/FmeaTool.test.tsx` | 9 — FMEA tool rendering, workflow selection, input validation, run integration, mapping-override survival across output-strategy and FMD-standard changes |
+| `frontend/src/features/fmea/FmeaTool.test.tsx` | 12 — FMEA tool rendering, workflow selection, input validation, run integration, mapping-override survival across output-strategy and FMD-standard changes, mode-aware required marker on Failure Mode Causes in merge modes |
 | `frontend/src/features/fmea/FmeaTool.inspection.test.tsx` | 5 — sheet selection interactivity during background aggregation, inspection cap warning display, stale-validation clears on browse/sheet change, orphaned-override pruning |
-| `frontend/src/features/toolRunDispatch.test.tsx` | 7 — FMEA (option-key payload incl. hdaSource), BOM Compare, Failure Rate, and RefDes workflow dispatch from React tools, validation-failure (execute_run skipped), all six BOM Compare options reach the backend, and Custom Compare column pairs reach `options.compare_columns` |
+| `frontend/src/features/toolRunDispatch.test.tsx` | 10 — FMEA (option-key payload incl. hdaSource), BOM Compare, Failure Rate, and RefDes workflow dispatch from React tools, validation-failure (execute_run skipped), all six BOM Compare options reach the backend, Custom Compare column pairs reach `options.compare_columns`, desktop mode never seeds demo validation content (M9), and FMEA Required chips on mandatory input roles |
 | `frontend/src/features/bom-compare/BomCompareTool.test.tsx` | 14 — custom-compare slots, pristine exit, workflow round-trip cache, interrupted-inspection recovery, double-start guard, raw-string error surfacing, real-header mapping derivation, dispatch payloads, group-only prov checkbox disabled in custom, column-pair picker auto-pairs in custom / hidden in group |
 | `frontend/src/features/failure-rate/FailureRateTool.test.tsx` | 2 — stale-validation clears on browse, real-header mapping derivation |
 | `frontend/src/features/refdes-extractor/RefDesExtractorTool.test.tsx` | 14 — piece-part pinlist slot, pristine behavior, empty-input dispatch, adaptive-geometry gating, numeric tuning fields (render, dispatch, geometry gating), and the advanced-controls disclosure (collapsed by default, hover tooltips, and the 9 advanced params reaching the payload) |

@@ -175,6 +175,35 @@ describe("tool run dispatch", () => {
     ]);
   });
 
+  it("never seeds demo validation content into the desktop UI (M9)", async () => {
+    // Wiring Invariant #3 extension: the "Example data staged" scenario card
+    // is browser-preview content. Rendering it in the desktop runtime reads
+    // as leftover state from a previous session.
+    const user = userEvent.setup();
+
+    const bomCompare = render(<BomCompareTool />);
+    expect(screen.queryByText(/example data staged/i)).toBeNull();
+    // The workflow-switch else-branch used to re-seed scenario validations.
+    await user.click(screen.getByRole("button", { name: /Custom Compare/i }));
+    expect(screen.queryByText(/example data staged/i)).toBeNull();
+    bomCompare.unmount();
+
+    const failureRate = render(<FailureRateTool />);
+    expect(screen.queryByText(/example data staged/i)).toBeNull();
+    failureRate.unmount();
+
+    const refdes = render(<RefDesExtractorTool />);
+    expect(screen.queryByText(/example data staged/i)).toBeNull();
+    refdes.unmount();
+  });
+
+  it("FMEA marks mandatory input roles with a Required chip in desktop mode", () => {
+    render(<FmeaTool />);
+    // piece_part_generate: grouping, bom, failureModes are backend-required;
+    // hda is hidden (inline default), so exactly three chips render.
+    expect(screen.getAllByText("Required")).toHaveLength(3);
+  });
+
   it("dispatches the FMEA workflow with the option keys the backend reads", async () => {
     // Regression guard for the hdaSource bug class (Tier-3 #28): the FMEA
     // execute payload's option keys were asserted nowhere frontend-side, so a

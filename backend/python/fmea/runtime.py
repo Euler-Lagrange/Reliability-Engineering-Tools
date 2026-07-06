@@ -739,11 +739,6 @@ def execute_run_request(
     workflow_id = str(body.get("workflowId", "")).strip()
     options = body.get("options") or {}
     failure_modes_standard = str(options.get("failureModesStandard", "FMD-2016")).strip() or "FMD-2016"
-    column_selection_raw = options.get("columnSelection") or {}
-    column_selection = {
-        "mode": str(column_selection_raw.get("mode", "all")).strip() or "all",
-        "columns": [str(c) for c in (column_selection_raw.get("columns") or [])],
-    }
     # Phase 4 / A6: CCA identifier (BOM-Only only). Already validated above.
     cca_prefix_raw = options.get("ccaPrefix")
     cca_prefix = (
@@ -958,27 +953,10 @@ def execute_run_request(
         percent=95,
     )
 
-    # Apply column subset filtering if requested. ROW_TYPE_COL is always
-    # retained because the writer uses it to drive insert/update decisions.
-    # Phase D safety: if NONE of the user-requested columns actually exist
-    # in the generated DataFrame (e.g., stale UI state after a column
-    # inspection), fall back to keeping all columns rather than silently
-    # shipping an empty workbook. The user gets a WARNING log so they
-    # notice.
-    if column_selection["mode"] == "subset" and column_selection["columns"]:
-        from fmea.fmea_generator_logic import ROW_TYPE_COL
-        keep = set(column_selection["columns"])
-        keep.add(ROW_TYPE_COL)
-        filtered_cols = [c for c in dataframe.columns if c in keep]
-        user_matches = [c for c in filtered_cols if c != ROW_TYPE_COL]
-        if user_matches:
-            dataframe = dataframe[filtered_cols]
-        else:
-            stream_log_callback(
-                f"WARNING: column subset filter matched none of the requested columns "
-                f"{column_selection['columns']!r}. Keeping all columns as a safe fallback. "
-                f"Available columns: {list(dataframe.columns)[:10]}{'...' if len(dataframe.columns) > 10 else ''}"
-            )
+    # Batch 3 (2026-07 deep dive): the columnSelection subset filter was
+    # removed — no UI control ever sent it, so the branch was unreachable
+    # from the shipped frontend (Wiring Invariant #1: a backend option with
+    # no UI control must get a control or be removed).
 
     if use_template_preserve:
         from fmea.fmea_template_analyzer import analyze_template as _analyze_template

@@ -110,14 +110,33 @@ export function getVisibleRoles(workflowId: WorkflowId, hdaSource: HdaSource): F
   }
 }
 
+/**
+ * Roles the backend's `_required_roles` blocks validation on, per workflow.
+ * Drives the "Required" chip on unloaded input cards — keep in lockstep
+ * with `backend/python/fmea/runtime.py`.
+ */
+const FMEA_REQUIRED_ROLES: Partial<Record<WorkflowId, FileRole[]>> = {
+  piece_part_generate: ["grouping", "bom", "failureModes"],
+  bom_only: ["bom", "failureModes"],
+  functional_to_piecepart: ["functionalFmea", "bom", "failureModes"],
+  fill_gaps: ["existingFmea", "bom", "failureModes"],
+};
+
 function buildWorkflowInputs(
   inputs: InputFileState[],
   workflowId: WorkflowId,
   hdaSource: HdaSource,
 ) {
+  const requiredRoles = new Set<FileRole>(FMEA_REQUIRED_ROLES[workflowId] ?? []);
+  // Explicitly choosing a separate HDA file makes the hda role blocking
+  // (backend reason_code missing_separate_hda).
+  if (hdaSource === "separate") {
+    requiredRoles.add("hda");
+  }
   return getVisibleRoles(workflowId, hdaSource)
     .map((role) => inputs.find((input) => input.role === role))
-    .filter((input): input is InputFileState => Boolean(input));
+    .filter((input): input is InputFileState => Boolean(input))
+    .map((input) => ({ ...input, required: requiredRoles.has(input.role) }));
 }
 
 function buildOutputInputs(inputs: InputFileState[], outputStrategyId: OutputStrategyId) {
@@ -126,7 +145,8 @@ function buildOutputInputs(inputs: InputFileState[], outputStrategyId: OutputStr
   }
 
   const targetWorkbook = inputs.find((input) => input.role === "targetWorkbook");
-  return targetWorkbook ? [targetWorkbook] : [];
+  // The preserve-formatting strategy cannot run without its template.
+  return targetWorkbook ? [{ ...targetWorkbook, required: true }] : [];
 }
 
 function buildRunRequest(
@@ -288,7 +308,14 @@ function buildFmeaMappingRows(
         optionLabels,
         help: meta.help,
         origin: meta.origin,
-        required: meta.required,
+        // "Failure Mode Causes" is static `required: false` in the metadata
+        // (it is optional outside merges), but the backend hard-blocks the
+        // merge workflows without it (missing_failure_mode_causes_mapping) —
+        // show the marker exactly where the gate exists.
+        required:
+          meta.required ||
+          (meta.canonical === "Failure Mode Causes" &&
+            (workflowId === "fill_gaps" || workflowId === "functional_to_piecepart")),
       };
     },
   );

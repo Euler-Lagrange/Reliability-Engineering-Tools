@@ -118,6 +118,34 @@ describe("FmeaTool — Phase 5 mapping row visibility", () => {
     expect(hasMappingLabel("FMEA-ID")).toBe(true);
   }, FMEA_TOOL_TEST_TIMEOUT_MS);
 
+  test("merge modes mark Failure Mode Causes as required; non-merge modes do not", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await waitForFmeaTool();
+
+    // piece_part_generate: three statically-required rows carry the marker,
+    // Failure Mode Causes does not (auto-detect is acceptable there).
+    const initialMarkers = screen.getAllByLabelText("Required column");
+    expect(initialMarkers).toHaveLength(3);
+    expect(
+      initialMarkers.some((marker) =>
+        marker.closest("tr")?.textContent?.includes("Failure Mode Causes"),
+      ),
+    ).toBe(false);
+
+    // Merge mode: the backend hard-requires the Failure Mode Causes mapping
+    // (missing_failure_mode_causes_mapping), so the marker must appear.
+    await user.click(screen.getByRole("button", { name: /merge functional fmea/i }));
+
+    const mergeMarkers = screen.getAllByLabelText("Required column");
+    expect(mergeMarkers).toHaveLength(4);
+    expect(
+      mergeMarkers.some((marker) =>
+        marker.closest("tr")?.textContent?.includes("Failure Mode Causes"),
+      ),
+    ).toBe(true);
+  }, FMEA_TOOL_TEST_TIMEOUT_MS);
+
   test("Merge Piece-Part FMEA mode also shows merge-only rows", async () => {
     const user = userEvent.setup();
     renderApp();
