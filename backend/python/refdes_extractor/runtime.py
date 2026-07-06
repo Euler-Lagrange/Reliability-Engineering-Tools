@@ -23,7 +23,7 @@ from common import (
     validate_explicit_output_directory,
 )
 from common.excel_styles import StylePresets, style_header_only, style_worksheet
-from common.exceptions import ValidationError, ProcessingError
+from common.exceptions import FileAccessError, ProcessingError, ValidationError
 from refdes_extractor.validation_notes import annotate_results
 from shared.pre_run_validation import (
     LabeledState,
@@ -861,8 +861,10 @@ def execute_run_request(
         wb.save(str(tmp_output))
         wb.close()
         if not verify_excel_readable(tmp_output):
-            raise IOError(
-                f"Post-write verification failed for {tmp_output}; workbook did not open."
+            raise FileAccessError(
+                f"Post-write verification failed for {tmp_output}; workbook did not open.",
+                file_path=str(tmp_output),
+                operation="write",
             )
         atomic_finalize(tmp_output, output_path, log_func=stream_log)
     except Exception:

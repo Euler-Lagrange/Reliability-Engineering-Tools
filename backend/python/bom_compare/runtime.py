@@ -17,7 +17,7 @@ from common import (
     verify_excel_readable,
     validate_explicit_output_directory,
 )
-from common.exceptions import ValidationError
+from common.exceptions import FileAccessError, ValidationError
 from shared.pre_run_validation import (
     append_output_directory_warning,
     DO_NOT_MAP_SENTINEL,
@@ -462,8 +462,10 @@ def _run_group_compare(
     try:
         write_excel_report(results, str(tmp_output))
         if not verify_excel_readable(tmp_output):
-            raise IOError(
-                f"Post-write verification failed for {tmp_output}; workbook did not open."
+            raise FileAccessError(
+                f"Post-write verification failed for {tmp_output}; workbook did not open.",
+                file_path=str(tmp_output),
+                operation="write",
             )
         atomic_finalize(tmp_output, output_path, log_func=log)
     except Exception:
@@ -549,8 +551,10 @@ def _run_extraction_compare(
         wb.save(str(tmp_output))
         wb.close()
         if not verify_excel_readable(tmp_output):
-            raise IOError(
-                f"Post-write verification failed for {tmp_output}; workbook did not open."
+            raise FileAccessError(
+                f"Post-write verification failed for {tmp_output}; workbook did not open.",
+                file_path=str(tmp_output),
+                operation="write",
             )
         atomic_finalize(tmp_output, output_path, log_func=log)
     except Exception:
@@ -675,8 +679,10 @@ def _run_custom_compare(
     try:
         write_bom_compare_excel(result, str(tmp_output), bom_a_name=name_a, bom_b_name=name_b)
         if not verify_excel_readable(tmp_output):
-            raise IOError(
-                f"Post-write verification failed for {tmp_output}; workbook did not open."
+            raise FileAccessError(
+                f"Post-write verification failed for {tmp_output}; workbook did not open.",
+                file_path=str(tmp_output),
+                operation="write",
             )
         atomic_finalize(tmp_output, output_path, log_func=log)
     except Exception:

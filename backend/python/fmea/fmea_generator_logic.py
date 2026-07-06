@@ -2141,30 +2141,30 @@ class FMEAProcessor:
                     else 0
                 )
                 _diff = _computed_count - mapped_count_from_fraction
-                # Fix R2-H1: the previous assertion was tautological
-                # (``a == b + (a - b)``) and could not catch any real
-                # error. Replace it with a pair of meaningful checks:
-                #
-                # 1. Non-negativity — both counts are instance counts
-                #    and must be >= 0. A negative value would indicate
-                #    a corrupt BOM or usage parse error upstream.
-                # 2. Bounded-value sanity — a Part Usage like 1e-7
-                #    yields mapped_count = 10,000,000 which is almost
-                #    certainly a data-entry error (e.g., user typed
-                #    0.0000001 instead of 1.0). R3-M2: such entries
-                #    now STAY in the discrepancies sheet so the user
-                #    can triage them, but they increment a per-processor
-                #    suspicious counter that emits ONE aggregated
-                #    WARNING at the end of the workflow (rather than
-                #    spamming the log with one WARNING per row).
-                assert (
-                    mapped_count_from_fraction >= 0 and _computed_count >= 0
-                ), (
-                    f"Part Usage counts must be non-negative: "
-                    f"computed={_computed_count}, "
-                    f"mapped={mapped_count_from_fraction}, "
-                    f"usage_value={_usage_value}, refdes={ref_des}"
-                )
+                # Batch 4 (2026-07): the former non-negativity assert died
+                # on user data — a BOM Part Usage of "-1" parses to a
+                # negative fraction and produced a run-killing
+                # AssertionError. A negative count is a data-quality
+                # problem, not a code invariant: warn and keep the entry so
+                # it shows up in the diagnostics sheet for triage.
+                if mapped_count_from_fraction < 0 or _computed_count < 0:
+                    self.log(
+                        f"Part Usage for '{ref_des}' produced a negative "
+                        f"instance count (mapped={mapped_count_from_fraction}, "
+                        f"computed={_computed_count}, "
+                        f"usage value={_usage_value!r}) — likely a BOM "
+                        f"data-entry error. Review the "
+                        f"'{PART_USAGE_DIAGNOSTICS_SHEET_NAME}' sheet.",
+                        "WARNING",
+                    )
+                # Bounded-value sanity — a Part Usage like 1e-7 yields
+                # mapped_count = 10,000,000 which is almost certainly a
+                # data-entry error (e.g., user typed 0.0000001 instead of
+                # 1.0). R3-M2: such entries STAY in the discrepancies sheet
+                # so the user can triage them, but they increment a
+                # per-processor suspicious counter that emits ONE aggregated
+                # WARNING at the end of the workflow (rather than spamming
+                # the log with one WARNING per row).
                 # Fix R3-M2: raise the threshold to 1,000,000 instances.
                 # Production dense SMD PCBs can legitimately have 15,000+
                 # instances of a single decoupling-cap variant sharing

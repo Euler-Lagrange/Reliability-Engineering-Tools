@@ -4,7 +4,6 @@ import {
   buildAggregatedMappingSource,
   buildWorkbookColumnUnion,
   mergeColumnsByNormalizedName,
-  resolveSheetInspections,
   shouldShowTargetWorkbook,
 } from "./mappingAnalysis";
 
@@ -105,42 +104,4 @@ describe("mappingAnalysis", () => {
     expect(shouldShowTargetWorkbook("existing_workbook_preserve_formatting")).toBe(true);
   });
 
-  test("keeps successful sheet inspections when unrelated workbook sheets fail", () => {
-    expect(
-      resolveSheetInspections("BOM", [
-        {
-          sheetName: "BOM",
-          result: {
-            status: "fulfilled",
-            value: { sheet: "BOM", columns: ["Part Usage"] },
-          },
-        },
-        {
-          sheetName: "Notes",
-          result: {
-            status: "rejected",
-            reason: new Error("Could not locate a non-empty header row in the selected worksheet."),
-          },
-        },
-      ]),
-    ).toEqual({
-      selectedInspection: { sheet: "BOM", columns: ["Part Usage"] },
-      successfulInspections: [{ sheet: "BOM", columns: ["Part Usage"] }],
-      skippedSheets: ["Notes"],
-    });
-  });
-
-  test("fails when the selected sheet inspection fails", () => {
-    expect(() =>
-      resolveSheetInspections("BOM", [
-        {
-          sheetName: "BOM",
-          result: {
-            status: "rejected",
-            reason: new Error("Could not locate a non-empty header row in the selected worksheet."),
-          },
-        },
-      ]),
-    ).toThrow("Could not locate a non-empty header row");
-  });
 });

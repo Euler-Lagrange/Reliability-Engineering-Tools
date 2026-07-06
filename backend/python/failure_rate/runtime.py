@@ -14,7 +14,7 @@ from common import (
     verify_excel_readable,
     validate_explicit_output_directory,
 )
-from common.exceptions import ValidationError
+from common.exceptions import FileAccessError, ValidationError
 from shared.pre_run_validation import (
     append_output_directory_warning,
     DO_NOT_MAP_SENTINEL,
@@ -341,8 +341,10 @@ def execute_run_request(
     try:
         logic.save_results(str(tmp_output))
         if not verify_excel_readable(tmp_output):
-            raise IOError(
-                f"Post-write verification failed for {tmp_output}; workbook did not open."
+            raise FileAccessError(
+                f"Post-write verification failed for {tmp_output}; workbook did not open.",
+                file_path=str(tmp_output),
+                operation="write",
             )
         atomic_finalize(tmp_output, output_path, log_func=stream_log)
     except Exception:

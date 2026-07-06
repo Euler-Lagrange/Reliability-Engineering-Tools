@@ -74,7 +74,7 @@ const fmeaRunEvents: RunEventTemplate[] = [
   },
 ];
 
-export type HdaSource = "inline" | "separate";
+type HdaSource = "inline" | "separate";
 
 /**
  * Phase 3 role visibility matrix. The display order returned here determines
@@ -87,7 +87,7 @@ export type HdaSource = "inline" | "separate";
  * section and only added to the run payload when the selected strategy
  * requires them.
  */
-export function getVisibleRoles(workflowId: WorkflowId, hdaSource: HdaSource): FileRole[] {
+function getVisibleRoles(workflowId: WorkflowId, hdaSource: HdaSource): FileRole[] {
   const hda: FileRole[] = hdaSource === "separate" ? ["hda"] : [];
   switch (workflowId) {
     case "functional_to_piecepart":
@@ -206,7 +206,7 @@ function buildRunRequest(
  * Strip a CCA prefix candidate to the allowed character set.
  * A-Z, 0-9, hyphen; max 8 characters. Input is upper-cased first.
  */
-export function sanitizeCcaPrefix(raw: string): string {
+function sanitizeCcaPrefix(raw: string): string {
   return raw.toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 8);
 }
 

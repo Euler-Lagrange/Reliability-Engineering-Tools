@@ -34,7 +34,7 @@ Every message is one JSON object on one line:
 
 ## Commands
 
-All eight commands currently implemented by the sidecar:
+All ten commands currently implemented by the sidecar:
 
 - `health_check`
 - `list_sheets`
@@ -63,7 +63,13 @@ All eight commands currently implemented by the sidecar:
     - `status` — always `"ok"` when the sidecar is healthy (required by the frontend schema)
     - `backend` — backend identity string (e.g. `"python-sidecar"`)
     - `protocol_version` — NDJSON protocol version
-    - `mode` — `"desktop-bridge"` (filled in by the Rust layer)
+    - `mode` — `"desktop-bridge"` (filled in by the Rust layer; the same
+      injection applies to the `list_sheets`, `inspect_input`, and
+      `analyze_template` result payloads, which is why the frontend Zod
+      schemas require `mode` even though the Python sidecar does not emit
+      it for those commands. `validate_run` and `execute_run` are the
+      exception: their `mode` is emitted by the Python tool runtimes
+      themselves and passed through raw — do not remove it there.)
     - `log_directory` (added in 0.4.2, optional) — absolute path to the
       sidecar log directory (`~/.reliability_tools/logs/` or the override
       supplied via `RELIABILITY_TOOLS_LOG_DIR`). Surfaced to the frontend
@@ -230,6 +236,7 @@ determines which backend module handles the request.
 | `fill_gaps` | `fmea.runtime` |
 | `bom_compare_group` | `bom_compare.runtime` |
 | `bom_compare_custom` | `bom_compare.runtime` |
+| `extraction_compare` | `bom_compare.runtime` |
 | `failure_rate_link` | `failure_rate.runtime` |
 | `refdes_extract` | `refdes_extractor.runtime` |
 
@@ -444,8 +451,8 @@ attempts automatic reconnection with exponential backoff (2s, 4s, 8s, 15s, 30s).
 ## Current Runtime Shape
 
 - The desktop shell keeps a managed Python sidecar session alive across bridge commands.
-- Implemented commands: `health_check`, `list_sheets`, `inspect_input`, `analyze_template`, `validate_run`, `execute_run`, `cancel_run`, `read_flet_config`.
-- Supported workflows: `piece_part_generate`, `bom_only`, `functional_to_piecepart`, `fill_gaps`, `bom_compare_group`, `bom_compare_custom`, `failure_rate_link`, `refdes_extract`.
+- Implemented commands: `health_check`, `list_sheets`, `inspect_input`, `analyze_template`, `validate_run`, `execute_run`, `cancel_run`, `read_flet_config`, `read_refdes_prefixes`, `write_refdes_prefixes`.
+- Supported workflows: `piece_part_generate`, `bom_only`, `functional_to_piecepart`, `fill_gaps`, `bom_compare_group`, `bom_compare_custom`, `extraction_compare`, `failure_rate_link`, `refdes_extract`.
 - Supported FMEA output strategies: `new_workbook_standard`, `existing_workbook_preserve_formatting`.
 - `execute_run` uses a background thread with streamed events; all other commands are synchronous request/response.
 - Run-scoped events are correlated by `run_id` and routed to the frontend via Tauri event channels.

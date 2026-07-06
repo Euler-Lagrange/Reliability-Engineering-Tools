@@ -4248,3 +4248,131 @@ def test_merge_fmc_gate_builds_validation_cards(tmp_path: Path) -> None:
         and "Failure Mode Causes" in str(message.get("detail", ""))
     ]
     assert blocked, result["validations"]
+
+
+# ----- Batch 4 (2026-07 FMEA deep dive): robustness ---------------------------
+
+
+def test_post_write_verification_failure_raises_file_access_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed post-write verification must surface as the project's
+    FileAccessError (code "FileAccessError" in the UI), not a raw IOError
+    that reaches the user as the meaningless code "OSError"."""
+    from common.exceptions import FileAccessError
+
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "R100",
+                "Part Number": "RES-1",
+                "Description": "Resistor",
+                "BAE HDA Commodity I": "Resistor",
+                "BAE HDA Commodity II": "Chip",
+                "Part Usage": "1",
+            }
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "CPU-001",
+                "Reference Designator": "R100",
+                "Function Description": "Support",
+                "Schematic Page": "1",
+            }
+        ],
+    )
+    body = {
+        "workflowId": "piece_part_generate",
+        "outputStrategyId": "new_workbook_standard",
+        "options": {"failureModesStandard": "FMD-2016"},
+        "inputs": [
+            _state("grouping", paths["grouping"]),
+            _state("bom", paths["bom"]),
+            _state("failureModes", paths["fm"]),
+        ],
+        "mappings": [],
+    }
+
+    monkeypatch.setattr("fmea.runtime.verify_excel_readable", lambda _p: False)
+    with pytest.raises(FileAccessError):
+        execute_run_request(body)
+
+
+def test_negative_part_usage_survives_as_data_quality_warning(
+    tmp_path: Path,
+) -> None:
+    """A malformed negative Part Usage (e.g. "-1") is user data, not code
+    corruption: the run must complete with a data-quality warning and a
+    diagnostics entry, not die on a live AssertionError."""
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "R700",
+                "Part Number": "RES-7",
+                "Description": "Resistor",
+                "BAE HDA Commodity I": "Resistor",
+                "BAE HDA Commodity II": "Chip",
+                "Part Usage": "-1",
+            }
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "RES-700",
+                "Reference Designator": "R700",
+                "Function Description": "Pull-down",
+                "Schematic Page": "4",
+            }
+        ],
+        fm_rows=[
+            {
+                "FMD-2016 Commodity Type 1": "Resistor",
+                "FMD-2016 Commodity Type 2": "Chip",
+                "Failure Mode": "Open",
+                "Failure Mode Ratio": 1.0,
+            }
+        ],
+    )
+    proc = FMEAProcessor()
+    df = _process_piecepart(
+        proc, paths, tmp_path, column_overrides={"Part Usage": "Part Usage"},
+    )
+
+    assert not df.empty
+    # The mismatch is captured for triage instead of crashing the run.
+    assert proc.part_usage_discrepancies, proc.part_usage_discrepancies
+    entry = proc.part_usage_discrepancies[0]
+    assert entry["refdes"] == "R700", entry
+    assert entry["mapped_count"] < 0, entry
+    warnings_for_r700 = [
+        w for w in proc.usage_warnings if w.get("RefDes") == "R700"
+    ]
+    assert warnings_for_r700, proc.usage_warnings
+
+
+def test_write_plain_cell_guards_nan_and_sanitizes_strings() -> None:
+    """The template-writer append path writes cells without a style source;
+    its shared helper must sanitize strings and convert NaN to None (a raw
+    NaN float writes a broken numeric cell)."""
+    import math
+
+    from openpyxl import Workbook
+
+    from fmea.fmea_template_writer import _write_plain_cell
+
+    wb = Workbook()
+    ws = wb.active
+
+    _write_plain_cell(ws.cell(row=1, column=1), float("nan"))
+    _write_plain_cell(ws.cell(row=1, column=2), "plain text")
+    _write_plain_cell(ws.cell(row=1, column=3), 0.5)
+    _write_plain_cell(ws.cell(row=1, column=4), None)
+
+    assert ws.cell(row=1, column=1).value is None
+    assert ws.cell(row=1, column=2).value == "plain text"
+    assert ws.cell(row=1, column=3).value == 0.5
+    assert ws.cell(row=1, column=4).value is None
+    assert not any(
+        isinstance(c.value, float) and math.isnan(c.value) for c in ws[1]
+    )

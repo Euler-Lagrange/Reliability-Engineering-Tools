@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from common.exceptions import ValidationError
+from common.exceptions import FileAccessError, ValidationError
 from common import (
     atomic_write_path,
     atomic_finalize,
@@ -1000,8 +1000,10 @@ def execute_run_request(
             finally:
                 wb.close()
             if not verify_excel_readable(tmp_output):
-                raise IOError(
-                    f"Post-write verification failed for {tmp_output}; workbook did not open."
+                raise FileAccessError(
+                    f"Post-write verification failed for {tmp_output}; workbook did not open.",
+                    file_path=str(tmp_output),
+                    operation="write",
                 )
             atomic_finalize(tmp_output, output_path, log_func=stream_log_callback)
         except Exception:
@@ -1016,8 +1018,10 @@ def execute_run_request(
         try:
             write_excel_report(dataframe, tmp_output, processor)
             if not verify_excel_readable(tmp_output):
-                raise IOError(
-                    f"Post-write verification failed for {tmp_output}; workbook did not open."
+                raise FileAccessError(
+                    f"Post-write verification failed for {tmp_output}; workbook did not open.",
+                    file_path=str(tmp_output),
+                    operation="write",
                 )
             atomic_finalize(tmp_output, output_path, log_func=stream_log_callback)
         except Exception:

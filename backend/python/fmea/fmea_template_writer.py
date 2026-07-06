@@ -91,6 +91,21 @@ def _noop_log(msg: str) -> None:
     """Fallback log function that does nothing."""
 
 
+def _write_plain_cell(cell, value) -> None:
+    """Write a value into an appended-row cell (no style source to copy).
+
+    Same hygiene as ``_update_cell_preserving_format``: sanitize strings
+    and never write NaN — a raw NaN float lands as a broken numeric cell
+    in the saved workbook.
+    """
+    if isinstance(value, str):
+        cell.value = sanitize_for_excel(value)
+    elif pd.isna(value):
+        cell.value = None
+    else:
+        cell.value = value
+
+
 def _apply_cell_style(cell, style: CellStyle) -> None:
     """Apply a CellStyle snapshot to a worksheet cell.
 
@@ -536,11 +551,7 @@ def write_template_preserved(
                         col_name, template_map.column_map, extra_col_indices
                     )
                     if col_idx:
-                        cell = ws.cell(row=append_row, column=col_idx)
-                        if isinstance(value, str):
-                            cell.value = sanitize_for_excel(value)
-                        else:
-                            cell.value = value
+                        _write_plain_cell(ws.cell(row=append_row, column=col_idx), value)
                 append_row += 1
 
             # Write piece-part rows
@@ -553,11 +564,7 @@ def write_template_preserved(
                         col_name, template_map.column_map, extra_col_indices
                     )
                     if col_idx:
-                        cell = ws.cell(row=target_row, column=col_idx)
-                        if isinstance(value, str):
-                            cell.value = sanitize_for_excel(value)
-                        else:
-                            cell.value = value
+                        _write_plain_cell(ws.cell(row=target_row, column=col_idx), value)
 
                 # Mark as new
                 diag_col = (extra_col_indices.get(_DIAGNOSTIC_COL)

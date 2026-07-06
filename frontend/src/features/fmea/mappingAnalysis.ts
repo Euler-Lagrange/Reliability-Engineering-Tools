@@ -7,17 +7,6 @@ export interface AggregatedMappingSource {
   sourceLabelText: string | null;
 }
 
-export interface SettledSheetInspection<T> {
-  sheetName: string;
-  result: PromiseSettledResult<T>;
-}
-
-export interface ResolvedSheetInspections<T> {
-  selectedInspection: T;
-  successfulInspections: T[];
-  skippedSheets: string[];
-}
-
 export function normalizeHeader(value: string): string {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ");
 }
@@ -47,7 +36,7 @@ export function shouldShowTargetWorkbook(outputStrategyId: OutputStrategyId): bo
   return outputStrategyId === "existing_workbook_preserve_formatting";
 }
 
-export function formatInputSourceLabels(labels: string[]): string | null {
+function formatInputSourceLabels(labels: string[]): string | null {
   if (labels.length === 0) {
     return null;
   }
@@ -103,32 +92,5 @@ export function buildAggregatedMappingSource(
     ),
     sourceLabels,
     sourceLabelText: formatInputSourceLabels(sourceLabels),
-  };
-}
-
-export function resolveSheetInspections<T>(
-  selectedSheet: string,
-  inspections: SettledSheetInspection<T>[],
-): ResolvedSheetInspections<T> {
-  const successfulInspections = inspections.flatMap((inspection) =>
-    inspection.result.status === "fulfilled" ? [inspection.result.value] : [],
-  );
-  const skippedSheets = inspections.flatMap((inspection) =>
-    inspection.result.status === "rejected" ? [inspection.sheetName] : [],
-  );
-  const selectedInspection = inspections.find((inspection) => inspection.sheetName === selectedSheet);
-
-  if (!selectedInspection) {
-    throw new Error(`Selected sheet '${selectedSheet}' was not inspected.`);
-  }
-
-  if (selectedInspection.result.status === "rejected") {
-    throw selectedInspection.result.reason;
-  }
-
-  return {
-    selectedInspection: selectedInspection.result.value,
-    successfulInspections,
-    skippedSheets,
   };
 }
