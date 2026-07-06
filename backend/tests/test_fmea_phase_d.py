@@ -1257,7 +1257,10 @@ def test_part_usage_mismatch_flags_row_and_logs_diagnostic(tmp_path: Path) -> No
     try:
         assert "Part Usage Diagnostics" in wb.sheetnames, wb.sheetnames
         ws = wb["Part Usage Diagnostics"]
-        headers = [ws.cell(row=1, column=c).value for c in range(1, ws.max_column + 1)]
+        # Batch 2: row 1 is now the explanatory banner; headers moved to row 2.
+        banner = ws.cell(row=1, column=1).value
+        assert banner and "Mapped Count" in str(banner), banner
+        headers = [ws.cell(row=2, column=c).value for c in range(1, ws.max_column + 1)]
         assert "RefDes" in headers
         assert "Mapped Count" in headers
         assert "Computed Count" in headers
@@ -3888,6 +3891,9 @@ def test_template_preserve_writes_diagnostic_summary_sheets(tmp_path: Path) -> N
         assert banner_cell and str(banner_cell).startswith(
             "These rows are RefDes variants"
         ), banner_cell
+        # Batch 2: the Part Usage Diagnostics banner must too.
+        pu_banner = output["Part Usage Diagnostics"].cell(row=1, column=1).value
+        assert pu_banner and "Mapped Count" in str(pu_banner), pu_banner
     finally:
         output.close()
 
@@ -4033,3 +4039,213 @@ def test_validate_run_allows_do_not_map_on_fmea_id_in_bom_only(tmp_path: Path) -
     )
     result = validate_run_request(body)
     assert result["ok"] is True, result
+
+
+# ----- Batch 2 (2026-07 FMEA deep dive): diagnostics language ----------------
+
+
+def test_reason_code_labels_cover_all_emitted_codes() -> None:
+    """Lockstep guard: every UPPER_SNAKE ReasonCode literal emitted anywhere
+    in the backend must have a plain-language REASON_CODE_LABELS entry, so a
+    raw token-case string can never reach the Validation_Warnings sheet."""
+    import re as _re
+
+    from common.user_facing_labels import REASON_CODE_LABELS
+
+    backend_root = Path(__file__).resolve().parents[1] / "python"
+    pattern = _re.compile(
+        r"['\"]ReasonCode['\"]\s*[:=]\s*['\"]([A-Z][A-Z_0-9]+)['\"]"
+        r"|reason_code\s*=\s*['\"]([A-Z][A-Z_0-9]+)['\"]"
+    )
+    emitted: set[str] = set()
+    for py_file in backend_root.rglob("*.py"):
+        text = py_file.read_text(encoding="utf-8", errors="ignore")
+        for match in pattern.finditer(text):
+            emitted.add(match.group(1) or match.group(2))
+
+    assert emitted, "scanner found no emitted ReasonCodes - pattern broken?"
+    missing = sorted(code for code in emitted if code not in REASON_CODE_LABELS)
+    assert missing == [], (
+        f"ReasonCodes emitted without a REASON_CODE_LABELS entry: {missing}"
+    )
+
+
+def test_fmea_parse_failure_reason_code_says_replaced_with_count(
+    tmp_path: Path,
+) -> None:
+    """The FMEA path replaces an unparseable Part Usage with the instance
+    count 1/N - it never defaults to 1.0. Its reason code and label must say
+    so; PU_PARSE_DEFAULTED remains accurate only for the BOM-Compare sites
+    that genuinely default to 1.0."""
+    from common.user_facing_labels import to_reason_code_label
+
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "U500",
+                "Part Number": "IC-9",
+                "Description": "Micro",
+                "BAE HDA Commodity I": "Microcircuit",
+                "BAE HDA Commodity II": "Digital",
+                "Part Usage": "garbage-value",
+            }
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "CPU-009",
+                "Reference Designator": "U500",
+                "Function Description": "Core",
+                "Schematic Page": "2",
+            }
+        ],
+    )
+    proc = FMEAProcessor()
+    _process_piecepart(proc, paths, tmp_path)
+
+    parse_warnings = [
+        w for w in proc.usage_warnings
+        if "could not be parsed" in str(w.get("Reason", ""))
+    ]
+    assert parse_warnings, proc.usage_warnings
+    code = parse_warnings[0]["ReasonCode"]
+    assert code == "PU_PARSE_REPLACED_WITH_COUNT", parse_warnings[0]
+    label = to_reason_code_label(code)
+    assert "1.0" not in label, label
+    assert "instance count" in label.lower(), label
+
+
+def test_part_usage_diagnostics_sheet_has_explanatory_banner(
+    tmp_path: Path,
+) -> None:
+    """The Part Usage Diagnostics sheet must open with a banner explaining
+    Mapped Count / Computed Count / Diff, mirroring the New-RefDes sheet."""
+    from openpyxl import load_workbook
+
+    from fmea.fmea_generator_logic import PART_USAGE_DIAGNOSTICS_SHEET_NAME
+
+    proc = FMEAProcessor()
+    proc.part_usage_discrepancies.append(
+        {"refdes": "R1", "mapped_count": 3, "computed_count": 1, "diff": -2}
+    )
+    df = pd.DataFrame([{"RefDes": "R1", "Failure Mode": "Open"}])
+    out = tmp_path / "pu_banner.xlsx"
+    write_excel_report(df, out, proc)
+
+    wb = load_workbook(out)
+    try:
+        ws = wb[PART_USAGE_DIAGNOSTICS_SHEET_NAME]
+        banner = ws.cell(row=1, column=1).value
+        headers = [cell.value for cell in ws[2]]
+    finally:
+        wb.close()
+    assert banner and "Mapped Count" in str(banner), banner
+    assert "Computed Count" in str(banner), banner
+    assert headers[0] == "RefDes", headers
+
+
+def test_template_merge_summary_explains_diagnostic_flags() -> None:
+    """Template_Merge_Summary must carry a legend for the two Diagnostic
+    flag values so 'NOT IN BOM - Review' / 'NEW - Added by generator' are
+    never bare tokens, and the flagged metric must name the flag it counts."""
+    from openpyxl import Workbook
+
+    from fmea.fmea_template_writer import TemplateWriteResult, _write_summary_sheets
+
+    wb = Workbook()
+    result = TemplateWriteResult(groups_matched=1, pp_rows_flagged=2)
+    _write_summary_sheets(wb, FMEAProcessor(), result, lambda msg: None)
+
+    ws = wb["Template_Merge_Summary"]
+    rows = [
+        (ws.cell(row=r, column=1).value, ws.cell(row=r, column=2).value)
+        for r in range(1, ws.max_row + 1)
+    ]
+    labels = [str(label) for label, _ in rows if label]
+
+    flagged_metric = [m for m in labels if "flagged" in m.lower()]
+    assert flagged_metric and "NOT IN BOM - Review" in flagged_metric[0], labels
+
+    def legend_value(flag: str) -> str:
+        for label, value in rows:
+            if label and str(label).startswith("Diagnostic flag") and flag in str(label):
+                return str(value or "")
+        return ""
+
+    assert len(legend_value("NOT IN BOM - Review")) > 20, rows
+    assert len(legend_value("NEW - Added by generator")) > 20, rows
+
+
+def test_unsupported_execution_path_toast_names_the_combo(tmp_path: Path) -> None:
+    """The unsupported-path toast must say WHICH workflow/strategy combo was
+    rejected and what is supported - not just 'not yet available'."""
+    body = {
+        "workflowId": "bogus_flow",
+        "outputStrategyId": "new_workbook_standard",
+        "options": {"failureModesStandard": "FMD-2016"},
+        "inputs": [],
+        "mappings": [],
+    }
+    result = validate_run_request(body)
+    assert result["ok"] is False, result
+    assert result["reason_code"] == "unsupported_execution_path", result
+    assert "bogus_flow" in result["toast_text"], result["toast_text"]
+    assert "piece_part_generate" in result["toast_text"], result["toast_text"]
+
+
+def test_merge_fmc_gate_defers_to_missing_files(tmp_path: Path) -> None:
+    """File checks come first: a fill_gaps body with no files loaded must
+    report missing_files, not the Failure Mode Causes mapping gate."""
+    body = {
+        "workflowId": "fill_gaps",
+        "outputStrategyId": "new_workbook_standard",
+        "options": {"failureModesStandard": "FMD-2016"},
+        "inputs": [],
+        "mappings": [],
+    }
+    result = validate_run_request(body)
+    assert result["ok"] is False, result
+    assert result["reason_code"] == "missing_files", result
+
+
+def test_merge_fmc_gate_builds_validation_cards(tmp_path: Path) -> None:
+    """The FMC gate must flow through the standard response builder so the
+    UI gets a structured 'Run is blocked' card, not an empty validations
+    list."""
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "R100",
+                "Part Number": "RES-1",
+                "Description": "Resistor",
+                "BAE HDA Commodity I": "Resistor",
+                "BAE HDA Commodity II": "Chip",
+                "Part Usage": "1",
+            }
+        ],
+    )
+    existing_fmea = tmp_path / "existing.xlsx"
+    pd.DataFrame([{"FMEA-ID": "X-001"}]).to_excel(existing_fmea, index=False)
+
+    body = {
+        "workflowId": "fill_gaps",
+        "outputStrategyId": "new_workbook_standard",
+        "options": {"failureModesStandard": "FMD-2016"},
+        "inputs": [
+            _state("existingFmea", existing_fmea),
+            _state("bom", paths["bom"]),
+            _state("failureModes", paths["fm"]),
+        ],
+        "mappings": [],
+    }
+    result = validate_run_request(body)
+    assert result["ok"] is False, result
+    assert result["reason_code"] == "missing_failure_mode_causes_mapping", result
+    blocked = [
+        message
+        for message in result["validations"]
+        if message.get("severity") == "error"
+        and "Failure Mode Causes" in str(message.get("detail", ""))
+    ]
+    assert blocked, result["validations"]

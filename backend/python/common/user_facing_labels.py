@@ -21,8 +21,14 @@ REASON_CODE_LABELS = {
     "PU_INCONSISTENT_DUPLICATE": "Part Usage Inconsistent Across Duplicate Rows",
     "FMR_SUM_MISMATCH": "Failure Mode Ratio Sum Mismatch",
     "FMR_USAGE_PRODUCT_MISMATCH": "Failure Mode Ratio and Part Usage Product Mismatch",
+    # PU_PARSE_DEFAULTED is emitted only by the BOM-Compare validators, which
+    # genuinely substitute 1.0. The FMEA generator substitutes the instance
+    # count instead and emits PU_PARSE_REPLACED_WITH_COUNT — two codes so
+    # each label stays truthful about what the tool actually did.
     "PU_PARSE_DEFAULTED": "Part Usage Parse Failed and Was Defaulted to 1.0",
+    "PU_PARSE_REPLACED_WITH_COUNT": "Part Usage Parse Failed and Was Replaced With the Instance Count (1/N)",
     "PU_GUESSED_NO_COUNT_SOURCE": "Part Usage Could Not Be Determined (No Instance Count Source)",
+    "PU_INHERITED_MISMATCH": "Part Usage Expected Value Mismatch (Inherited Variant)",
     "SCOPE_CB_ONLY": "Scope Mismatch: Circuit Block Only",
     "SCOPE_PP_ONLY": "Scope Mismatch: Piece-Part Only",
     "SCOPE_UNCLASSIFIED_ONLY": "Scope Mismatch: Unclassified Row Type Only",

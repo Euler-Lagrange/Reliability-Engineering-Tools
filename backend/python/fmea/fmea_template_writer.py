@@ -31,9 +31,8 @@ from common.exceptions import FileAccessError, ProcessingError
 from common.logger import get_tool_logger
 from common.refdes_utils import canonicalize_refdes
 from fmea.fmea_generator_logic import (
-    NEW_REFDES_BANNER,
-    NEW_REFDES_SHEET_NAME,
     ROW_TYPE_COL,
+    SUMMARY_SHEET_BANNERS,
     build_summary_frames,
     normalize_func_base_id,
     output_headers_for,
@@ -644,15 +643,28 @@ def _write_summary_sheets(wb, processor, result: TemplateWriteResult,
     """
     from openpyxl.styles import Font
 
-    # Template merge summary
+    # Template merge summary. The last two rows are a legend for the values
+    # the writer puts in the Diagnostic column — without them the flags read
+    # as bare tokens in the merged workbook.
     summary_data = [
         ("Groups matched", result.groups_matched),
         ("Groups unmatched (kept as-is)", result.groups_unmatched),
         ("Groups new (appended)", result.groups_new),
         ("Piece-part rows updated", result.pp_rows_updated),
         ("Piece-part rows inserted", result.pp_rows_inserted),
-        ("Piece-part rows flagged", result.pp_rows_flagged),
+        ("Piece-part rows flagged 'NOT IN BOM - Review'", result.pp_rows_flagged),
         ("Extra columns appended", ", ".join(result.extra_cols_appended) or "None"),
+        (
+            "Diagnostic flag 'NOT IN BOM - Review'",
+            "This template row has no matching generated piece-part row — its "
+            "RefDes is absent from the current BOM. Verify the component and "
+            "either update the BOM or remove the stale row.",
+        ),
+        (
+            "Diagnostic flag 'NEW - Added by generator'",
+            "This row was inserted by the generator for a RefDes present in "
+            "the BOM/grouping data but missing from the template workbook.",
+        ),
     ]
 
     sheet_name = "Template_Merge_Summary"
@@ -713,10 +725,11 @@ def _write_processor_summaries(wb, processor, log_func: Callable[[str], None]) -
                     cell.value = None
                 else:
                     cell.value = val
-        # Same paste-back banner the new-workbook writer prepends.
-        if sheet_name == NEW_REFDES_SHEET_NAME and len(frame.columns) > 0:
+        # Same explanation banners the new-workbook writer prepends.
+        banner = SUMMARY_SHEET_BANNERS.get(sheet_name)
+        if banner and len(frame.columns) > 0:
             ws.insert_rows(1)
-            ws.cell(row=1, column=1, value=NEW_REFDES_BANNER)
+            ws.cell(row=1, column=1, value=banner)
             try:
                 ws.merge_cells(
                     start_row=1, start_column=1,

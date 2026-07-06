@@ -2006,7 +2006,7 @@ class FMEAProcessor:
                     'Usage': round(_usage_value, 4),
                     'Expected': round(1.0 / count, 4),
                     'Count': count,
-                    'ReasonCode': 'PU_PARSE_DEFAULTED',
+                    'ReasonCode': 'PU_PARSE_REPLACED_WITH_COUNT',
                     'Reason': (
                         f"Part Usage value '{raw_usage}' could not be parsed. "
                         f"Replaced with instance count 1/{count}."
@@ -2349,6 +2349,24 @@ NEW_REFDES_BANNER = (
     "component. Review and copy these into your BOM."
 )
 
+# Batch 2: the Part Usage Diagnostics columns are meaningless without a
+# legend — spell out what Mapped/Computed/Diff actually are.
+PART_USAGE_DIAGNOSTICS_BANNER = (
+    "Rows where the Part Usage mapped from the BOM disagrees with the "
+    "instance count FMEA-Gen computed from the design data. Mapped Count = "
+    "instances implied by the BOM Part Usage value (round(1 / usage)); "
+    "Computed Count = distinct instances counted in the design; Diff = "
+    "Computed - Mapped. Review the BOM Part Usage for these RefDes."
+)
+
+# Explanation banners keyed by summary sheet name. Both output writers
+# consult this map, so a sheet gains its legend in new-workbook AND
+# preserve-formatting output the moment it is registered here.
+SUMMARY_SHEET_BANNERS: Dict[str, str] = {
+    NEW_REFDES_SHEET_NAME: NEW_REFDES_BANNER,
+    PART_USAGE_DIAGNOSTICS_SHEET_NAME: PART_USAGE_DIAGNOSTICS_BANNER,
+}
+
 
 def build_summary_frames(proc: 'FMEAProcessor') -> Dict[str, pd.DataFrame]:
     """Assemble every diagnostic summary sheet as a ``name -> DataFrame`` dict.
@@ -2526,14 +2544,15 @@ def write_excel_report(
             else:
                 style_worksheet(ws, frame, row_style_func=lambda r, i, s=style_name: s, max_width=40)
 
-            # Phase D / A9: prepend an explanation banner row on the
-            # "FMEA Gen New RefDes" sheet so the paste-back intent is
-            # obvious at a glance.
-            if name == NEW_REFDES_SHEET_NAME:
+            # Phase D / A9 + Batch 2: prepend the sheet's explanation banner
+            # (New RefDes paste-back intent, Part Usage Diagnostics legend)
+            # so no diagnostic sheet opens with bare, unexplained columns.
+            banner = SUMMARY_SHEET_BANNERS.get(name)
+            if banner:
                 col_count = len(frame.columns)
                 if col_count > 0:
                     ws.insert_rows(1)
-                    ws.cell(row=1, column=1, value=NEW_REFDES_BANNER)
+                    ws.cell(row=1, column=1, value=banner)
                     try:
                         ws.merge_cells(
                             start_row=1, start_column=1,

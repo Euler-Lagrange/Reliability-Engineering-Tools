@@ -392,26 +392,6 @@ def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
                 "mappedTo"
             )
 
-    # Fix C2: merge modes parse "Failure Mode Causes" as a comma-separated
-    # list of reference designators to derive each group's component set.
-    # Without an explicit mapping for that column, the backend runs but
-    # silently produces empty component lists — the generated FMEA is
-    # effectively blank. Block that upfront.
-    if workflow_id in ("fill_gaps", "functional_to_piecepart"):
-        fmc_mapped_to = mapped_canonicals.get("Failure Mode Causes")
-        if not fmc_mapped_to or fmc_mapped_to == DO_NOT_MAP_SENTINEL:
-            return {
-                "ok": False,
-                "reason_code": "missing_failure_mode_causes_mapping",
-                "toast_text": (
-                    "Map the 'Failure Mode Causes' column before running a "
-                    "merge. The backend parses it to identify components in "
-                    "each function group."
-                ),
-                "validations": [],
-                "mode": "desktop-bridge",
-            }
-
     required_roles = _required_roles(workflow_id, output_strategy_id)
     required_files = [
         LabeledValue(_role_label(role), (inputs_by_role.get(role) or {}).get("path"))
@@ -448,11 +428,39 @@ def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
         invalid_mappings=invalid_mappings,
     )
 
+    # Fix C2 (+ Batch 2 rework): merge modes parse "Failure Mode Causes" as
+    # a comma-separated RefDes list to derive each group's component set.
+    # Without an explicit mapping the backend runs but silently produces an
+    # effectively blank FMEA — block that here. Runs AFTER the file/loading
+    # checks (missing files is the more fundamental message) and flows
+    # through the standard response builder so the UI gets a structured
+    # "Run is blocked" card and the output-directory warning still appends.
+    if result.ok and workflow_id in ("fill_gaps", "functional_to_piecepart"):
+        fmc_mapped_to = mapped_canonicals.get("Failure Mode Causes")
+        if not fmc_mapped_to or fmc_mapped_to == DO_NOT_MAP_SENTINEL:
+            result = type(result)(
+                ok=False,
+                reason_code="missing_failure_mode_causes_mapping",
+                toast_text=(
+                    "Map the 'Failure Mode Causes' column before running a "
+                    "merge. The backend parses it to identify components in "
+                    "each function group."
+                ),
+                affected_labels=("Failure Mode Causes",),
+            )
+
     if workflow_id not in SUPPORTED_EXECUTION_WORKFLOWS or output_strategy_id not in SUPPORTED_OUTPUT_STRATEGIES:
         result = type(result)(
             ok=False,
             reason_code="unsupported_execution_path",
-            toast_text="This execution path is not yet available in the migrated backend.",
+            toast_text=(
+                f"Workflow '{workflow_id or '(none)'}' with output strategy "
+                f"'{output_strategy_id or '(none)'}' is not supported. "
+                f"Supported workflows: "
+                f"{', '.join(sorted(SUPPORTED_EXECUTION_WORKFLOWS))}. "
+                f"Supported output strategies: "
+                f"{', '.join(sorted(SUPPORTED_OUTPUT_STRATEGIES))}."
+            ),
             affected_labels=result.affected_labels,
         )
     elif failure_modes_standard not in SUPPORTED_FAILURE_MODES_STANDARDS:

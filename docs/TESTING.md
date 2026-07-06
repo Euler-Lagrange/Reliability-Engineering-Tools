@@ -8,7 +8,7 @@
 | Backend security audit | `backend/tests/test_security_audit.py` | 27 | pytest |
 | Backend cancel bridge | `backend/tests/test_cancel_bridge.py` | 12 | pytest |
 | Backend output-directory helpers | `backend/tests/test_output_directory_helpers.py` | 10 | pytest |
-| Backend FMEA Phase D | `backend/tests/test_fmea_phase_d.py` | 64 | pytest |
+| Backend FMEA Phase D | `backend/tests/test_fmea_phase_d.py` | 71 | pytest |
 | Backend Failure-Rate logic | `backend/tests/test_failure_rate_logic.py` | 24 | pytest |
 | Backend RefDes extraction-engine | `backend/tests/test_extraction_engine.py` | 15 | pytest |
 | Backend BOM-compare logic | `backend/tests/test_bom_compare_logic.py` | 31 | pytest |
@@ -24,7 +24,7 @@
 | Backend NextGen engine | `backend/tests/test_nextgen_engine.py` | 10 | pytest |
 | Backend RefDes runtime | `backend/tests/test_refdes_runtime.py` | 24 | pytest |
 | Backend RefDes validation notes | `backend/tests/test_validation_notes.py` | 12 | pytest |
-| **Backend subtotal** | | **340** | |
+| **Backend subtotal** | | **347** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 4 | Vitest + RTL |
 | Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 3 | Vitest + RTL |
@@ -68,7 +68,7 @@
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
 | **Frontend subtotal** | | **277** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 17 | cargo test |
-| **Total** | | **634** | |
+| **Total** | | **641** | |
 
 ## Backend Tests
 
@@ -209,7 +209,7 @@ new FMEA tests must do the same or validation will reject the request.
 | Single-active-run guard | `test_sidecar_rejects_second_execute_while_run_is_active` |
 | Error recovery | `test_sidecar_execute_emits_backend_error_on_missing_columns`, `test_sidecar_remains_responsive_after_failed_run` |
 | Missing-file validation | `test_sidecar_validate_rejects_missing_required_files` |
-| FMEA Phase D (in-process, 64 tests) | BOM inheritance, variant handling, failure modes standard filtering, fill-gaps validation, usage fraction calculations, legacy enrichment rejection, functional-to-piecepart preservation, CCA prefix handling, output directory configuration (including unwritable-directory fallback), Part Usage (PU) column logic incl. Tier-1 compute-or-blank+flag (instance-count 1/N derivation, blank+PU_GUESSED flag, explicit-value preservation), column override modes, union merge strategies, FMC mapping, bijective FMEA-ID suffix, Batch-1 deep-dive fixes (preserve-mode diagnostic-sheet parity incl. the New-RefDes banner, underscore-column hygiene, `invalid_do_not_map` required-mapping gate + bom_only FMEA-ID exemption) |
+| FMEA Phase D (in-process, 71 tests) | BOM inheritance, variant handling, failure modes standard filtering, fill-gaps validation, usage fraction calculations, legacy enrichment rejection, functional-to-piecepart preservation, CCA prefix handling, output directory configuration (including unwritable-directory fallback), Part Usage (PU) column logic incl. Tier-1 compute-or-blank+flag (instance-count 1/N derivation, blank+PU_GUESSED flag, explicit-value preservation), column override modes, union merge strategies, FMC mapping, bijective FMEA-ID suffix, Batch-1 deep-dive fixes (preserve-mode diagnostic-sheet parity incl. the New-RefDes banner, underscore-column hygiene, `invalid_do_not_map` required-mapping gate + bom_only FMEA-ID exemption), Batch-2 diagnostics language (REASON_CODE_LABELS lockstep scan, PU_PARSE_REPLACED_WITH_COUNT split, Part Usage Diagnostics banner in both writers, Template_Merge_Summary flag legend, named unsupported-combo toast, files-first FMC ordering + structured cards) |
 | Inspection caps (subprocess, 4 tests) | `inspect_input` row cap at 20 000 rows, column cap at 100 columns, sparse-sheet row cap by physical rows scanned, header-search cap failure within 1 000 rows |
 | Failure-Rate logic (in-process, 24 tests) | Failure Rate (FR) linker math driven through `FMEALinkerLogic.process`: per-mode `Mode_FR = Part_FR * Usage * Corrected_Ratio` arithmetic, unit-mode scaling to per-hour space, RefDes lookup normalization, and Tier-1 genuine-gap Part Usage handling (blank usage with real FR → NaN Mode_FR, "=1/N" formula-cell-as-NaN, unmatched-RefDes zero preserved, circuit-block roll-up skips blank children) — asserts exact computed numbers |
 | RefDes extraction-engine (in-process, 15 tests) | `_disambiguate_pin_mapping` pin-label collision resolution across the three-tier priority (body center inside group rect → body overlaps rect → nearest body by distance); the Tier-2 #20 pinlist-failure run-log surfacing; and the geometry RefDes-check prefix-allowlist alignment (#6), the `pin_assignment_threshold` config key, and cap-hit run-log warnings |
