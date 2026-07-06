@@ -3686,3 +3686,350 @@ def test_explicit_bom_usage_is_preserved_not_overridden_by_count(tmp_path: Path)
         if w.get("ReasonCode") == "PU_GUESSED_NO_COUNT_SOURCE"
     ]
     assert guessed == [], guessed
+
+
+# ----- Batch 1 (2026-07 FMEA deep dive): diagnostic-sheet parity, internal
+# ----- column hygiene, and required-mapping enforcement ----------------------
+
+
+def test_build_summary_frames_covers_all_diagnostic_sheets() -> None:
+    """H1: build_summary_frames() is the single source of truth for the
+    diagnostic summary sheets. Populated processor collections must each
+    produce their sheet frame; empty collections must be absent."""
+    from fmea.fmea_generator_logic import (
+        NEW_REFDES_SHEET_NAME,
+        PART_USAGE_DIAGNOSTICS_SHEET_NAME,
+        build_summary_frames,
+    )
+
+    proc = FMEAProcessor()
+    proc.unmatched_hda.append(("R1", "PN-1"))
+    proc.fmr_warnings.append(
+        {
+            "RefDes": "R1",
+            "Sum": 1.1,
+            "Ratios": "0.5, 0.6",
+            "ReasonCode": "FMR_SUM_MISMATCH",
+        }
+    )
+    proc.usage_warnings.append(
+        {
+            "RefDes": "R1",
+            "Base": "R1",
+            "Usage": 0.3333,
+            "Expected": 1.0,
+            "Count": 1,
+            "ReasonCode": "PU_EXPECTED_MISMATCH_BASIC",
+            "Reason": "Usage mismatch",
+        }
+    )
+    proc.bom_additions.append(
+        {
+            "ref_des": "U200-A",
+            "base_refdes": "U200",
+            "usage_fraction": "1/2",
+            "part_number": "IC-1234",
+            "description": "Microcontroller",
+            "hda1": "Microcircuit",
+            "hda2": "Digital",
+            "fmd1": "Microcircuit",
+            "fmd2": "Digital",
+            "source_workflow": "piece_part_generate",
+            "notes": "",
+        }
+    )
+    proc.part_usage_discrepancies.append(
+        {"refdes": "R1", "mapped_count": 3, "computed_count": 1, "diff": -2}
+    )
+
+    frames = build_summary_frames(proc)
+
+    assert set(frames.keys()) == {
+        "Missing_HDA",
+        "Validation_Warnings",
+        NEW_REFDES_SHEET_NAME,
+        PART_USAGE_DIAGNOSTICS_SHEET_NAME,
+    }, sorted(frames.keys())
+    for name, frame in frames.items():
+        assert not frame.empty, f"{name} frame should not be empty"
+    assert list(frames[PART_USAGE_DIAGNOSTICS_SHEET_NAME].columns) == [
+        "RefDes",
+        "Mapped Count",
+        "Computed Count",
+        "Diff",
+    ]
+
+
+def test_template_preserve_writes_diagnostic_summary_sheets(tmp_path: Path) -> None:
+    """H1: the preserve-formatting writer must emit the same diagnostic
+    sheets as the new-workbook writer. Before this fix, Validation_Warnings,
+    FMEA Gen New RefDes, and Part Usage Diagnostics were silently dropped in
+    preserve mode while the success note claimed they were captured."""
+    from openpyxl import Workbook, load_workbook
+
+    from fmea.fmea_generator_logic import NEW_REFDES_SHEET_NAME
+
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "U200",
+                "Part Number": "IC-1234",
+                "Description": "Microcontroller",
+                "BAE HDA Commodity I": "Microcircuit",
+                "BAE HDA Commodity II": "Digital",
+                "Part Usage": "1/2",
+            },
+            {
+                "Reference Designator": "R300",
+                "Part Number": "RES-1",
+                "Description": "Resistor",
+                "BAE HDA Commodity I": "Resistor",
+                "BAE HDA Commodity II": "Chip",
+                "Part Usage": "1/3",
+            },
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "CPU-001",
+                "Reference Designator": "U200-A, U200-B",
+                "Function Description": "Processor variants",
+                "Schematic Page": "12",
+            },
+            {
+                "Component Group": "CPU-002",
+                "Reference Designator": "R300",
+                "Function Description": "Support resistor",
+                "Schematic Page": "13",
+            },
+        ],
+        fm_rows=[
+            # Ratios sum to 1.1 -> FMR_SUM_MISMATCH warnings.
+            {
+                "FMD-2016 Commodity Type 1": "Microcircuit",
+                "FMD-2016 Commodity Type 2": "Digital",
+                "Failure Mode": "Stuck high",
+                "Failure Mode Ratio": 0.5,
+            },
+            {
+                "FMD-2016 Commodity Type 1": "Microcircuit",
+                "FMD-2016 Commodity Type 2": "Digital",
+                "Failure Mode": "Stuck low",
+                "Failure Mode Ratio": 0.6,
+            },
+            {
+                "FMD-2016 Commodity Type 1": "Resistor",
+                "FMD-2016 Commodity Type 2": "Chip",
+                "Failure Mode": "Open",
+                "Failure Mode Ratio": 1.0,
+            },
+        ],
+    )
+
+    target_path = tmp_path / "target_fmea.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "FMEA"
+    ws.append(
+        [
+            "FMEA-ID",
+            "FMEA Level",
+            "Failure Mode Causes",
+            "Function Description",
+            "Failure Mode",
+            "Failure Mode Ratio",
+        ]
+    )
+    ws.append(["CPU-001", "Circuit Block", "U200-A, U200-B", "Processor variants", "", ""])
+    ws.append(["CPU-002", "Circuit Block", "R300", "Support resistor", "", ""])
+    wb.save(target_path)
+
+    def state(role: str, path: Path, sheet: str = "Sheet1") -> dict:
+        return {
+            "role": role,
+            "label": role,
+            "path": str(path),
+            "selectedSheet": sheet,
+            "source": "desktop-bridge",
+            "isResolvingSheets": False,
+            "isAnalyzing": False,
+            "resolutionError": None,
+            "sheets": [{"id": "s1", "label": sheet}],
+        }
+
+    body = {
+        "workflowId": "piece_part_generate",
+        "outputStrategyId": "existing_workbook_preserve_formatting",
+        "options": {"failureModesStandard": "FMD-2016"},
+        "inputs": [
+            state("grouping", paths["grouping"]),
+            state("bom", paths["bom"]),
+            state("failureModes", paths["fm"]),
+            state("targetWorkbook", target_path, sheet="FMEA"),
+        ],
+        # Part Usage explicitly mapped -> discrepancy tracking is active.
+        "mappings": [
+            {"canonical": "Part Usage", "mappedTo": "Part Usage", "status": "mapped"},
+        ],
+    }
+
+    result = execute_run_request(body)
+    assert result["status"] == "success", result
+    assert result["warning_count"] > 0, result
+
+    output = load_workbook(Path(result["output_file"]))
+    try:
+        sheetnames = output.sheetnames
+        assert "Validation_Warnings" in sheetnames, sheetnames
+        assert NEW_REFDES_SHEET_NAME in sheetnames, sheetnames
+        assert "Part Usage Diagnostics" in sheetnames, sheetnames
+        # The paste-back banner must survive the preserve path too.
+        banner_cell = output[NEW_REFDES_SHEET_NAME].cell(row=1, column=1).value
+        assert banner_cell and str(banner_cell).startswith(
+            "These rows are RefDes variants"
+        ), banner_cell
+    finally:
+        output.close()
+
+
+def test_write_excel_report_drops_internal_style_columns(tmp_path: Path) -> None:
+    """H2: internal underscore-prefixed columns (_row_type, _style_hint)
+    must never leak into the written FMEA sheet."""
+    from openpyxl import load_workbook
+
+    proc = FMEAProcessor()
+    df = pd.DataFrame(
+        [
+            {
+                "RefDes": "R1",
+                "Failure Mode": "Open",
+                "_row_type": "piece_part_no_match",
+                "_style_hint": "error",
+            }
+        ]
+    )
+    out = tmp_path / "internal_cols.xlsx"
+    write_excel_report(df, out, proc)
+
+    wb = load_workbook(out)
+    try:
+        headers = [cell.value for cell in wb["FMEA"][1]]
+    finally:
+        wb.close()
+    leaked = [h for h in headers if h is not None and str(h).startswith("_")]
+    assert leaked == [], f"internal columns leaked into output: {leaked}"
+
+
+def _validate_body_with_mapping(
+    tmp_path: Path, workflow_id: str, mappings: list[dict], options: dict | None = None
+) -> dict:
+    """Shared fixture for the required-mapping validation tests."""
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "R100",
+                "Part Number": "RES-1",
+                "Description": "Resistor",
+                "BAE HDA Commodity I": "Resistor",
+                "BAE HDA Commodity II": "Chip",
+                "Part Usage": "1",
+            }
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "CPU-001",
+                "Reference Designator": "R100",
+                "Function Description": "Support",
+                "Schematic Page": "1",
+            }
+        ],
+    )
+
+    def state(role: str, path: Path) -> dict:
+        return {
+            "role": role,
+            "label": role,
+            "path": str(path),
+            "selectedSheet": "Sheet1",
+            "source": "desktop-bridge",
+            "isResolvingSheets": False,
+            "isAnalyzing": False,
+            "resolutionError": None,
+            "sheets": [{"id": "s1", "label": "Sheet1"}],
+        }
+
+    inputs = [state("bom", paths["bom"]), state("failureModes", paths["fm"])]
+    if workflow_id == "piece_part_generate":
+        inputs.insert(0, state("grouping", paths["grouping"]))
+
+    return {
+        "workflowId": workflow_id,
+        "outputStrategyId": "new_workbook_standard",
+        "options": {"failureModesStandard": "FMD-2016", **(options or {})},
+        "inputs": inputs,
+        "mappings": mappings,
+    }
+
+
+def test_validate_run_rejects_do_not_map_on_required_mapping(tmp_path: Path) -> None:
+    """H3: explicitly selecting 'Do Not Map' for a required column (here
+    'Failure Mode') must block at validate time with invalid_do_not_map —
+    not silently fall back to heuristic column detection."""
+    from shared.pre_run_validation import DO_NOT_MAP_SENTINEL
+
+    body = _validate_body_with_mapping(
+        tmp_path,
+        "piece_part_generate",
+        mappings=[
+            {
+                "canonical": "Failure Mode",
+                "mappedTo": DO_NOT_MAP_SENTINEL,
+                "status": "not_mapped",
+            }
+        ],
+    )
+    result = validate_run_request(body)
+    assert result["ok"] is False, result
+    assert result["reason_code"] == "invalid_do_not_map", result
+    assert "Failure Mode" in result["toast_text"], result
+
+
+def test_validate_run_allows_do_not_map_on_optional_mapping(tmp_path: Path) -> None:
+    """H3 companion: 'Do Not Map' on a non-required column must NOT block."""
+    from shared.pre_run_validation import DO_NOT_MAP_SENTINEL
+
+    body = _validate_body_with_mapping(
+        tmp_path,
+        "piece_part_generate",
+        mappings=[
+            {
+                "canonical": "Component Part Description",
+                "mappedTo": DO_NOT_MAP_SENTINEL,
+                "status": "not_mapped",
+            }
+        ],
+    )
+    result = validate_run_request(body)
+    assert result["ok"] is True, result
+
+
+def test_validate_run_allows_do_not_map_on_fmea_id_in_bom_only(tmp_path: Path) -> None:
+    """H3 companion: FMEA-ID is hidden (and derived) in BOM-Only mode, so a
+    stale 'Do Not Map' for it must not block that workflow."""
+    from shared.pre_run_validation import DO_NOT_MAP_SENTINEL
+
+    body = _validate_body_with_mapping(
+        tmp_path,
+        "bom_only",
+        mappings=[
+            {
+                "canonical": "FMEA-ID",
+                "mappedTo": DO_NOT_MAP_SENTINEL,
+                "status": "not_mapped",
+            }
+        ],
+        options={"ccaPrefix": "PSU1"},
+    )
+    result = validate_run_request(body)
+    assert result["ok"] is True, result

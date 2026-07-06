@@ -31,7 +31,10 @@ from common.exceptions import FileAccessError, ProcessingError
 from common.logger import get_tool_logger
 from common.refdes_utils import canonicalize_refdes
 from fmea.fmea_generator_logic import (
+    NEW_REFDES_BANNER,
+    NEW_REFDES_SHEET_NAME,
     ROW_TYPE_COL,
+    build_summary_frames,
     normalize_func_base_id,
     output_headers_for,
 )
@@ -680,54 +683,52 @@ def _write_summary_sheets(wb, processor, result: TemplateWriteResult,
 
 
 def _write_processor_summaries(wb, processor, log_func: Callable[[str], None]) -> None:
-    """Write standard processor diagnostic sheets to the workbook."""
+    """Write the processor diagnostic sheets to the workbook.
+
+    Consumes ``build_summary_frames`` — the single source of truth shared
+    with ``write_excel_report`` — so the preserve-formatting path emits the
+    SAME diagnostic sheets as the new-workbook path (Validation_Warnings,
+    FMEA Gen New RefDes, Part Usage Diagnostics, and the five legacy
+    sheets). These sheets were silently dropped in preserve mode before.
+    """
     from openpyxl.styles import Font
 
-    sheets_to_write: Dict[str, Tuple[List[str], list]] = {}
+    frames = build_summary_frames(processor)
 
-    if processor.no_matches:
-        sheets_to_write["No_Matches"] = (
-            ["RefDes", "PN", "Reason"],
-            processor.no_match_details,
-        )
-    if processor.unmatched_hda:
-        sheets_to_write["Missing_HDA"] = (
-            ["RefDes", "PN"],
-            processor.unmatched_hda,
-        )
-    if processor.group_missing_in_bom:
-        sheets_to_write["Group_Missing_BOM"] = (
-            ["Group", "Missing RefDes"],
-            processor.group_missing_in_bom,
-        )
-    if processor.bom_missing_ref_rows:
-        sheets_to_write["BOM_Missing_Refs"] = (
-            ["Row #", "Raw Value"],
-            processor.bom_missing_ref_rows,
-        )
-    if processor.bom_duplicate_refdes:
-        sheets_to_write["BOM_Duplicate_Refs"] = (
-            ["RefDes", "Occurrences"],
-            processor.bom_duplicate_refdes,
-        )
-
-    for sheet_name, (headers, data_rows) in sheets_to_write.items():
+    written = 0
+    for sheet_name, frame in frames.items():
+        if frame.empty:
+            continue
         if sheet_name in wb.sheetnames:
             del wb[sheet_name]
         ws = wb.create_sheet(sheet_name)
-        for col_idx, header in enumerate(headers, start=1):
-            ws.cell(row=1, column=col_idx, value=header).font = Font(bold=True)
-        for row_idx, row_data in enumerate(data_rows, start=2):
-            if isinstance(row_data, (list, tuple)):
-                for col_idx, val in enumerate(row_data, start=1):
-                    cell = ws.cell(row=row_idx, column=col_idx)
-                    if isinstance(val, str):
-                        cell.value = sanitize_for_excel(val)
-                    else:
-                        cell.value = val
+        for col_idx, header in enumerate(frame.columns, start=1):
+            ws.cell(row=1, column=col_idx, value=str(header)).font = Font(bold=True)
+        for row_idx, row_values in enumerate(frame.itertuples(index=False), start=2):
+            for col_idx, val in enumerate(row_values, start=1):
+                cell = ws.cell(row=row_idx, column=col_idx)
+                if isinstance(val, str):
+                    cell.value = sanitize_for_excel(val)
+                elif pd.isna(val):
+                    cell.value = None
+                else:
+                    cell.value = val
+        # Same paste-back banner the new-workbook writer prepends.
+        if sheet_name == NEW_REFDES_SHEET_NAME and len(frame.columns) > 0:
+            ws.insert_rows(1)
+            ws.cell(row=1, column=1, value=NEW_REFDES_BANNER)
+            try:
+                ws.merge_cells(
+                    start_row=1, start_column=1,
+                    end_row=1, end_column=len(frame.columns),
+                )
+            except ValueError:
+                # Single-column frames can't be merged; ignore.
+                pass
+        written += 1
 
-    if sheets_to_write:
-        log_func(f"Wrote {len(sheets_to_write)} processor summary sheet(s)")
+    if written:
+        log_func(f"Wrote {written} processor summary sheet(s)")
 
 
 def build_template_output_path(

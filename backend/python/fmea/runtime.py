@@ -348,6 +348,29 @@ def _build_validation_messages(
     return messages
 
 
+# Canonicals whose mapping row is marked ``required: true`` in the frontend
+# (mappingColumns.ts). Selecting "— Do Not Map —" for one of these must block
+# at validate time with ``invalid_do_not_map`` (Wiring Invariant #6) instead
+# of silently falling back to heuristic column detection at execute time.
+# FMEA-ID is exempt in BOM-Only mode: that workflow hides the row and derives
+# its own IDs from the CCA identifier.
+REQUIRED_MAPPING_CANONICALS: tuple[str, ...] = (
+    "FMEA-ID",
+    "Failure Mode",
+    "Failure Mode Ratio",
+)
+
+
+def _required_mapping_canonicals(workflow_id: str) -> tuple[str, ...]:
+    if workflow_id == "bom_only":
+        return tuple(
+            canonical
+            for canonical in REQUIRED_MAPPING_CANONICALS
+            if canonical != "FMEA-ID"
+        )
+    return REQUIRED_MAPPING_CANONICALS
+
+
 def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
     workflow_id = str(body.get("workflowId", "")).strip()
     output_strategy_id = str(body.get("outputStrategyId", "")).strip()
@@ -357,23 +380,24 @@ def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
     )
     inputs_by_role = _collect_inputs(body)
 
+    body_mappings = body.get("mappings") or []
+    mapped_canonicals: dict[str, Any] = {}
+    for row in body_mappings:
+        if isinstance(row, Mapping):
+            # Fix R2-H3: strip canonical to match the normalization in
+            # ``_build_column_overrides`` so a padded/case-different
+            # canonical can't bypass the validator while still landing
+            # in the overrides dict under the stripped key.
+            mapped_canonicals[str(row.get("canonical", "")).strip()] = row.get(
+                "mappedTo"
+            )
+
     # Fix C2: merge modes parse "Failure Mode Causes" as a comma-separated
     # list of reference designators to derive each group's component set.
     # Without an explicit mapping for that column, the backend runs but
     # silently produces empty component lists — the generated FMEA is
     # effectively blank. Block that upfront.
     if workflow_id in ("fill_gaps", "functional_to_piecepart"):
-        body_mappings = body.get("mappings") or []
-        mapped_canonicals: dict[str, Any] = {}
-        for row in body_mappings:
-            if isinstance(row, Mapping):
-                # Fix R2-H3: strip canonical to match the normalization in
-                # ``_build_column_overrides`` so a padded/case-different
-                # canonical can't bypass the validator while still landing
-                # in the overrides dict under the stripped key.
-                mapped_canonicals[str(row.get("canonical", "")).strip()] = row.get(
-                    "mappedTo"
-                )
         fmc_mapped_to = mapped_canonicals.get("Failure Mode Causes")
         if not fmc_mapped_to or fmc_mapped_to == DO_NOT_MAP_SENTINEL:
             return {
@@ -403,11 +427,25 @@ def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
         for role in required_roles
     )
 
+    # H3 (2026-07 deep dive): required columns explicitly set to the
+    # "Do Not Map" sentinel block with invalid_do_not_map. Rows absent from
+    # the payload stay eligible for heuristic auto-detection.
+    invalid_mappings = [
+        LabeledValue(
+            canonical,
+            DO_NOT_MAP_SENTINEL
+            if mapped_canonicals.get(canonical) == DO_NOT_MAP_SENTINEL
+            else None,
+        )
+        for canonical in _required_mapping_canonicals(workflow_id)
+    ]
+
     result = validate_pre_run_state(
         required_files=required_files,
         load_in_progress=load_in_progress,
         loaded_states=loaded_states,
         not_loaded_message="Load current files and sheets for: {labels}.",
+        invalid_mappings=invalid_mappings,
     )
 
     if workflow_id not in SUPPORTED_EXECUTION_WORKFLOWS or output_strategy_id not in SUPPORTED_OUTPUT_STRATEGIES:

@@ -1302,7 +1302,6 @@ class FMEAProcessor:
                         'Failure Mode Causes': ref,
                         'Diagnostic': f"Row generation failed for {ref}: {exc}",
                         '_row_type': 'piece_part_no_match',
-                        '_style_hint': 'error',
                     }]
 
                 # Fix A4: when a component is in the union set (expected
@@ -1323,7 +1322,6 @@ class FMEAProcessor:
                             f'but missing from BOM.'
                         ),
                         '_row_type': 'piece_part_no_match',
-                        '_style_hint': 'error',
                     }]
 
                 # Inherit effects from the old FMEA circuit-block row
@@ -2343,16 +2341,26 @@ class FMEAProcessor:
                 rows.append(row)
         return rows
 
-def write_excel_report(
-    df: pd.DataFrame,
-    filename: Union[str, Path],
-    proc: FMEAProcessor,
-) -> None:
-    """Write FMEA report with modern styling using shared utility."""
-    from openpyxl import Workbook
+# Banner prepended to the "FMEA Gen New RefDes" sheet by BOTH output writers
+# (new-workbook and template-preserve) so the paste-back intent is obvious.
+NEW_REFDES_BANNER = (
+    "These rows are RefDes variants found in the source that were "
+    "not in the BOM. Their data was inherited from a matching base "
+    "component. Review and copy these into your BOM."
+)
 
-    # Prepare summary DataFrames
-    summaries = {}
+
+def build_summary_frames(proc: 'FMEAProcessor') -> Dict[str, pd.DataFrame]:
+    """Assemble every diagnostic summary sheet as a ``name -> DataFrame`` dict.
+
+    Single source of truth for the diagnostic sheet list, shared by
+    ``write_excel_report`` (new-workbook path) and the template-preserve
+    writer (``fmea_template_writer._write_processor_summaries``). Both
+    output strategies must expose the same diagnostics; keeping the
+    assembly here prevents the two writers from drifting apart again.
+    Sheets whose backing collection is empty are omitted.
+    """
+    summaries: Dict[str, pd.DataFrame] = {}
     if proc.no_matches:
         summaries['No_Matches'] = pd.DataFrame(proc.no_match_details, columns=['RefDes', 'PN', 'Reason'])
     if proc.unmatched_hda:
@@ -2436,13 +2444,33 @@ def write_excel_report(
             for entry in proc.part_usage_discrepancies
         ])
 
+    return summaries
+
+
+def write_excel_report(
+    df: pd.DataFrame,
+    filename: Union[str, Path],
+    proc: FMEAProcessor,
+) -> None:
+    """Write FMEA report with modern styling using shared utility."""
+    from openpyxl import Workbook
+
+    # Prepare summary DataFrames (shared with the template-preserve writer)
+    summaries = build_summary_frames(proc)
+
     # Create workbook
     wb = Workbook()
     ws_fmea = wb.active
     ws_fmea.title = "FMEA"
 
-    # Clean FMEA DataFrame (remove internal row type column)
-    clean_df = df.drop(columns=[ROW_TYPE_COL], errors='ignore')
+    # Clean FMEA DataFrame: remove ALL internal underscore-prefixed columns
+    # (_row_type, and historically _style_hint) so styling metadata can
+    # never leak into the user's deliverable.
+    internal_cols = [
+        col for col in df.columns
+        if isinstance(col, str) and col.startswith('_')
+    ]
+    clean_df = df.drop(columns=internal_cols, errors='ignore')
 
     # Row styling based on FMEA row type
     def fmea_row_style(row, idx):
@@ -2505,12 +2533,7 @@ def write_excel_report(
                 col_count = len(frame.columns)
                 if col_count > 0:
                     ws.insert_rows(1)
-                    banner = (
-                        "These rows are RefDes variants found in the source that were "
-                        "not in the BOM. Their data was inherited from a matching base "
-                        "component. Review and copy these into your BOM."
-                    )
-                    ws.cell(row=1, column=1, value=banner)
+                    ws.cell(row=1, column=1, value=NEW_REFDES_BANNER)
                     try:
                         ws.merge_cells(
                             start_row=1, start_column=1,

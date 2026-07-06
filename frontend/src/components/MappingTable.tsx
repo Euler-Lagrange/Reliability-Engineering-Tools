@@ -214,6 +214,16 @@ export function MappingTable({
                 <td>
                   <div className="mapping-field">
                     <span className="mapping-field__name">{row.displayLabel ?? row.canonical}</span>
+                    {row.required ? (
+                      <span
+                        className="mapping-field__required"
+                        role="img"
+                        aria-label="Required column"
+                        title="Required — selecting 'Do Not Map' for this column blocks the run."
+                      >
+                        *
+                      </span>
+                    ) : null}
                     {hasHelp ? (
                       <button
                         type="button"

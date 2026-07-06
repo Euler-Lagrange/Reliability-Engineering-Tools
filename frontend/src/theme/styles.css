@@ -1373,6 +1373,14 @@ tbody tr:hover {
   font-weight: var(--weight-semibold);
 }
 
+/* Required-column marker — pairs with the backend invalid_do_not_map
+   validate-time gate; the tooltip on the marker explains the rule. */
+.mapping-field__required {
+  color: var(--danger);
+  font-weight: var(--weight-semibold);
+  cursor: help;
+}
+
 /* Mapping table "Mapped to" cell — give the dropdown trigger enough
    horizontal room so long source-column names are visible without
    truncation, and so the menu (min-width: max(220px, 100%)) opens

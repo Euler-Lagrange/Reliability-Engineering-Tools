@@ -83,6 +83,24 @@ describe("MappingTable — Phase 2 infrastructure", () => {
     expect(screen.queryByText(/ABOUT THIS COLUMN/i)).not.toBeInTheDocument();
   });
 
+  test("marks required rows with a required indicator, optional rows unmarked", () => {
+    // rowWithHelp carries required: true; rowWithoutHelp has no required flag.
+    render(
+      <MappingTable
+        rows={[rowWithHelp(), rowWithoutHelp()]}
+        overrides={{}}
+        onOverride={vi.fn()}
+      />,
+    );
+
+    const marker = screen.getByLabelText("Required column");
+    const requiredRow = marker.closest("tr");
+    expect(requiredRow).toHaveTextContent("Failure Mode");
+    expect(requiredRow).not.toHaveTextContent("Part Number");
+    // Exactly one marker — the optional row must not render one.
+    expect(screen.getAllByLabelText("Required column")).toHaveLength(1);
+  });
+
   test("only one help panel is expanded at a time", async () => {
     const user = userEvent.setup();
     const rows: ColumnMappingRow[] = [
