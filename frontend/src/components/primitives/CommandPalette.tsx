@@ -9,6 +9,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { MagnifyingGlass, type Icon as PhosphorIcon } from "@phosphor-icons/react";
+import { useEscapeLayer } from "../../shared/hooks/useEscapeLayer";
 import { EmptyState } from "./EmptyState";
 
 /**
@@ -143,13 +144,13 @@ export function CommandPalette({ actions, open, onClose }: CommandPaletteProps) 
     [onClose],
   );
 
+  // Escape closes the palette through the shared dismiss-stack so it only ever
+  // dismisses the top-most layer (see useEscapeLayer). Tab / Arrow / Enter stay
+  // local to the dialog's own keydown handler below.
+  useEscapeLayer(open, onClose);
+
   const handleKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-        return;
-      }
       // Focus trap: Tab inside the palette cycles between focusable
       // descendants without escaping to the shell behind the overlay.
       if (event.key === "Tab") {
@@ -208,7 +209,7 @@ export function CommandPalette({ actions, open, onClose }: CommandPaletteProps) 
         }
       }
     },
-    [activateAction, activeIndex, filteredActions, onClose],
+    [activateAction, activeIndex, filteredActions],
   );
 
   const handleBackdropClick = useCallback(

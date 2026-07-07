@@ -4382,3 +4382,23 @@ def test_write_plain_cell_guards_nan_and_sanitizes_strings() -> None:
     assert not any(
         isinstance(c.value, float) and math.isnan(c.value) for c in ws[1]
     )
+
+
+# ----- Perf/cancellation probe follow-ups (2026-07-07) -----------------------
+
+
+def test_write_excel_report_honors_cancellation(tmp_path: Path) -> None:
+    """The output-writing phase dominates large runs (measured ~60-77% of a
+    5k-part run) but had NO cancellation coverage — the Cancel button went
+    dead the moment generation finished. A cancelled processor must abort
+    the write instead of spending half a minute styling a doomed workbook."""
+    from common.cancellation import CancellationError
+
+    proc = FMEAProcessor()
+    proc.cancel.cancel()
+    df = pd.DataFrame(
+        [{"RefDes": f"R{i}", "Failure Mode": "Open"} for i in range(500)]
+    )
+    out = tmp_path / "cancelled.xlsx"
+    with pytest.raises((CancellationError, InterruptedError)):
+        write_excel_report(df, out, proc)

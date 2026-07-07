@@ -8,14 +8,16 @@
 | Backend security audit | `backend/tests/test_security_audit.py` | 27 | pytest |
 | Backend cancel bridge | `backend/tests/test_cancel_bridge.py` | 12 | pytest |
 | Backend output-directory helpers | `backend/tests/test_output_directory_helpers.py` | 10 | pytest |
-| Backend FMEA Phase D | `backend/tests/test_fmea_phase_d.py` | 74 | pytest |
+| Backend FMEA Phase D | `backend/tests/test_fmea_phase_d.py` | 75 | pytest |
 | Backend Failure-Rate logic | `backend/tests/test_failure_rate_logic.py` | 27 | pytest |
 | Backend RefDes extraction-engine | `backend/tests/test_extraction_engine.py` | 15 | pytest |
 | Backend BOM-compare logic | `backend/tests/test_bom_compare_logic.py` | 37 | pytest |
 | Backend BOM-compare runtime | `backend/tests/test_bom_compare_runtime.py` | 11 | pytest |
 | Backend extraction compare | `backend/tests/test_extraction_compare.py` | 9 | pytest |
 | Backend Failure-Rate runtime | `backend/tests/test_failure_rate_runtime.py` | 3 | pytest |
-| Backend read-layer (NA + header dedup) | `backend/tests/test_read_layer.py` | 8 | pytest |
+| Backend read-layer (NA + header dedup) | `backend/tests/test_read_layer.py` | 9 | pytest |
+| Backend excel styles | `backend/tests/test_excel_styles.py` | 3 | pytest |
+| Backend validate output path | `backend/tests/test_validate_output_path.py` | 5 | pytest |
 | Backend RefDes BOM-coverage | `backend/tests/test_coverage_report.py` | 19 | pytest |
 | Backend BOM-loader | `backend/tests/test_bom_loader.py` | 6 | pytest |
 | Backend OneDrive detection | `backend/tests/test_onedrive_detection.py` | 5 | pytest |
@@ -25,9 +27,11 @@
 | Backend RefDes runtime | `backend/tests/test_refdes_runtime.py` | 27 | pytest |
 | Backend RefDes validation notes | `backend/tests/test_validation_notes.py` | 12 | pytest |
 | Backend RefDes prefix config | `backend/tests/test_refdes_prefix_config.py` | 7 | pytest |
-| **Backend subtotal** | | **378** | |
+| **Backend subtotal** | | **388** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
-| Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 4 | Vitest + RTL |
+| Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 5 | Vitest + RTL |
+| Frontend escape layers | `frontend/src/shared/hooks/useEscapeLayer.test.ts` | 4 | Vitest |
+| Frontend error boundary | `frontend/src/shared/errors/ErrorBoundary.test.tsx` | 3 | Vitest + RTL |
 | Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 3 | Vitest + RTL |
 | Frontend mapping table | `frontend/src/components/MappingTable.test.tsx` | 13 | Vitest + RTL |
 | Frontend run state panel | `frontend/src/components/RunStatePanel.test.tsx` | 6 | Vitest + RTL |
@@ -70,9 +74,9 @@
 | Frontend shell-hook install | `frontend/src/app/App.shellHooks.test.tsx` | 1 | Vitest + RTL |
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
-| **Frontend subtotal** | | **296** | |
+| **Frontend subtotal** | | **304** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 17 | cargo test |
-| **Total** | | **691** | |
+| **Total** | | **709** | |
 
 ## Backend Tests
 

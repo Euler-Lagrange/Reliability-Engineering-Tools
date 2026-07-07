@@ -1,7 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ContextDrawer } from "./ContextDrawer";
+import { MappingTable } from "./MappingTable";
+import type { ColumnMappingRow } from "../app/types";
 import type { OutputPreview } from "../contracts/sidecar";
 import { usePreviewStore } from "../stores/previewStore";
 import type { ActiveRunState } from "../stores/runStore";
@@ -146,5 +148,47 @@ describe("ContextDrawer", () => {
     expect(useShellStore.getState().contextOpen).toBe(false);
     expect(drawer).toHaveAttribute("aria-hidden", "true");
     expect(drawer).toHaveAttribute("inert");
+  });
+
+  it("Escape dismisses only the most recent layer (help panel before drawer)", async () => {
+    // Stacked window-level Escape handlers previously closed both the drawer
+    // AND the mapping help panel on a single Escape. With the shared
+    // dismiss-stack, the first Escape closes only the most-recently-opened
+    // layer (the help panel); the drawer stays open until a second Escape.
+    const user = userEvent.setup();
+    useShellStore.setState({ contextOpen: true, activeToolId: "dark_star_fmea" });
+
+    const helpRow: ColumnMappingRow = {
+      canonical: "Failure Mode",
+      mappedTo: "Failure Mode",
+      status: "mapped",
+      recommendation: "Exact header match",
+      options: ["Failure Mode", "Mode"],
+      help: "Maps the failure mode column.",
+      required: true,
+    };
+
+    render(
+      <>
+        <ContextDrawer />
+        <MappingTable rows={[helpRow]} overrides={{}} onOverride={vi.fn()} />
+      </>,
+    );
+
+    // The drawer is open (its layer registered first).
+    expect(useShellStore.getState().contextOpen).toBe(true);
+
+    // Open the mapping help panel — this becomes the top-most layer.
+    await user.click(screen.getByRole("button", { name: /about failure mode/i }));
+    expect(screen.getByText(/ABOUT THIS COLUMN/i)).toBeInTheDocument();
+
+    // First Escape closes ONLY the help panel; the drawer remains open.
+    await user.keyboard("{Escape}");
+    expect(screen.queryByText(/ABOUT THIS COLUMN/i)).not.toBeInTheDocument();
+    expect(useShellStore.getState().contextOpen).toBe(true);
+
+    // Second Escape now closes the drawer.
+    await user.keyboard("{Escape}");
+    expect(useShellStore.getState().contextOpen).toBe(false);
   });
 });

@@ -42,6 +42,30 @@ def sanitize_for_excel(value: Any) -> Any:
     return value
 
 
+def _coerce_cell_for_excel(value: Any) -> Any:
+    """Coerce a DataFrame cell value into an Excel-safe scalar.
+
+    ``pd.isna`` raises ``ValueError`` ("The truth value of an array with more
+    than one element is ambiguous") on a list-/ndarray-valued cell, which would
+    abort the entire sheet write. We only NaN-test genuine scalars; non-scalar
+    cells (lists, tuples, ndarrays, dicts) are stringified and sanitized so the
+    write always succeeds instead of crashing on unexpected data shapes.
+
+    Args:
+        value: Any cell value.
+
+    Returns:
+        Empty string for scalar NaN/None, the sanitized value for scalars, or
+        the sanitized ``str()`` of a non-scalar cell.
+    """
+    if pd.api.types.is_scalar(value):
+        if pd.isna(value):
+            return ""
+        return sanitize_for_excel(value)
+    # Non-scalar (list / ndarray / dict / tuple): stringify defensively.
+    return sanitize_for_excel(str(value))
+
+
 @dataclass
 class ExcelColors:
     """Centralized color definitions for Excel styling."""
@@ -231,7 +255,9 @@ def calculate_column_widths(
 
         # Check data values
         for val in sample_df[col]:
-            if pd.isna(val):
+            # Only NaN-test genuine scalars; a list/ndarray cell would raise
+            # "truth value of an array is ambiguous" (mirrors _coerce_cell_for_excel).
+            if pd.api.types.is_scalar(val) and pd.isna(val):
                 continue
             # Handle multi-line cells - take longest line
             val_str = str(val)
@@ -296,7 +322,23 @@ def style_worksheet(
         cell.alignment = presets.header_alignment
         cell.border = presets.thin_border
 
-    # Style data rows (row 2 onwards)
+    # Style data rows (row 2 onwards).
+    #
+    # Perf (2026-07-07 probe): assigning Font/Fill/Border objects per cell
+    # forces openpyxl to re-hash the full style on EVERY assignment — at 5k
+    # rows that was ~5.3M hash calls and 77% of the whole FMEA run (55s of
+    # 71s). The sheet only ever uses a handful of DISTINCT styles, so we
+    # style the FIRST cell of each (font, fill) combo through the public
+    # descriptors, capture the resulting ``_style`` index array, and stamp
+    # cheap per-cell copies for every later cell with the same combo. The
+    # copy is required: descriptors mutate ``_style`` in place, so a shared
+    # array would let a later ``cell.number_format = ...`` (the FMEA Part
+    # Usage fraction / failure-rate scientific formats) bleed across cells —
+    # ``test_style_array_stamp_is_not_shared`` guards that.
+    from copy import copy as _copy
+
+    style_cache: dict = {}
+
     for row_idx in range(2, num_rows + 1):
         # Cancel check every 100 rows for minimal overhead
         if cancel_check and row_idx % 100 == 0 and cancel_check():
@@ -323,12 +365,19 @@ def style_worksheet(
         # Apply styles to each cell in the row
         for col_idx in range(1, num_cols + 1):
             cell = ws.cell(row=row_idx, column=col_idx)
-            cell.font = font
-            cell.alignment = presets.data_alignment
-            cell.border = presets.thin_border
             # Only apply fill to cells that have data (not empty)
-            if fill is not None and cell.value not in (None, "", " "):
-                cell.fill = fill
+            apply_fill = fill is not None and cell.value not in (None, "", " ")
+            cache_key = (id(font), id(fill) if apply_fill else None)
+            template = style_cache.get(cache_key)
+            if template is None:
+                cell.font = font
+                cell.alignment = presets.data_alignment
+                cell.border = presets.thin_border
+                if apply_fill:
+                    cell.fill = fill
+                style_cache[cache_key] = _copy(cell._style)
+            else:
+                cell._style = _copy(template)
 
     # Auto-size columns
     if auto_width:
@@ -413,12 +462,8 @@ def write_styled_excel(
     # Data rows
     for row_idx, (_, row) in enumerate(df.iterrows(), start=2):
         for col_idx, value in enumerate(row, start=1):
-            # Convert NaN to empty string
-            if pd.isna(value):
-                value = ""
-            else:
-                value = sanitize_for_excel(value)
-            ws.cell(row=row_idx, column=col_idx, value=value)
+            # Convert NaN to empty string (list/ndarray cells are stringified).
+            ws.cell(row=row_idx, column=col_idx, value=_coerce_cell_for_excel(value))
 
     # Apply styling
     style_worksheet(
@@ -453,11 +498,7 @@ def write_df_to_sheet(ws: Worksheet, df: pd.DataFrame) -> None:
     for col_idx, col_name in enumerate(df.columns, start=1):
         ws.cell(row=1, column=col_idx, value=sanitize_for_excel(str(col_name)))
 
-    # Data rows (sanitize all values)
+    # Data rows (sanitize all values; list/ndarray cells are stringified).
     for row_idx, (_, row) in enumerate(df.iterrows(), start=2):
         for col_idx, value in enumerate(row, start=1):
-            if pd.isna(value):
-                value = ""
-            else:
-                value = sanitize_for_excel(value)
-            ws.cell(row=row_idx, column=col_idx, value=value)
+            ws.cell(row=row_idx, column=col_idx, value=_coerce_cell_for_excel(value))

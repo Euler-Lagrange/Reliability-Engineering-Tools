@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo, useRef } from "react";
 import { X } from "@phosphor-icons/react";
 import { toolDefinitions } from "../app/toolRegistry";
+import { useEscapeLayer } from "../shared/hooks/useEscapeLayer";
 import { usePreviewStore } from "../stores/previewStore";
 import { useRunStore } from "../stores/runStore";
 import { useShellStore } from "../stores/shellStore";
@@ -35,19 +36,11 @@ export function ContextDrawer() {
     return activeRun?.toolId === activeToolId ? activeRun : null;
   }, [activeRun, activeToolId]);
 
-  // Local Escape handler — the global shortcut owns ⌘R; Escape stays
-  // drawer-local so it doesn't collide with other Escape consumers (the
-  // command palette closes on Escape via its own modal layer).
-  useEffect(() => {
-    if (!open) return;
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setContextOpen(false);
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, setContextOpen]);
+  // Local Escape handler — the global shortcut owns ⌘R. Escape closes the
+  // drawer through the shared dismiss-stack so a single press only dismisses
+  // the top-most open layer (e.g. a mapping help panel opened after the
+  // drawer) rather than collapsing every Escape consumer at once.
+  useEscapeLayer(open, () => setContextOpen(false));
 
   const preview = snapshot?.preview ?? null;
   const totalEstimated =

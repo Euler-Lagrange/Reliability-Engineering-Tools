@@ -123,3 +123,43 @@ def test_get_prefix_strips_invisible_characters() -> None:
     assert get_prefix("​R1") == "R"
     assert get_prefix("﻿C22") == "C"
     assert get_prefix("R1") == "R"
+
+
+def test_style_array_stamp_is_not_shared(tmp_path) -> None:
+    """Perf-cache guard: style_worksheet stamps cached StyleArray COPIES.
+    openpyxl mutates a cell''s _style in place, so a shared array would let
+    a later number_format assignment bleed across every same-styled cell
+    (the FMEA fraction/scientific formats are applied exactly that way)."""
+    import pandas as pd
+    from openpyxl import Workbook, load_workbook
+
+    from common.excel_styles import style_worksheet, write_df_to_sheet
+
+    df = pd.DataFrame(
+        [
+            {"RefDes": "R1", "Part Usage": 0.5},
+            {"RefDes": "R2", "Part Usage": 0.25},
+        ]
+    )
+    wb = Workbook()
+    ws = wb.active
+    write_df_to_sheet(ws, df)
+    style_worksheet(ws, df, alternate_rows=False)
+
+    # Both data cells in the Part Usage column share the cached style combo.
+    ws.cell(row=2, column=2).number_format = "# ???/???"
+
+    assert ws.cell(row=2, column=2).number_format == "# ???/???"
+    assert ws.cell(row=3, column=2).number_format != "# ???/???"
+
+    # The styling itself survives a real save/load round-trip.
+    out = tmp_path / "styled.xlsx"
+    wb.save(out)
+    wb.close()
+    rt = load_workbook(out)
+    try:
+        assert rt.active.cell(row=2, column=1).font.name == ws.cell(row=2, column=1).font.name
+        assert rt.active.cell(row=2, column=2).number_format == "# ???/???"
+        assert rt.active.cell(row=3, column=2).number_format != "# ???/???"
+    finally:
+        rt.close()

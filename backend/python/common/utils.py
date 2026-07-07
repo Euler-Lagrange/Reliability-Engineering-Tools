@@ -860,35 +860,37 @@ def validate_output_path(folder: str, filename: str) -> str:
         Resolved absolute path that is guaranteed to be within folder
 
     Raises:
-        ValueError: If path is invalid, escapes the folder, or exceeds Windows limit
-        TypeError: If filename is not a string
+        ValidationError: If path is invalid, escapes the folder, exceeds the
+            Windows limit, or the filename is not a string.
 
     Example:
         >>> validate_output_path("/home/user/output", "report.xlsx")
         '/home/user/output/report.xlsx'
         >>> validate_output_path("/home/user/output", "../../../etc/passwd")
-        ValueError: Output path escapes folder: ../../../etc/passwd
+        ValidationError: Output path escapes folder: ../../../etc/passwd
     """
+    from .exceptions import ValidationError
+
     # Windows MAX_PATH limit (B3 fix: prevent silent failures with long paths)
     MAX_WINDOWS_PATH = 260
 
     if not isinstance(filename, str):
-        raise TypeError(f"filename must be a string, got {type(filename).__name__}")
+        raise ValidationError(f"filename must be a string, got {type(filename).__name__}")
     if not folder:
         folder = os.getcwd()
     # Resolve to absolute path (handles .. and symlinks)
     folder_real = os.path.realpath(folder)
     if not os.path.isdir(folder_real):
-        raise ValueError(f"Output folder does not exist: {folder}")
+        raise ValidationError(f"Output folder does not exist: {folder}")
     # Construct full path and verify it's still within folder
     full_path = os.path.realpath(os.path.join(folder_real, filename))
     # Use os.sep to prevent prefix attacks (e.g., "reports_evil" matching "reports")
     if not (full_path.startswith(folder_real + os.sep) or full_path == folder_real):
-        raise ValueError(f"Output path escapes folder: {filename}")
+        raise ValidationError(f"Output path escapes folder: {filename}")
 
     # B3: Validate Windows path length to prevent silent write failures
     if os.name == 'nt' and len(full_path) > MAX_WINDOWS_PATH:
-        raise ValueError(
+        raise ValidationError(
             f"Output path exceeds Windows {MAX_WINDOWS_PATH}-character limit "
             f"({len(full_path)} chars). Use a shorter folder path or filename."
         )

@@ -2473,6 +2473,14 @@ def write_excel_report(
     """Write FMEA report with modern styling using shared utility."""
     from openpyxl import Workbook
 
+    # Cancellation probe (2026-07-07): this writer dominates large runs
+    # (~60-77% of a 5k-part run) and previously had ZERO cancellation
+    # coverage — the Cancel button went dead the moment generation ended.
+    # Check between phases and thread cancel_check into the per-row style
+    # loops. The final wb.save() remains an unavoidable atomic window.
+    cancel_check = proc.cancel.is_cancelled
+    proc.cancel.check("Workbook write cancelled by user.")
+
     # Prepare summary DataFrames (shared with the template-preserve writer)
     summaries = build_summary_frames(proc)
 
@@ -2490,25 +2498,31 @@ def write_excel_report(
     ]
     clean_df = df.drop(columns=internal_cols, errors='ignore')
 
-    # Row styling based on FMEA row type
+    # Row styling based on FMEA row type. Perf: precompute the row-type list
+    # once — the previous per-row ``df.iloc[idx]`` materialized a full Series
+    # for every output row (a second one on top of style_worksheet's own),
+    # which profiled at seconds per 10k rows.
+    row_types: list = (
+        df[ROW_TYPE_COL].tolist() if ROW_TYPE_COL in df.columns else []
+    )
+    _STYLE_BY_ROW_TYPE = {
+        'circuit_block': 'neutral',
+        'piece_part_no_match': 'error',
+        'validation_warning': 'warning',  # Yellow for FMR/usage issues
+    }
+
     def fmea_row_style(row, idx):
-        # M4: Use try-except for safe index access
-        try:
-            if ROW_TYPE_COL in df.columns and 0 <= idx < len(df):
-                rtype = df.iloc[idx][ROW_TYPE_COL]
-                if rtype == 'circuit_block':
-                    return 'neutral'
-                elif rtype == 'piece_part_no_match':
-                    return 'error'
-                elif rtype == 'validation_warning':
-                    return 'warning'  # Yellow highlighting for FMR/usage issues
-        except (IndexError, KeyError) as e:
-            _logger.debug(f"Row style lookup failed for idx {idx}: {e}")
+        if 0 <= idx < len(row_types):
+            return _STYLE_BY_ROW_TYPE.get(row_types[idx], 'default')
         return 'default'
 
     # Write and style FMEA sheet
     write_df_to_sheet(ws_fmea, clean_df)
-    style_worksheet(ws_fmea, clean_df, row_style_func=fmea_row_style, max_width=35)
+    proc.cancel.check("Workbook write cancelled by user.")
+    style_worksheet(
+        ws_fmea, clean_df, row_style_func=fmea_row_style, max_width=35,
+        cancel_check=cancel_check,
+    )
 
     # Apply fraction format to Part Usage column
     usage_col_idx = None
@@ -2536,13 +2550,17 @@ def write_excel_report(
 
     for name, frame in summaries.items():
         if not frame.empty:
+            proc.cancel.check("Workbook write cancelled by user.")
             ws = wb.create_sheet(name)
             write_df_to_sheet(ws, frame)
             style_name = summary_styles.get(name, 'default')
             if style_name == 'default':
-                style_worksheet(ws, frame, max_width=40)
+                style_worksheet(ws, frame, max_width=40, cancel_check=cancel_check)
             else:
-                style_worksheet(ws, frame, row_style_func=lambda r, i, s=style_name: s, max_width=40)
+                style_worksheet(
+                    ws, frame, row_style_func=lambda r, i, s=style_name: s,
+                    max_width=40, cancel_check=cancel_check,
+                )
 
             # Phase D / A9 + Batch 2: prepend the sheet's explanation banner
             # (New RefDes paste-back intent, Part Usage Diagnostics legend)

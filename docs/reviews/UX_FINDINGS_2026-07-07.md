@@ -99,3 +99,31 @@ comparison. Desktop mode is unaffected (real inspection drives the rows).
 ## Known intentional placeholders (do not "fix" without user)
 - "Load example" buttons show coming-soon toasts (documented placeholder).
 - Minimal `data-selected` styling (see finding 1 caution).
+
+## Round 2 — documentation-driven findings (from writing USER_GUIDE.md, still OPEN)
+
+Surfaced while cross-checking the user guide against source; none fixed yet:
+
+1. **BOM Compare option labels are raw snake_case** — five of six checkboxes
+   render `key.replace(/_/g, " ")` verbatim ("exact match", "ignore dnp",
+   "check part usage", "check fmr", "treat prov as covered"); "dnp" is never
+   expanded to Do-Not-Populate anywhere in the UI. Human-case them + hints
+   (`BomCompareTool.tsx` options render loop).
+2. **"Dark Star" codename leaks into user-facing FMEA copy** (e.g. "Choose
+   how Dark Star writes the finished workbook") and demo run summaries —
+   the product is "Reliability Tools Desktop". Grep `Dark Star` in
+   frontend/src (excluding the brand glyph/shell title decision).
+3. **Two sheet-naming schemes in one tool** — group path writes "Missing in
+   BOM" / "Failure Mode Ratio Errors" (spaces); custom path writes
+   `Only_In_*` / `Failure_Mode_Ratio` (underscores). Consider unifying
+   (`group_analysis.py` vs `excel_export.py`); note downstream scripts may
+   key on current names — needs the migration-log pattern used for
+   BOM_Additions.
+4. **Custom Compare's FMEA sheets are gated on filename-based detection**
+   ("FMEA Detected by Filename") — content-based detection would be less
+   surprising (`excel_export.py` / `fmea_coverage.py`).
+5. **CCA identifier vs RefDes-prefix rules differ** (1-8 uppercase
+   alphanumerics/hyphens vs 1-5 letters) — correct per their backends, but
+   the two "prefix" fields could explain their different rules better.
+6. USER_GUIDE.md now exists — keep it in sync when tool behavior changes
+   (add to the release checklist alongside doc counts).

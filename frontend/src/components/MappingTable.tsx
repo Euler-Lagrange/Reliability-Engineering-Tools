@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Info } from "@phosphor-icons/react";
 import {
   DO_NOT_MAP_LABEL,
@@ -6,6 +6,7 @@ import {
   type ColumnMappingRow,
   type MappingStatus,
 } from "../app/types";
+import { useEscapeLayer } from "../shared/hooks/useEscapeLayer";
 import { CustomSelect } from "./CustomSelect";
 
 interface MappingTableProps {
@@ -114,18 +115,9 @@ export function MappingTable({
   }, []);
 
   // Escape collapses the currently-open panel regardless of focus target.
-  useEffect(() => {
-    if (expandedHelpRow === null) {
-      return;
-    }
-    const handleKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setExpandedHelpRow(null);
-      }
-    };
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
-  }, [expandedHelpRow]);
+  // Registered through the shared dismiss-stack so a single Escape only closes
+  // this (top-most) layer, not other open surfaces (e.g. the Review drawer).
+  useEscapeLayer(expandedHelpRow !== null, () => setExpandedHelpRow(null));
 
   // Only REQUIRED rows count toward the amber "N unmapped" badge — an
   // optional row without a mapping is a normal state, not a to-do (UX

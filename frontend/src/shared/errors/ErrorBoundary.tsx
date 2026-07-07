@@ -1,5 +1,5 @@
 import type { ErrorInfo, ReactNode } from "react";
-import { Component } from "react";
+import { Component, useEffect, useRef, useState } from "react";
 import { useShellStore } from "../../stores/shellStore";
 import { useThemeStore } from "../../stores/themeStore";
 import { useNotificationStore } from "../../stores/notificationStore";
@@ -92,6 +92,21 @@ function ErrorBoundaryFallback({
   const themeMode = useThemeStore((state) => state.mode);
   const pushNotification = useNotificationStore((state) => state.push);
 
+  // Inline copy confirmation. When the ROOT boundary catches, the App (and the
+  // NotificationCenter that renders toasts) is unmounted — a pushed toast would
+  // never render. So we surface the result on the button itself. The store push
+  // is kept too, since nested (non-root) boundaries still have a live toast host.
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (resetTimerRef.current) {
+        clearTimeout(resetTimerRef.current);
+      }
+    };
+  }, []);
+
   const truncatedStack = truncateStack(error?.stack);
 
   const handleCopyDiagnostics = async () => {
@@ -132,6 +147,14 @@ function ErrorBoundaryFallback({
         copied = false;
       }
     }
+    // Inline confirmation on the button itself (survives a root-boundary
+    // unmount of the toast host), reverting after a short delay.
+    setCopyState(copied ? "copied" : "failed");
+    if (resetTimerRef.current) {
+      clearTimeout(resetTimerRef.current);
+    }
+    resetTimerRef.current = setTimeout(() => setCopyState("idle"), 2500);
+
     pushNotification({
       tone: copied ? "success" : "error",
       title: copied ? "Diagnostic bundle copied" : "Copy failed",
@@ -140,6 +163,13 @@ function ErrorBoundaryFallback({
         : "Clipboard write failed; open the latest log file instead.",
     });
   };
+
+  const copyButtonLabel =
+    copyState === "copied"
+      ? "Copied ✓"
+      : copyState === "failed"
+        ? "Copy failed — see log"
+        : "Copy diagnostic bundle";
 
   const handleOpenLatestLog = () => {
     // No production Tauri command surfaces a "reveal log file" path yet, so
@@ -186,8 +216,10 @@ function ErrorBoundaryFallback({
           onClick={() => {
             void handleCopyDiagnostics();
           }}
+          aria-live="polite"
+          data-copy-state={copyState}
         >
-          Copy diagnostic bundle
+          {copyButtonLabel}
         </button>
         <button
           type="button"
