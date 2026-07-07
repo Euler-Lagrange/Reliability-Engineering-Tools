@@ -1,5 +1,19 @@
 # Live UX Look-In — 2026-07-07 (browser preview, v0.4.8)
 
+> **STATUS: ALL FIVE FINDINGS FIXED same-day** (post-v0.4.8 commit). #1
+> turned out to be a CSS cascade bug, not a design decision — the unified
+> `[data-selected="true"]` rule was silently overridden by the later
+> `.choice-card` border/background rule at equal specificity; a compound
+> selector restores the intended accent border + fill. #2 "TBD" → "—"
+> (and the browser-mock demo now computes a real percentage). #3 optional
+> unmapped rows are neutral and excluded from the "N unmapped" badge
+> (fixture rows across BOM Compare / Failure Rate gained explicit
+> `required` flags). #4 badges have `title` tooltips via `badgeHint`.
+> #5 FMEA browser-mock seeds demo workbook columns (DEMO_WORKBOOK_COLUMNS,
+> mirroring BOM Compare's seedColumnsForWorkflow). Fixes #1/#2/#5 verified
+> live in the browser after HMR. This file is kept as the record of the
+> pass; the sections below describe the PRE-fix state.
+
 A screenshot-driven pass through all five tools in **browser-preview mode**
 (`npm run dev` → localhost:5173, Claude-in-Chrome on Edge). Purpose:
 document UX findings for a future session to fix — none of these were

@@ -769,6 +769,17 @@ button:disabled {
   background: var(--surface);
 }
 
+/* Cascade repair (UX findings 2026-07-07 #1): the rule above shares
+   specificity (0,1,0) with the unified [data-selected="true"] selection
+   rule earlier in this file but comes LATER, so it silently clobbered the
+   selected card's accent border + fill — the only surviving cue was the
+   eyebrow color. The compound selector (0,2,0) restores the intended
+   selected-state styling regardless of source order. */
+.choice-card[data-selected="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
 .section-card {
   padding: var(--space-4);
 }

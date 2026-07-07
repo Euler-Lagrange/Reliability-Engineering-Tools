@@ -151,6 +151,7 @@ export const workflowOptions: WorkflowOption[] = [
       "Expand a functional FMEA into piece-part rows using group-level union merge.",
     eyebrow: "Merge",
     badge: "Functional",
+    badgeHint: "Starts from a functional-level FMEA source.",
     requiredRoles: ["functionalFmea", "bom", "failureModes"],
     optionalRoles: ["hda", "grouping"],
   },
@@ -161,6 +162,7 @@ export const workflowOptions: WorkflowOption[] = [
       "Bring forward an existing piece-part FMEA, union component lists, and fill gaps.",
     eyebrow: "Merge",
     badge: "Piece-Part",
+    badgeHint: "Starts from an existing piece-part FMEA source.",
     requiredRoles: ["existingFmea", "bom", "failureModes"],
     optionalRoles: ["hda", "grouping"],
   },
@@ -171,6 +173,8 @@ export const workflowOptions: WorkflowOption[] = [
       "Build a new piece-part FMEA from a grouping workbook + BOM + failure modes.",
     eyebrow: "Generate",
     badge: "Balanced",
+    badgeHint:
+      "Full-input build: grouping workbook + BOM + failure modes give the richest output.",
     requiredRoles: ["grouping", "bom", "failureModes"],
     optionalRoles: ["hda"],
   },
@@ -181,6 +185,8 @@ export const workflowOptions: WorkflowOption[] = [
       "Build a piece-part FMEA with just a BOM and failure modes. Requires a CCA prefix.",
     eyebrow: "Generate",
     badge: "Lean",
+    badgeHint:
+      "Minimal-input build: just a BOM + failure modes, grouped under one CCA identifier.",
     requiredRoles: ["bom", "failureModes"],
     optionalRoles: ["hda"],
   },
@@ -547,6 +553,7 @@ export const bomCompareWorkflowOptions: WorkflowOption[] = [
     summary: "Compare grouping file against BOM to find missing and extra RefDes.",
     eyebrow: "Standard",
     badge: "Coverage",
+    badgeHint: "Checks that every grouped RefDes is covered by the BOM, both directions.",
   },
   {
     id: "bom_compare_custom",
@@ -554,6 +561,7 @@ export const bomCompareWorkflowOptions: WorkflowOption[] = [
     summary: "Compare two arbitrary BOMs to find differences by RefDes key.",
     eyebrow: "Flexible",
     badge: "Delta",
+    badgeHint: "Direct row-level differences between any two BOMs.",
   },
   {
     id: "extraction_compare",
@@ -561,6 +569,7 @@ export const bomCompareWorkflowOptions: WorkflowOption[] = [
     summary: "Diff two RefDes extraction outputs: appeared, disappeared, and moved groups.",
     eyebrow: "Revision",
     badge: "Drift",
+    badgeHint: "Tracks components that appeared, disappeared, or moved between schematic revisions.",
   },
 ];
 
@@ -574,6 +583,7 @@ export const bomCompareGroupMappings: ColumnMappingRow[] = [
     status: "mapped",
     recommendation: "Exact match",
     options: ["Component Group", "Group", "Circuit Block"],
+    required: true,
   },
   {
     canonical: "grouping_refdes_col",
@@ -582,6 +592,7 @@ export const bomCompareGroupMappings: ColumnMappingRow[] = [
     status: "mapped",
     recommendation: "Exact match",
     options: ["Reference Designator", "RefDes", "Ref Des"],
+    required: true,
   },
   {
     canonical: "bom_refdes_col",
@@ -590,6 +601,7 @@ export const bomCompareGroupMappings: ColumnMappingRow[] = [
     status: "mapped",
     recommendation: "Exact match",
     options: ["Reference Designator", "RefDes", "Ref Des"],
+    required: true,
   },
   {
     canonical: "bom_desc_col",
@@ -623,6 +635,7 @@ export const bomCompareCustomMappings: ColumnMappingRow[] = [
     status: "mapped",
     recommendation: "Exact match",
     options: ["Reference Designator", "RefDes"],
+    required: true,
   },
   {
     canonical: "refdes_col_b",
@@ -631,6 +644,7 @@ export const bomCompareCustomMappings: ColumnMappingRow[] = [
     status: "mapped",
     recommendation: "Exact match",
     options: ["Reference Designator", "RefDes"],
+    required: true,
   },
 ];
 
@@ -777,6 +791,7 @@ export const failureRateMappings: ColumnMappingRow[] = [
     status: "mapped",
     recommendation: "Exact match",
     options: ["Reference Designator", "Component", "RefDes"],
+    required: true,
   },
   {
     canonical: "pred_fr",
@@ -785,6 +800,7 @@ export const failureRateMappings: ColumnMappingRow[] = [
     status: "mapped",
     recommendation: "Exact match",
     options: ["Failure Rate", "FR", "Lambda"],
+    required: true,
   },
   {
     canonical: "fmea_cause",
@@ -793,6 +809,7 @@ export const failureRateMappings: ColumnMappingRow[] = [
     status: "mapped",
     recommendation: "Exact match",
     options: ["Failure Mode Causes", "Failure Cause", "Cause"],
+    required: true,
   },
   {
     canonical: "fmea_ratio",
@@ -801,6 +818,7 @@ export const failureRateMappings: ColumnMappingRow[] = [
     status: "mapped",
     recommendation: "Exact match",
     options: ["Failure Mode Ratio", "FMR", "Ratio"],
+    required: true,
   },
   {
     canonical: "fmea_usage",
@@ -809,6 +827,7 @@ export const failureRateMappings: ColumnMappingRow[] = [
     status: "mapped",
     recommendation: "Exact match",
     options: ["Part Usage", "Usage", "Quantity"],
+    required: true,
   },
   {
     canonical: "fmea_func",

@@ -74,6 +74,11 @@ export interface WorkflowOption {
   eyebrow: string;
   badge: string;
   /**
+   * Tooltip explaining the badge token. Single-word badges like
+   * "Balanced"/"Lean" are opaque without it (UX findings 2026-07-07 #4).
+   */
+  badgeHint?: string;
+  /**
    * Input roles that MUST be supplied before this workflow will validate.
    * Must match the backend's `_required_roles()` in `fmea/runtime.py`
    * exactly — if the two drift, the UI will either block the user

@@ -83,6 +83,33 @@ describe("MappingTable — Phase 2 infrastructure", () => {
     expect(screen.queryByText(/ABOUT THIS COLUMN/i)).not.toBeInTheDocument();
   });
 
+  test("optional unmapped rows are neutral and excluded from the unmapped badge", () => {
+    // UX findings 2026-07-07 #3: an optional row with no mapping is a normal
+    // state — no amber Attention chip, no contribution to "N unmapped".
+    const rows: ColumnMappingRow[] = [
+      rowWithHelp({
+        canonical: "Failure Mode",
+        mappedTo: "",
+        status: "attention",
+        required: true,
+      }),
+      rowWithoutHelp({
+        canonical: "Function column",
+        mappedTo: "",
+        status: "attention",
+        recommendation: "Optional. Select a Function column for FR rollup.",
+      }),
+    ];
+    render(<MappingTable rows={rows} overrides={{}} onOverride={vi.fn()} />);
+
+    // Only the REQUIRED unmapped row counts toward the badge.
+    expect(screen.getByText("1 unmapped")).toBeInTheDocument();
+    // The required row keeps its amber Attention chip...
+    expect(screen.getByText("Attention")).toBeInTheDocument();
+    // ...while the optional row demotes to the neutral Not mapped chip.
+    expect(screen.getByText("Not mapped")).toBeInTheDocument();
+  });
+
   test("marks required rows with a required indicator, optional rows unmarked", () => {
     // rowWithHelp carries required: true; rowWithoutHelp has no required flag.
     render(

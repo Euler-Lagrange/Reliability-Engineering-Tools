@@ -24,7 +24,9 @@ export function WorkflowSelector({
         >
           <div className="choice-card__header">
             <span className="choice-card__eyebrow">{workflow.eyebrow}</span>
-            <span className="choice-card__badge">{workflow.badge}</span>
+            <span className="choice-card__badge" title={workflow.badgeHint}>
+              {workflow.badge}
+            </span>
           </div>
           <h3>{workflow.title}</h3>
           <p>{workflow.summary}</p>

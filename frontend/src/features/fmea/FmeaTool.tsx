@@ -248,6 +248,32 @@ const initialValidations: ValidationMessage[] = IS_BROWSER_MOCK
 const initialRunTemplates: RunEventTemplate[] = IS_BROWSER_MOCK
   ? demoScenarios[0].runSequence.events
   : fmeaRunEvents;
+// UX findings 2026-07-07 #5: browser-mock demo columns. Without these the
+// demo staged LOADED files but every mapping row read "Not mapped" (plus an
+// amber unmapped badge and a "TBD" hero metric) — inconsistent with the BOM
+// Compare / Failure Rate demos, whose fixtures stage mapped rows. Headers
+// match the canonical labels so every visible row exact-matches. Desktop
+// seeds {} — real inspection is the only column source there (mirrors BOM
+// Compare's seedColumnsForWorkflow pattern).
+const DEMO_WORKBOOK_COLUMNS: Partial<Record<FileRole, string[]>> = IS_BROWSER_MOCK
+  ? {
+      grouping: [
+        "FMEA-ID",
+        "Failure Mode Causes",
+        "Function Description",
+        "Schematic Page",
+      ],
+      bom: [
+        "Component Part Description",
+        "Part Usage",
+        "BAE HDA Commodity Level 1",
+        "BAE HDA Commodity Level 2",
+        "FMD-2016 Commodity Type 1",
+        "FMD-2016 Commodity Type 2",
+      ],
+      failureModes: ["Failure Mode", "Failure Mode Ratio"],
+    }
+  : {};
 
 /**
  * Phase 5: Build the FMEA mapping rows from the canonical metadata.
@@ -426,7 +452,7 @@ export function FmeaTool() {
   );
   const [validations, setValidations] = useState<ValidationMessage[]>(initialValidations);
   const [inputInspections, setInputInspections] = useState<Partial<Record<FileRole, InputInspection>>>({});
-  const [workbookColumnsByRole, setWorkbookColumnsByRole] = useState<Partial<Record<FileRole, string[]>>>({});
+  const [workbookColumnsByRole, setWorkbookColumnsByRole] = useState<Partial<Record<FileRole, string[]>>>(DEMO_WORKBOOK_COLUMNS);
   const [templateAnalyses, setTemplateAnalyses] = useState<Partial<Record<FileRole, TemplateAnalysis>>>({});
   const [mappingOverrides, setMappingOverrides] = useState<Record<string, string>>({});
   const [runMode, setRunMode] = useState<RunMode>("idle");
@@ -689,7 +715,9 @@ export function FmeaTool() {
           (effectiveMappings.filter((row) => row.status === "mapped").length / effectiveMappings.length) * 100,
         )
       : null;
-  const mappingCoverageLabel = mappingCoverage === null ? "TBD" : `${mappingCoverage}%`;
+  // "—" (not "TBD") before any inspection: a literal TBD in the hero
+  // metric reads as unfinished UI (UX findings 2026-07-07 #2).
+  const mappingCoverageLabel = mappingCoverage === null ? "—" : `${mappingCoverage}%`;
 
   const activeWorkflow = workflowOptions.find((workflow) => workflow.id === workflowId) ?? workflowOptions[0];
 

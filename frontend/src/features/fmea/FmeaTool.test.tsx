@@ -84,6 +84,11 @@ describe("FmeaTool — Phase 5 mapping row visibility", () => {
     expect(hasMappingLabel("Local Effect")).toBe(false);
     expect(hasMappingLabel("Next Higher Effect")).toBe(false);
     expect(hasMappingLabel("End Effect")).toBe(false);
+
+    // UX findings 2026-07-07 #2/#5: browser-mock seeds demo workbook columns,
+    // so the hero metric computes a real percentage (never the literal "TBD"
+    // placeholder) and the demo mapping rows auto-map.
+    expect(screen.queryByText("TBD")).toBeNull();
   }, FMEA_TOOL_TEST_TIMEOUT_MS);
 
   test("BOM-Only mode hides the FMEA-ID mapping row", async () => {

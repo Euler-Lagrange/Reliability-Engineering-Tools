@@ -72,6 +72,13 @@ function resolveDisplayStatus(row: ColumnMappingRow, mappedValue: string): Mappi
   if (row.origin === "derived") {
     return "derived";
   }
+  // UX findings 2026-07-07 #3: an OPTIONAL row that simply has no mapping
+  // is not a warning state — demote the amber "attention" chip to the
+  // neutral "Not mapped" so users aren't sent chasing a non-issue. Rows
+  // marked required keep their fixture status untouched.
+  if (row.required !== true && !mappedValue && row.status === "attention") {
+    return "not_mapped";
+  }
   return row.status;
 }
 
@@ -120,7 +127,14 @@ export function MappingTable({
     return () => window.removeEventListener("keydown", handleKey);
   }, [expandedHelpRow]);
 
+  // Only REQUIRED rows count toward the amber "N unmapped" badge — an
+  // optional row without a mapping is a normal state, not a to-do (UX
+  // findings 2026-07-07 #3). All three tools' fixture/metadata rows carry
+  // explicit `required` flags.
   const unmappedCount = rows.filter((row) => {
+    if (row.required !== true) {
+      return false;
+    }
     const mapped = overrides[row.canonical] ?? row.mappedTo;
     const status = resolveDisplayStatus(row, mapped);
     return status !== "mapped" && status !== "derived";
