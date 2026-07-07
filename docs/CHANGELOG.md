@@ -7,7 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-07-07 — FMEA Deep Dive + All-Tools Stability Sweep
+
 ### Fixed
+
+- **FMEA Generator deep dive (4 batches, all TDD + QA-reviewed)** —
+  (1) the preserve-formatting output strategy silently dropped the
+  `Validation_Warnings`, `FMEA Gen New RefDes`, and `Part Usage Diagnostics`
+  sheets while the success note claimed they were captured — a shared
+  `build_summary_frames` is now the single sheet-list source for both
+  writers; (2) the internal `_style_hint` column leaked into the written
+  FMEA sheet — all underscore-prefixed columns are now dropped; (3) required
+  mappings (FMEA-ID, Failure Mode, Failure Mode Ratio) set to "Do Not Map"
+  silently fell back to heuristics — they now block at validate time with
+  `invalid_do_not_map`, and the mapping table marks required rows (mode-aware
+  for Failure Mode Causes in merge modes); (4) diagnostics language made
+  truthful: `PU_PARSE_REPLACED_WITH_COUNT` split from the BOM-Compare-only
+  "defaulted to 1.0" code, the missing `PU_INHERITED_MISMATCH` label added
+  with a lockstep test over every emitted reason code, legend banners on the
+  Part Usage Diagnostics sheet and Template_Merge_Summary flags, and the
+  unsupported-path toast now names the rejected workflow/strategy combo;
+  (5) the unreachable `options.columnSelection` backend branch was removed,
+  warning counts now reach the run result and success toast, unloaded
+  required inputs show a "Required" chip, and the browser-demo "Example data
+  staged" card no longer renders in the desktop app (RefDes / Failure Rate /
+  BOM Compare, incl. workflow switches); (6) robustness: post-write
+  verification failures across all four tools raise `FileAccessError`
+  instead of raw `IOError`, a negative BOM Part Usage no longer kills the
+  run with an `AssertionError`, and the template-writer append path is
+  NaN-safe.
+- **Failure Rate output integrity** — the abbreviation expander ran over
+  every output column, silently rewriting user text ("Main CB panel"
+  shipped as "Main Circuit Block panel"); it now expands only the
+  tool-written `Validation_Notes` column. The internal `Validation_RefDes`
+  column no longer ships, and informational circuit-block roll-up notes no
+  longer inflate the warning count, draw amber styling, or appear on the
+  Validation Warnings triage sheet.
+- **RefDes Extractor metrics + frozen-build multiprocessing** — the
+  verified/unverified group metrics counted a row-label suffix that every
+  group emits (a no-BOM run reported all groups "verified" while its own
+  notes said the opposite); verification now requires the Verified row to
+  carry components. `multiprocessing.freeze_support()` is installed at
+  sidecar startup so the geometry-subprocess option works in the packaged
+  PyInstaller build instead of hanging each batch to its timeout. The
+  geometry-batch checkpoint control is now actually wired (out_folder) —
+  and flipped to opt-in, since it writes JSON artifacts into the chosen
+  output folder; a checkpoint write failure degrades to a warning.
+- **Friendlier blocking errors** — empty/wrong-sheet BOM Compare inputs now
+  block with messages naming the file as the UI labels it ("File 1: the
+  selected sheet has no data rows") instead of raw `ValueError` "DataFrame"
+  jargon; blocked-run mapping messages show display labels ("FMEA: failure
+  mode ratio") instead of raw canonicals; the custom-path Failure Mode
+  Ratio sheet translates "FMR != 1.0" to plain language like the group path.
+- **Settings prefix editor resilience** — a corrupt
+  `~/.refdes_extractor_config.json` now surfaces a visible warning in the
+  editor (instead of silently resetting to defaults), and a failed save no
+  longer orphans its `.tmp` file.
+
+### Changed
+
+- **BOM Compare "base match" checkbox** relabeled "loose prefix base match"
+  with a hint — base-RefDes matching is always on; the option adds fuzzy
+  prefix coverage and is a no-op with exact match.
+- **RefDes Component Detail sheet** opens with a legend banner explaining
+  the Source vocabulary (geometry / parent-refdes / box-text /
+  pinlist-cluster / unqualified) and the 0-1 Confidence scale.
+- **Success toasts are warning-aware** — a run that succeeded with warnings
+  reports "N warning(s) captured in the output workbook" instead of an
+  unqualified file path.
+- Protocol doc sync: ten commands, `extraction_compare` routing,
+  refdes-prefix commands, and an accurate note on which result payloads get
+  Rust-injected `mode`.
+- Test suite grew from 627 to 671 (373 backend / 281 frontend / 17 Rust).
+
+### Fixed (pre-0.4.7 unreleased batch)
 
 - **Adversarial-review findings on the diagnostics/compare/prefix batch** —
   three parallel adversarial reviews of the five-feature batch surfaced and
