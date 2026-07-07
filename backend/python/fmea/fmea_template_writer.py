@@ -745,6 +745,8 @@ def _write_processor_summaries(wb, processor, log_func: Callable[[str], None]) -
             except ValueError:
                 # Single-column frames can't be merged; ignore.
                 pass
+            # Pin banner + header together (matches the new-workbook writer).
+            ws.freeze_panes = "A3"
         written += 1
 
     if written:

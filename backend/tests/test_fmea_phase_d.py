@@ -3893,6 +3893,9 @@ def test_template_preserve_writes_diagnostic_summary_sheets(tmp_path: Path) -> N
         # Batch 2: the Part Usage Diagnostics banner must too.
         pu_banner = output["Part Usage Diagnostics"].cell(row=1, column=1).value
         assert pu_banner and "Mapped Count" in str(pu_banner), pu_banner
+        # Banner sheets pin banner + header rows in the preserve path too.
+        assert output[NEW_REFDES_SHEET_NAME].freeze_panes == "A3"
+        assert output["Part Usage Diagnostics"].freeze_panes == "A3"
     finally:
         output.close()
 
@@ -4136,11 +4139,14 @@ def test_part_usage_diagnostics_sheet_has_explanatory_banner(
         ws = wb[PART_USAGE_DIAGNOSTICS_SHEET_NAME]
         banner = ws.cell(row=1, column=1).value
         headers = [cell.value for cell in ws[2]]
+        freeze = ws.freeze_panes
     finally:
         wb.close()
     assert banner and "Mapped Count" in str(banner), banner
     assert "Computed Count" in str(banner), banner
     assert headers[0] == "RefDes", headers
+    # Banner sheets pin banner + header rows so headers never scroll away.
+    assert freeze == "A3", freeze
 
 
 def test_template_merge_summary_explains_diagnostic_flags() -> None:

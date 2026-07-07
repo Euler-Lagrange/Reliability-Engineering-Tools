@@ -225,6 +225,9 @@ def get_prefix(token: str) -> Optional[str]:
     """
     t = str(token).strip().upper()
     t = CONTROL_CHARS_PATTERN.sub("", t)
+    # Same invisible-char hygiene as canonicalize_refdes: a PDF-pasted
+    # zero-width space would otherwise defeat the ^([A-Z]+) anchor.
+    t = INVISIBLE_CHARS_PATTERN.sub("", t)
     match = re.match(r'^([A-Z]+)', t)
     return match.group(1) if match else None
 
@@ -264,6 +267,18 @@ def canonicalize_refdes(token: str) -> str:
         >>> canonicalize_refdes("U100\\x00")
         'U100'
     """
+    # NaN/None guard (same idiom as split_refdes_list — this module stays
+    # pandas-free): a NaN cell must yield an empty token, not a spurious
+    # "NAN" RefDes key.
+    if token is None:
+        return ""
+    try:
+        if token != token:  # NaN is the only value unequal to itself
+            return ""
+    except Exception:
+        pass
+    if hasattr(token, '__class__') and 'NAType' in token.__class__.__name__:
+        return ""
     t = str(token).upper()
     # Normalize common hidden characters before trimming.
     t = CONTROL_CHARS_PATTERN.sub("", t)

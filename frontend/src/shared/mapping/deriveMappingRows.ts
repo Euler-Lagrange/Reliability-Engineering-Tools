@@ -1,5 +1,5 @@
 import type { ColumnMappingRow, FileRole } from "../../app/types";
-import { normalizeHeader } from "../../features/fmea/mappingAnalysis";
+import { normalizeHeader } from "./normalizeHeader";
 
 /**
  * Shared mapping-row derivation for the tools whose Column Mapping rows are

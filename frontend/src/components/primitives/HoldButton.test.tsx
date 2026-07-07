@@ -72,6 +72,29 @@ describe("HoldButton", () => {
     expect(confirmButton).toBeInTheDocument();
   });
 
+  test("does not fire onConfirm if disabled flips true during the hold", () => {
+    const onConfirm = vi.fn();
+    const { rerender } = render(
+      <HoldButton label="Cancel" holdMs={600} onConfirm={onConfirm} />,
+    );
+
+    const button = screen.getByRole("button", { name: "Cancel" });
+    fireEvent.pointerDown(button, { button: 0, pointerType: "mouse" });
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+
+    // The underlying run completes mid-hold, so the parent disables the
+    // button before the hold duration elapses.
+    rerender(<HoldButton label="Cancel" holdMs={600} disabled onConfirm={onConfirm} />);
+
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
   test("disabled prop blocks pointer interaction", () => {
     const onConfirm = vi.fn();
     render(<HoldButton label="Cancel" holdMs={200} disabled onConfirm={onConfirm} />);

@@ -65,7 +65,7 @@ npm run dev              # Vite dev server (browser preview mode)
 npm run build            # Production build
 npm run typecheck        # TypeScript type checking
 npm run typecheck:tests  # TypeScript type checking for Vitest files
-npm test                 # Vitest (281 tests)
+npm test                 # Vitest (295 tests)
 
 # Desktop (requires Rust toolchain)
 npm run tauri:dev        # Dev mode with hot reload
@@ -73,7 +73,7 @@ npm run tauri:build:portable  # Release build → src-tauri/target/.../release/
 npm run cargo:test       # Rust bridge unit tests via the repo runner
 
 # Python sidecar (use project venv)
-.venv\Scripts\python.exe -m pytest backend/tests -v    # 373 backend tests (50 sidecar + 27 audit + 12 cancel bridge + 10 output-directory helper + 74 FMEA phase D + 27 failure-rate logic + 15 RefDes extraction-engine + 35 BOM-compare logic + 11 BOM-compare runtime + 9 extraction-compare + 3 failure-rate runtime + 6 read-layer + 19 RefDes BOM-coverage + 6 BOM-loader + 5 OneDrive detection + 3 file-size guard + 3 crash-dump + 12 NextGen engine + 27 RefDes runtime + 12 validation-notes + 7 refdes-prefix config)
+.venv\Scripts\python.exe -m pytest backend/tests -v    # 378 backend tests (50 sidecar + 27 audit + 12 cancel bridge + 10 output-directory helper + 74 FMEA phase D + 27 failure-rate logic + 15 RefDes extraction-engine + 37 BOM-compare logic + 11 BOM-compare runtime + 9 extraction-compare + 3 failure-rate runtime + 8 read-layer + 19 RefDes BOM-coverage + 6 BOM-loader + 5 OneDrive detection + 3 file-size guard + 4 crash-dump + 12 NextGen engine + 27 RefDes runtime + 12 validation-notes + 7 refdes-prefix config)
 .venv\Scripts\python.exe backend/python/sidecar_main.py --self-test
 
 # Full release
@@ -170,7 +170,7 @@ The audit runs:
 
 ## Testing
 
-### Backend Tests (373 total)
+### Backend Tests (378 total)
 - 50 sidecar integration tests in `test_sidecar_main.py` (incl. the RefDes BOM-coverage sheet emission, the extraction_compare validate/execute pair, the refdes-prefix read/write round-trip with HOME isolated to tmp_path + legacy-token grandfathering, and the Batch-6 corrupt-prefix-config warning surface)
 - 27 security-audit tests in `test_security_audit.py` (synthetic positives + live tree scan; incl. subprocess via alias/from-import, os.system/popen/startfile, and ctypes native-import detection)
 - 12 cancel-bridge tests in `test_cancel_bridge.py` (BOM Compare + RefDes bridges plus Failure Rate `FMEALinkerLogic.cancel` binding through `ActiveRun`)
@@ -178,17 +178,17 @@ The audit runs:
 - 74 FMEA Phase D tests in `test_fmea_phase_d.py` (incl. the hdaSource contract, fill_gaps no-count-source flagging, Tier-1 Part Usage compute-or-blank+flag: instance-count 1/N derivation counting distinct physical instances not occurrences, blank+PU_GUESSED flag, explicit-value preservation, Batch-1 deep-dive fixes: preserve-mode diagnostic-sheet parity via `build_summary_frames`, underscore-column hygiene in the written FMEA sheet, the `invalid_do_not_map` validate-time gate for required mappings with the bom_only FMEA-ID exemption, and Batch-2 diagnostics language: REASON_CODE_LABELS lockstep scan of every emitted ReasonCode, the PU_PARSE_REPLACED_WITH_COUNT split from the BOM-Compare-only PU_PARSE_DEFAULTED, Part Usage Diagnostics banner in both writers, Template_Merge_Summary flag legend, named unsupported-combo toast, files-first FMC gate ordering with structured validation cards, and Batch-4 robustness: FileAccessError on failed post-write verification, negative Part Usage handled as a data-quality warning, NaN-safe template-append cells)
 - 27 Failure-Rate logic tests in `test_failure_rate_logic.py` (incl. circuit-block roll-up, leaf-block preservation, prediction-FR coercion flagging, Tier-1 genuine-gap Part Usage: blank usage with real FR → NaN Mode_FR, formula-cell-as-NaN, unmatched-RefDes zero preserved, roll-up skips blank child, all-gap-children block blanks to NaN, and Batch-5 output integrity: expander no longer rewrites pass-through user text, internal Validation_RefDes dropped from export, informational roll-up notes excluded from warnings)
 - 15 RefDes extraction-engine tests in `test_extraction_engine.py` (pin-disambiguation, Tier-2 #20 pinlist-failure streaming, and the geometry RefDes-check prefix-allowlist alignment (#6) + `pin_assignment_threshold` key + cap-hit warning)
-- 35 BOM-compare logic tests in `test_bom_compare_logic.py` (incl. custom-path option semantics, residual-digit guard, non-numeric FMR flagging, per-column value-diff contract, Tier-4 FMR-key canonicalization against invisible-char RefDes, the Batch-5 custom FMR sheet user-facing status translation, and Batch-6 friendly ValidationError messages for empty/wrong-sheet inputs)
+- 37 BOM-compare logic tests in `test_bom_compare_logic.py` (incl. custom-path option semantics, residual-digit guard, non-numeric FMR flagging, per-column value-diff contract, Tier-4 FMR-key canonicalization against invisible-char RefDes, the Batch-5 custom FMR sheet user-facing status translation, Batch-6 friendly ValidationError messages for empty/wrong-sheet inputs, and the final-day fixes: group-report expander scoped to tool-authored columns so user text ships verbatim, detect_column tolerating numeric Excel headers)
 - 11 BOM-compare runtime tests in `test_bom_compare_runtime.py` (dnp_regex default, Do-Not-Map sentinel validation, custom option wiring, compare_columns forwarding, Batch-6 display-label blocked-run messages)
 - 9 extraction-compare tests in `test_extraction_compare.py` (rev-to-rev differ: appeared/disappeared/moved buckets, (Verified)/(Unverified) suffix + gap-row normalization against phantom churn, blank-cell NaN guard through a real Excel round-trip, order-independent cross-group duplicate membership, UNGROUPED as a named bucket, styled 4-sheet report read-back)
 - 3 Failure-Rate runtime tests in `test_failure_rate_runtime.py` (Do-Not-Map sentinel validation, Batch-6 display-label blocked-run messages)
 - 7 RefDes prefix-config tests in `test_refdes_prefix_config.py` (Batch-6: absent-vs-corrupt config distinction, corrupt-file read warning, non-dict payload, .tmp cleanup when os.replace fails, happy-path round-trip — config path monkeypatched so the real user config is never touched)
-- 6 read-layer tests in `test_read_layer.py` (Excel/CSV NA-literal parity, duplicate-header dedup matching pandas)
+- 8 read-layer tests in `test_read_layer.py` (Excel/CSV NA-literal parity, duplicate-header dedup matching pandas, canonicalize_refdes NaN/None guard, get_prefix invisible-char hygiene)
 - 19 RefDes BOM-coverage tests in `test_coverage_report.py` (reverse-diff buckets: Not Extracted / Extracted-Ungrouped / Extracted-Provisional, component-level normalization, deterministic collapse of same-base BOM rows, unparented-pin rejection, multi-row page/group union, NaN-cell guards, BOM enrichment, summary counts, sheet writer)
 - 6 BOM-loader tests in `test_bom_loader.py` (opt-in Part Number / Description capture keyed to the normalized RefDes, Description-over-Name precedence, pin-style rows count as their base component)
 - 5 OneDrive-detection tests in `test_onedrive_detection.py` (Decision A: env-var-first OneDrive path detection with directory-boundary match + substring fallback)
 - 3 file-size guard tests in `test_file_guards.py` (Decision C: `ensure_file_size_within` caps the full analyze_template load against OOM)
-- 3 crash-dump tests in `test_crash_dump.py` (Decision B: review-before-sharing banner + embedded-value truncation)
+- 4 crash-dump tests in `test_crash_dump.py` (Decision B: review-before-sharing banner + embedded-value truncation, and the retention cap pruning the oldest dumps)
 - 12 NextGen-engine tests in `test_nextgen_engine.py` (default engine: pinlist-failure streamed to the run log; word-extraction-timeout surfacing; pin-token verification against pin-level BOM entries incl. the Verified-row formatting; diagnostics accumulator: None is a no-op, token-diag merge skips None fields, pinned orphan-disposition vocabulary, token-pages fold with mode-suffix strip + cross-group duplicate group listing, per-pass adoption replaces rather than merges; Batch-5: checkpoint write failure degrades to a warning, geometry checkpoints are opt-in)
 - 27 RefDes-runtime tests in `test_refdes_runtime.py` (output DataFrame drops internal `_is_gap`/`_row_style` columns and renames to Title Case display headers; blocking type/range validation of all 16 engine options at validate time, incl. the 0-valid adaptive-orphan threshold and a config-field lockstep guard; Batch-5: verified-group metrics require components not just the row-label suffix, out_folder plumbed for geometry checkpoints, sidecar main() installs multiprocessing.freeze_support)
 - 12 validation-notes tests in `test_validation_notes.py` (cross-group duplicate ordinals by page order, V/U split never self-flags, not-in-BOM notes gated on a provided BOM, gap-row notes, ambiguous-token notes + warning style, Component Detail / Orphan Pins sheet read-back incl. skip-when-empty, styled-workbook read-back: Aptos Narrow, frozen header, header fill, duplicate-row amber highlight)
@@ -200,7 +200,7 @@ The audit runs:
 - `pytest.importorskip("fitz")` for RefDes tests requiring PyMuPDF
 - `backend/tests/conftest.py` installs a `sys.path` shim for in-process unit tests
 
-### Frontend Tests (281 total across 41 test files)
+### Frontend Tests (295 total across 44 test files)
 - Vitest + React Testing Library
 - Browser-mock mode (no Tauri runtime needed)
 - `src/app/App.test.tsx`
@@ -226,7 +226,10 @@ The audit runs:
 - `src/features/fmea/mappingColumns.test.ts`
 - `src/features/fmea/mappingAnalysis.test.ts`
 - `src/features/settings/SettingsTool.test.tsx` (RefDes prefix editor: load/add/remove/save, client-side validation, browser-mode guard, failed-load Retry recovery, corrupt-config warning banner)
-- `src/features/toolRunDispatch.test.tsx` (now covers the FMEA payload keys + the extraction_compare no-mappings/no-options payload + M9 no-demo-content-in-desktop + FMEA Required input chips)
+- `src/features/toolRunDispatch.test.tsx` (now covers the FMEA payload keys + the extraction_compare no-mappings/no-options payload + M9 no-demo-content-in-desktop + FMEA Required input chips + the cross-tool run guard, with an afterEach async drain for run-store test isolation)
+- `src/components/WorkflowSelector.test.tsx` (new — aria-pressed selection semantics)
+- `src/components/StrategySelector.test.tsx` (new — aria-pressed selection semantics)
+- `src/components/InputGrid.test.tsx` (new — per-card copy-path state isolation)
 - `src/mocks/scenarios.test.ts` (new — Tier-3 #28 scenario completeness)
 - `src/shared/backend/runLifecycle.test.ts` (now covers the terminal-status guard)
 - `src/shared/backend/useDesktopRunController.test.ts` (success-toast two-event ordering + warning-count mapping/qualified toast)
@@ -246,7 +249,7 @@ The audit runs:
 - `src/stores/storeMigrations.test.ts` (new — Decision E persist version/migration)
 
 Run `npx vitest run --config frontend/vite.config.ts --reporter=default` to
-see individual counts per file — the suite totals 281 tests and changes
+see individual counts per file — the suite totals 295 tests and changes
 whenever a suite gains or loses cases.
 
 ## Critical Gotchas

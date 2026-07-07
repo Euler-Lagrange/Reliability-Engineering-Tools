@@ -597,6 +597,8 @@ def _write_component_detail_sheet(wb, details: dict | None) -> None:
         )
     except ValueError:  # pragma: no cover - single-column frames can't merge
         pass
+    # insert_rows does NOT shift the styler's A2 freeze — pin banner + header.
+    ws.freeze_panes = "A3"
 
 
 def _write_orphan_pins_sheet(wb, details: dict | None) -> None:

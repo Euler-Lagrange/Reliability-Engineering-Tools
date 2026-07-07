@@ -227,8 +227,11 @@ export function GlobalLogPanel() {
         target.setPointerCapture(event.pointerId);
         pointerCaptureRef.current = { target, pointerId: event.pointerId };
       } catch {
-        // If pointer capture is unavailable, fall back to document-level
-        // listeners installed by the useEffect below.
+        // Pointer capture is required to keep receiving move/up events once
+        // the pointer leaves the handle. There is no document-level listener
+        // fallback: if capture is unavailable the drag simply stops when the
+        // pointer leaves the handle. Acceptable here because WebView2 (the
+        // production runtime) supports setPointerCapture.
         pointerCaptureRef.current = null;
       }
     },

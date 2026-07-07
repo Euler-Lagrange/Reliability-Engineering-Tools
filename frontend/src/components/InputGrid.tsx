@@ -20,6 +20,29 @@ interface InputGridProps {
 type InputCardState = "pending" | "active" | "loaded";
 
 /**
+ * Per-card copy-to-clipboard button. Each instance owns its own
+ * `useCopyToClipboard()` hook so the transient "Copied!" affordance is
+ * scoped to the card the user actually clicked — a single shared hook at
+ * the grid level flipped every card's button at once.
+ */
+function CopyPathButton({ path, label }: { path: string; label: string }) {
+  const { copy, copied } = useCopyToClipboard();
+  return (
+    <button
+      type="button"
+      className={`input-card__path-copy${copied ? " input-card__path-copy--copied" : ""}`}
+      aria-label={`Copy ${label} path to clipboard`}
+      title={copied ? "Copied!" : "Copy path to clipboard"}
+      onClick={() => {
+        void copy(path);
+      }}
+    >
+      <Copy size={14} weight="regular" />
+    </button>
+  );
+}
+
+/**
  * Design handoff principle J (stepper) — classify each input card so CSS can
  * collapse unstarted and completed rows while the single actionable card
  * stays fully expanded. The first card without a path is the "active" step;
@@ -53,7 +76,6 @@ function classifyInputStates(inputs: InputFileState[]): InputCardState[] {
 }
 
 export function InputGrid({ inputs, onBrowse, onSheetChange, getDisabledSheetReason }: InputGridProps) {
-  const { copy, copied } = useCopyToClipboard();
   const states = classifyInputStates(inputs);
 
   return (
@@ -90,17 +112,7 @@ export function InputGrid({ inputs, onBrowse, onSheetChange, getDisabledSheetRea
                     {displayPath}
                   </span>
                   {canCopyPath ? (
-                    <button
-                      type="button"
-                      className={`input-card__path-copy${copied ? " input-card__path-copy--copied" : ""}`}
-                      aria-label={`Copy ${input.label} path to clipboard`}
-                      title={copied ? "Copied!" : "Copy path to clipboard"}
-                      onClick={() => {
-                        void copy(input.path);
-                      }}
-                    >
-                      <Copy size={14} weight="regular" />
-                    </button>
+                    <CopyPathButton path={input.path} label={input.label} />
                   ) : null}
                 </div>
               </div>

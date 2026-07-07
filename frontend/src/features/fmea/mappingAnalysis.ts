@@ -1,14 +1,16 @@
 import type { FileRole, InputFileState, OutputStrategyId } from "../../app/types";
+import { normalizeHeader } from "../../shared/mapping/normalizeHeader";
+
+// Canonical implementation lives in shared/mapping (layering follow-up #3:
+// shared/ must never import from features/). Re-exported here so the FMEA
+// feature's existing imports keep working.
+export { normalizeHeader };
 
 export interface AggregatedMappingSource {
   columns: string[];
   optionLabels: Record<string, string>;
   sourceLabels: string[];
   sourceLabelText: string | null;
-}
-
-export function normalizeHeader(value: string): string {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, " ");
 }
 
 export function mergeColumnsByNormalizedName(columns: string[]): string[] {

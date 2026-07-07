@@ -12,12 +12,13 @@ export function WorkflowSelector({
   onSelect,
 }: WorkflowSelectorProps) {
   return (
-    <div className="card-grid">
+    <div className="card-grid" role="group" aria-label="Workflow">
       {workflows.map((workflow) => (
         <button
           key={workflow.id}
           className="choice-card"
           data-selected={workflow.id === selectedWorkflowId}
+          aria-pressed={workflow.id === selectedWorkflowId}
           onClick={() => onSelect(workflow.id)}
           type="button"
         >

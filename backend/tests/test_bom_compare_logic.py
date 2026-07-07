@@ -703,3 +703,70 @@ def test_compare_two_boms_empty_uses_ui_file_labels() -> None:
     assert "File 2" in msg_b
     assert "no data rows" in msg_b
     assert "DataFrame" not in msg_b
+
+
+def test_group_report_preserves_user_text_in_passthrough_columns(tmp_path) -> None:
+    """Final-day audit F2 (sibling of the Failure Rate corruption fix): the
+    group-path report expander must run ONLY on tool-authored diagnostic
+    columns (Reason/Status). User pass-through text like a BOM Description
+    of "Main CB panel" (circuit breaker) must ship verbatim."""
+    from openpyxl import load_workbook
+
+    from bom_compare.bom_compare_logic import AnalyzeResults
+    from bom_compare.group_analysis import write_excel_report
+
+    results = AnalyzeResults(
+        summary=pd.DataFrame([{"Item": "Total groups", "Value": 1}]),
+        description_warnings=pd.DataFrame(
+            [
+                {
+                    "Base": "CB1",
+                    "Expected_Approx": 2,
+                    "Observed_Grouped_Tokens": "CB1-1, CB1-2",
+                    "Description": "Main CB panel",
+                }
+            ]
+        ),
+        fmr_warnings=pd.DataFrame(
+            [{"RefDes": "U2", "Sum": 1.1, "Status": "FMR != 1.0"}]
+        ),
+    )
+
+    out = tmp_path / "group_report.xlsx"
+    write_excel_report(results, str(out))
+
+    wb = load_workbook(out)
+    try:
+        warn_ws = wb["Warnings"]
+        warn_headers = [c.value for c in warn_ws[1]]
+        desc_idx = warn_headers.index("Description") + 1
+        description = warn_ws.cell(row=2, column=desc_idx).value
+
+        fmr_ws = wb["Failure Mode Ratio Errors"]
+        fmr_headers = [c.value for c in fmr_ws[1]]
+        status_idx = fmr_headers.index("Status") + 1
+        status = fmr_ws.cell(row=2, column=status_idx).value
+    finally:
+        wb.close()
+
+    # User text is untouched...
+    assert description == "Main CB panel", description
+    # ...while the tool-authored Status column is still expanded.
+    assert status == "Failure Mode Ratio does not equal 1.0", status
+
+
+def test_detect_column_tolerates_non_string_headers() -> None:
+    """Final-day audit F1: openpyxl preserves numeric header cells as
+    int/float (a column headed 2024, or the user picking a data row as the
+    header row). detect_column must match by string coercion instead of
+    dying on int.lower() with a cryptic AttributeError."""
+    from common.utils import detect_column
+
+    columns = [2024, "Reference Designator", 3.5]
+    assert detect_column(columns, ["Reference Designator"]) == "Reference Designator"
+    assert detect_column(columns, ["2024"]) == 2024
+    assert detect_column(columns, ["missing"]) is None
+    assert (
+        detect_column(columns, ["designator"], substring_match=True)
+        == "Reference Designator"
+    )

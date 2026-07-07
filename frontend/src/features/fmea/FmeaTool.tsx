@@ -462,6 +462,7 @@ export function FmeaTool() {
     resetSessionUnlessLive: resetDesktopRunSessionUnlessLive,
     armTerminalHandler,
     cancel: cancelDesktopRun,
+    guardCrossToolRun,
     panelRunMode,
     panelTimeline,
     panelProgress,
@@ -1115,6 +1116,12 @@ export function FmeaTool() {
       setContextView("run");
       setRunMode("running");
       setRunIndex(0);
+      return;
+    }
+
+    // Cross-tool guard: another tool's live run must not be clobbered by
+    // this start's rejection path — toast and bail before sending anything.
+    if (guardCrossToolRun()) {
       return;
     }
 

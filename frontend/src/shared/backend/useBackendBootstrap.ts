@@ -21,6 +21,15 @@ export function useBackendBootstrap() {
 
     function attemptReconnect() {
       if (!active) return;
+      // Cancel any reconnect timer still pending from a prior disconnect. A
+      // second disconnect (or a burst of them) must not overwrite the timer
+      // handle and leave the old timer to fire — that spawned duplicate,
+      // overlapping health-check chains and double "Backend reconnected"
+      // toasts.
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = undefined;
+      }
       const delay = RECONNECT_DELAYS[Math.min(reconnectAttempt, RECONNECT_DELAYS.length - 1)];
       reconnectAttempt++;
 

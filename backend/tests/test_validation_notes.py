@@ -198,6 +198,8 @@ def test_component_detail_sheet_rows_sorted_and_flagged(tmp_path) -> None:
     assert ws.cell(row=4, column=6).value == "ambiguous (3 candidates)"
     # The header row (now row 2) keeps the extractor font.
     assert ws.cell(row=2, column=1).font.name == "Aptos Narrow"
+    # Banner + header rows are pinned so headers never scroll away.
+    assert ws.freeze_panes == "A3"
 
 
 def test_orphan_pins_sheet_and_skip_when_empty(tmp_path) -> None:

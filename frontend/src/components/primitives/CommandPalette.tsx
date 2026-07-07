@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -74,6 +75,14 @@ function matchesQuery(action: CommandPaletteAction, query: string): boolean {
 export function CommandPalette({ actions, open, onClose }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
+  // Stable base id for the results listbox + its option rows, so the search
+  // input can advertise a combobox relationship (aria-controls) and point
+  // `aria-activedescendant` at the highlighted option.
+  const listboxId = useId();
+  const optionId = useCallback(
+    (indexInFlat: number) => `${listboxId}-option-${indexInFlat}`,
+    [listboxId],
+  );
   const inputRef = useRef<HTMLInputElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -219,6 +228,13 @@ export function CommandPalette({ actions, open, onClose }: CommandPaletteProps) 
   // active-row highlight and Enter-key activation share one source of
   // truth.
   let cursor = 0;
+  // Only advertise an active descendant when a real option is highlighted;
+  // an empty result set must leave the attribute absent (WAI-ARIA combobox
+  // pattern) so assistive tech doesn't reference a non-existent id.
+  const activeOptionId =
+    filteredActions.length > 0 && activeIndex < filteredActions.length
+      ? optionId(activeIndex)
+      : undefined;
   return (
     <div
       ref={backdropRef}
@@ -249,9 +265,19 @@ export function CommandPalette({ actions, open, onClose }: CommandPaletteProps) 
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             aria-label="Search command palette"
+            role="combobox"
+            aria-expanded="true"
+            aria-controls={listboxId}
+            aria-autocomplete="list"
+            aria-activedescendant={activeOptionId}
           />
         </div>
-        <div className="command-palette__results" role="listbox" aria-label="Command palette results">
+        <div
+          id={listboxId}
+          className="command-palette__results"
+          role="listbox"
+          aria-label="Command palette results"
+        >
           {filteredActions.length === 0 ? (
             <div className="command-palette__empty">
               <EmptyState
@@ -276,6 +302,7 @@ export function CommandPalette({ actions, open, onClose }: CommandPaletteProps) 
                   return (
                     <button
                       key={action.id}
+                      id={optionId(indexInFlat)}
                       type="button"
                       className={className}
                       role="option"

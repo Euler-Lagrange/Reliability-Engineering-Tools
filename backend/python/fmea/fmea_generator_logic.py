@@ -2561,6 +2561,10 @@ def write_excel_report(
                     except ValueError:
                         # Single-column frames can't be merged; ignore.
                         pass
+                    # insert_rows does NOT shift the styler's A2 freeze, so
+                    # only the banner would stay pinned and the header would
+                    # scroll away. Pin banner + header together.
+                    ws.freeze_panes = "A3"
 
     try:
         wb.save(filename)

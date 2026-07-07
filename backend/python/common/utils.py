@@ -420,9 +420,13 @@ def list_excel_sheet_names(path: str, log_func=None) -> list:
         else:
             from openpyxl import load_workbook
             wb = load_workbook(source, read_only=True, data_only=True)
-            names = list(wb.sheetnames)
-            wb.close()
-            return names
+            try:
+                return list(wb.sheetnames)
+            finally:
+                # A read-only workbook holds the zip handle open until GC —
+                # close on the exception path too or a later write/rename on
+                # the same file can hit "file in use" on Windows.
+                wb.close()
 
     try:
         return _read_sheet_names(resolved, ext)
@@ -538,6 +542,7 @@ def try_read_table(path: str, header_row: int = 0, sheet_name=None, log_func=Non
                         time.sleep(0.5)
                         continue
                     # Last resort: copy to temp file
+                    tmp_path = None
                     try:
                         with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
                             tmp_path = tmp.name
@@ -551,14 +556,17 @@ def try_read_table(path: str, header_row: int = 0, sheet_name=None, log_func=Non
                                     "Install xlrd or convert the file to .xlsx."
                                 )
                             raise
-                        finally:
+                    except (PermissionError, OSError, IOError) as copy_err:
+                        _ensure_logger().debug(f"Temp file fallback failed: {copy_err}")
+                        raise
+                    finally:
+                        # Covers the copyfile-failure path too — without this
+                        # a failed copy left a zero-byte temp file behind.
+                        if tmp_path is not None:
                             try:
                                 os.remove(tmp_path)
                             except OSError:
                                 pass
-                    except (PermissionError, OSError, IOError) as copy_err:
-                        _ensure_logger().debug(f"Temp file fallback failed: {copy_err}")
-                        raise
         raise IOError(f"Could not read {p}")
 
     if ext in (".csv", ".txt", ".tsv"):
@@ -645,13 +653,16 @@ def detect_column(
         >>> detect_column(['partner_id'], ['part'], substring_match=True)
         None  # 'part' requires word boundary, doesn't match 'partner_id'
     """
+    # openpyxl preserves numeric header cells as int/float (a column headed
+    # 2024, or a data row picked as the header row) — coerce to str for
+    # matching but return the ORIGINAL label so DataFrame indexing works.
     # Preserve first match when columns differ only by case (e.g., "ID" vs "id")
     cols_ci: dict[str, str] = {}
     for c in columns:
-        cols_ci.setdefault(c.lower(), c)
+        cols_ci.setdefault(str(c).lower(), c)
 
-    def norm(s: str) -> str:
-        return re.sub(r"[^a-z0-9]", "", s.lower())
+    def norm(s) -> str:
+        return re.sub(r"[^a-z0-9]", "", str(s).lower())
 
     cols_norm: dict[str, str] = {}
     for c in columns:
@@ -670,7 +681,7 @@ def detect_column(
     # Pass 3: Substring match (optional)
     if substring_match:
         for col in columns:
-            col_lower = col.lower().strip()
+            col_lower = str(col).lower().strip()
             for syn in synonyms:
                 syn_lower = syn.lower().strip()
                 # Use word-boundary matching for short synonyms to avoid false positives

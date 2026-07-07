@@ -11,21 +11,21 @@
 | Backend FMEA Phase D | `backend/tests/test_fmea_phase_d.py` | 74 | pytest |
 | Backend Failure-Rate logic | `backend/tests/test_failure_rate_logic.py` | 27 | pytest |
 | Backend RefDes extraction-engine | `backend/tests/test_extraction_engine.py` | 15 | pytest |
-| Backend BOM-compare logic | `backend/tests/test_bom_compare_logic.py` | 35 | pytest |
+| Backend BOM-compare logic | `backend/tests/test_bom_compare_logic.py` | 37 | pytest |
 | Backend BOM-compare runtime | `backend/tests/test_bom_compare_runtime.py` | 11 | pytest |
 | Backend extraction compare | `backend/tests/test_extraction_compare.py` | 9 | pytest |
 | Backend Failure-Rate runtime | `backend/tests/test_failure_rate_runtime.py` | 3 | pytest |
-| Backend read-layer (NA + header dedup) | `backend/tests/test_read_layer.py` | 6 | pytest |
+| Backend read-layer (NA + header dedup) | `backend/tests/test_read_layer.py` | 8 | pytest |
 | Backend RefDes BOM-coverage | `backend/tests/test_coverage_report.py` | 19 | pytest |
 | Backend BOM-loader | `backend/tests/test_bom_loader.py` | 6 | pytest |
 | Backend OneDrive detection | `backend/tests/test_onedrive_detection.py` | 5 | pytest |
 | Backend file-size guard | `backend/tests/test_file_guards.py` | 3 | pytest |
-| Backend crash-dump | `backend/tests/test_crash_dump.py` | 3 | pytest |
+| Backend crash-dump | `backend/tests/test_crash_dump.py` | 4 | pytest |
 | Backend NextGen engine | `backend/tests/test_nextgen_engine.py` | 12 | pytest |
 | Backend RefDes runtime | `backend/tests/test_refdes_runtime.py` | 27 | pytest |
 | Backend RefDes validation notes | `backend/tests/test_validation_notes.py` | 12 | pytest |
 | Backend RefDes prefix config | `backend/tests/test_refdes_prefix_config.py` | 7 | pytest |
-| **Backend subtotal** | | **373** | |
+| **Backend subtotal** | | **378** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 4 | Vitest + RTL |
 | Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 3 | Vitest + RTL |
@@ -33,8 +33,8 @@
 | Frontend run state panel | `frontend/src/components/RunStatePanel.test.tsx` | 6 | Vitest + RTL |
 | Frontend output folder picker | `frontend/src/components/OutputFolderPicker.test.tsx` | 2 | Vitest + RTL |
 | Frontend log panel resize | `frontend/src/components/GlobalLogPanel.resize.test.tsx` | 13 | Vitest + RTL |
-| Frontend command palette | `frontend/src/components/primitives/CommandPalette.test.tsx` | 5 | Vitest + RTL |
-| Frontend hold button | `frontend/src/components/primitives/HoldButton.test.tsx` | 5 | Vitest + RTL |
+| Frontend command palette | `frontend/src/components/primitives/CommandPalette.test.tsx` | 8 | Vitest + RTL |
+| Frontend hold button | `frontend/src/components/primitives/HoldButton.test.tsx` | 6 | Vitest + RTL |
 | Frontend empty state | `frontend/src/components/primitives/EmptyState.test.tsx` | 5 | Vitest + RTL |
 | Frontend run lifecycle | `frontend/src/shared/backend/runLifecycle.test.ts` | 9 | Vitest |
 | Frontend desktop run controller | `frontend/src/shared/backend/useDesktopRunController.test.ts` | 3 | Vitest |
@@ -43,7 +43,7 @@
 | Frontend run event client | `frontend/src/shared/backend/client.runEvents.test.ts` | 2 | Vitest |
 | Frontend contract schemas | `frontend/src/contracts/sidecar.test.ts` | 5 | Vitest |
 | Frontend busy reset | `frontend/src/shared/backend/useBackendBusyReset.test.ts` | 9 | Vitest |
-| Frontend backend bootstrap | `frontend/src/shared/backend/useBackendBootstrap.test.ts` | 2 | Vitest |
+| Frontend backend bootstrap | `frontend/src/shared/backend/useBackendBootstrap.test.ts` | 3 | Vitest |
 | Frontend run subscription | `frontend/src/shared/backend/useBackendRunSubscription.test.ts` | 3 | Vitest |
 | Frontend theme registry | `frontend/src/shared/theme/themeRegistry.test.ts` | 10 | Vitest |
 | Frontend app shortcuts | `frontend/src/shared/hooks/useAppShortcuts.test.tsx` | 6 | Vitest + RTL |
@@ -62,14 +62,17 @@
 | Frontend RefDes Extractor tool | `frontend/src/features/refdes-extractor/RefDesExtractorTool.test.tsx` | 14 | Vitest + RTL |
 | Frontend number field | `frontend/src/components/primitives/NumberField.test.tsx` | 6 | Vitest + RTL |
 | Frontend mapping derivation | `frontend/src/shared/mapping/deriveMappingRows.test.ts` | 6 | Vitest |
-| Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 10 | Vitest + RTL |
+| Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 12 | Vitest + RTL |
+| Frontend workflow selector | `frontend/src/components/WorkflowSelector.test.tsx` | 3 | Vitest + RTL |
+| Frontend strategy selector | `frontend/src/components/StrategySelector.test.tsx` | 3 | Vitest + RTL |
+| Frontend input grid | `frontend/src/components/InputGrid.test.tsx` | 1 | Vitest + RTL |
 | Frontend Settings tool | `frontend/src/features/settings/SettingsTool.test.tsx` | 6 | Vitest + RTL |
 | Frontend shell-hook install | `frontend/src/app/App.shellHooks.test.tsx` | 1 | Vitest + RTL |
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
-| **Frontend subtotal** | | **281** | |
+| **Frontend subtotal** | | **295** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 17 | cargo test |
-| **Total** | | **671** | |
+| **Total** | | **690** | |
 
 ## Backend Tests
 
@@ -235,14 +238,14 @@ neither of which exists under jsdom, so the client returns mock data from
 | `frontend/src/components/RunStatePanel.test.tsx` | 6 — run state display, progress, result, cancel, error |
 | `frontend/src/components/GlobalLogPanel.resize.test.tsx` | 13 — log panel drag-to-resize, collapse, expand, boundary constraints |
 | `frontend/src/components/primitives/CommandPalette.test.tsx` | 5 — command palette open, search, select, keyboard navigation, dismiss |
-| `frontend/src/components/primitives/HoldButton.test.tsx` | 5 — hold-to-confirm interaction, cancel on release, progress feedback |
+| `frontend/src/components/primitives/HoldButton.test.tsx` | 6 — hold-to-confirm interaction, cancel on release, progress feedback, no confirm when disabled mid-hold |
 | `frontend/src/components/primitives/EmptyState.test.tsx` | 5 — empty state rendering, icon, message, action slot |
 | `frontend/src/shared/backend/runLifecycle.test.ts` | 6 — run lifecycle state transitions (ack, progress, result, cancel, error, reset) |
 | `frontend/src/shared/backend/cancelError.test.ts` | 18 — cancel error detection, wrapping, propagation across error types, plus `describeBackendError` normalization of raw-string Tauri rejections |
 | `frontend/src/shared/backend/client.cancelRun.test.ts` | 2 — cancel run command dispatch and response handling |
 | `frontend/src/shared/backend/client.runEvents.test.ts` | 2 — production run-event subscription schema parsing |
 | `frontend/src/shared/backend/useBackendBusyReset.test.ts` | 9 — busy state recovery after run completion, error, or unmount |
-| `frontend/src/shared/backend/useBackendBootstrap.test.ts` | 2 — reconnect backoff and active-run clearing |
+| `frontend/src/shared/backend/useBackendBootstrap.test.ts` | 3 — reconnect backoff, active-run clearing, no overlapping reconnect chains on double-disconnect |
 | `frontend/src/shared/backend/useBackendRunSubscription.test.ts` | 3 — shell-level run-event fanout, global log capture, and result-schema validation-failure → terminal failure |
 | `frontend/src/shared/theme/themeRegistry.test.ts` | 10 — theme registry consistency (ids, labels, icons, colorScheme, rail visibility) |
 | `frontend/src/shared/hooks/useRoleRequestSequence.test.ts` | 5 — per-role async request sequencing (stale response suppression) |
@@ -251,7 +254,7 @@ neither of which exists under jsdom, so the client returns mock data from
 | `frontend/src/app/App.keepalive.test.tsx` | 2 — keep-alive shell: tool-local state survives a tool-switch round-trip, only visited tools mount |
 | `frontend/src/features/fmea/FmeaTool.test.tsx` | 12 — FMEA tool rendering, workflow selection, input validation, run integration, mapping-override survival across output-strategy and FMD-standard changes, mode-aware required marker on Failure Mode Causes in merge modes |
 | `frontend/src/features/fmea/FmeaTool.inspection.test.tsx` | 5 — sheet selection interactivity during background aggregation, inspection cap warning display, stale-validation clears on browse/sheet change, orphaned-override pruning |
-| `frontend/src/features/toolRunDispatch.test.tsx` | 10 — FMEA (option-key payload incl. hdaSource), BOM Compare, Failure Rate, and RefDes workflow dispatch from React tools, validation-failure (execute_run skipped), all six BOM Compare options reach the backend, Custom Compare column pairs reach `options.compare_columns`, desktop mode never seeds demo validation content (M9), and FMEA Required chips on mandatory input roles |
+| `frontend/src/features/toolRunDispatch.test.tsx` | 12 — FMEA (option-key payload incl. hdaSource), BOM Compare, Failure Rate, and RefDes workflow dispatch from React tools, validation-failure (execute_run skipped), all six BOM Compare options reach the backend, Custom Compare column pairs reach `options.compare_columns`, desktop mode never seeds demo validation content (M9), FMEA Required chips on mandatory input roles, and the cross-tool run guard (blocks + toasts while another tool's run is live; terminal runs don't block) |
 | `frontend/src/features/bom-compare/BomCompareTool.test.tsx` | 14 — custom-compare slots, pristine exit, workflow round-trip cache, interrupted-inspection recovery, double-start guard, raw-string error surfacing, real-header mapping derivation, dispatch payloads, group-only prov checkbox disabled in custom, column-pair picker auto-pairs in custom / hidden in group |
 | `frontend/src/features/failure-rate/FailureRateTool.test.tsx` | 2 — stale-validation clears on browse, real-header mapping derivation |
 | `frontend/src/features/refdes-extractor/RefDesExtractorTool.test.tsx` | 14 — piece-part pinlist slot, pristine behavior, empty-input dispatch, adaptive-geometry gating, numeric tuning fields (render, dispatch, geometry gating), and the advanced-controls disclosure (collapsed by default, hover tooltips, and the 9 advanced params reaching the payload) |

@@ -91,3 +91,35 @@ def test_finalize_headers_matches_pandas_on_collision(tmp_path):
     wb.save(p)
     runtime_cols = list(try_read_table(str(p)).columns)
     assert _finalize_headers(headers) == runtime_cols
+
+
+def test_canonicalize_refdes_family_guards_nan_and_none() -> None:
+    """Final-day audit F3: a NaN/None cell fed to the canonicalize family
+    must yield an empty string, not a spurious "NAN"/"NONE" RefDes key
+    (split_refdes_list already guards this way)."""
+    import pandas as pd
+
+    from common.refdes_utils import (
+        canonicalize_refdes,
+        get_base_refdes,
+        get_usage_base_refdes,
+    )
+
+    assert canonicalize_refdes(float("nan")) == ""
+    assert canonicalize_refdes(None) == ""
+    assert canonicalize_refdes(pd.NA) == ""
+    assert get_base_refdes(float("nan")) == ""
+    assert get_usage_base_refdes(None) == ""
+    # Real tokens are unaffected.
+    assert canonicalize_refdes("r100") == "R100"
+
+
+def test_get_prefix_strips_invisible_characters() -> None:
+    """Final-day audit F4: get_prefix must strip the same zero-width /
+    invisible characters canonicalize_refdes strips — a PDF-pasted
+    "​R1" is still an R-prefixed component."""
+    from common.refdes_utils import get_prefix
+
+    assert get_prefix("​R1") == "R"
+    assert get_prefix("﻿C22") == "C"
+    assert get_prefix("R1") == "R"

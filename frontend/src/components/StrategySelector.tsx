@@ -12,12 +12,13 @@ export function StrategySelector({
   onSelect,
 }: StrategySelectorProps) {
   return (
-    <div className="card-grid">
+    <div className="card-grid" role="group" aria-label="Output strategy">
       {strategies.map((strategy) => (
         <button
           key={strategy.id}
           className="choice-card choice-card--strategy"
           data-selected={strategy.id === selectedStrategyId}
+          aria-pressed={strategy.id === selectedStrategyId}
           onClick={() => onSelect(strategy.id)}
           type="button"
         >

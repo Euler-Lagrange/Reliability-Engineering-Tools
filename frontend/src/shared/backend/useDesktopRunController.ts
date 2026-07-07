@@ -9,7 +9,11 @@ import type {
 import type { ToolId } from "../../stores/shellStore";
 import { useShellStore } from "../../stores/shellStore";
 import { useNotificationStore } from "../../stores/notificationStore";
-import { useRunStore } from "../../stores/runStore";
+import {
+  TOOL_RUN_LABELS,
+  findLiveRunConflict,
+  useRunStore,
+} from "../../stores/runStore";
 import { backendClient } from "./client";
 import { buildCancelNotification } from "./cancelError";
 import { buildRunTimeline, useBackendRunLifecycle } from "./runLifecycle";
@@ -357,11 +361,35 @@ export function useDesktopRunController(
     resetSession();
   }
 
+  /**
+   * Cross-tool run guard (holistic-review follow-up #1). Returns true —
+   * after toasting which tool owns the live run — when ANOTHER tool's run
+   * is still in flight, so `handleStartRun` can bail before sending
+   * anything. The backend's single-active-run guard would reject the
+   * request anyway, but the rejection used to land in this tool's catch
+   * path and clobber the other tool's live run UI handle.
+   */
+  function guardCrossToolRun(): boolean {
+    const conflict = findLiveRunConflict(toolId);
+    if (!conflict) {
+      return false;
+    }
+    pushNotification({
+      tone: "warning",
+      title: "Another run is active",
+      detail:
+        `${TOOL_RUN_LABELS[conflict.toolId]} is still running. ` +
+        `Wait for it to finish or cancel it from that tool before starting a new run.`,
+    });
+    return true;
+  }
+
   return {
     session: desktopRunSession,
     beginAcceptedRun,
     resetSession,
     resetSessionUnlessLive,
+    guardCrossToolRun,
     armTerminalHandler,
     cancel,
     desktopTimeline,

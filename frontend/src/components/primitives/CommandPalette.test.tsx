@@ -54,7 +54,7 @@ describe("CommandPalette", () => {
 
     render(<CommandPalette actions={makeActions()} open={true} onClose={vi.fn()} />);
 
-    const input = await screen.findByRole("textbox", { name: /search command palette/i });
+    const input = await screen.findByRole("combobox", { name: /search command palette/i });
     await user.type(input, "theme");
 
     expect(screen.getByRole("option", { name: /Theme: Dark Precision/i })).toBeInTheDocument();
@@ -81,6 +81,56 @@ describe("CommandPalette", () => {
 
     await user.keyboard("{ArrowUp}");
     expect(fmeaOption).toHaveAttribute("aria-selected", "true");
+  });
+
+  test("exposes combobox semantics wired to the listbox", async () => {
+    render(<CommandPalette actions={makeActions()} open={true} onClose={vi.fn()} />);
+
+    const input = await screen.findByRole("combobox", { name: /search command palette/i });
+    expect(input).toHaveAttribute("aria-expanded", "true");
+    expect(input).toHaveAttribute("aria-autocomplete", "list");
+
+    const controls = input.getAttribute("aria-controls");
+    expect(controls).toBeTruthy();
+    const listbox = screen.getByRole("listbox", { name: /command palette results/i });
+    expect(listbox).toHaveAttribute("id", controls);
+  });
+
+  test("aria-activedescendant follows arrow-key navigation", async () => {
+    const user = userEvent.setup();
+
+    render(<CommandPalette actions={makeActions()} open={true} onClose={vi.fn()} />);
+
+    const input = await screen.findByRole("combobox", { name: /search command palette/i });
+    const fmeaOption = screen.getByRole("option", { name: /FMEA Generator/i });
+    expect(fmeaOption.id).toBeTruthy();
+
+    // First option is active by default → aria-activedescendant points at it.
+    await waitFor(() => {
+      expect(input).toHaveAttribute("aria-activedescendant", fmeaOption.id);
+    });
+
+    await user.keyboard("{ArrowDown}");
+    const themeOption = screen.getByRole("option", { name: /Theme: Dark Precision/i });
+    expect(themeOption.id).toBeTruthy();
+    expect(themeOption.id).not.toBe(fmeaOption.id);
+    expect(input).toHaveAttribute("aria-activedescendant", themeOption.id);
+
+    await user.keyboard("{ArrowUp}");
+    expect(input).toHaveAttribute("aria-activedescendant", fmeaOption.id);
+  });
+
+  test("aria-activedescendant is absent when no actions match", async () => {
+    const user = userEvent.setup();
+
+    render(<CommandPalette actions={makeActions()} open={true} onClose={vi.fn()} />);
+
+    const input = await screen.findByRole("combobox", { name: /search command palette/i });
+    await act(async () => {
+      await user.type(input, "zzznomatch");
+    });
+
+    expect(input).not.toHaveAttribute("aria-activedescendant");
   });
 
   test("Enter triggers onSelect on the active action", async () => {
@@ -111,7 +161,7 @@ describe("CommandPalette", () => {
 
     render(<CommandPalette actions={makeActions()} open={true} onClose={vi.fn()} />);
 
-    const input = await screen.findByRole("textbox", { name: /search command palette/i });
+    const input = await screen.findByRole("combobox", { name: /search command palette/i });
     await act(async () => {
       await user.type(input, "zzznomatch");
     });

@@ -169,6 +169,30 @@ CRASH_DUMP_BANNER = (
 )
 _CRASH_VALUE_MAX = 500          # per-value / per-line cap
 _CRASH_TRACEBACK_MAX = 20_000   # total traceback cap
+# Backlog (crash-retention): keep only the newest N dumps. A crash loop (or
+# years of use) must not fill the user's disk with dump files.
+CRASH_DUMP_RETENTION = 20
+
+
+def _prune_crash_dumps(crash_dir: Path, keep: int = CRASH_DUMP_RETENTION) -> None:
+    """Delete the oldest ``crash_*.log`` files beyond the retention cap.
+
+    Best-effort: called from the crash-dump writer, so it must never raise —
+    an undeletable file (AV lock, permissions) is simply left in place.
+    """
+    try:
+        dumps = sorted(
+            crash_dir.glob("crash_*.log"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        for stale in dumps[keep:]:
+            try:
+                stale.unlink()
+            except OSError:
+                pass
+    except Exception:  # noqa: BLE001 — retention must never block the dump
+        pass
 
 
 def _truncate_for_crash(text: str, max_len: int) -> str:
@@ -240,6 +264,10 @@ def write_crash_dump(
                 for line in tb_text.splitlines(keepends=True)
             )
             fh.write(_truncate_for_crash(tb_bounded, _CRASH_TRACEBACK_MAX))
+
+        # Retention AFTER the write so the new dump counts toward the cap
+        # (and is never itself pruned — it has the newest mtime).
+        _prune_crash_dumps(crash_dir)
 
         return dump_path
     except Exception:  # noqa: BLE001 — last-resort writer must not raise

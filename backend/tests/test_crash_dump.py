@@ -51,3 +51,39 @@ def test_crash_dump_short_exception_is_intact(monkeypatch, tmp_path: Path) -> No
     assert "Thread:     worker-1" in text
     # A short, benign dump is not truncated.
     assert "truncated" not in text
+
+
+def test_crash_dump_retention_prunes_oldest(monkeypatch, tmp_path: Path) -> None:
+    """Backlog (crash-retention): dumps must not accumulate forever. Writing a
+    new dump prunes the crashes directory down to the newest
+    CRASH_DUMP_RETENTION files; the oldest are removed first. Best-effort -
+    an undeletable file must not break the dump write."""
+    from common.logger import CRASH_DUMP_RETENTION
+
+    monkeypatch.setenv("RELIABILITY_TOOLS_LOG_DIR", str(tmp_path))
+    crash_dir = tmp_path / "crashes"
+    crash_dir.mkdir(parents=True)
+
+    # Seed more old dumps than the retention cap, with strictly increasing
+    # mtimes so "oldest" is well-defined.
+    import os
+    import time
+
+    base = time.time() - 10_000
+    for i in range(CRASH_DUMP_RETENTION + 5):
+        p = crash_dir / f"crash_sidecar_old{i:03d}.log"
+        p.write_text("old dump", encoding="utf-8")
+        os.utime(p, (base + i, base + i))
+
+    try:
+        raise RuntimeError("boom")
+    except RuntimeError as exc:
+        path = write_crash_dump("sidecar", type(exc), exc, exc.__traceback__)
+
+    assert path is not None and path.exists()
+    remaining = sorted(f.name for f in crash_dir.glob("crash_*.log"))
+    assert len(remaining) == CRASH_DUMP_RETENTION, remaining
+    # The newest dump survives; the very oldest seeds are gone.
+    assert path.name in remaining
+    assert "crash_sidecar_old000.log" not in remaining
+    assert "crash_sidecar_old004.log" not in remaining

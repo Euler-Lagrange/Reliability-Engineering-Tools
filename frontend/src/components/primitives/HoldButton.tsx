@@ -58,6 +58,14 @@ export function HoldButton({
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const liveRegionId = useId();
+  // Mirror the latest `disabled` prop so the deferred hold-timer callback can
+  // re-check it. If the button is disabled mid-hold (e.g. the run completes
+  // while the user is holding Cancel), the timer must abort rather than fire
+  // a stale confirmation.
+  const disabledRef = useRef(disabled);
+  useEffect(() => {
+    disabledRef.current = disabled;
+  }, [disabled]);
 
   const clearHoldTimer = useCallback(() => {
     if (timerRef.current !== null) {
@@ -78,6 +86,13 @@ export function HoldButton({
     setHolding(true);
     timerRef.current = window.setTimeout(() => {
       timerRef.current = null;
+      if (disabledRef.current) {
+        // Disabled flipped true during the hold — abort without confirming
+        // and clear the visual hold state.
+        setHolding(false);
+        gestureActiveRef.current = false;
+        return;
+      }
       firedRef.current = true;
       setHolding(false);
       onConfirm();

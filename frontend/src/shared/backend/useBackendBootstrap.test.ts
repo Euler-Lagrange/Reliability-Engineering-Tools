@@ -147,6 +147,59 @@ describe("useBackendBootstrap", () => {
     unmount();
   });
 
+  it("does not schedule overlapping reconnect chains on repeated disconnects", async () => {
+    // Two disconnect events arriving before the first reconnect timer fires
+    // must NOT leave two pending timers — the overlapping-chain bug fired
+    // two health-check loops (and two reconnected toasts) for a single
+    // recovery.
+    let onSessionEvent: ((event: BackendSessionEvent) => void) | null = null;
+    mockBackendClient.subscribeToSessionEvents.mockImplementation(
+      async (handler: (event: BackendSessionEvent) => void) => {
+        onSessionEvent = handler;
+        return () => {};
+      },
+    );
+
+    const { unmount } = renderHook(() => useBackendBootstrap());
+    await flushAsyncWork();
+    // Initial bootstrap health check.
+    expect(mockBackendClient.healthCheck).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      onSessionEvent?.({
+        kind: "disconnected",
+        connected: false,
+        backend: "python-sidecar",
+        message: "Desktop backend dropped once.",
+      });
+    });
+    act(() => {
+      onSessionEvent?.({
+        kind: "disconnected",
+        connected: false,
+        backend: "python-sidecar",
+        message: "Desktop backend dropped twice.",
+      });
+    });
+
+    // Advance past every reconnect delay and flush the health-check chain.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+
+    // Only ONE reconnect chain runs → exactly one additional health check
+    // (two with the bug), and the single deduped "Backend reconnected" toast
+    // carries count 1 (it was pushed twice with the bug).
+    expect(mockBackendClient.healthCheck).toHaveBeenCalledTimes(2);
+    const reconnectToasts = useNotificationStore
+      .getState()
+      .notifications.filter((notification) => notification.title === "Backend reconnected");
+    expect(reconnectToasts).toHaveLength(1);
+    expect(reconnectToasts[0]?.count).toBe(1);
+
+    unmount();
+  });
+
   it("is a no-op on reconnect when no run is active", async () => {
     let onSessionEvent: ((event: BackendSessionEvent) => void) | null = null;
     mockBackendClient.subscribeToSessionEvents.mockImplementation(async (handler: (event: BackendSessionEvent) => void) => {

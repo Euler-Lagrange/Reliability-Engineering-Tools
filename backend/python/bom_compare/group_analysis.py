@@ -843,6 +843,13 @@ def write_excel_report(results: AnalyzeResults, output_path: str) -> None:
 
     wb = Workbook()
 
+    # Tool-AUTHORED diagnostic text columns — the only ones the abbreviation
+    # expander may touch. Running it over every column rewrote user
+    # pass-through text (a BOM Description of "Main CB panel" shipped as
+    # "Main Circuit Block panel") — the same corruption class fixed on the
+    # Failure Rate side in Batch 5.
+    _EXPANDABLE_COLUMNS = {"Reason", "Status"}
+
     def user_facing_frame(df: pd.DataFrame) -> pd.DataFrame:
         """Translate technical codes/messages for exported reports."""
         if df is None or df.empty:
@@ -856,9 +863,8 @@ def write_excel_report(results: AnalyzeResults, output_path: str) -> None:
             frame["Reason Code"] = frame["Reason Code"].apply(to_reason_code_label)
 
         for col in frame.columns:
-            if col == "Reason Code":
-                continue
-            frame[col] = frame[col].apply(to_user_facing_text)
+            if col in _EXPANDABLE_COLUMNS:
+                frame[col] = frame[col].apply(to_user_facing_text)
 
         return frame
 

@@ -113,6 +113,40 @@ export const useRunStore = create<RunStoreState>((set) => ({
 }));
 
 /**
+ * Display labels for the cross-tool run guard's toast. Kept here (not
+ * toolRegistry) so the store layer never imports component modules.
+ */
+export const TOOL_RUN_LABELS: Record<ToolId, string> = {
+  dark_star_fmea: "FMEA Generator",
+  bom_compare: "BOM Comparison Tool",
+  failure_rate: "Failure Rate Integration",
+  refdes_extractor: "RefDes Extractor",
+  settings: "Settings",
+};
+
+const TERMINAL_PHASES: ReadonlySet<RunMode> = new Set([
+  "success",
+  "failure",
+  "cancelled",
+  "disconnected",
+]);
+
+/**
+ * Return the live run that would conflict with starting a run in
+ * ``toolId``, or null when starting is safe. The backend already rejects a
+ * second concurrent run; this frontend guard exists so the rejection path
+ * can never clobber the OTHER tool's live run UI handle (holistic-review
+ * follow-up #1).
+ */
+export function findLiveRunConflict(toolId: ToolId): ActiveRunState | null {
+  const activeRun = useRunStore.getState().activeRun;
+  if (!activeRun || activeRun.toolId === toolId) {
+    return null;
+  }
+  return TERMINAL_PHASES.has(activeRun.phase) ? null : activeRun;
+}
+
+/**
  * Build an ``ActiveRunState`` from a freshly accepted run.
  */
 export function buildActiveRunFromAccepted(args: {

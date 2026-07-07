@@ -1,11 +1,11 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BomCompareTool } from "./bom-compare/BomCompareTool";
 import { FailureRateTool } from "./failure-rate/FailureRateTool";
 import { FmeaTool } from "./fmea/FmeaTool";
 import { RefDesExtractorTool } from "./refdes-extractor/RefDesExtractorTool";
-import { useRunStore } from "../stores/runStore";
+import { buildActiveRunFromAccepted, useRunStore } from "../stores/runStore";
 import { useShellStore } from "../stores/shellStore";
 import { useNotificationStore } from "../stores/notificationStore";
 
@@ -55,6 +55,19 @@ async function runTool(startLabel: string) {
   await user.click(screen.getByRole("tab", { name: /^Run$/i }));
   await user.click(screen.getByRole("button", { name: startLabel }));
 }
+
+afterEach(async () => {
+  // Test-isolation drain (debugger finding): tests await only "executeRun was
+  // called", but handleStartRun CONTINUES past that await — its resolved
+  // executeRun promise runs beginAcceptedRun, which writes the shared
+  // runStore singleton. Without draining here, that continuation can land in
+  // a LATER test and clobber its seeded activeRun (defeating e.g. the
+  // cross-tool guard test). Flush pending micro/macrotasks inside act while
+  // the component is still mounted, so continuations settle in their own test.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+});
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -202,6 +215,53 @@ describe("tool run dispatch", () => {
     // piece_part_generate: grouping, bom, failureModes are backend-required;
     // hda is hidden (inline default), so exactly three chips render.
     expect(screen.getAllByText("Required")).toHaveLength(3);
+  });
+
+  it("blocks starting a run while another tool's run is live (cross-tool guard)", async () => {
+    // Holistic-review follow-up #1: the backend rejects a second concurrent
+    // run, but the rejection path used to clobber the OTHER tool's live run
+    // UI handle. The frontend must gate the start with a friendly toast and
+    // never send the request.
+    useRunStore.setState({
+      activeRun: {
+        ...buildActiveRunFromAccepted({
+          runId: "run_live_bom",
+          toolId: "bom_compare",
+          sessionGeneration: 1,
+        }),
+        phase: "running",
+      },
+    });
+
+    render(<FmeaTool />);
+    await runTool("Generate FMEA");
+
+    expect(backendMocks.validateRun).not.toHaveBeenCalled();
+    expect(backendMocks.executeRun).not.toHaveBeenCalled();
+    const notes = useNotificationStore.getState().notifications;
+    expect(notes).toHaveLength(1);
+    expect(notes[0].detail).toMatch(/BOM Comparison Tool/i);
+    // The other tool's live run handle is untouched.
+    expect(useRunStore.getState().activeRun?.runId).toBe("run_live_bom");
+    expect(useRunStore.getState().activeRun?.toolId).toBe("bom_compare");
+  });
+
+  it("allows a new run when the other tool's run is already terminal", async () => {
+    useRunStore.setState({
+      activeRun: {
+        ...buildActiveRunFromAccepted({
+          runId: "run_done_bom",
+          toolId: "bom_compare",
+          sessionGeneration: 1,
+        }),
+        phase: "success",
+      },
+    });
+
+    render(<FmeaTool />);
+    await runTool("Generate FMEA");
+
+    await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
   });
 
   it("dispatches the FMEA workflow with the option keys the backend reads", async () => {
