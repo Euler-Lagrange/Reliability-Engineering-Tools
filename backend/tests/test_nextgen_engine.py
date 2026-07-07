@@ -210,3 +210,33 @@ def test_nextgen_word_timeout_surfaces_on_run_log() -> None:
     assert words == []
     assert any("WARNING" in line and "page 3" in line for line in lines)
     assert any("timed out" in line for line in lines)
+
+
+def test_checkpoint_write_failure_does_not_crash(tmp_path) -> None:
+    """Batch 5 follow-up: the checkpoint writer sits on the extraction hot
+    path — a write failure (permissions, disk full, bad path) must degrade
+    to a logged warning, never crash the run."""
+    from pathlib import Path
+
+    from refdes_extractor.runtime import RefDesConfig
+    from refdes_test.nextgen_engine import _save_geometry_batch_checkpoint
+
+    # Point out_folder at a FILE so the checkpoint mkdir fails.
+    blocker = tmp_path / "not_a_dir"
+    blocker.write_text("occupied")
+
+    config = RefDesConfig(geometry_batch_checkpoint_enabled=True).to_config_manager(
+        out_folder=str(blocker)
+    )
+    # Must not raise.
+    _save_geometry_batch_checkpoint(
+        config, Path("schematic.pdf"), 0, [1, 2], 5, 4, set()
+    )
+
+
+def test_geometry_checkpoints_are_opt_in() -> None:
+    """Checkpoints write JSON artifacts into the user's chosen output
+    folder — that must be an explicit opt-in, not a default side effect."""
+    from refdes_extractor.runtime import RefDesConfig
+
+    assert RefDesConfig().geometry_batch_checkpoint_enabled is False

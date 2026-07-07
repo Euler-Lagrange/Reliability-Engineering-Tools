@@ -86,7 +86,7 @@ const OPTION_TOOLTIPS: Record<string, string> = {
   geometry_batch_timeout_seconds:
     "Maximum seconds spent on one geometry batch before those pages degrade to annotation-only extraction.",
   geometry_batch_checkpoint_enabled:
-    "Checkpoint between geometry batches so a long run is more robust and resumable.",
+    "Write a JSON progress checkpoint into a _refdes_test_checkpoints folder inside the output directory after each geometry batch — useful for triaging long runs. Off by default so runs don't add files next to your report.",
   pin_assignment_threshold:
     "Maximum distance in points for assigning a detected pin to a component body (larger captures more pins but risks wrong parents).",
   refdes_search_radius:
@@ -150,7 +150,9 @@ export function RefDesExtractorTool() {
     // Advanced engine tuning — defaults mirror the backend RefDesConfig.
     geometry_subprocess_enabled: false,
     geometry_batch_timeout_seconds: 240.0,
-    geometry_batch_checkpoint_enabled: true,
+    // Opt-in: writes JSON checkpoints into the user's output folder.
+    // Keep in lockstep with the backend RefDesConfig default.
+    geometry_batch_checkpoint_enabled: false,
     pin_assignment_threshold: 50.0,
     refdes_search_radius: 100.0,
     adaptive_orphan_threshold: 5,

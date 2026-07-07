@@ -58,7 +58,10 @@ class RefDesConfig:
     geometry_batch_size: int = 10
     geometry_subprocess_enabled: bool = False
     geometry_batch_timeout_seconds: float = 240.0
-    geometry_batch_checkpoint_enabled: bool = True
+    # Opt-in: checkpoints write JSON artifacts into the user's chosen output
+    # folder (_refdes_test_checkpoints/), so they must never be a default
+    # side effect. Keep in lockstep with the frontend default.
+    geometry_batch_checkpoint_enabled: bool = False
     max_pin_label_length: int = 4
     prov_distance: float = 15.0
     pin_assignment_threshold: float = 50.0
@@ -75,19 +78,57 @@ class RefDesConfig:
         filtered = {k: v for k, v in options.items() if k in field_names}
         return cls(**filtered)
 
-    def to_config_manager(self) -> ConfigManager:
-        """Create an in-memory ConfigManager for legacy engine compatibility."""
+    def to_config_manager(self, out_folder: str = "") -> ConfigManager:
+        """Create an in-memory ConfigManager for legacy engine compatibility.
+
+        ``out_folder`` is the resolved run output directory. The engine's
+        geometry-batch checkpoint writer early-returns without one, so
+        omitting it silently disables the checkpoint feature the Advanced
+        controls advertise.
+        """
         cm = ConfigManager.__new__(ConfigManager)
         cm._lock = threading.Lock()
         cm.app_name = "refdes_extract_sidecar"
         cm.config_path = Path("/dev/null")
         cm.data = {f.name: getattr(self, f.name) for f in fields(self)}
+        if out_folder:
+            cm.data["out_folder"] = str(out_folder)
         return cm
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _summarize_group_verification(results: list) -> tuple:
+    """Count distinct logical groups and how many are genuinely verified.
+
+    A group with a BOM is emitted as TWO rows ("X (Verified)" +
+    "X (Unverified)"), and "GROUP NOT DETECTED" / _is_gap rows are
+    placeholders for expected-but-missing groups. Count DISTINCT logical
+    groups so the metrics aren't inflated by the split or by gap
+    placeholders. Batch 5 (2026-07): a group counts as verified only when
+    its "(Verified)" row actually CARRIES components — every regular group
+    emits the row pair regardless of BOM state, so the label suffix alone
+    said nothing (a no-BOM run reported every group "verified" while the
+    notes said the opposite).
+    """
+    group_verified: dict = {}
+    for r in results:
+        g = str(r.get("group", ""))
+        if r.get("_is_gap") or "GROUP NOT DETECTED" in g:
+            continue
+        base = g.replace(" (Verified)", "").replace(" (Unverified)", "")
+        try:
+            count = int(r.get("component count", 0) or 0)
+        except (TypeError, ValueError):
+            count = 0
+        is_verified_row = "(Verified)" in g and count > 0
+        group_verified[base] = group_verified.get(base, False) or is_verified_row
+    total = len(group_verified)
+    verified = sum(1 for v in group_verified.values() if v)
+    return total, verified, total - verified
+
 
 def _role_label(role: str) -> str:
     return ROLE_LABELS.get(role, role)
@@ -601,7 +642,6 @@ def execute_run_request(
     inputs_by_role = _collect_inputs(body)
     options = body.get("options") or {}
     config = RefDesConfig.from_options(options)
-    config_cm = config.to_config_manager()
 
     pdf_path = _input_path(inputs_by_role, "pdf")
     bom_path = _input_path(inputs_by_role, "bom")
@@ -623,6 +663,9 @@ def execute_run_request(
     )
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_path = output_directory / f"RefDesExtract_{timestamp}.xlsx"
+    # Built AFTER output resolution so geometry-batch checkpoints have a
+    # destination (they early-return without out_folder).
+    config_cm = config.to_config_manager(out_folder=str(output_directory))
 
     def emit_status(status: str, stage: str, message: str) -> None:
         if status_callback:
@@ -880,21 +923,7 @@ def execute_run_request(
     emit_progress("Complete", "Extraction complete.", 100)
 
     # --- Compute statistics ---
-    # A group with a BOM is emitted as TWO rows ("X (Verified)" + "X (Unverified)"),
-    # and "GROUP NOT DETECTED" / _is_gap rows are placeholders for expected-but-missing
-    # groups. Count DISTINCT logical groups so the metrics aren't inflated by the split
-    # or by gap placeholders, and so verified/unverified don't overlap. A logical group
-    # counts as "verified" if any of its rows is a (Verified) row.
-    _group_verified = {}
-    for r in results:
-        _g = str(r.get("group", ""))
-        if r.get("_is_gap") or "GROUP NOT DETECTED" in _g:
-            continue
-        _base = _g.replace(" (Verified)", "").replace(" (Unverified)", "")
-        _group_verified[_base] = _group_verified.get(_base, False) or ("(Verified)" in _g)
-    total_groups = len(_group_verified)
-    verified = sum(1 for v in _group_verified.values() if v)
-    unverified = total_groups - verified
+    total_groups, verified, unverified = _summarize_group_verification(results)
     # Each component appears in exactly one row (verified xor unverified set), so
     # summing all rows still counts every extracted component once.
     total_refdes = sum(r.get("component count", 0) for r in results)

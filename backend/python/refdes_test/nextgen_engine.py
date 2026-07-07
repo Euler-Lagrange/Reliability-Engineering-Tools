@@ -585,9 +585,6 @@ def _save_geometry_batch_checkpoint(
     if not out_folder:
         return
 
-    checkpoint_dir = Path(out_folder) / "_refdes_test_checkpoints"
-    checkpoint_dir.mkdir(parents=True, exist_ok=True)
-
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     name = f"{Path(pdf_path).stem}_geo_batch_{batch_index + 1:03d}_{ts}.json"
     payload = {
@@ -599,7 +596,20 @@ def _save_geometry_batch_checkpoint(
         "body_rect_count": body_count,
         "degraded_pages_1_indexed": [p + 1 for p in sorted(degraded_pages)],
     }
-    (checkpoint_dir / name).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    # Batch 5 follow-up: this sits on the extraction hot path OUTSIDE the
+    # per-batch try/except — a checkpoint write failure (permissions, disk
+    # full, OneDrive placeholder) must never kill the run itself.
+    try:
+        checkpoint_dir = Path(out_folder) / "_refdes_test_checkpoints"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        (checkpoint_dir / name).write_text(
+            json.dumps(payload, indent=2), encoding="utf-8"
+        )
+    except OSError as exc:
+        _logger.warning(
+            f"Geometry batch checkpoint could not be written to "
+            f"'{out_folder}': {exc}. Continuing without the checkpoint."
+        )
 
 
 def _run_geometry_with_batches(

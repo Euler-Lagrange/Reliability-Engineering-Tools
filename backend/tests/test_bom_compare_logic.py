@@ -611,3 +611,46 @@ def test_compare_two_boms_skips_pair_with_column_absent_from_a_file() -> None:
     )
 
     assert result.differences == []
+
+
+# ----- Batch 5 (2026-07 stability sweep) -------------------------------------
+
+
+def test_custom_fmr_sheet_writes_user_facing_status(tmp_path) -> None:
+    """The custom-path Failure_Mode_Ratio sheet must translate the internal
+    "FMR != 1.0" status the same way the group path does — the raw token is
+    an unexpanded abbreviation in the delivered report."""
+    from openpyxl import load_workbook
+
+    from bom_compare.excel_export import write_bom_compare_excel
+
+    bom_a = _custom_df([
+        {"RefDes": "U2", "Ratio": 0.5},
+        {"RefDes": "U2", "Ratio": 0.6},  # sums to 1.1 -> FMR mismatch
+    ])
+    bom_b = _custom_df([{"RefDes": "U9", "Ratio": 1.0}])
+
+    result = compare_two_boms(
+        bom_a, bom_b, refdes_col_a="RefDes", refdes_col_b="RefDes",
+        check_fmr=True, check_part_usage=False,
+    )
+    assert result.fmr_warnings, "fixture should produce an FMR warning"
+
+    out = tmp_path / "custom_fmr.xlsx"
+    write_bom_compare_excel(result, str(out), "First BOM", "Second BOM")
+
+    wb = load_workbook(out)
+    try:
+        ws = wb["Failure_Mode_Ratio"]
+        headers = [c.value for c in ws[1]]
+        status_idx = headers.index("Status") + 1
+        statuses = [
+            ws.cell(row=r, column=status_idx).value
+            for r in range(2, ws.max_row + 1)
+        ]
+    finally:
+        wb.close()
+    assert any(
+        s == "Failure Mode Ratio does not equal 1.0" for s in statuses
+    ), statuses
+    assert not any(s == "FMR != 1.0" for s in statuses), statuses

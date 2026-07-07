@@ -64,6 +64,28 @@ _logger = get_tool_logger("failure_rate")
 
 # ==================== LOGIC CLASS ====================
 
+# Batch 5 (2026-07 stability sweep): note segments that are purely
+# informational annotations, not actionable warnings. They must not inflate
+# warning_count, draw amber row styling, or appear on the Validation
+# Warnings triage sheet.
+INFORMATIONAL_NOTE_PREFIXES = (
+    "Circuit-block roll-up of",
+    "Block roll-up of",
+)
+
+
+def note_is_informational_only(note) -> bool:
+    """True when every segment of a Validation_Notes cell is informational.
+
+    Notes are ``;``-joined segments. A mixed note (roll-up annotation PLUS a
+    genuine warning like "child usage(s) unknown") stays a warning.
+    """
+    segments = [seg.strip() for seg in str(note or "").split(";") if seg.strip()]
+    if not segments:
+        return False
+    return all(seg.startswith(INFORMATIONAL_NOTE_PREFIXES) for seg in segments)
+
+
 class FMEALinkerLogic:
     """Core logic for linking FMEA data with failure rate predictions."""
 
@@ -622,8 +644,17 @@ class FMEALinkerLogic:
             from openpyxl import Workbook
 
             export_df = self.merged_df.copy()
-            for col in export_df.columns:
-                export_df[col] = export_df[col].apply(to_user_facing_text)
+            # Batch 5 (2026-07 stability sweep): expand shorthand ONLY in the
+            # tool-written notes column. Running the expander over every
+            # column rewrote legitimate user text — "Main CB panel" (circuit
+            # breaker) shipped as "Main Circuit Block panel".
+            if 'Validation_Notes' in export_df.columns:
+                export_df['Validation_Notes'] = (
+                    export_df['Validation_Notes'].apply(to_user_facing_text)
+                )
+            # Internal FMR-groupby key — never ship it (renders as a fully
+            # blank column on default runs).
+            export_df = export_df.drop(columns=['Validation_RefDes'], errors='ignore')
 
             wb = Workbook()
             ws_main = wb.active
@@ -644,6 +675,10 @@ class FMEALinkerLogic:
                 if has_ratio_sum_error:
                     return 'error'
                 elif notes.strip():
+                    # Pure roll-up annotations are informational — amber
+                    # styling would send the user chasing non-issues.
+                    if note_is_informational_only(notes):
+                        return 'default'
                     return 'warning'
                 return 'default'
 
@@ -666,7 +701,13 @@ class FMEALinkerLogic:
             # Create Validation Warnings sheet if there are warnings
             # M7 fix: Only create sheet if column exists
             if has_validation_col and 'Extracted_RefDes' in export_df.columns:
-                val_df = export_df[export_df['Validation_Notes'] != ""][['Extracted_RefDes', 'Validation_Notes']]
+                # Genuine warnings only — pure roll-up info notes stay on the
+                # Main sheet but don't belong on a triage list.
+                warning_mask = export_df['Validation_Notes'].apply(
+                    lambda note: str(note or "").strip() != ""
+                    and not note_is_informational_only(note)
+                )
+                val_df = export_df[warning_mask][['Extracted_RefDes', 'Validation_Notes']]
             else:
                 val_df = pd.DataFrame()  # Empty DataFrame
             if not val_df.empty:

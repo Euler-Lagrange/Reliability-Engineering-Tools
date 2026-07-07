@@ -363,7 +363,9 @@ describe("RefDesExtractorTool advanced engine controls", () => {
     const request = backendMocks.executeRun.mock.calls[0][0];
     expect(request.options.geometry_subprocess_enabled).toBe(false);
     expect(request.options.geometry_batch_timeout_seconds).toBe(240);
-    expect(request.options.geometry_batch_checkpoint_enabled).toBe(true);
+    // Batch 5: checkpoints write JSON into the user's output folder, so
+    // they are opt-in — the default must ship OFF.
+    expect(request.options.geometry_batch_checkpoint_enabled).toBe(false);
     expect(request.options.pin_assignment_threshold).toBe(50);
     expect(request.options.refdes_search_radius).toBe(100);
     expect(request.options.adaptive_orphan_threshold).toBe(5);

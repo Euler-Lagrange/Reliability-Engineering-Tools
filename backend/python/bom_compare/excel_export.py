@@ -239,7 +239,9 @@ def write_bom_compare_excel(
                 'Source': source_map.get(src, src),
                 'RefDes': w.get('RefDes'),
                 'Sum': w.get('Sum'),
-                'Status': w.get('Status'),
+                # Same translation the group path applies — the raw
+                # "FMR != 1.0" token is an unexpanded abbreviation.
+                'Status': to_user_facing_text(w.get('Status')),
             })
         df_fmr = pd.DataFrame(fmr_rows)
         write_df_to_sheet(ws_fmr, df_fmr)

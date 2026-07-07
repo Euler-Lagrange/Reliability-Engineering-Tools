@@ -893,6 +893,15 @@ def _install_crash_hooks() -> None:
 
 
 def main() -> int:
+    # Batch 5 (2026-07): MUST be first. The sidecar ships as a PyInstaller
+    # --onefile exe and the RefDes geometry-subprocess option uses
+    # multiprocessing spawn; without freeze_support() every frozen child
+    # re-runs this main() (and the NDJSON stdin loop) instead of the worker,
+    # hanging each geometry batch until its timeout. No-op in dev.
+    import multiprocessing
+
+    multiprocessing.freeze_support()
+
     _install_crash_hooks()
 
     if "--self-test" in sys.argv:

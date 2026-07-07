@@ -630,3 +630,84 @@ def test_block_rollup_all_gap_children_blanks_block_fr() -> None:
     # Block FR is entirely unknown -> BLANK (NaN), not 0.0.
     assert pd.isna(result["Mode_FR"].iloc[0]), result["Mode_FR"].iloc[0]
     assert "unknown" in str(result["Validation_Notes"].iloc[0]).lower()
+
+
+# ----- Batch 5 (2026-07 stability sweep): output integrity ------------------
+
+
+def test_save_results_preserves_user_text_in_passthrough_columns(tmp_path) -> None:
+    """The abbreviation expander must run ONLY on the tool-written notes
+    column. Running it over every column rewrote legitimate user text:
+    "Main CB panel" (circuit breaker) shipped as "Main Circuit Block panel"."""
+    from openpyxl import load_workbook
+
+    pred = pd.DataFrame([{"Reference Designator": "R1", "Failure Rate": 0.00001}])
+    fmea = pd.DataFrame(
+        [
+            {
+                "Failure Mode Causes": "R1",
+                "Failure Mode Ratio": 1.0,
+                "Part Usage": 1.0,
+                "Component Description": "Main CB panel",
+            }
+        ]
+    )
+    logic = _make_logic(pred, fmea)
+    logic.process(COL_MAP)
+
+    out = tmp_path / "fr_out.xlsx"
+    logic.save_results(str(out))
+
+    wb = load_workbook(out)
+    try:
+        ws = wb["Main"]
+        headers = [c.value for c in ws[1]]
+        desc_idx = headers.index("Component Description") + 1
+        assert ws.cell(row=2, column=desc_idx).value == "Main CB panel"
+    finally:
+        wb.close()
+
+
+def test_save_results_drops_internal_validation_refdes_column(tmp_path) -> None:
+    """Validation_RefDes is an internal FMR-groupby key — it must not ship
+    in the delivered workbook (it renders as a fully blank column on
+    default runs)."""
+    from openpyxl import load_workbook
+
+    pred = pd.DataFrame([{"Reference Designator": "R1", "Failure Rate": 0.00001}])
+    fmea = pd.DataFrame(
+        [{"Failure Mode Causes": "R1", "Failure Mode Ratio": 1.0, "Part Usage": 1.0}]
+    )
+    logic = _make_logic(pred, fmea)
+    logic.process(COL_MAP)
+
+    out = tmp_path / "fr_cols.xlsx"
+    logic.save_results(str(out))
+
+    wb = load_workbook(out)
+    try:
+        headers = [c.value for c in wb["Main"][1]]
+    finally:
+        wb.close()
+    assert "Validation_RefDes" not in headers, headers
+
+
+def test_rollup_only_notes_are_informational() -> None:
+    """Pure roll-up annotations are informational, not warnings — they must
+    not inflate warning_count or draw amber row styling. Mixed notes that
+    also carry a real warning stay warnings."""
+    from failure_rate.failure_rate_logic import note_is_informational_only
+
+    assert note_is_informational_only(
+        "Circuit-block roll-up of 3 piece-part row(s); "
+    ) is True
+    assert note_is_informational_only(
+        "Block roll-up of 2 listed component(s); "
+    ) is True
+    # Mixed: roll-up + genuine warning -> still a warning.
+    assert note_is_informational_only(
+        "Circuit-block roll-up of 3 piece-part row(s); "
+        "1 child usage(s) unknown — block FR may be understated; "
+    ) is False
+    assert note_is_informational_only("RefDes not in Prediction") is False
+    assert note_is_informational_only("") is False

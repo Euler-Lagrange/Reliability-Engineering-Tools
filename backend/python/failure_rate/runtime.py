@@ -24,7 +24,7 @@ from shared.pre_run_validation import (
 )
 from shared.output_preview import build_preview_from_file
 
-from failure_rate.failure_rate_logic import FMEALinkerLogic
+from failure_rate.failure_rate_logic import FMEALinkerLogic, note_is_informational_only
 
 _logger = get_tool_logger("failure_rate_runtime")
 
@@ -357,12 +357,18 @@ def execute_run_request(
     emit_progress("Writing workbook", "Workbook written.", 98)
     emit_progress("Complete", "Failure rate linking complete.", 100)
 
-    # Count warnings from Validation_Notes column
+    # Count warnings from Validation_Notes column. Pure roll-up annotations
+    # are informational and excluded — counting them overstated the toast's
+    # warning total on every block-structured FMEA.
     warning_count = 0
     no_match_count = 0
     if "Validation_Notes" in result_df.columns:
         notes_series = result_df["Validation_Notes"].fillna("")
-        warning_count = int((notes_series != "").sum())
+        warning_count = int(sum(
+            1
+            for note in notes_series
+            if str(note).strip() != "" and not note_is_informational_only(note)
+        ))
         no_match_count = int(notes_series.str.contains("not in Prediction", case=False, na=False).sum())
 
     return {
