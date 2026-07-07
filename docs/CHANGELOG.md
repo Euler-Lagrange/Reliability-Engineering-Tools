@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.8] - 2026-07-07 — Report Integrity, Cross-Tool Guard, A11y, Suite Stability
+
+### Fixed
+
+- **BOM Compare group reports no longer rewrite user text** — the
+  abbreviation expander ran over every export column, so a BOM Description
+  like "Main CB panel" (circuit breaker) shipped as "Main Circuit Block
+  panel". It is now scoped to the tool-authored Reason/Status columns —
+  the sibling of the Failure Rate fix shipped in 0.4.7.
+- **Numeric Excel headers no longer crash column detection** — a header row
+  containing a numeric cell (a column headed `2024`, or a data row picked
+  as the header row) died with a cryptic `AttributeError`; `detect_column`
+  now matches by string coercion while preserving the original labels.
+- **Phantom "NAN" RefDes eliminated** — `canonicalize_refdes` and its
+  family return an empty token for NaN/None cells instead of a spurious
+  `"NAN"` grouping key; `get_prefix` strips zero-width characters like its
+  sibling helpers.
+- **Cross-tool run guard** — starting a run while another tool's run is
+  live now shows "Another run is active" and blocks before sending
+  anything; previously the backend rejection could clobber the live run's
+  UI handle.
+- **Test-suite under-load flake root-caused and fixed** — React Testing
+  Library's 1000 ms `asyncUtilTimeout` (not vitest's `testTimeout`) was
+  exceeded by cold lazy-chunk imports under CPU starvation;
+  `asyncUtilTimeout=5000` + `testTimeout=15000`, proven across six
+  under-load full-suite runs. A run-store test-isolation leak in the
+  dispatch tests is drained in `afterEach`.
+- Crash dumps are capped at the newest 20; workbook-handle and temp-file
+  leaks fixed in the read layer; banner sheets freeze banner + header rows
+  so column headers never scroll away.
+
+### Changed
+
+- **Accessibility**: the command palette is a real combobox for screen
+  readers (`aria-activedescendant` follows arrow-key navigation); workflow
+  and output-strategy cards expose selection via `aria-pressed`; each input
+  card's copy-path button tracks its own "Copied!" state; a hold-to-confirm
+  button can no longer fire after being disabled mid-hold; backend
+  reconnect can no longer spawn overlapping retry chains.
+- `normalizeHeader` moved to `shared/mapping` (shared code no longer
+  imports from a feature directory).
+- Test suite grew from 671 to 690 (378 backend / 295 frontend / 17 Rust).
+
 ## [0.4.7] - 2026-07-07 — FMEA Deep Dive + All-Tools Stability Sweep
 
 ### Fixed

@@ -1,4 +1,21 @@
-# Stability Sweep — 2026-07-06/07 (v0.4.7)
+# Stability Sweep — 2026-07-06/07 (v0.4.7 + v0.4.8)
+
+> **v0.4.8 addendum (final-day sweep, commit `e3cced6`):** a fourth audit
+> wave covered the layers never deep-dived (backend `common/` + `shared/`,
+> frontend components/primitives/stores/hooks) plus the deferred backlog.
+> Headline fixes: the BOM Compare group-report expander was rewriting user
+> text (same corruption class as the 0.4.7 Failure Rate fix — now scoped to
+> Reason/Status); `detect_column` no longer crashes on numeric Excel
+> headers; NaN cells can no longer become a phantom "NAN" RefDes; a
+> cross-tool run guard stops one tool's start from clobbering another
+> tool's live run; command palette/selector/copy-button accessibility; and
+> the long-standing vitest under-load flake was root-caused (RTL
+> asyncUtilTimeout 1000ms vs cold lazy-chunk imports) and fixed. Suite:
+> **378 backend / 295 frontend / 17 Rust = 690**, day-diff QA verdict PASS
+> with zero findings. Remaining known-open: the live in-browser UX pass
+> was blocked (no Chrome on this machine) — worth doing once Chrome +
+> the Claude extension are available; the dev server workflow is
+> `npm run dev` → localhost:5173.
 
 Session handoff for the FMEA deep dive + all-tools stability sweep. Written so
 any future session (or reviewer) can see what was done, how it was verified,
