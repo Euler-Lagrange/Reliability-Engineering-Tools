@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SettingsTool } from "./SettingsTool";
@@ -149,5 +149,60 @@ describe("SettingsTool — RefDes Prefixes card", () => {
 
     expect(await screen.findByText("PS")).toBeInTheDocument();
     expect(mockBackendClient.readRefdesPrefixes).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("SettingsTool — User Guide", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    mockBackendClient.runtimeMode = "desktop-bridge";
+    mockBackendClient.readRefdesPrefixes.mockReset();
+    mockBackendClient.readRefdesPrefixes.mockResolvedValue({
+      defaults: ["C", "R", "U"],
+      custom: [],
+      path: "C:\\Users\\test\\.refdes_extractor_config.json",
+    });
+  });
+
+  it("opens the in-app guide from the Help card, hops sections, and closes on Escape", async () => {
+    const user = userEvent.setup();
+    render(<SettingsTool />);
+
+    // Closed by default.
+    expect(screen.queryByRole("dialog", { name: /user guide/i })).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: /open user guide/i }));
+
+    const dialog = await screen.findByRole("dialog", { name: /user guide/i });
+    expect(dialog).toBeInTheDocument();
+
+    // Every tool has a section, reachable through the nav.
+    const nav = screen.getByRole("navigation", { name: /guide sections/i });
+    for (const label of [
+      "Getting started",
+      "FMEA Generator",
+      "BOM Comparison",
+      "Failure Rate",
+      "RefDes Extractor",
+      "Settings",
+      "Troubleshooting",
+      "FAQ",
+    ]) {
+      expect(within(nav).getByRole("button", { name: label })).toBeInTheDocument();
+    }
+
+    // Content spot-checks: limitations and inputs are actually explained.
+    expect(
+      screen.getByRole("heading", { name: "FMEA Generator", level: 2 }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Hyphens are pins, never ranges/i)).toBeInTheDocument();
+    // Appears in Getting started AND the troubleshooting table.
+    expect(screen.getAllByText(/Another run is active/i).length).toBeGreaterThan(0);
+
+    // Nav hop does not crash without scrollIntoView (jsdom) — and Escape
+    // closes the guide through the shared dismiss stack.
+    await user.click(within(nav).getByRole("button", { name: "FAQ" }));
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: /user guide/i })).toBeNull();
   });
 });

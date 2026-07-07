@@ -70,13 +70,13 @@
 | Frontend workflow selector | `frontend/src/components/WorkflowSelector.test.tsx` | 3 | Vitest + RTL |
 | Frontend strategy selector | `frontend/src/components/StrategySelector.test.tsx` | 3 | Vitest + RTL |
 | Frontend input grid | `frontend/src/components/InputGrid.test.tsx` | 1 | Vitest + RTL |
-| Frontend Settings tool | `frontend/src/features/settings/SettingsTool.test.tsx` | 6 | Vitest + RTL |
+| Frontend Settings tool | `frontend/src/features/settings/SettingsTool.test.tsx` | 7 | Vitest + RTL |
 | Frontend shell-hook install | `frontend/src/app/App.shellHooks.test.tsx` | 1 | Vitest + RTL |
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
-| **Frontend subtotal** | | **304** | |
+| **Frontend subtotal** | | **305** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 17 | cargo test |
-| **Total** | | **709** | |
+| **Total** | | **710** | |
 
 ## Backend Tests
 

@@ -1401,6 +1401,183 @@ tbody tr:hover {
   flex-shrink: 0;
 }
 
+/* ============================================================
+   Help Guide — the in-app user manual launched from Settings.
+   A full-screen, theme-aware document with a sticky section nav.
+   ============================================================ */
+.help-guide {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal, 60);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.help-guide__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.help-guide__header h1 {
+  margin: 0;
+  font-size: var(--text-xl, 20px);
+  letter-spacing: -0.02em;
+  outline: none;
+}
+
+.help-guide__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.help-guide__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-4);
+  width: 208px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+  overflow-y: auto;
+}
+
+.help-guide__nav-link {
+  appearance: none;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-base);
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.help-guide__nav-link:hover {
+  background: var(--surface-muted);
+  color: var(--text);
+}
+
+.help-guide__nav-link:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
+}
+
+.help-guide__content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-6);
+  scroll-behavior: smooth;
+}
+
+.help-guide__section {
+  max-width: 78ch;
+  margin: 0 auto var(--space-6);
+  padding-bottom: var(--space-6);
+  border-bottom: 1px solid var(--line);
+  scroll-margin-top: var(--space-4);
+}
+
+.help-guide__section h2 {
+  margin: 0 0 var(--space-3);
+  letter-spacing: -0.02em;
+}
+
+.help-guide__section h3 {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: var(--text-base);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-uppercase);
+  color: var(--text-faint);
+}
+
+.help-guide__section p,
+.help-guide__section li {
+  color: var(--text-muted);
+  line-height: 1.55;
+  font-size: var(--text-base);
+}
+
+.help-guide__section li {
+  margin-bottom: var(--space-2);
+}
+
+.help-guide__section strong {
+  color: var(--text);
+}
+
+.help-guide__section code,
+.help-guide__section kbd {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.9em;
+  background: var(--surface-muted);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.help-guide__table-wrap {
+  overflow-x: auto;
+  margin: var(--space-3) 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+
+.help-guide__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-base);
+}
+
+.help-guide__table th {
+  text-align: left;
+  padding: 8px 12px;
+  background: var(--surface-muted);
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-uppercase);
+  border-bottom: 1px solid var(--line);
+}
+
+.help-guide__table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-muted);
+  vertical-align: top;
+}
+
+.help-guide__table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.help-guide__callout {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+}
+
+.help-guide__footer {
+  max-width: 78ch;
+  margin: 0 auto;
+  color: var(--text-faint);
+  font-size: var(--text-xs);
+}
+
 /* Mapping table "Mapped to" cell — give the dropdown trigger enough
    horizontal room so long source-column names are visible without
    truncation, and so the menu (min-width: max(220px, 100%)) opens

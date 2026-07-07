@@ -65,7 +65,7 @@ npm run dev              # Vite dev server (browser preview mode)
 npm run build            # Production build
 npm run typecheck        # TypeScript type checking
 npm run typecheck:tests  # TypeScript type checking for Vitest files
-npm test                 # Vitest (304 tests)
+npm test                 # Vitest (305 tests)
 
 # Desktop (requires Rust toolchain)
 npm run tauri:dev        # Dev mode with hot reload
@@ -202,7 +202,7 @@ The audit runs:
 - `pytest.importorskip("fitz")` for RefDes tests requiring PyMuPDF
 - `backend/tests/conftest.py` installs a `sys.path` shim for in-process unit tests
 
-### Frontend Tests (304 total across 46 test files)
+### Frontend Tests (305 total across 46 test files)
 - Vitest + React Testing Library
 - Browser-mock mode (no Tauri runtime needed)
 - `src/app/App.test.tsx`
@@ -227,7 +227,7 @@ The audit runs:
 - `src/features/fmea/FmeaTool.inspection.test.tsx`
 - `src/features/fmea/mappingColumns.test.ts`
 - `src/features/fmea/mappingAnalysis.test.ts`
-- `src/features/settings/SettingsTool.test.tsx` (RefDes prefix editor: load/add/remove/save, client-side validation, browser-mode guard, failed-load Retry recovery, corrupt-config warning banner)
+- `src/features/settings/SettingsTool.test.tsx` (RefDes prefix editor: load/add/remove/save, client-side validation, browser-mode guard, failed-load Retry recovery, corrupt-config warning banner, and the in-app User Guide overlay: open from the Help card, section nav, Escape close)
 - `src/features/toolRunDispatch.test.tsx` (now covers the FMEA payload keys + the extraction_compare no-mappings/no-options payload + M9 no-demo-content-in-desktop + FMEA Required input chips + the cross-tool run guard, with an afterEach async drain for run-store test isolation)
 - `src/components/WorkflowSelector.test.tsx` (new — aria-pressed selection semantics)
 - `src/components/StrategySelector.test.tsx` (new — aria-pressed selection semantics)
@@ -253,7 +253,7 @@ The audit runs:
 - `src/stores/storeMigrations.test.ts` (new — Decision E persist version/migration)
 
 Run `npx vitest run --config frontend/vite.config.ts --reporter=default` to
-see individual counts per file — the suite totals 304 tests and changes
+see individual counts per file — the suite totals 305 tests and changes
 whenever a suite gains or loses cases.
 
 ## Critical Gotchas

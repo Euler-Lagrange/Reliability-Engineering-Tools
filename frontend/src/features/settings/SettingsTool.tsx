@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { ArrowClockwise, FolderOpen, Heart, X } from "@phosphor-icons/react";
+import { ArrowClockwise, BookOpen, FolderOpen, Heart, X } from "@phosphor-icons/react";
 import { SectionCard } from "../../components/SectionCard";
+import { HelpGuide } from "./HelpGuide";
 import { protocolVersion } from "../../contracts/sidecar";
 import { OPEN_FOLDER_LABEL } from "../../shared/backend/fileManager";
 import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
@@ -58,6 +59,7 @@ export function SettingsTool() {
   const setBackendState = useShellStore((state) => state.setBackendState);
   const pushNotification = useNotificationStore((state) => state.push);
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   // Phase 4 Task 8: last-ping latency displayed with a colored dot.
   // Stored locally because the shell store does not track latency today.
   const [lastLatencyMs, setLastLatencyMs] = useState<number | null>(null);
@@ -233,6 +235,21 @@ export function SettingsTool() {
       <div className="tool-workspace">
         <section className="workspace-grid workspace-grid--single">
           <div className="workspace-grid__main">
+            <SectionCard title="User Guide" eyebrow="Help">
+              <p className={styles.helpIntro}>
+                New here? The guide walks through every tool — what it does,
+                which inputs it needs, its options and limitations, and how to
+                read the output workbooks and their diagnostic sheets.
+              </p>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => setHelpOpen(true)}
+              >
+                <BookOpen size={16} weight="regular" /> Open user guide
+              </button>
+            </SectionCard>
+
             <SectionCard title="Theme" eyebrow="Appearance">
               <div className={styles.themeGrid}>
                 {themeOptions.map((option) => {
@@ -484,6 +501,7 @@ export function SettingsTool() {
             </SectionCard>
           </div>
         </section>
+        <HelpGuide open={helpOpen} onClose={() => setHelpOpen(false)} />
       </div>
     </ErrorBoundary>
   );

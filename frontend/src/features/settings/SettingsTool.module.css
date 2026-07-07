@@ -39,6 +39,23 @@
   color: var(--accent);
 }
 
+/* Same cascade repair as .choice-card in theme/styles.css: the base
+   .themeOption border/background above outranks the global unified
+   [data-selected] rule by load order, so the selected theme tile showed
+   only the icon tint. Restore the intended accent border + fill. */
+.themeOption[data-selected="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.helpIntro {
+  margin: 0 0 var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  max-width: 68ch;
+}
+
 .themeOptionLabel {
   font-size: var(--text-base);
   font-weight: var(--weight-semibold);
