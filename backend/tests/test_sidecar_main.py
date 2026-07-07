@@ -1504,6 +1504,34 @@ def test_sidecar_reads_and_writes_refdes_prefixes(tmp_path: Path) -> None:
         process.kill()
 
 
+def test_sidecar_read_refdes_prefixes_warns_on_corrupt_config(tmp_path: Path) -> None:
+    # Batch 6 #4a: a CORRUPT config (invalid JSON) must not be silently
+    # swallowed as "no custom prefixes". The read returns the defaults plus a
+    # ``warning`` field so the UI can tell the user their saved list could not
+    # be read before a save overwrites it. (An ABSENT file stays warning-free.)
+    config_path = tmp_path / ".refdes_extractor_config.json"
+    config_path.write_text("{ this is not valid json ", encoding="utf-8")
+
+    process = subprocess.Popen(
+        [sys.executable, str(SIDECAR)],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        text=True, env=_prefix_env(tmp_path),
+    )
+    try:
+        _read_ready_line(process)
+
+        result = _send_command(process, "req_px_corrupt", "read_refdes_prefixes", {})
+        assert result["kind"] == "result"
+        # Defaults still render; no custom chips from the corrupt file.
+        assert "U" in result["payload"]["defaults"]
+        assert result["payload"]["custom"] == []
+        # The warning is present and mentions the invalid-JSON cause.
+        assert "warning" in result["payload"]
+        assert "invalid JSON" in result["payload"]["warning"]
+    finally:
+        process.kill()
+
+
 def test_sidecar_write_refdes_prefixes_rejects_invalid_and_preserves_keys(tmp_path: Path) -> None:
     # Pre-existing config with OTHER keys the writer must preserve.
     config_path = tmp_path / ".refdes_extractor_config.json"

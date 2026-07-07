@@ -19,6 +19,7 @@ except ImportError:  # pragma: no cover - covered in runtime environments with d
     load_workbook = None
 
 from common.cancellation import CancellationError
+from common.exceptions import ValidationError
 from common.utils import ensure_file_available, ensure_file_size_within
 from common.logger import get_log_directory, write_crash_dump
 from fmea.runtime import execute_run_request as fmea_execute, validate_run_request as fmea_validate
@@ -202,7 +203,7 @@ def _extract_header_details(worksheet: Any) -> tuple[int, list[str], int, int, b
         if header_rows_scanned >= MAX_HEADER_SEARCH_ROWS:
             break
 
-    raise ValueError(
+    raise ValidationError(
         "Could not locate a non-empty header row within the first "
         f"{MAX_HEADER_SEARCH_ROWS} scanned rows of the selected worksheet."
     )
@@ -512,16 +513,40 @@ def _refdes_config_path() -> Path:
     return Path.home() / REFDES_CONFIG_FILENAME
 
 
-def _load_refdes_config() -> dict[str, Any]:
-    """Read ~/.refdes_extractor_config.json, tolerating absent/corrupt files."""
+# Surfaced by _read_refdes_prefixes when the config file exists but cannot be
+# parsed — the UI shows it so the user knows a save will overwrite the file.
+REFDES_CONFIG_CORRUPT_WARNING = (
+    "Your saved prefix file could not be read (invalid JSON); showing "
+    "defaults. Saving will overwrite it."
+)
+
+
+def _load_refdes_config() -> tuple[dict[str, Any], str | None]:
+    """Read ~/.refdes_extractor_config.json.
+
+    Returns ``(data, warning)``. An ABSENT file is normal (no custom prefixes
+    saved yet) -> ``({}, None)``. A file that is present but unreadable/corrupt
+    (invalid JSON, an OS error, or a non-object payload) is distinguished with
+    a warning string so the caller can tell the user their saved list could not
+    be loaded — otherwise a corrupt file silently reads as "no custom prefixes"
+    and the next save clobbers it without notice.
+    """
     path = _refdes_config_path()
     if not path.exists():
-        return {}
+        return {}, None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return {}
-    return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError) as exc:
+        logging.getLogger("reliability_tools.sidecar").warning(
+            "RefDes prefix config at %s could not be read: %s", path, exc
+        )
+        return {}, REFDES_CONFIG_CORRUPT_WARNING
+    if not isinstance(data, dict):
+        logging.getLogger("reliability_tools.sidecar").warning(
+            "RefDes prefix config at %s is not a JSON object; ignoring.", path
+        )
+        return {}, REFDES_CONFIG_CORRUPT_WARNING
+    return data, None
 
 
 def _configured_prefix_tokens(data: dict[str, Any]) -> list[str]:
@@ -541,19 +566,23 @@ def _read_refdes_prefixes(_body: dict[str, Any]) -> dict[str, Any]:
     """Read the custom RefDes prefix list (extends the IEEE-315 defaults)."""
     from common.refdes_utils import IEEE_315_PREFIXES
 
+    data, warning = _load_refdes_config()
     defaults = {str(p).upper() for p in IEEE_315_PREFIXES}
     custom = [
         token
-        for token in _configured_prefix_tokens(_load_refdes_config())
+        for token in _configured_prefix_tokens(data)
         # A hand-edited file may repeat an IEEE default; it is already
         # covered, so don't render it as a removable custom chip.
         if token not in defaults
     ]
-    return {
+    result: dict[str, Any] = {
         "defaults": sorted(IEEE_315_PREFIXES),
         "custom": custom,
         "path": str(_refdes_config_path()),
     }
+    if warning:
+        result["warning"] = warning
+    return result
 
 
 def _write_refdes_prefixes(body: dict[str, Any]) -> dict[str, Any]:
@@ -569,10 +598,12 @@ def _write_refdes_prefixes(body: dict[str, Any]) -> dict[str, Any]:
 
     raw = body.get("prefixes")
     if not isinstance(raw, list):
-        raise ValueError("'prefixes' must be a list of strings.")
+        raise ValidationError("'prefixes' must be a list of strings.")
 
     path = _refdes_config_path()
-    data = _load_refdes_config()
+    # A corrupt file loads as {} (with a warning surfaced on read); the write
+    # then simply overwrites it — the intended recovery path.
+    data, _warning = _load_refdes_config()
     grandfathered = set(_configured_prefix_tokens(data))
 
     defaults = {str(p).upper() for p in IEEE_315_PREFIXES}
@@ -583,7 +614,7 @@ def _write_refdes_prefixes(body: dict[str, Any]) -> dict[str, Any]:
         if not token:
             continue
         if token not in grandfathered and not REFDES_PREFIX_RE.fullmatch(token):
-            raise ValueError(f"Invalid prefix '{item}': prefixes are 1-5 letters (A-Z).")
+            raise ValidationError(f"Invalid prefix '{item}': prefixes are 1-5 letters (A-Z).")
         if token in defaults or token in seen:
             continue  # IEEE-315 defaults need no repeating; dedupe the rest
         seen.add(token)
@@ -591,10 +622,19 @@ def _write_refdes_prefixes(body: dict[str, Any]) -> dict[str, Any]:
 
     data["ref_prefixes"] = cleaned
 
-    # Atomic write so a crash mid-save can't corrupt the config file.
+    # Atomic write so a crash mid-save can't corrupt the config file. If the
+    # final rename fails (e.g. the destination is locked), unlink the orphaned
+    # temp file so a retry isn't blocked by stale state, then re-raise.
     tmp_path = path.with_name(path.name + ".tmp")
     tmp_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    os.replace(tmp_path, path)
+    try:
+        os.replace(tmp_path, path)
+    except OSError:
+        try:
+            tmp_path.unlink()
+        except OSError:
+            pass
+        raise
 
     return {
         "custom": cleaned,

@@ -36,9 +36,27 @@ ROLE_LABELS = {
     "fmea": "FMEA workbook",
 }
 
+# Human-readable labels for the canonical mapping tokens, so a blocked-run
+# message reads "Missing required mappings: FMEA: failure mode ratio." instead
+# of the raw canonical ("fmea_ratio"). These MUST mirror the frontend display
+# labels in frontend/src/mocks/scenarios.ts (failureRateMappings). Unknown keys
+# fall back to the raw canonical.
+CANONICAL_DISPLAY_LABELS = {
+    "pred_ref": "Prediction: RefDes column",
+    "pred_fr": "Prediction: failure rate column",
+    "fmea_cause": "FMEA: failure mode causes",
+    "fmea_ratio": "FMEA: failure mode ratio",
+    "fmea_usage": "FMEA: part usage",
+    "fmea_func": "FMEA: function column",
+}
+
 
 def _role_label(role: str) -> str:
     return ROLE_LABELS.get(role, role)
+
+
+def _mapping_label(canonical: str) -> str:
+    return CANONICAL_DISPLAY_LABELS.get(canonical, canonical)
 
 
 def _required_roles(workflow_id: str) -> list[str]:
@@ -166,11 +184,11 @@ def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
     # branch fire instead. A genuinely empty/absent mapping is raw None, so it
     # still triggers missing_mappings as before.
     required_mapping_values = [
-        LabeledValue(name, _raw_mapping(body, name))
+        LabeledValue(_mapping_label(name), _raw_mapping(body, name))
         for name in req_mapping_names
     ]
     invalid_mapping_values = [
-        LabeledValue(name, _raw_mapping(body, name))
+        LabeledValue(_mapping_label(name), _raw_mapping(body, name))
         for name in req_mapping_names
         if _raw_mapping(body, name) == DO_NOT_MAP_SENTINEL
     ]

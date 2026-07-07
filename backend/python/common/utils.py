@@ -160,19 +160,23 @@ def _hydrate_onedrive_file(path: Path, log_func=None, cancel_check=None) -> bool
 
 
 def ensure_file_size_within(path, max_bytes: int, *, what: str = "file") -> None:
-    """Raise ``ValueError`` if ``path`` is larger than ``max_bytes``.
+    """Raise ``ValidationError`` if ``path`` is larger than ``max_bytes``.
 
     Decision C: guards a *fully-loaded* read (e.g. ``analyze_template``, which
     opens the whole workbook with ``read_only=False`` for merged-cell / freeze-
     pane inspection) against out-of-memory on a pathologically large file. A
     missing / unstattable path is left to the downstream open to surface.
     """
+    # Local import: mirrors ``validate_input_columns`` below — keeps the
+    # exceptions module out of this utility module's import graph.
+    from .exceptions import ValidationError
+
     try:
         size = Path(path).stat().st_size
     except OSError:
         return
     if size > max_bytes:
-        raise ValueError(
+        raise ValidationError(
             f"The {what} is too large to open "
             f"({size / (1024 * 1024):.1f} MB; limit {max_bytes / (1024 * 1024):.0f} MB)."
         )

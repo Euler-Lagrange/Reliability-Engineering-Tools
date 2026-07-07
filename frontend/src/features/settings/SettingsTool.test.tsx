@@ -112,6 +112,25 @@ describe("SettingsTool — RefDes Prefixes card", () => {
     expect(mockBackendClient.readRefdesPrefixes).not.toHaveBeenCalled();
   });
 
+  it("surfaces a corrupt-config warning returned by the read", async () => {
+    // Batch 6 #4a: a corrupt config file loads the defaults but returns a
+    // ``warning`` string so the user knows a save will overwrite it.
+    mockBackendClient.readRefdesPrefixes.mockResolvedValue({
+      defaults: ["C", "R", "U"],
+      custom: [],
+      path: "C:\\Users\\test\\.refdes_extractor_config.json",
+      warning:
+        "Your saved prefix file could not be read (invalid JSON); showing defaults. Saving will overwrite it.",
+    });
+    render(<SettingsTool />);
+
+    expect(
+      await screen.findByText(/could not be read \(invalid JSON\)/i),
+    ).toBeInTheDocument();
+    // The editor still renders (defaults visible) — the warning is non-blocking.
+    expect(screen.getByText("IEEE-315 defaults (3)")).toBeInTheDocument();
+  });
+
   it("offers Retry after a failed load and recovers on success", async () => {
     // e.g. Settings opened while the sidecar is still reconnecting — the
     // first read fails; without Retry the card is stuck until app restart.

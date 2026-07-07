@@ -1043,16 +1043,29 @@ export function BomCompareTool() {
                 const groupOnly =
                   key === "treat_prov_as_covered" && workflowId === "bom_compare_custom";
                 const disabled = groupOnly || extractionMode;
-                const hint = extractionMode
+                // base_match toggles LOOSE/fuzzy prefix base matching — it is a
+                // no-op when exact_match is on, and its raw key ("base match")
+                // misleads (base-RefDes matching is always on). Give it a
+                // truthful label + hint (Wiring Invariant #2).
+                const isBaseMatch = key === "base_match";
+                const label = isBaseMatch
+                  ? "loose prefix base match"
+                  : key.replace(/_/g, " ");
+                const modeHint = extractionMode
                   ? "BOM compare modes only"
                   : groupOnly
                     ? "Group vs BOM mode only"
                     : undefined;
+                const hint =
+                  modeHint ??
+                  (isBaseMatch
+                    ? "Base-RefDes matching is always on; this adds fuzzy prefix coverage. No effect when exact match is enabled."
+                    : undefined);
                 return (
                   <CheckboxField
                     key={key}
                     id={`bom-compare-option-${key}`}
-                    label={key.replace(/_/g, " ")}
+                    label={label}
                     checked={value}
                     disabled={disabled}
                     hint={hint}

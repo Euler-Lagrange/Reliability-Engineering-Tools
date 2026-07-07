@@ -132,6 +132,41 @@ def test_group_compare_required_mapping_sentinel_blocks_validation(tmp_path: Pat
 
     assert result["ok"] is False
     assert result["reason_code"] == "invalid_do_not_map"
+    # Batch 6 #7: the message names the mapping as the UI labels it.
+    assert "BOM: RefDes column" in result["toast_text"]
+    assert "bom_refdes_col" not in result["toast_text"]
+
+
+def test_group_compare_missing_mapping_uses_display_label(tmp_path: Path) -> None:
+    """A missing required group-compare mapping is reported with the human
+    display label ('Grouping: group column'), not the raw canonical."""
+    body = _build_group_body(tmp_path)
+    body["mappings"] = [
+        row for row in body["mappings"] if row["canonical"] != "grouping_group_col"
+    ]
+
+    result = bom_runtime.validate_run_request(body)
+
+    assert result["ok"] is False
+    assert result["reason_code"] == "missing_mappings"
+    assert "Grouping: group column" in result["toast_text"]
+    assert "grouping_group_col" not in result["toast_text"]
+
+
+def test_custom_compare_missing_mapping_uses_file_display_label(tmp_path: Path) -> None:
+    """A missing required custom-compare mapping is reported with the UI's
+    'File 1 / File 2' display label, not the raw refdes_col_a canonical."""
+    body = _build_custom_body(tmp_path)
+    body["mappings"] = [
+        row for row in body["mappings"] if row["canonical"] != "refdes_col_a"
+    ]
+
+    result = bom_runtime.validate_run_request(body)
+
+    assert result["ok"] is False
+    assert result["reason_code"] == "missing_mappings"
+    assert "File 1: RefDes column" in result["toast_text"]
+    assert "refdes_col_a" not in result["toast_text"]
 
 
 def _build_custom_body(tmp_path: Path) -> dict:

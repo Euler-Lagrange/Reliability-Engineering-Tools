@@ -12,6 +12,7 @@ from __future__ import annotations
 import pandas as pd
 from openpyxl import Workbook, load_workbook
 
+from common.exceptions import ValidationError
 from bom_compare.extraction_compare import (
     ExtractionCompareResult,
     compare_extractions,
@@ -152,8 +153,8 @@ def test_missing_columns_raise_a_readable_error() -> None:
     df = pd.DataFrame([{"Something": "else"}])
     try:
         load_component_groups(df)
-        raise AssertionError("expected ValueError")
-    except ValueError as exc:
+        raise AssertionError("expected ValidationError")
+    except ValidationError as exc:
         assert "RefDes extraction sheet" in str(exc)
 
 

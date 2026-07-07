@@ -185,6 +185,23 @@ describe("BomCompareTool custom compare workflow", () => {
     expect(screen.getByRole("checkbox", { name: /treat prov as covered/i })).toBeEnabled();
   });
 
+  // Batch 6 #2: base_match is a no-op when exact_match is on and its raw
+  // key ("base match") misleads — base-RefDes matching is ALWAYS on. Give it a
+  // truthful label + a hint (Wiring Invariant #2: never a silently-ignored /
+  // mislabelled control).
+  it("labels base_match truthfully and shows a prefix-matching hint", () => {
+    render(<BomCompareTool />);
+
+    // Truthful label replaces the misleading "base match".
+    expect(
+      screen.getByRole("checkbox", { name: /loose prefix base match/i }),
+    ).toBeInTheDocument();
+    // The hint explains base matching is always on and this is prefix-only.
+    expect(
+      screen.getByText(/Base-RefDes matching is always on/i),
+    ).toBeInTheDocument();
+  });
+
   it("dispatches bomA/bomB inputs and custom mappings for a custom run", async () => {
     const user = userEvent.setup();
     render(<BomCompareTool />);

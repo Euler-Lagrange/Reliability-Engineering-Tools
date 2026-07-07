@@ -309,6 +309,10 @@ export const refdesPrefixesResultSchema = z.object({
   defaults: z.array(z.string()),
   custom: z.array(z.string()),
   path: z.string(),
+  // Present only when the saved config file exists but could not be parsed
+  // (invalid JSON / non-object). The UI surfaces it so the user knows a save
+  // will overwrite the unreadable file.
+  warning: z.string().optional(),
 });
 
 export const writeRefdesPrefixesResultSchema = z.object({

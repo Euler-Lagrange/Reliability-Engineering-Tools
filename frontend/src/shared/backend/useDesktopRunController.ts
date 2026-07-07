@@ -244,8 +244,11 @@ export function useDesktopRunController(
     }
 
     if (phase === "failure") {
+      // Intentionally do NOT set backendStatus here: useBackendBusyReset owns
+      // the shell chip and returns it to "ready" on every terminal phase, so a
+      // "error" write here is immediately overridden (a dead write). The
+      // failure still surfaces via the error toast below and the run panel.
       setBackendState({
-        backendStatus: "error",
         backendMode: "desktop-bridge",
         backendMessage: desktopRunSession.statusMessage,
         lastBackendCheckAt: new Date().toISOString(),

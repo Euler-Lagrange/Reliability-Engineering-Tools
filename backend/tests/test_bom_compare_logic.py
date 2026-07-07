@@ -17,11 +17,15 @@ Two concerns are covered:
 
 from __future__ import annotations
 
-import pandas as pd
+import re
 
+import pandas as pd
+import pytest
+
+from common.exceptions import ValidationError
 from common.refdes_utils import expand_refdes_range, split_refdes_list
 from bom_compare.bom_compare_logic import ColumnMapping, AnalyzeOptions, compare_two_boms
-from bom_compare.group_analysis import analyze
+from bom_compare.group_analysis import analyze, explode_bom, explode_grouping
 
 
 # ---------------------------------------------------------------------------
@@ -654,3 +658,48 @@ def test_custom_fmr_sheet_writes_user_facing_status(tmp_path) -> None:
         s == "Failure Mode Ratio does not equal 1.0" for s in statuses
     ), statuses
     assert not any(s == "FMR != 1.0" for s in statuses), statuses
+
+
+# ---------------------------------------------------------------------------
+# Batch 6 #1: empty / wrong-sheet inputs must raise a project ValidationError
+# with a friendly, UI-labelled message (no raw ValueError, no "DataFrame"
+# jargon). The sheet the user picked simply had no data rows.
+# ---------------------------------------------------------------------------
+
+def test_explode_grouping_empty_df_raises_friendly_validation_error() -> None:
+    with pytest.raises(ValidationError) as excinfo:
+        explode_grouping(pd.DataFrame(), "Reference Designator", None)
+    msg = str(excinfo.value)
+    assert "Grouping file" in msg
+    assert "no data rows" in msg
+    assert "DataFrame" not in msg  # jargon dropped
+
+
+def test_explode_bom_empty_df_raises_friendly_validation_error() -> None:
+    with pytest.raises(ValidationError) as excinfo:
+        explode_bom(
+            pd.DataFrame(), "Reference Designator", None, False,
+            re.compile(r"\bDNP\b", re.I),
+        )
+    msg = str(excinfo.value)
+    assert "BOM file" in msg
+    assert "no data rows" in msg
+    assert "DataFrame" not in msg
+
+
+def test_compare_two_boms_empty_uses_ui_file_labels() -> None:
+    good = pd.DataFrame([{"Reference Designator": "R1"}])
+
+    with pytest.raises(ValidationError) as excinfo_a:
+        compare_two_boms(pd.DataFrame(), good, "Reference Designator", "Reference Designator")
+    msg_a = str(excinfo_a.value)
+    assert "File 1" in msg_a
+    assert "no data rows" in msg_a
+    assert "DataFrame" not in msg_a
+
+    with pytest.raises(ValidationError) as excinfo_b:
+        compare_two_boms(good, pd.DataFrame(), "Reference Designator", "Reference Designator")
+    msg_b = str(excinfo_b.value)
+    assert "File 2" in msg_b
+    assert "no data rows" in msg_b
+    assert "DataFrame" not in msg_b

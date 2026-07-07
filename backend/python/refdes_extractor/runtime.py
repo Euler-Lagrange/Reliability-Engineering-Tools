@@ -539,6 +539,18 @@ def _extractor_presets() -> StylePresets:
 _COMPONENT_DETAIL_SHEET = "Component Detail"
 _ORPHAN_PINS_SHEET = "Orphan Pins"
 
+# Legend banner prepended to the Component Detail sheet (row 1, merged across
+# the columns) so the Source vocabulary and Confidence scale aren't opaque.
+# Mirrors the FMEA SUMMARY_SHEET_BANNERS convention.
+_COMPONENT_DETAIL_BANNER = (
+    "Source: geometry = pin-to-body geometric match; "
+    "parent-refdes = inherited from the parent RefDes token; "
+    "box-text = text found inside the component outline; "
+    "pinlist-cluster = grouped via the pin list; "
+    "unqualified = no geometric confirmation.   "
+    "Confidence = 0-1 heuristic score (higher = stronger evidence)."
+)
+
 
 def _ambiguity_flag(candidates) -> str:
     try:
@@ -575,6 +587,16 @@ def _write_component_detail_sheet(wb, details: dict | None) -> None:
     ws = wb.create_sheet(_COMPONENT_DETAIL_SHEET)
     write_df_to_sheet(ws, df)
     style_worksheet(ws, df, presets=_extractor_presets(), alternate_rows=True)
+    # Prepend a merged legend banner (row 1); the styled headers shift to row 2.
+    # Mirrors the FMEA summary-sheet banner pattern (insert AFTER styling).
+    ws.insert_rows(1)
+    ws.cell(row=1, column=1, value=_COMPONENT_DETAIL_BANNER)
+    try:
+        ws.merge_cells(
+            start_row=1, start_column=1, end_row=1, end_column=len(df.columns),
+        )
+    except ValueError:  # pragma: no cover - single-column frames can't merge
+        pass
 
 
 def _write_orphan_pins_sheet(wb, details: dict | None) -> None:

@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from common.exceptions import ValidationError
 from common.utils import ensure_file_size_within
 
 
@@ -21,7 +22,7 @@ def test_file_size_guard_allows_a_small_file(tmp_path: Path) -> None:
 def test_file_size_guard_rejects_an_oversized_file(tmp_path: Path) -> None:
     target = tmp_path / "big.bin"
     target.write_bytes(b"x" * 4096)
-    with pytest.raises(ValueError, match="too large"):
+    with pytest.raises(ValidationError, match="too large"):
         ensure_file_size_within(target, 1024, what="template workbook")
 
 

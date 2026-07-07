@@ -79,3 +79,24 @@ def test_failure_rate_required_mapping_sentinel_blocks_validation(tmp_path: Path
 
     assert result["ok"] is False
     assert result["reason_code"] == "invalid_do_not_map"
+    # Batch 6 #7: the message names the mapping the way the UI labels it, not
+    # the raw canonical token (fmea_cause).
+    assert "FMEA: failure mode causes" in result["toast_text"]
+    assert "fmea_cause" not in result["toast_text"]
+
+
+def test_failure_rate_missing_mapping_uses_display_label(tmp_path: Path) -> None:
+    """A missing required mapping is reported with the human display label
+    ('FMEA: failure mode ratio'), never the raw canonical ('fmea_ratio')."""
+    body = _build_body(tmp_path)
+    # Drop the fmea_ratio mapping so it reads as absent.
+    body["mappings"] = [
+        row for row in body["mappings"] if row["canonical"] != "fmea_ratio"
+    ]
+
+    result = fr_runtime.validate_run_request(body)
+
+    assert result["ok"] is False
+    assert result["reason_code"] == "missing_mappings"
+    assert "FMEA: failure mode ratio" in result["toast_text"]
+    assert "fmea_ratio" not in result["toast_text"]

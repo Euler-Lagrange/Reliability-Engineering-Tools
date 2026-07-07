@@ -74,6 +74,9 @@ export function SettingsTool() {
   const [prefixSaved, setPrefixSaved] = useState<string[]>([]);
   const [prefixDraft, setPrefixDraft] = useState<string[]>([]);
   const [prefixLoadError, setPrefixLoadError] = useState<string | null>(null);
+  // Non-blocking warning surfaced when the saved config exists but is corrupt
+  // (invalid JSON) — the read still returns defaults, but a save overwrites it.
+  const [prefixWarning, setPrefixWarning] = useState<string | null>(null);
   const [newPrefix, setNewPrefix] = useState("");
   const [isSavingPrefixes, setIsSavingPrefixes] = useState(false);
   const [showAllDefaults, setShowAllDefaults] = useState(false);
@@ -97,6 +100,7 @@ export function SettingsTool() {
         setPrefixSaved(result.custom);
         setPrefixDraft(result.custom);
         setPrefixLoadError(null);
+        setPrefixWarning(result.warning ?? null);
       })
       .catch((error: unknown) => {
         if (cancelled) return;
@@ -347,6 +351,11 @@ export function SettingsTool() {
                     </div>
                   ) : (
                     <>
+                      {prefixWarning ? (
+                        <p className={styles.prefixWarning} role="status">
+                          {prefixWarning}
+                        </p>
+                      ) : null}
                       <div>
                         <p className={styles.diagnosticLabel}>
                           IEEE-315 defaults ({prefixDefaults.length})

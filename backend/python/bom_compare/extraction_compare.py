@@ -31,6 +31,7 @@ from common.excel_styles import (
     style_worksheet,
     write_df_to_sheet,
 )
+from common.exceptions import ValidationError
 from common.refdes_utils import split_refdes_list
 
 SHEET_SUMMARY = "Summary"
@@ -64,7 +65,7 @@ def _column(df: pd.DataFrame, wanted: str) -> str:
     for col in df.columns:
         if str(col).strip().lower() == wanted.lower():
             return str(col)
-    raise ValueError(
+    raise ValidationError(
         f"Input does not look like a RefDes extraction sheet: missing the "
         f"'{wanted}' column (found: {', '.join(str(c) for c in df.columns)})."
     )

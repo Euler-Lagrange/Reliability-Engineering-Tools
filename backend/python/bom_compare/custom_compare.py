@@ -24,7 +24,7 @@ from common import (
     to_reason_code_label,
     to_user_facing_text,
 )
-from common.exceptions import ColumnMappingError
+from common.exceptions import ColumnMappingError, ValidationError
 from common.refdes_utils import (
     canonicalize_refdes,
     get_base_refdes,
@@ -161,11 +161,18 @@ def compare_two_boms(
         except re.error:
             dnp_re = re.compile(r"\bDNP\b", re.I)
 
-    # Validate inputs
+    # Validate inputs. Use the UI's role names ("File 1"/"File 2") so the
+    # message matches what the operator sees, not the internal A/B labels.
     if bom_a_df is None or bom_a_df.empty:
-        raise ValueError("BOM A DataFrame cannot be None or empty")
+        raise ValidationError(
+            "File 1: the selected sheet has no data rows. "
+            "Pick the sheet that contains the BOM parts."
+        )
     if bom_b_df is None or bom_b_df.empty:
-        raise ValueError("BOM B DataFrame cannot be None or empty")
+        raise ValidationError(
+            "File 2: the selected sheet has no data rows. "
+            "Pick the sheet that contains the BOM parts."
+        )
     if refdes_col_a not in bom_a_df.columns:
         raise ColumnMappingError(f"RefDes column '{refdes_col_a}' not found in BOM A")
     if refdes_col_b not in bom_b_df.columns:

@@ -180,15 +180,24 @@ def test_component_detail_sheet_rows_sorted_and_flagged(tmp_path) -> None:
     wb.save(path)
 
     ws = load_workbook(path)["Component Detail"]
-    headers = [ws.cell(row=1, column=c).value for c in range(1, 7)]
+    # Row 1 is a merged legend banner explaining the Source vocabulary and the
+    # Confidence scale (mirrors the FMEA summary-sheet banner pattern).
+    banner = ws.cell(row=1, column=1).value
+    assert banner is not None
+    banner_lower = banner.lower()
+    assert "geometry" in banner_lower
+    assert "parent-refdes" in banner_lower
+    assert "confidence" in banner_lower
+    # Headers move to row 2.
+    headers = [ws.cell(row=2, column=c).value for c in range(1, 7)]
     assert headers == ["Component", "Group", "Pages", "Confidence", "Source", "Flags"]
-    # Sorted by group: CPU-001 first.
-    assert ws.cell(row=2, column=1).value == "R1"
-    assert ws.cell(row=3, column=1).value == "U7-38"
-    assert ws.cell(row=3, column=3).value == "4, 9"
-    assert ws.cell(row=3, column=6).value == "ambiguous (3 candidates)"
-    assert ws.cell(row=1, column=1).font.name == "Aptos Narrow"
-    assert ws.freeze_panes == "A2"
+    # Data starts on row 3; sorted by group: CPU-001 first.
+    assert ws.cell(row=3, column=1).value == "R1"
+    assert ws.cell(row=4, column=1).value == "U7-38"
+    assert ws.cell(row=4, column=3).value == "4, 9"
+    assert ws.cell(row=4, column=6).value == "ambiguous (3 candidates)"
+    # The header row (now row 2) keeps the extractor font.
+    assert ws.cell(row=2, column=1).font.name == "Aptos Narrow"
 
 
 def test_orphan_pins_sheet_and_skip_when_empty(tmp_path) -> None:

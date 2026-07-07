@@ -30,7 +30,7 @@ from common import (
     to_reason_code_label,
     to_user_facing_text,
 )
-from common.exceptions import ColumnMappingError
+from common.exceptions import ColumnMappingError, ValidationError
 from common.refdes_utils import (
     canonicalize_refdes,
     get_base_refdes,
@@ -109,7 +109,10 @@ def explode_grouping(
     """Parse grouping file and explode RefDes tokens."""
     # Input validation
     if df is None or df.empty:
-        raise ValueError("Grouping DataFrame cannot be None or empty")
+        raise ValidationError(
+            "Grouping file: the selected sheet has no data rows. "
+            "Pick the sheet that contains the component groups."
+        )
     if ref_col not in df.columns:
         raise ColumnMappingError(f"Required RefDes column '{ref_col}' not found in grouping file")
     if group_col and group_col not in df.columns:
@@ -166,7 +169,10 @@ def explode_bom(
     """Parse BOM file and explode RefDes tokens."""
     # Input validation
     if df is None or df.empty:
-        raise ValueError("BOM DataFrame cannot be None or empty")
+        raise ValidationError(
+            "BOM file: the selected sheet has no data rows. "
+            "Pick the sheet that contains the BOM parts."
+        )
     if ref_col not in df.columns:
         raise ColumnMappingError(f"Required RefDes column '{ref_col}' not found in BOM file")
     if desc_col and desc_col not in df.columns:

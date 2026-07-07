@@ -53,9 +53,27 @@ ROLE_LABELS = {
     "extractionB": "Extraction B (newer)",
 }
 
+# Human-readable labels for the canonical mapping tokens, so a blocked-run
+# message reads "Missing required mappings: BOM: RefDes column." instead of the
+# raw canonical ("bom_refdes_col"). These MUST mirror the frontend display
+# labels in frontend/src/mocks/scenarios.ts (bomCompareGroupMappings /
+# bomCompareCustomMappings). Unknown keys fall back to the raw canonical.
+CANONICAL_DISPLAY_LABELS = {
+    "grouping_group_col": "Grouping: group column",
+    "grouping_refdes_col": "Grouping: RefDes column",
+    "bom_refdes_col": "BOM: RefDes column",
+    "bom_desc_col": "BOM: description column",
+    "refdes_col_a": "File 1: RefDes column",
+    "refdes_col_b": "File 2: RefDes column",
+}
+
 
 def _role_label(role: str) -> str:
     return ROLE_LABELS.get(role, role)
+
+
+def _mapping_label(canonical: str) -> str:
+    return CANONICAL_DISPLAY_LABELS.get(canonical, canonical)
 
 
 def _required_roles(workflow_id: str) -> list[str]:
@@ -199,11 +217,11 @@ def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
     # branch fire instead. A genuinely empty/absent mapping is raw None, so it
     # still triggers missing_mappings as before.
     required_mapping_values = [
-        LabeledValue(name, _raw_mapping(body, name))
+        LabeledValue(_mapping_label(name), _raw_mapping(body, name))
         for name in req_mapping_names
     ]
     invalid_mapping_values = [
-        LabeledValue(name, _raw_mapping(body, name))
+        LabeledValue(_mapping_label(name), _raw_mapping(body, name))
         for name in req_mapping_names
         if _raw_mapping(body, name) == DO_NOT_MAP_SENTINEL
     ]
