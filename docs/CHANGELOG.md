@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.9] - 2026-07-09 — In-App User Guide, Cancellation Coverage, 2× Faster Reports
+
+### Added
+
+- **In-app User Guide** — a new Help card in Settings launches a
+  full-screen, theme-aware guide with a hop-around section nav (the Tauri
+  successor to the legacy help page): every tool's modes, required inputs,
+  options, limitations, output-sheet and flag vocabulary, troubleshooting,
+  and an FAQ. The full manual also ships as `docs/USER_GUIDE.md`, and
+  `docs/ARCHITECTURE.md` gains an operational-knowledge appendix (run
+  lifecycle rules, cancellation architecture, perf cliffs, break-glass
+  table) for maintainers.
+- Performance baselines (`docs/reviews/PERF_BASELINES.md`) and a synthetic
+  stress probe (`scripts/perf_probe.py`).
+
+### Fixed
+
+- **Cancel now works during report writing** — the output-writing phase
+  (~60-77% of a large FMEA run) had no cancellation coverage, so the
+  Cancel button went dead the moment generation finished. Measured cancel
+  latency went from *never* to about one second.
+- **Report writing is ~2× faster** — openpyxl re-hashed the full cell
+  style on every assignment (77% of a 5,000-part run); the shared styler
+  now stamps cached style copies. 5k-part FMEA: 55 s → 29 s; scaling
+  verified ~linear to 20k parts.
+- One Escape now closes only the top-most open layer (mapping help panel,
+  review drawer, command palette, user guide) instead of all of them.
+- The crash-screen's "Copy diagnostic bundle" button confirms inline (its
+  toast could never render once the app shell had crashed).
+- Excel writers no longer crash on list-valued cells; crash dumps are
+  capped at the newest 20; `canonicalize_refdes` can no longer mint a
+  phantom "NAN" RefDes from an empty cell; numeric Excel headers no longer
+  crash column detection.
+
+### Changed
+
+- BOM Compare option checkboxes have human-cased labels with descriptive
+  hints ("Ignore DNP rows", "Check Failure Mode Ratios", …).
+- The "Dark Star" codename no longer appears in user-facing copy.
+- Selected workflow/strategy/theme cards show a clear accent border + fill
+  (two CSS cascade bugs — the minimal styling was never intentional).
+- Optional mapping rows no longer count toward the amber "N unmapped"
+  badge or render warning-colored chips.
+- The FMEA hero metric shows "—" before inspection instead of "TBD";
+  workflow badges carry explanatory tooltips.
+- Test suite grew from 690 to 711 (388 backend / 306 frontend / 17 Rust).
+
 ## [0.4.8] - 2026-07-07 — Report Integrity, Cross-Tool Guard, A11y, Suite Stability
 
 ### Fixed
