@@ -229,17 +229,18 @@ const SECTIONS: GuideSection[] = [
         <h3>Options</h3>
         <ul>
           <li>
-            <strong>ignore dnp</strong> (on) — skip Do-Not-Populate rows.{" "}
-            <strong>check part usage</strong> (on) — emit Part Usage warnings.{" "}
-            <strong>check fmr</strong> — add a Failure-Mode-Ratio check sheet.
+            <strong>Ignore DNP rows</strong> (on) — skip Do-Not-Populate rows.{" "}
+            <strong>Check Part Usage</strong> (on) — emit Part Usage warnings.{" "}
+            <strong>Check Failure Mode Ratios</strong> — add a
+            Failure-Mode-Ratio check sheet.
           </li>
           <li>
-            <strong>loose prefix base match</strong> — base-RefDes matching is
+            <strong>Loose prefix base match</strong> — base-RefDes matching is
             always on; this adds fuzzy prefix coverage (no effect with exact
-            match). <strong>exact match</strong> — compare tokens verbatim.
+            match). <strong>Exact match</strong> — compare tokens verbatim.
           </li>
           <li>
-            <strong>treat prov as covered</strong> — Group vs BOM only; treats
+            <strong>Treat PROV as covered</strong> — Group vs BOM only; treats
             PROV groups as covered.
           </li>
         </ul>

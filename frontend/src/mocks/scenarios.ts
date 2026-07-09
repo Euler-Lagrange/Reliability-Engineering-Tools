@@ -123,7 +123,7 @@ const warningHeavyMessages: ValidationMessage[] = [
     severity: "warning",
     area: "Piece-Part Merge",
     title: "Multi-RefDes source rows were excluded from enrichment",
-    detail: "Dark Star preserved the legacy safety rule and rejected ambiguous rows.",
+    detail: "The generator preserved the legacy safety rule and rejected ambiguous rows.",
   },
   {
     id: "err-1",
@@ -249,7 +249,7 @@ const successEvents = [
   {
     id: "event-1",
     title: "Resolve sheets and profile",
-    detail: "Mapped workbook inputs against the selected Dark Star column profile.",
+    detail: "Mapped workbook inputs against the selected column profile.",
     progress: 18,
   },
   {
@@ -381,7 +381,7 @@ export const demoScenarios: DemoScenario[] = [
         severity: "info",
         area: "Planner",
         title: "Merged-header region preserved in workbook plan",
-        detail: "Dark Star keeps the target workbook explicit and shows planner confidence before execution.",
+        detail: "The generator keeps the target workbook explicit and shows planner confidence before execution.",
       },
     ],
     previewRows,
@@ -444,7 +444,7 @@ export const demoScenarios: DemoScenario[] = [
       result: {
         status: "success",
         title: "Workbook plan simulation finished",
-        summary: "Dark Star reached a review-ready state with clean completion messaging and output metadata.",
+        summary: "The generator reached a review-ready state with clean completion messaging and output metadata.",
         outputFile: "DarkStar_RunSuccess_20260403_1131.xlsx",
         primaryMetric: "5 timeline stages",
         secondaryMetric: "100% run completion",

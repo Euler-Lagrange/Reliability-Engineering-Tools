@@ -1408,8 +1408,8 @@ export function FmeaTool() {
             eyebrow="Workbook & folder"
             description={
               workflowId === "fill_gaps"
-                ? "Choose how Dark Star writes the finished workbook. Fill-gaps often targets an existing workbook copy, but the output strategy stays explicit here."
-                : "Choose how Dark Star writes the finished workbook, then confirm the destination workbook and output folder."
+                ? "Choose how the generator writes the finished workbook. Fill-gaps often targets an existing workbook copy, but the output strategy stays explicit here."
+                : "Choose how the generator writes the finished workbook, then confirm the destination workbook and output folder."
             }
           >
             <div className="setup-grid">

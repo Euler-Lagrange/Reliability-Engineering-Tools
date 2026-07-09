@@ -193,12 +193,12 @@ Checkboxes in the **Options** card:
 
 | Label | Default | Effect |
 |-------|---------|--------|
-| loose prefix base match | off | Adds fuzzy prefix base coverage. Base-RefDes matching is *always* on; this is a no-op when **exact match** is enabled. |
-| exact match | off | Match RefDes exactly (no base normalization). |
-| ignore dnp | on | Skip Do-Not-Populate rows. |
-| check part usage | on | Emit Part Usage warnings. |
-| check fmr | off | Add a Failure-Mode-Ratio check sheet. |
-| treat prov as covered | on | Treat `PROV` groups as covered. **Group vs BOM only** — disabled with a hint elsewhere. |
+| Loose prefix base match | off | Adds fuzzy prefix base coverage. Base-RefDes matching is *always* on; this is a no-op when **Exact match** is enabled. |
+| Exact match | off | Compare RefDes tokens verbatim — no base-RefDes reduction. |
+| Ignore DNP rows | on | Skip Do-Not-Populate parts before comparing. |
+| Check Part Usage | on | Validate Part Usage against instance counts and add a warnings sheet. |
+| Check Failure Mode Ratios | off | Verify each part's ratios sum to 1.0 and add a check sheet. |
+| Treat PROV as covered | on | Treat `PROV` groups as covered. **Group vs BOM only** — disabled with a hint elsewhere. |
 
 **Extraction Compare** reads none of these; every checkbox and the mapping card
 are disabled/hidden in that mode (fixed-schema group diff).

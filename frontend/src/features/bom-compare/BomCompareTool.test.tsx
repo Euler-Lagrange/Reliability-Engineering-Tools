@@ -202,6 +202,50 @@ describe("BomCompareTool custom compare workflow", () => {
     ).toBeInTheDocument();
   });
 
+  // Batch 6 #2 (extended): the five previously-mechanical option checkboxes
+  // used to render lowercase, hint-less labels straight from the option key
+  // ("exact match", "ignore dnp", "check part usage", "check fmr", "treat prov
+  // as covered"). They now show human-cased labels with descriptive hints.
+  // Case-SENSITIVE anchored name regexes assert the human-casing (a lowercase
+  // "exact match" no longer matches), and the descriptive hint text asserts the
+  // hint renders (there was no hint at all before).
+  it("renders human-cased option labels with descriptive hints", () => {
+    render(<BomCompareTool />);
+
+    // Human-cased labels (default Group vs BOM mode — all enabled).
+    expect(
+      screen.getByRole("checkbox", { name: /^Exact match/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: /^Ignore DNP rows/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: /^Check Part Usage/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: /^Check Failure Mode Ratios/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("checkbox", { name: /^Treat PROV as covered/ }),
+    ).toBeInTheDocument();
+
+    // Descriptive hints render alongside their labels.
+    expect(
+      screen.getByText("Compare RefDes tokens verbatim — no base-RefDes reduction."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Skip Do-Not-Populate parts before comparing."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Validate Part Usage against instance counts and add a warnings sheet.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Verify each part's ratios sum to 1.0 and add a check sheet."),
+    ).toBeInTheDocument();
+  });
+
   it("dispatches bomA/bomB inputs and custom mappings for a custom run", async () => {
     const user = userEvent.setup();
     render(<BomCompareTool />);

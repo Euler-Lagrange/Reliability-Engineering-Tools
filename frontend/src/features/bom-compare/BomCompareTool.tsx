@@ -144,6 +144,47 @@ function sanitizeInterruptedInput(input: InputFileState): InputFileState {
   };
 }
 
+/**
+ * Batch 6 #2 (extended): human-cased label + descriptive hint for every
+ * comparison option, replacing the old mechanical `key.replace(/_/g, " ")`
+ * labelling (which rendered lowercase "ignore dnp", "check fmr", ...). Keyed by
+ * the option key so the render loop below can look each one up.
+ *
+ * Two entries carry NO descriptive `hint` here on purpose:
+ *   - `treat_prov_as_covered` — its only hint is the MODE-GATING one computed in
+ *     the render loop ("Group vs BOM mode only" / "BOM compare modes only"),
+ *     preserved exactly as before.
+ *   - `base_match` keeps its verbatim prefix-matching hint (unchanged wording).
+ * In every mode the mode-gating hint (when present) still wins over the
+ * descriptive hint below — an inert control must explain WHY it is inert
+ * (Wiring Invariant #2), not show its normal description.
+ */
+const OPTION_META: Record<string, { label: string; hint?: string }> = {
+  exact_match: {
+    label: "Exact match",
+    hint: "Compare RefDes tokens verbatim — no base-RefDes reduction.",
+  },
+  ignore_dnp: {
+    label: "Ignore DNP rows",
+    hint: "Skip Do-Not-Populate parts before comparing.",
+  },
+  check_part_usage: {
+    label: "Check Part Usage",
+    hint: "Validate Part Usage against instance counts and add a warnings sheet.",
+  },
+  check_fmr: {
+    label: "Check Failure Mode Ratios",
+    hint: "Verify each part's ratios sum to 1.0 and add a check sheet.",
+  },
+  treat_prov_as_covered: {
+    label: "Treat PROV as covered",
+  },
+  base_match: {
+    label: "Loose prefix base match",
+    hint: "Base-RefDes matching is always on; this adds fuzzy prefix coverage. No effect when exact match is enabled.",
+  },
+};
+
 export function BomCompareTool() {
   const baseScenario = bomCompareDemoScenarios[0];
   const [workflowId, setWorkflowId] = useState<WorkflowId>(baseScenario.workflowId);
@@ -1050,29 +1091,24 @@ export function BomCompareTool() {
                 const groupOnly =
                   key === "treat_prov_as_covered" && workflowId === "bom_compare_custom";
                 const disabled = groupOnly || extractionMode;
-                // base_match toggles LOOSE/fuzzy prefix base matching — it is a
-                // no-op when exact_match is on, and its raw key ("base match")
-                // misleads (base-RefDes matching is always on). Give it a
-                // truthful label + hint (Wiring Invariant #2).
-                const isBaseMatch = key === "base_match";
-                const label = isBaseMatch
-                  ? "loose prefix base match"
-                  : key.replace(/_/g, " ");
+                // Human-cased label + descriptive hint from the explicit map.
+                // Fallback to the mechanical label so a future options key
+                // added without an OPTION_META entry renders (hint-less)
+                // instead of crashing the whole tool render.
+                const meta = OPTION_META[key] ?? { label: key.replace(/_/g, " ") };
                 const modeHint = extractionMode
                   ? "BOM compare modes only"
                   : groupOnly
                     ? "Group vs BOM mode only"
                     : undefined;
-                const hint =
-                  modeHint ??
-                  (isBaseMatch
-                    ? "Base-RefDes matching is always on; this adds fuzzy prefix coverage. No effect when exact match is enabled."
-                    : undefined);
+                // Mode gating always wins over the descriptive hint: an inert
+                // control must say WHY it is inert, not show its normal blurb.
+                const hint = modeHint ?? meta.hint;
                 return (
                   <CheckboxField
                     key={key}
                     id={`bom-compare-option-${key}`}
-                    label={label}
+                    label={meta.label}
                     checked={value}
                     disabled={disabled}
                     hint={hint}

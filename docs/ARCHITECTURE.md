@@ -461,3 +461,133 @@ These are brief pointers; the full ADR text lives in `docs/DECISIONS.md`.
 - **Single active run** — only one `execute_run` may be in flight at a time.
   Concurrency is bounded inside the run by Python threads, not by stacking
   runs. Simplifies cancellation, progress routing, and the UI state machine.
+
+
+---
+
+# Operational Knowledge (added 2026-07-09)
+
+The sections above describe the structure. This part captures the
+operational knowledge from the v0.4.6-v0.4.9 audit/hardening cycle - the
+ordering rules, performance cliffs, and failure modes that are not visible
+from the directory tree. Companion docs: `docs/reviews/` (audit history,
+perf baselines, UX findings), `docs/USER_GUIDE.md` (user-facing behavior).
+
+## The Run Lifecycle - ordering rules that are load-bearing
+
+1. **Start gates run in a fixed order** in every tool's `handleStartRun`:
+   browser-mock early return -> `guardCrossToolRun()` (another tool's live
+   run blocks with a toast BEFORE anything is sent - the backend would
+   reject it anyway, but the rejection path used to clobber the live
+   run's UI handle) -> `isStartingRef` re-entrancy guard -> stale-session
+   clear -> validate -> execute.
+2. **`status:success` arrives BEFORE the `result` payload.** The terminal
+   effect in `useDesktopRunController` deliberately waits for the result
+   event; firing on the status event loses the success toast on every
+   run. Keyed `${runId}:${phase}` so each terminal fires exactly once.
+3. **The status chip is owned by `useBackendBusyReset`**, which returns it
+   to `ready` on every run-completion terminal (success/failure/cancelled;
+   `disconnected` is handled by the bootstrap path instead). Do not write
+   `backendStatus: "error"` from tool failure branches - it is dead
+   (failures surface via toast + run panel).
+4. **Exactly one event subscription exists** (`useBackendRunSubscription`
+   in App.tsx). Tool hooks project store state. A second subscription, or
+   one inside a tool, misses events across tool switches.
+
+## Cancellation architecture
+
+- `CancellationError` inherits `InterruptedError -> OSError -> Exception`.
+  Every broad `except Exception` on a run path must re-raise cancellation
+  first, or bare-`raise` after cleanup. Violating this silently eats the
+  Cancel button; it is test-enforced in several suites.
+- Workers must call `self.cancel.check()` in EVERY long phase including
+  output writing. The write phase is 60-77% of a large FMEA run and had
+  zero checks until 2026-07 - generation finished ~1.4s into a 33s run
+  and Cancel was dead afterwards. `style_worksheet` accepts a
+  `cancel_check` callable; thread it through any new writer.
+- `wb.save()` is an accepted atomic no-cancel window (~8s at 5k rows).
+- Cancel-before-bind is handled: `ActiveRun.bind_processor` replays a
+  latched cancel. Do not add `cancel.reset()` inside `process()` - each
+  run gets a fresh processor, and a reset races the pre-bind cancel
+  (comments in `fmea_generator_logic.py` mark where it was removed).
+
+## The Excel performance cliff
+
+`common/excel_styles.style_worksheet` stamps cached `StyleArray` copies
+per distinct (font, fill) combo instead of assigning style objects per
+cell. Per-cell assignment re-hashes the full style through openpyxl's
+IndexedList - 5.3M hash calls at 5k rows, 77% of the entire FMEA run,
+before the fix. Rules that keep it correct:
+
+- Copies are mandatory: openpyxl mutates `_style` IN PLACE, so a shared
+  array lets a later `number_format` bleed across every same-styled cell
+  (guarded by `test_style_array_stamp_is_not_shared`).
+- Apply `number_format` AFTER `style_worksheet`, never before.
+- Baselines in `docs/reviews/PERF_BASELINES.md`; re-run
+  `scripts/perf_probe.py` (synthetic data) after touching writers.
+  Scaling is ~linear; FMEA memory is ~20KB/part (100k parts ~ 2GB -
+  revisit openpyxl write_only/lxml only if boards get that big).
+
+## Diagnostics-language rules (each backed by a shipped bug)
+
+- Every emitted `ReasonCode` must have a `REASON_CODE_LABELS` entry -
+  a lockstep test scans the backend for emitted codes.
+- The abbreviation expander (`to_user_facing_text`) runs ONLY on
+  tool-authored columns (FR `Validation_Notes`; BOM Compare
+  `Reason`/`Status`). Applied to pass-through columns it rewrote user
+  text ("Main CB panel" -> "Main Circuit Block panel") in TWO tools.
+- Blocking messages are sentences naming the control to fix, in the
+  user's vocabulary: display labels not canonical tokens, "File 1" not
+  "BOM A", never "DataFrame".
+- Every flag token written to a workbook gets an in-workbook legend
+  (banner row or summary legend). Banner sheets re-pin
+  `freeze_panes = "A3"` after `insert_rows(1)` - the insert does not
+  shift the styler's A2 freeze.
+- Internal columns are underscore-prefixed and stripped at write time.
+
+## CSS selection-state cascade trap
+
+The unified selected-state rule is `[data-selected="true"]` (accent
+border + `--accent-soft` fill). Any component class that sets its own
+border/background LATER in the stylesheet at equal specificity silently
+overrides it - the selected card then shows only its child eyebrow/icon
+tint. This shipped twice (`.choice-card`, Settings theme tiles); both
+have compound-selector repairs (`.choice-card[data-selected="true"]`).
+Any NEW selectable card class needs its own compound selector.
+
+## Escape / overlay discipline
+
+`useEscapeLayer` (frontend/src/shared/hooks) is a module-level dismiss
+stack with ONE window listener; Escape dismisses only the top layer.
+Every overlay (mapping help panel, review drawer, command palette, the
+Settings User Guide) registers through it. Never add a component-local
+window keydown Escape listener.
+
+## Where to look when something breaks
+
+| Symptom | Start here |
+|---------|------------|
+| Run stuck busy / wrong chip | `useBackendBusyReset` + terminal guard in `runLifecycle`; is the phase actually terminal? |
+| Cancel does nothing | grep `cancel.check` in the running phase; see Cancellation rules above |
+| Events missing after tool switch | something subscribed outside `useBackendRunSubscription` |
+| Generic error but log has the real one | a catch bypassing `describeBackendError` (Tauri rejects with raw strings) |
+| "nan"/internal columns in output | writer guards in `excel_styles`; underscore-strip in the tool writer |
+| Sidecar orphaned after a crash | Windows Job Object assignment in `src-tauri/lib.rs` |
+| Vitest flakes under load | RTL `asyncUtilTimeout` in `vitest.setup.ts` (root-caused 2026-07: cold lazy-chunk imports vs the 1000ms RTL default - NOT vitest testTimeout) |
+| Slow report writing | PERF_BASELINES.md + the StyleArray cache |
+| A control does nothing | Wiring Invariants #1/#2 (CLAUDE.md): trace handler -> state -> payload -> backend reader |
+| Frozen-exe-only misbehavior | the packaged self-test steps in `scripts/release.bat` are the only frozen-runtime coverage; `freeze_support()` in `sidecar_main.main()` |
+
+## Quality gates and working discipline
+
+`scripts/release.bat` is the 16-step pipeline ending in self-tests of
+the PACKAGED exe before promotion to `local_build/` - the only place
+frozen-runtime behavior is exercised; never skip it. Test counts live in
+four doc locations that move together (Wiring Invariant #10). The
+discipline that kept this codebase healthy through six audit waves:
+failing test first, full suites per batch, an independent adversarial QA
+review of every batch diff, doc counts synced in the same commit. The
+reusable audit lens list (dropped diagnostics, internal-column leaks,
+cryptic tokens, misleading labels, phantom options, asserts on user
+data, NaN writes, demo-content leaks, generic messages) lives in
+`docs/reviews/STABILITY_SWEEP_2026-07-07.md`.
