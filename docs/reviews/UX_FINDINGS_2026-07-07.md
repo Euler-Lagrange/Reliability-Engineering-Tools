@@ -100,30 +100,40 @@ comparison. Desktop mode is unaffected (real inspection drives the rows).
 - "Load example" buttons show coming-soon toasts (documented placeholder).
 - Minimal `data-selected` styling (see finding 1 caution).
 
-## Round 2 — documentation-driven findings (from writing USER_GUIDE.md, still OPEN)
+## Round 2 — documentation-driven findings (from writing USER_GUIDE.md)
 
-Surfaced while cross-checking the user guide against source; none fixed yet:
+Surfaced while cross-checking the user guide against source. Statuses as of
+2026-07-09 (post-v0.4.9): #1, #2, #5 FIXED; #3, #4 OPEN pending user
+decisions; #6 is a standing process note.
 
-1. **BOM Compare option labels are raw snake_case** — five of six checkboxes
-   render `key.replace(/_/g, " ")` verbatim ("exact match", "ignore dnp",
-   "check part usage", "check fmr", "treat prov as covered"); "dnp" is never
-   expanded to Do-Not-Populate anywhere in the UI. Human-case them + hints
-   (`BomCompareTool.tsx` options render loop).
-2. **"Dark Star" codename leaks into user-facing FMEA copy** (e.g. "Choose
-   how Dark Star writes the finished workbook") and demo run summaries —
-   the product is "Reliability Tools Desktop". Grep `Dark Star` in
-   frontend/src (excluding the brand glyph/shell title decision).
-3. **Two sheet-naming schemes in one tool** — group path writes "Missing in
-   BOM" / "Failure Mode Ratio Errors" (spaces); custom path writes
-   `Only_In_*` / `Failure_Mode_Ratio` (underscores). Consider unifying
-   (`group_analysis.py` vs `excel_export.py`); note downstream scripts may
-   key on current names — needs the migration-log pattern used for
-   BOM_Additions.
-4. **Custom Compare's FMEA sheets are gated on filename-based detection**
-   ("FMEA Detected by Filename") — content-based detection would be less
-   surprising (`excel_export.py` / `fmea_coverage.py`).
-5. **CCA identifier vs RefDes-prefix rules differ** (1-8 uppercase
-   alphanumerics/hyphens vs 1-5 letters) — correct per their backends, but
-   the two "prefix" fields could explain their different rules better.
-6. USER_GUIDE.md now exists — keep it in sync when tool behavior changes
-   (add to the release checklist alongside doc counts).
+1. **FIXED (`fb437eb`, v0.4.9)** — ~~BOM Compare option labels are raw
+   snake_case~~ — five of six checkboxes rendered `key.replace(/_/g, " ")`
+   verbatim ("exact match", "ignore dnp", ...). Now human-cased with hints
+   via `OPTION_META` in `BomCompareTool.tsx`, with a mechanical-label
+   fallback so future keys can't crash the render.
+2. **FIXED (`fb437eb`, v0.4.9)** — ~~"Dark Star" codename leaks into
+   user-facing FMEA copy~~ — removed from all user-facing prose and demo
+   run summaries. The sidebar brand mark and internal IDs are deliberately
+   kept (verified 2026-07-09: the only remaining frontend hit is
+   `App.tsx` `brandLabel`).
+3. **OPEN — needs user decision.** **Two sheet-naming schemes in one
+   tool** — group path writes "Missing in BOM" / "Failure Mode Ratio
+   Errors" (spaces); custom path writes `Only_In_*` / `Failure_Mode_Ratio`
+   (underscores). Consider unifying (`group_analysis.py` vs
+   `excel_export.py`); note downstream scripts may key on current names —
+   needs the migration-log pattern used for BOM_Additions.
+4. **OPEN — needs user decision.** **Custom Compare's FMEA sheets are
+   gated on filename-based detection** ("FMEA Detected by Filename") —
+   content-based detection would be less surprising (`excel_export.py` /
+   `fmea_coverage.py`).
+5. **FIXED (2026-07-09)** — ~~CCA identifier vs RefDes-prefix rules
+   differ unexplained~~ — both rules were already correct per their
+   backends and documented in USER_GUIDE.md, but the live UI only stated
+   them after a failed input. Now stated up front: the FMEA CCA hint
+   includes "1–8 uppercase letters, digits, or hyphens"
+   (`FmeaTool.tsx`), and the Settings prefix intro explains a prefix is
+   the designator's leading letters only (1–5, digits are the component
+   number) (`SettingsTool.tsx`).
+6. **Standing process note.** USER_GUIDE.md and the in-app HelpGuide
+   overlay exist — keep both in sync when tool behavior changes (add to
+   the release checklist alongside doc counts).

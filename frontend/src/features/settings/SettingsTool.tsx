@@ -352,7 +352,9 @@ export function SettingsTool() {
                 <div className={styles.prefixStack}>
                   <p className={styles.prefixIntro}>
                     Custom prefixes extend the IEEE-315 defaults the extractor uses to
-                    recognize reference designators (U7, R12, ...). Changes apply after
+                    recognize reference designators (U7, R12, ...). A prefix is the
+                    designator&apos;s leading letters only — 1–5 letters, e.g. PS or XU;
+                    the digits that follow are the component number. Changes apply after
                     the app restarts.
                   </p>
                   {prefixLoadError ? (

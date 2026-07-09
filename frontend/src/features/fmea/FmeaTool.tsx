@@ -1358,7 +1358,7 @@ export function FmeaTool() {
                 <div className="setup-block">
                   <OptionsField
                     label="CCA Identifier"
-                    hint="Used as the prefix for generated FMEA-IDs — e.g. `PSU` produces `PSU-C200-A`."
+                    hint="Used as the prefix for generated FMEA-IDs — e.g. `PSU` produces `PSU-C200-A`. 1–8 uppercase letters, digits, or hyphens."
                     required
                     htmlFor="fmea-cca-prefix"
                   >
