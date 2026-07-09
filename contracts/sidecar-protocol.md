@@ -275,7 +275,7 @@ body. Currently defined fields:
   string falls back to the canonical `DEFAULT_DNP_REGEX` when omitted or
   empty — an empty pattern is never compiled), `check_fmr` (per-RefDes
   failure-mode-ratio sum validation; custom path emits a
-  `Failure_Mode_Ratio` warnings sheet), and `check_part_usage`. All of
+  `Failure Mode Ratio Errors` warnings sheet), and `check_part_usage`. All of
   these are honored on **both** workflows as of 0.4.6.
   `treat_prov_as_covered` is **group-only** (it keys off the grouping
   file's group-name column, which a two-BOM custom compare does not

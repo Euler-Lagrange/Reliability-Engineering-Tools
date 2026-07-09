@@ -621,9 +621,9 @@ def test_compare_two_boms_skips_pair_with_column_absent_from_a_file() -> None:
 
 
 def test_custom_fmr_sheet_writes_user_facing_status(tmp_path) -> None:
-    """The custom-path Failure_Mode_Ratio sheet must translate the internal
-    "FMR != 1.0" status the same way the group path does — the raw token is
-    an unexpanded abbreviation in the delivered report."""
+    """The custom-path Failure Mode Ratio Errors sheet must translate the
+    internal "FMR != 1.0" status the same way the group path does — the raw
+    token is an unexpanded abbreviation in the delivered report."""
     from openpyxl import load_workbook
 
     from bom_compare.excel_export import write_bom_compare_excel
@@ -645,7 +645,7 @@ def test_custom_fmr_sheet_writes_user_facing_status(tmp_path) -> None:
 
     wb = load_workbook(out)
     try:
-        ws = wb["Failure_Mode_Ratio"]
+        ws = wb["Failure Mode Ratio Errors"]
         headers = [c.value for c in ws[1]]
         status_idx = headers.index("Status") + 1
         statuses = [
@@ -770,3 +770,163 @@ def test_detect_column_tolerates_non_string_headers() -> None:
         detect_column(columns, ["designator"], substring_match=True)
         == "Reference Designator"
     )
+
+
+# ---------------------------------------------------------------------------
+# UX round-2 #4: content-based FMEA detection on the custom path. The FMEA-
+# aware checks (scope warnings, duplicate identity, usage CB-skip) used to be
+# gated purely on the FILENAME containing fmea/fmeca/piece-part — renaming an
+# FMEA export silently dropped every FMEA-aware behavior. A validated FMEA
+# Level column (name + value sampling) now triggers the scan too. Content-only
+# detection requires EXPLICIT circuit-block/piece-part text in the level
+# column — blank-row inference alone is not evidence — so a plain BOM can
+# never misfire into FMEA mode.
+# ---------------------------------------------------------------------------
+
+def test_custom_fmea_detected_by_content_without_fmea_filename() -> None:
+    """A file with a validated FMEA Level column is treated as an FMEA even
+    when its filename gives no hint (e.g. 'analysis_revB.xlsx'): the scope
+    scan runs and a CB-only token is flagged."""
+    bom_a = _custom_df([
+        {"RefDes": "U1", "FMEA Level": "Circuit Block"},
+        {"RefDes": "U2", "FMEA Level": "Circuit Block"},
+        {"RefDes": "U2", "FMEA Level": "Piece-Part"},
+    ])
+    bom_b = _custom_df([{"RefDes": "U1"}, {"RefDes": "U2"}])
+
+    result = compare_two_boms(
+        bom_a, bom_b, refdes_col_a="RefDes", refdes_col_b="RefDes",
+        check_part_usage=False,
+        source_name_a="analysis_revB.xlsx",
+        source_name_b="parts_list.xlsx",
+    )
+
+    cb_only = [
+        w for w in result.scope_warnings
+        if w["Source"] == "BOM A" and w["ReasonCode"] == "SCOPE_CB_ONLY"
+    ]
+    assert any(w["RefDes"] == "U1" for w in cb_only), result.scope_warnings
+    # U2 appears in both scopes — must not be flagged.
+    assert not any(w["RefDes"] == "U2" for w in result.scope_warnings)
+
+
+def test_custom_plain_bom_never_misfires_into_fmea_mode() -> None:
+    """A plain BOM (no FMEA Level column) with grouped multi-token RefDes
+    cells must NOT be treated as an FMEA — the loose row-inference path
+    ('two tokens in a cell looks like a circuit block') is only reachable
+    behind a filename or validated-level-column signal."""
+    bom_a = _custom_df([
+        {"RefDes": "C1, C2", "Description": "Caps"},
+        {"RefDes": "R1", "Description": "Resistor"},
+    ])
+    bom_b = _custom_df([{"RefDes": "C1"}, {"RefDes": "C2"}, {"RefDes": "R1"}])
+
+    result = compare_two_boms(
+        bom_a, bom_b, refdes_col_a="RefDes", refdes_col_b="RefDes",
+        check_part_usage=False,
+        source_name_a="bom_revA.xlsx",
+        source_name_b="bom_revB.xlsx",
+    )
+
+    assert result.scope_warnings == []
+
+
+def test_custom_level_column_without_explicit_rows_not_fmea() -> None:
+    """Content-only detection demands explicit CB/PP text. A 'Record Type'
+    column whose values merely contain 'cb' as a substring ('PCB Assembly')
+    opens the detection gate but classifies zero explicit rows — the file
+    must NOT enter FMEA mode, even though its blank rows would be inferred
+    as piece-part by the level-column classifier."""
+    bom_a = _custom_df([
+        {"RefDes": "U1", "Record Type": "PCB Assembly"},
+        {"RefDes": "U2", "Record Type": None},
+        {"RefDes": "U3", "Record Type": None},
+    ])
+    bom_b = _custom_df([{"RefDes": "U1"}, {"RefDes": "U2"}, {"RefDes": "U3"}])
+
+    result = compare_two_boms(
+        bom_a, bom_b, refdes_col_a="RefDes", refdes_col_b="RefDes",
+        check_part_usage=False,
+        source_name_a="assembly_export.xlsx",
+        source_name_b="parts.xlsx",
+    )
+
+    assert result.scope_warnings == []
+
+
+def test_custom_fmea_filename_fallback_unchanged() -> None:
+    """The legacy filename trigger still works without a level column: an
+    FMEA-named file whose rows carry CB/PP keywords in a plain text column
+    goes through the row-scan fallback exactly as before."""
+    bom_a = _custom_df([
+        {"RefDes": "U1", "Notes": "Circuit Block"},
+        {"RefDes": "U2", "Notes": "Circuit Block"},
+        {"RefDes": "U2", "Notes": "Piece-Part"},
+    ])
+    bom_b = _custom_df([{"RefDes": "U1"}, {"RefDes": "U2"}])
+
+    result = compare_two_boms(
+        bom_a, bom_b, refdes_col_a="RefDes", refdes_col_b="RefDes",
+        check_part_usage=False,
+        source_name_a="board_FMEA.xlsx",
+        source_name_b="parts_list.xlsx",
+    )
+
+    cb_only = [
+        w for w in result.scope_warnings
+        if w["Source"] == "BOM A" and w["ReasonCode"] == "SCOPE_CB_ONLY"
+    ]
+    assert any(w["RefDes"] == "U1" for w in cb_only), result.scope_warnings
+
+
+# ---------------------------------------------------------------------------
+# UX round-2 #3: the custom-path report uses the SAME human sheet-naming
+# scheme as the group path (spaces, Title Case) — no more Only_In_* /
+# Part_Usage / Failure_Mode_Ratio underscore names in one tool's output.
+# ---------------------------------------------------------------------------
+
+def test_custom_report_sheet_names_use_group_path_scheme(tmp_path) -> None:
+    from openpyxl import load_workbook
+
+    from bom_compare.bom_compare_logic import BomCompareResult
+    from bom_compare.excel_export import write_bom_compare_excel
+
+    result = BomCompareResult(
+        only_in_a=[{"RefDes": "U1"}],
+        only_in_b=[{"RefDes": "U9"}],
+        part_usage_warnings=[{
+            "Source": "File 1", "RefDes": "U1", "Base": "U1", "Usage": 0.5,
+            "Expected": 1.0, "Count": 1, "ReasonCode": "PU_MISMATCH",
+            "Reason": "Usage mismatch",
+        }],
+        fmr_warnings=[{
+            "Source": "File 1", "RefDes": "U2", "Sum": 1.1,
+            "Status": "FMR != 1.0",
+        }],
+        scope_warnings=[{
+            "Source": "BOM A", "RefDes": "U1", "ReasonCode": "SCOPE_CB_ONLY",
+            "Scope Status": "Only found in Circuit Block rows",
+            "Cross-File": "Only in BOM A", "Details": "",
+            "InCircuitBlock": "Yes", "InPiecePart": "No", "ScopeColumn": "RefDes",
+        }],
+    )
+
+    out = tmp_path / "custom_names.xlsx"
+    write_bom_compare_excel(result, str(out), "First BOM", "Second BOM")
+
+    wb = load_workbook(out)
+    try:
+        names = list(wb.sheetnames)
+    finally:
+        wb.close()
+
+    assert names == [
+        "Summary",
+        "Only In First BOM",
+        "Only In Second BOM",
+        "Part Usage",
+        "Failure Mode Ratio Errors",
+        "Scope Warnings",
+    ], names
+    # Lockstep guard: the custom path must never reintroduce underscore names.
+    assert not any("_" in n for n in names), names

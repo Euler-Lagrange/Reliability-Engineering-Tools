@@ -41,6 +41,7 @@ from common.validation_utils import (
 )
 from common.fmea_utils import (
     is_fmea_file,
+    detect_fmea_level_column,
     detect_refdes_column_for_fmea,
     classify_fmea_rows,
 )
@@ -284,8 +285,15 @@ def compare_two_boms(
         compare_pairs = validated_pairs
 
     # FMEA detection combines filename signal + row-scan classification.
+    # A validated FMEA Level column (name AND value sampling) triggers the
+    # scan even when the filename gives no hint — renaming an FMEA export
+    # must not silently drop the FMEA-aware checks. Content-only detection
+    # additionally requires EXPLICIT circuit-block/piece-part text in the
+    # level column (see _build_scope_sets) so a plain BOM can never misfire.
     filename_fmea_a = is_fmea_file(source_name_a or "")
     filename_fmea_b = is_fmea_file(source_name_b or "")
+    content_level_col_a = None if filename_fmea_a else detect_fmea_level_column(bom_a_df)
+    content_level_col_b = None if filename_fmea_b else detect_fmea_level_column(bom_b_df)
 
     # Detect Circuit Block columns as an additional hint for logging.
     cb_col_a = detect_circuit_block_column(bom_a_df)
@@ -326,6 +334,7 @@ def compare_two_boms(
         ref_col: str,
         source_label: str,
         enable_row_scope_scan: bool,
+        require_explicit_evidence: bool = False,
     ) -> Dict[str, Any]:
         """Build per-file token sets for all rows, circuit-block rows, and piece-part rows."""
         scope = {
@@ -352,7 +361,20 @@ def compare_two_boms(
             scope["row_type_by_excel_row"] = row_type_by_excel_row
             scope["cb_rows"] = sum(1 for c in classifications if c.row_type == "circuit_block")
             scope["pp_rows"] = sum(1 for c in classifications if c.row_type == "piece_part")
-            scope["is_fmea"] = scope["cb_rows"] > 0 or scope["pp_rows"] > 0
+            if require_explicit_evidence:
+                # Content-only detection (no filename signal): a row counts as
+                # evidence only when its level-column cell explicitly matched
+                # CB/PP text (fmea_level_value is set). Blank-row inference is
+                # deliberately excluded — a "Record Type" column whose values
+                # merely contain 'cb' as a substring (e.g. "PCB Assembly")
+                # opens the gate but must not flip a plain BOM into FMEA mode.
+                explicit_rows = sum(
+                    1 for c in classifications
+                    if c.row_type in ("circuit_block", "piece_part") and c.fmea_level_value
+                )
+                scope["is_fmea"] = explicit_rows > 0
+            else:
+                scope["is_fmea"] = scope["cb_rows"] > 0 or scope["pp_rows"] > 0
             detected_scope_col = detect_refdes_column_for_fmea(df)
 
         # Candidate scope columns:
@@ -429,28 +451,50 @@ def compare_two_boms(
         bom_a_df,
         refdes_col_a,
         "File 1",
-        enable_row_scope_scan=filename_fmea_a,
+        enable_row_scope_scan=filename_fmea_a or content_level_col_a is not None,
+        require_explicit_evidence=not filename_fmea_a,
     )
     scope_b = _build_scope_sets(
         bom_b_df,
         refdes_col_b,
         "File 2",
-        enable_row_scope_scan=filename_fmea_b,
+        enable_row_scope_scan=filename_fmea_b or content_level_col_b is not None,
+        require_explicit_evidence=not filename_fmea_b,
     )
     if scope_a["is_fmea"]:
+        if not filename_fmea_a:
+            log(
+                f"  File 1 detected as FMEA by content: validated FMEA Level column "
+                f"'{content_level_col_a}' (filename gave no FMEA hint)"
+            )
         log(
             f"  File 1 row-scope profile: {scope_a['cb_rows']} circuit-block rows, "
             f"{scope_a['pp_rows']} piece-part rows"
         )
     elif filename_fmea_a:
         log("  File 1 matched FMEA filename, but no circuit-block/piece-part rows were classified")
+    elif content_level_col_a:
+        log(
+            f"  File 1 has an FMEA Level-style column '{content_level_col_a}' but no explicit "
+            f"circuit-block/piece-part rows — not treated as FMEA"
+        )
     if scope_b["is_fmea"]:
+        if not filename_fmea_b:
+            log(
+                f"  File 2 detected as FMEA by content: validated FMEA Level column "
+                f"'{content_level_col_b}' (filename gave no FMEA hint)"
+            )
         log(
             f"  File 2 row-scope profile: {scope_b['cb_rows']} circuit-block rows, "
             f"{scope_b['pp_rows']} piece-part rows"
         )
     elif filename_fmea_b:
         log("  File 2 matched FMEA filename, but no circuit-block/piece-part rows were classified")
+    elif content_level_col_b:
+        log(
+            f"  File 2 has an FMEA Level-style column '{content_level_col_b}' but no explicit "
+            f"circuit-block/piece-part rows — not treated as FMEA"
+        )
 
     def normalize_key_text(value: Any) -> str:
         return normalize_text(value).upper()

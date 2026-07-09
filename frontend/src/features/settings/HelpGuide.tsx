@@ -243,6 +243,12 @@ const SECTIONS: GuideSection[] = [
             <strong>Treat PROV as covered</strong> — Group vs BOM only; treats
             PROV groups as covered.
           </li>
+          <li>
+            FMEA-aware checks (Scope Warnings sheet, composite duplicate
+            identity) turn on when a file is recognized as an FMEA — by
+            filename <em>or</em> by a validated FMEA Level column in its
+            content, so a renamed FMEA export is still recognized.
+          </li>
         </ul>
         <h3>Limitations to know</h3>
         <ul>

@@ -222,11 +222,17 @@ rule (Text / Text exact / Numeric).
 | `Failure Mode Ratio Errors` | RefDes whose FMRs don't sum to 1.0, with a Status. |
 | `Part Usage` | Part Usage warnings with Reason Code and Reason. |
 
-**Custom Compare** report sheets: `Summary`, `Only_In_<File 1>`,
-`Only_In_<File 2>`, `Differences`, `Duplicates`, `Part_Usage`,
-`Failure_Mode_Ratio`, `Scope_Warnings`. If a file is detected as an FMEA, extra
-`FMEA_<file>_Summary` / `_Missing` / `_Tokens` / `_PPIndex` coverage sheets are
-added.
+**Custom Compare** report sheets: `Summary`, `Only In <File 1>`,
+`Only In <File 2>`, `Differences`, `Duplicates`, `Part Usage`,
+`Failure Mode Ratio Errors`, `Scope Warnings` — the same human naming scheme
+as the Group vs BOM report (before 0.4.10 these used underscore names like
+`Only_In_*`).
+
+The FMEA-aware checks (`Scope Warnings`, composite duplicate identity) switch
+on when a file's *name* contains FMEA/FMECA/piece-part **or** the file's
+*content* carries a validated FMEA Level column with explicit Circuit Block /
+Piece-Part rows — a renamed FMEA export is still recognized. The run log
+records which signal triggered.
 
 **Extraction Compare** report sheets:
 

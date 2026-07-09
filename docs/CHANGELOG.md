@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BOM Compare Custom Compare report sheets renamed** to the same human
+  naming scheme the Group vs BOM report already used: `Only In <file>`,
+  `Part Usage`, `Failure Mode Ratio Errors`, `Scope Warnings` (previously
+  `Only_In_<file>`, `Part_Usage`, `Failure_Mode_Ratio`, `Scope_Warnings`).
+  If you have scripts that read these sheets by name, update them.
+- **FMEA detection in Custom Compare is now content-aware** — a file whose
+  content carries a validated FMEA Level column with explicit Circuit
+  Block / Piece-Part rows enters FMEA-aware mode (Scope Warnings,
+  composite duplicate identity) even when its filename gives no
+  FMEA/FMECA hint, so a renamed FMEA export is still recognized. Plain
+  BOMs cannot misfire: content-only detection requires explicit level
+  text, never row inference. The run log records which signal triggered.
+- The FMEA CCA Identifier hint and the Settings RefDes-prefix intro now
+  state their input rules up front (1–8 letters/digits/hyphens vs 1–5
+  letters) instead of only after a failed input.
+
 ## [0.4.9] - 2026-07-09 — In-App User Guide, Cancellation Coverage, 2× Faster Reports
 
 ### Added

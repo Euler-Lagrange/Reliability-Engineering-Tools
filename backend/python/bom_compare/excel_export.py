@@ -49,8 +49,10 @@ def sanitize_sheet_name(name: str, max_len: int = EXCEL_MAX_SHEET_NAME_LEN) -> s
     for char in EXCEL_INVALID_SHEET_CHARS:
         name = name.replace(char, '_')
 
-    # Replace spaces with underscores for cleaner names
-    name = name.replace(' ', '_')
+    # Spaces are kept — the whole tool uses the group path's human naming
+    # scheme ("Only In <file>", "Part Usage"). Collapse runs and trim so a
+    # filename full of replaced characters still reads cleanly.
+    name = ' '.join(name.split())
 
     # Remove consecutive underscores
     while '__' in name:
@@ -156,7 +158,7 @@ def write_bom_compare_excel(
     # Only in A sheet (use sanitized sheet name to handle invalid chars and length)
     sheet_name_a = None  # Initialize for collision check below
     if result.only_in_a:
-        sheet_name_a = sanitize_sheet_name(f"Only_In_{bom_a_name}")
+        sheet_name_a = sanitize_sheet_name(f"Only In {bom_a_name}")
         ws_a = wb.create_sheet(sheet_name_a)
         df_a = pd.DataFrame(result.only_in_a)
         write_df_to_sheet(ws_a, df_a)
@@ -164,10 +166,10 @@ def write_bom_compare_excel(
 
     # Only in B sheet (use sanitized sheet name to handle invalid chars and length)
     if result.only_in_b:
-        sheet_name_b = sanitize_sheet_name(f"Only_In_{bom_b_name}")
+        sheet_name_b = sanitize_sheet_name(f"Only In {bom_b_name}")
         # Handle collision if both names sanitize to the same value
         if result.only_in_a and sheet_name_b == sheet_name_a:
-            sheet_name_b = sanitize_sheet_name(f"Only_In_{bom_b_name}_2")
+            sheet_name_b = sanitize_sheet_name(f"Only In {bom_b_name} 2")
         ws_b = wb.create_sheet(sheet_name_b)
         df_b = pd.DataFrame(result.only_in_b)
         write_df_to_sheet(ws_b, df_b)
@@ -208,7 +210,7 @@ def write_bom_compare_excel(
 
     # Part Usage Warnings sheet (if any warnings found)
     if result.part_usage_warnings:
-        ws_usage = wb.create_sheet("Part_Usage")
+        ws_usage = wb.create_sheet("Part Usage")
         # Map File 1/2 source to display names
         source_map = {'File 1': bom_a_name, 'File 2': bom_b_name}
         usage_rows = []
@@ -230,7 +232,8 @@ def write_bom_compare_excel(
 
     # Failure Mode Ratio warnings sheet (custom-path check_fmr)
     if getattr(result, "fmr_warnings", None):
-        ws_fmr = wb.create_sheet("Failure_Mode_Ratio")
+        # Same name as the group path's FMR sheet — one tool, one vocabulary.
+        ws_fmr = wb.create_sheet("Failure Mode Ratio Errors")
         source_map = {'File 1': bom_a_name, 'File 2': bom_b_name}
         fmr_rows = []
         for w in result.fmr_warnings:
@@ -249,7 +252,7 @@ def write_bom_compare_excel(
 
     # Scope warnings sheet (for FMEA CB-vs-PP consistency warnings)
     if result.scope_warnings:
-        ws_scope = wb.create_sheet("Scope_Warnings")
+        ws_scope = wb.create_sheet("Scope Warnings")
         source_map = {'BOM A': bom_a_name, 'BOM B': bom_b_name}
         scope_rows = []
         for w in result.scope_warnings:
@@ -276,13 +279,14 @@ def write_bom_compare_excel(
             return
 
         summary = fmea_result.summary
-        # Use File1/File2 labels directly to avoid prefix collisions
-        # Limit prefix to 23 chars so suffix (_Summary = 8 chars) stays under 31
-        raw_prefix = f"FMEA_{file_label.replace(' ', '')}"
-        prefix = sanitize_sheet_name(raw_prefix[:23] if len(raw_prefix) > 23 else raw_prefix)
+        # Use the file labels directly to avoid prefix collisions
+        # Limit prefix to 22 chars so the longest suffix (" PP Index" = 9 chars)
+        # stays under Excel's 31-char sheet-name cap
+        raw_prefix = f"FMEA {file_label}"
+        prefix = sanitize_sheet_name(raw_prefix[:22] if len(raw_prefix) > 22 else raw_prefix)
 
         # Summary sheet
-        ws_summary = wb.create_sheet(f"{prefix}_Summary")
+        ws_summary = wb.create_sheet(f"{prefix} Summary")
         summary_rows = [
             ["FMEA Coverage Summary"],
             [],
@@ -322,7 +326,7 @@ def write_bom_compare_excel(
                     })
 
         if missing_rows:
-            ws_missing = wb.create_sheet(f"{prefix}_Missing")
+            ws_missing = wb.create_sheet(f"{prefix} Missing")
             df_missing = pd.DataFrame(missing_rows)
             write_df_to_sheet(ws_missing, df_missing)
             style_worksheet(ws_missing, df_missing, max_width=40, alternate_rows=True)
@@ -351,7 +355,7 @@ def write_bom_compare_excel(
                 all_token_rows.append(row)
 
         if all_token_rows:
-            ws_tokens = wb.create_sheet(f"{prefix}_Tokens")
+            ws_tokens = wb.create_sheet(f"{prefix} Tokens")
             df_tokens = pd.DataFrame(all_token_rows)
             write_df_to_sheet(ws_tokens, df_tokens)
             style_worksheet(ws_tokens, df_tokens, max_width=40, alternate_rows=True)
@@ -371,7 +375,7 @@ def write_bom_compare_excel(
             pp_index_rows.append(row)
 
         if pp_index_rows:
-            ws_pp = wb.create_sheet(f"{prefix}_PPIndex")
+            ws_pp = wb.create_sheet(f"{prefix} PP Index")
             df_pp = pd.DataFrame(pp_index_rows)
             write_df_to_sheet(ws_pp, df_pp)
             style_worksheet(ws_pp, df_pp, max_width=40, alternate_rows=True)

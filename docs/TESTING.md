@@ -11,7 +11,7 @@
 | Backend FMEA Phase D | `backend/tests/test_fmea_phase_d.py` | 75 | pytest |
 | Backend Failure-Rate logic | `backend/tests/test_failure_rate_logic.py` | 27 | pytest |
 | Backend RefDes extraction-engine | `backend/tests/test_extraction_engine.py` | 15 | pytest |
-| Backend BOM-compare logic | `backend/tests/test_bom_compare_logic.py` | 37 | pytest |
+| Backend BOM-compare logic | `backend/tests/test_bom_compare_logic.py` | 42 | pytest |
 | Backend BOM-compare runtime | `backend/tests/test_bom_compare_runtime.py` | 11 | pytest |
 | Backend extraction compare | `backend/tests/test_extraction_compare.py` | 9 | pytest |
 | Backend Failure-Rate runtime | `backend/tests/test_failure_rate_runtime.py` | 3 | pytest |
@@ -27,7 +27,7 @@
 | Backend RefDes runtime | `backend/tests/test_refdes_runtime.py` | 27 | pytest |
 | Backend RefDes validation notes | `backend/tests/test_validation_notes.py` | 12 | pytest |
 | Backend RefDes prefix config | `backend/tests/test_refdes_prefix_config.py` | 7 | pytest |
-| **Backend subtotal** | | **388** | |
+| **Backend subtotal** | | **393** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 5 | Vitest + RTL |
 | Frontend escape layers | `frontend/src/shared/hooks/useEscapeLayer.test.ts` | 4 | Vitest |
@@ -76,7 +76,7 @@
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
 | **Frontend subtotal** | | **306** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 17 | cargo test |
-| **Total** | | **711** | |
+| **Total** | | **716** | |
 
 ## Backend Tests
 
@@ -221,6 +221,7 @@ new FMEA tests must do the same or validation will reject the request.
 | Failure-Rate logic (in-process, 24 tests) | Failure Rate (FR) linker math driven through `FMEALinkerLogic.process`: per-mode `Mode_FR = Part_FR * Usage * Corrected_Ratio` arithmetic, unit-mode scaling to per-hour space, RefDes lookup normalization, and Tier-1 genuine-gap Part Usage handling (blank usage with real FR → NaN Mode_FR, "=1/N" formula-cell-as-NaN, unmatched-RefDes zero preserved, circuit-block roll-up skips blank children) — asserts exact computed numbers |
 | RefDes extraction-engine (in-process, 15 tests) | `_disambiguate_pin_mapping` pin-label collision resolution across the three-tier priority (body center inside group rect → body overlaps rect → nearest body by distance); the Tier-2 #20 pinlist-failure run-log surfacing; and the geometry RefDes-check prefix-allowlist alignment (#6), the `pin_assignment_threshold` config key, and cap-hit run-log warnings |
 | BOM-compare logic (in-process, 31 tests) | BOM Compare range/set math: opt-in RefDes range expansion (`R200-R205` → R200..R205) while the `analyze` orchestrator never expands by default (hyphens denote pins, e.g. `U200-1` reduces to base `U200`), zero-pad preservation, `analyze` set math (Missing in BOM / BOM Not in Groups, both directions), and the custom per-column value-diff contract (`compare_columns` flags a changed value, omitting it reports none, Numeric rule ignores text formatting) |
+| BOM-compare FMEA detection + sheet naming (in-process, 5 tests) | UX round-2 pair: content-based FMEA detection on the custom path (validated FMEA Level column triggers FMEA-aware mode without a filename hint; explicit-evidence gate so a plain BOM or a substring-only "Record Type" column never misfires; filename fallback unchanged) and the custom-report space-scheme sheet names (`Only In <file>` / `Part Usage` / `Failure Mode Ratio Errors` / `Scope Warnings`) with a no-underscore lockstep guard |
 | Read layer (in-process, 6 tests) | Excel/CSV `NA`/`N/A` literal-text read parity and duplicate-header dedup matching pandas' `.1`/`.2` scheme |
 | RefDes BOM-coverage (in-process, 19 tests) | Reverse-diff of extracted RefDes vs a loaded BOM: `BOM Not Grouped` (Not Extracted / Extracted-Ungrouped / Extracted-Provisional, with Part#/Description), `Extracted Not In BOM`, `Coverage Summary` counts, component-level normalization, unparented-pin rejection, and the sheet writer |
 | BOM-loader metadata (in-process, 5 tests) | Opt-in Part Number / Description capture in `load_bom_data`, keyed to the normalized RefDes, with Description-over-Name precedence |

@@ -103,8 +103,10 @@ comparison. Desktop mode is unaffected (real inspection drives the rows).
 ## Round 2 — documentation-driven findings (from writing USER_GUIDE.md)
 
 Surfaced while cross-checking the user guide against source. Statuses as of
-2026-07-09 (post-v0.4.9): #1, #2, #5 FIXED; #3, #4 OPEN pending user
-decisions; #6 is a standing process note.
+2026-07-09 (post-v0.4.9): ALL FIXED (#1, #2, #5 earlier same day; #3, #4
+after the user decided: no downstream scripts key on sheet names, and
+content-based FMEA detection is the preferred UX); #6 is a standing
+process note.
 
 1. **FIXED (`fb437eb`, v0.4.9)** — ~~BOM Compare option labels are raw
    snake_case~~ — five of six checkboxes rendered `key.replace(/_/g, " ")`
@@ -116,16 +118,28 @@ decisions; #6 is a standing process note.
    run summaries. The sidebar brand mark and internal IDs are deliberately
    kept (verified 2026-07-09: the only remaining frontend hit is
    `App.tsx` `brandLabel`).
-3. **OPEN — needs user decision.** **Two sheet-naming schemes in one
-   tool** — group path writes "Missing in BOM" / "Failure Mode Ratio
-   Errors" (spaces); custom path writes `Only_In_*` / `Failure_Mode_Ratio`
-   (underscores). Consider unifying (`group_analysis.py` vs
-   `excel_export.py`); note downstream scripts may key on current names —
-   needs the migration-log pattern used for BOM_Additions.
-4. **OPEN — needs user decision.** **Custom Compare's FMEA sheets are
-   gated on filename-based detection** ("FMEA Detected by Filename") —
-   content-based detection would be less surprising (`excel_export.py` /
-   `fmea_coverage.py`).
+3. **FIXED (2026-07-09)** — ~~Two sheet-naming schemes in one tool~~ —
+   user confirmed no downstream scripts key on the custom-path names, so
+   the custom path adopted the group path's human scheme: `Only In
+   <file>`, `Part Usage`, `Failure Mode Ratio Errors` (now the same name
+   as the group sheet), `Scope Warnings`. Root cause was
+   `sanitize_sheet_name` force-replacing spaces with underscores — that
+   step is gone, with a lockstep no-underscore test
+   (`test_custom_report_sheet_names_use_group_path_scheme`). CHANGELOG
+   carries the rename notice.
+4. **FIXED (2026-07-09)** — ~~Custom Compare's FMEA checks are gated on
+   filename-based detection~~ — a validated FMEA Level column (name +
+   value sampling) now triggers FMEA-aware mode even when the filename
+   gives no hint. Content-only detection requires EXPLICIT circuit-block/
+   piece-part text in the level column (blank-row inference is not
+   evidence), so a plain BOM can never misfire; the legacy filename
+   trigger is unchanged and the run log records which signal fired.
+   Note: the `fmea_coverage.py` coverage-sheet writer turned out to be
+   production-dead (no caller passes `fmea_result_1/2` to
+   `write_bom_compare_excel`) — the live FMEA-aware behaviors are Scope
+   Warnings, composite duplicate identity, and the usage CB-skip. Docs
+   corrected accordingly; wiring the coverage sheets in is a separate
+   decision if ever wanted.
 5. **FIXED (2026-07-09)** — ~~CCA identifier vs RefDes-prefix rules
    differ unexplained~~ — both rules were already correct per their
    backends and documented in USER_GUIDE.md, but the live UI only stated

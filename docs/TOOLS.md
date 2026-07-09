@@ -249,19 +249,21 @@ field.
 A single Excel workbook with these sheets (any sheet with no rows is
 omitted):
 
-- **Only_In_A** — RefDes present in the first file but missing from the second.
-- **Only_In_B** — RefDes present in the second file but missing from the first.
+- **Only In \<File 1\>**, **Only In \<File 2\>** — RefDes present in one file
+  but missing from the other.
 - **Differences** — RefDes present in both, but with differing values in the
   columns you chose to compare. In Custom Compare a **Column Value Comparison**
   picker auto-pairs matching headers between the two files (the RefDes key is
   excluded) and lets you add/remove pairs and set a per-pair rule (Text / Text
   exact / Numeric). With no pair configured, Custom Compare reports RefDes
   presence/absence only.
-- **Duplicates_A**, **Duplicates_B** — RefDes that appear more than once in
-  either file.
-- **Part_Usage_Warnings** — when the files carry Part Usage values, this
-  sheet flags any RefDes whose Part Usage does not match the instance count.
-- **Scope_Warnings** — FMEA-aware sanity checks. Only populated when the
+- **Duplicates** — RefDes that appear more than once in either file, with the
+  source file named per row.
+- **Part Usage** — when the files carry Part Usage values, this sheet flags
+  any RefDes whose Part Usage does not match the instance count.
+- **Failure Mode Ratio Errors** — with the Check Failure Mode Ratios option,
+  RefDes whose ratios don't sum to 1.0 (same sheet name as the group report).
+- **Scope Warnings** — FMEA-aware sanity checks. Only populated when the
   comparison involves FMEA-like content. See below.
 
 Extraction Compare writes its own four-sheet report instead
@@ -271,9 +273,13 @@ rev B).
 
 ### FMEA-aware mode
 
-The tool inspects both filenames. If either file looks like an FMEA or FMECA
-(for example, the filename contains `FMEA`, `FMECA`, or `piecepart`), and the
-row content supports it, the comparison switches on a few extra checks:
+A file enters FMEA-aware mode through either signal: its *filename* looks
+like an FMEA or FMECA (contains `FMEA`, `FMECA`, or `piecepart`) and the row
+content supports it, **or** — regardless of the filename — its *content*
+carries a validated FMEA Level column with explicit Circuit Block /
+Piece-Part rows, so a renamed FMEA export is still recognized. The run log
+records which signal triggered. When active, the comparison switches on a
+few extra checks:
 
 - Circuit-Block vs Piece-Part scope warnings — flags RefDes that only appear
   in Circuit Block rows, only in Piece-Part rows, or outside both.
