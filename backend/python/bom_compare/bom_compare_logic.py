@@ -191,13 +191,6 @@ from .group_analysis import (  # noqa: E402
     # Excel report
     write_excel_report,
 )
-from .fmea_coverage import (  # noqa: E402
-    TokenCoverage,
-    CircuitBlockCoverage,
-    CoverageSummary,
-    FmeaCoverageResult,
-    validate_fmea_coverage,
-)
 from .excel_export import (  # noqa: E402
     sanitize_sheet_name,
     write_bom_compare_excel,

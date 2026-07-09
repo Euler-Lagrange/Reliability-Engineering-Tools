@@ -49,7 +49,6 @@ def main():
         "--hidden-import", "bom_compare.bom_compare_logic",
         "--hidden-import", "bom_compare.custom_compare",
         "--hidden-import", "bom_compare.group_analysis",
-        "--hidden-import", "bom_compare.fmea_coverage",
         "--hidden-import", "bom_compare.excel_export",
         "--hidden-import", "bom_compare.extraction_compare",
         "--hidden-import", "failure_rate.runtime",

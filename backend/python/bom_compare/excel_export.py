@@ -3,11 +3,9 @@
 """
 BOM Compare - Excel Export Module
 
-Excel report writing for custom BOM-vs-BOM comparison results,
-including FMEA coverage sheets and styled summary/detail sheets.
+Excel report writing for custom BOM-vs-BOM comparison results with
+styled summary/detail sheets.
 """
-from typing import Dict, List, Optional, Any
-
 import pandas as pd
 
 from common import (
@@ -19,7 +17,6 @@ from common import (
 )
 
 from .bom_compare_logic import BomCompareResult
-from .fmea_coverage import FmeaCoverageResult
 
 _logger = get_tool_logger("bom_compare")
 
@@ -73,8 +70,6 @@ def write_bom_compare_excel(
     filename: str,
     bom_a_name: str = "BOM A",
     bom_b_name: str = "BOM B",
-    fmea_result_1: Optional['FmeaCoverageResult'] = None,
-    fmea_result_2: Optional['FmeaCoverageResult'] = None,
 ) -> None:
     """Write BOM comparison results to Excel file.
 
@@ -83,8 +78,6 @@ def write_bom_compare_excel(
         filename: Output file path
         bom_a_name: Display name for File 1
         bom_b_name: Display name for File 2
-        fmea_result_1: Optional FMEA coverage result for File 1
-        fmea_result_2: Optional FMEA coverage result for File 2
     """
     from openpyxl import Workbook
     from common.excel_styles import sanitize_for_excel
@@ -271,120 +264,6 @@ def write_bom_compare_excel(
         df_scope = pd.DataFrame(scope_rows)
         write_df_to_sheet(ws_scope, df_scope)
         style_worksheet(ws_scope, df_scope, max_width=50, alternate_rows=True)
-
-    # --- FMEA Coverage Sheets (if validation was run) ---
-    def write_fmea_coverage_sheets(fmea_result, file_label: str):
-        """Write FMEA coverage validation sheets for one file."""
-        if fmea_result is None:
-            return
-
-        summary = fmea_result.summary
-        # Use the file labels directly to avoid prefix collisions
-        # Limit prefix to 22 chars so the longest suffix (" PP Index" = 9 chars)
-        # stays under Excel's 31-char sheet-name cap
-        raw_prefix = f"FMEA {file_label}"
-        prefix = sanitize_sheet_name(raw_prefix[:22] if len(raw_prefix) > 22 else raw_prefix)
-
-        # Summary sheet
-        ws_summary = wb.create_sheet(f"{prefix} Summary")
-        summary_rows = [
-            ["FMEA Coverage Summary"],
-            [],
-            ["Metric", "Value"],
-            ["Source File", fmea_result.source_file],
-            ["FMEA Detected by Filename", str(fmea_result.detected_by_filename)],
-            ["FMEA Level Column", fmea_result.fmea_level_column or "row_scan"],
-            ["Level Column Validated", str(fmea_result.fmea_level_validated_by_values)],
-            ["RefDes Column", fmea_result.refdes_column_detected or "per_row_best_cell"],
-            ["RefDes Detection Method", fmea_result.refdes_detection_method],
-            [],
-            ["Total Block Rows", len(fmea_result.circuit_blocks)],
-            ["Total Tokens", summary.total_tokens],
-            ["Covered Tokens", summary.covered_tokens],
-            ["Missing Tokens", summary.missing_tokens],
-            ["Coverage %", f"{summary.coverage_pct:.1f}%"],
-            [],
-            ["Piece-Part Rows", len(fmea_result.piece_part_rows)],
-            ["Classified by Level Column", fmea_result.classified_by_level_col_count],
-            ["Classified by Row Scan", fmea_result.classified_by_row_scan_count],
-        ]
-        for row_data in summary_rows:
-            ws_summary.append([sanitize_for_excel(str(v)) if v else "" for v in row_data])
-        style_worksheet(ws_summary, pd.DataFrame(summary_rows[2:]), max_width=50)
-
-        # Missing tokens sheet
-        missing_rows = []
-        for cb in fmea_result.circuit_blocks:
-            for token in cb.tokens:
-                if not token.has_piece_part:
-                    missing_rows.append({
-                        "BlockRowIndex": cb.row_index,
-                        "BlockType": cb.fmea_level_value or "circuit_block",
-                        "Token": token.token,
-                        "OriginalCell": token.original_cell[:100] if token.original_cell else "",
-                        "SourceColumn": token.source_column,
-                    })
-
-        if missing_rows:
-            ws_missing = wb.create_sheet(f"{prefix} Missing")
-            df_missing = pd.DataFrame(missing_rows)
-            write_df_to_sheet(ws_missing, df_missing)
-            style_worksheet(ws_missing, df_missing, max_width=40, alternate_rows=True)
-
-        # All tokens sheet (detailed with CB_ and PP_FIRST_ columns)
-        all_token_rows = []
-        for cb in fmea_result.circuit_blocks:
-            for token in cb.tokens:
-                row = {
-                    "BlockRowIndex": cb.row_index,
-                    "BlockType": cb.fmea_level_value or "circuit_block",
-                    "ClassificationSource": cb.classification_source,
-                    "Token": token.token,
-                    "HasPiecePart": token.has_piece_part,
-                    "PiecePartRowCount": token.piece_part_row_count,
-                    "PiecePartRowIndexes": ",".join(str(i) for i in token.piece_part_row_indexes[:5]),
-                    "SourceColumn": token.source_column,
-                }
-                # Add CB_<col> columns from original circuit block row
-                for col, val in cb.original_row_data.items():
-                    row[f"CB_{col}"] = sanitize_for_excel(str(val)) if pd.notna(val) else ""
-                # Add PP_FIRST_<col> columns from first matching piece-part row
-                if token.first_piece_part_row_data:
-                    for col, val in token.first_piece_part_row_data.items():
-                        row[f"PP_FIRST_{col}"] = sanitize_for_excel(str(val)) if pd.notna(val) else ""
-                all_token_rows.append(row)
-
-        if all_token_rows:
-            ws_tokens = wb.create_sheet(f"{prefix} Tokens")
-            df_tokens = pd.DataFrame(all_token_rows)
-            write_df_to_sheet(ws_tokens, df_tokens)
-            style_worksheet(ws_tokens, df_tokens, max_width=40, alternate_rows=True)
-
-        # Sheet 4: Piece-part index (for debugging)
-        pp_index_rows = []
-        for pp_class in fmea_result.piece_part_rows:
-            row_data = fmea_result.piece_part_row_data.get(pp_class.row_index, {})
-            row = {
-                "PiecePartRowIndex": pp_class.row_index,
-                "FmeaLevelValue": pp_class.fmea_level_value or "",
-                "ClassificationSource": pp_class.classification_source,
-            }
-            # Add PP_<col> columns from original piece-part row
-            for col, val in row_data.items():
-                row[f"PP_{col}"] = sanitize_for_excel(str(val)) if pd.notna(val) else ""
-            pp_index_rows.append(row)
-
-        if pp_index_rows:
-            ws_pp = wb.create_sheet(f"{prefix} PP Index")
-            df_pp = pd.DataFrame(pp_index_rows)
-            write_df_to_sheet(ws_pp, df_pp)
-            style_worksheet(ws_pp, df_pp, max_width=40, alternate_rows=True)
-
-    # Write FMEA coverage sheets for each file
-    if fmea_result_1:
-        write_fmea_coverage_sheets(fmea_result_1, bom_a_name)
-    if fmea_result_2:
-        write_fmea_coverage_sheets(fmea_result_2, bom_b_name)
 
     wb.save(filename)
     _logger.info(f"BOM comparison results saved to: {filename}")

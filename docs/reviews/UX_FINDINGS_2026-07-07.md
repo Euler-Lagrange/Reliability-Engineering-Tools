@@ -137,9 +137,10 @@ process note.
    Note: the `fmea_coverage.py` coverage-sheet writer turned out to be
    production-dead (no caller passes `fmea_result_1/2` to
    `write_bom_compare_excel`) — the live FMEA-aware behaviors are Scope
-   Warnings, composite duplicate identity, and the usage CB-skip. Docs
-   corrected accordingly; wiring the coverage sheets in is a separate
-   decision if ever wanted.
+   Warnings, composite duplicate identity, and the usage CB-skip. User
+   decided 2026-07-09: DELETED (module, writer, re-exports,
+   hidden-import) rather than wired in — Scope Warnings already ships
+   the core CB-vs-PP signal. Docs corrected accordingly.
 5. **FIXED (2026-07-09)** — ~~CCA identifier vs RefDes-prefix rules
    differ unexplained~~ — both rules were already correct per their
    backends and documented in USER_GUIDE.md, but the live UI only stated

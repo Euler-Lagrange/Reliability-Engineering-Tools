@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   state their input rules up front (1–8 letters/digits/hyphens vs 1–5
   letters) instead of only after a failed input.
 
+### Removed
+
+- The dormant FMEA coverage-sheet writer (`bom_compare/fmea_coverage.py`
+  and its four never-shipped report sheets). It had no production caller
+  — the live FMEA-aware checks (Scope Warnings, composite duplicate
+  identity) are unaffected.
+
 ## [0.4.9] - 2026-07-09 — In-App User Guide, Cancellation Coverage, 2× Faster Reports
 
 ### Added
