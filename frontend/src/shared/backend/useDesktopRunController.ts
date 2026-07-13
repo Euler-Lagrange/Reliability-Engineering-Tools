@@ -268,10 +268,16 @@ export function useDesktopRunController(
         backendMessage: desktopRunSession.statusMessage,
         lastBackendCheckAt: new Date().toISOString(),
       });
+      const resultSchemaMismatch =
+        desktopRunSession.errorCode === "RESULT_SCHEMA_MISMATCH";
       pushNotification({
         tone: "error",
-        title: options.failureTitle,
-        detail: desktopRunSession.statusMessage ?? "Unknown backend execution failure",
+        title: resultSchemaMismatch
+          ? "Run completed, but the result could not be displayed"
+          : options.failureTitle,
+        detail: resultSchemaMismatch
+          ? "The output file was written; check the run log."
+          : desktopRunSession.statusMessage ?? "Unknown backend execution failure",
       });
       return;
     }

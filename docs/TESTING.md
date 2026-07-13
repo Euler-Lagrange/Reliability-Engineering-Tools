@@ -24,10 +24,10 @@
 | Backend file-size guard | `backend/tests/test_file_guards.py` | 3 | pytest |
 | Backend crash-dump | `backend/tests/test_crash_dump.py` | 4 | pytest |
 | Backend NextGen engine | `backend/tests/test_nextgen_engine.py` | 12 | pytest |
-| Backend RefDes runtime | `backend/tests/test_refdes_runtime.py` | 31 | pytest |
+| Backend RefDes runtime | `backend/tests/test_refdes_runtime.py` | 33 | pytest |
 | Backend RefDes validation notes | `backend/tests/test_validation_notes.py` | 12 | pytest |
 | Backend RefDes prefix config | `backend/tests/test_refdes_prefix_config.py` | 7 | pytest |
-| **Backend subtotal** | | **409** | |
+| **Backend subtotal** | | **411** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 5 | Vitest + RTL |
 | Frontend escape layers | `frontend/src/shared/hooks/useEscapeLayer.test.ts` | 4 | Vitest |
@@ -41,7 +41,7 @@
 | Frontend hold button | `frontend/src/components/primitives/HoldButton.test.tsx` | 6 | Vitest + RTL |
 | Frontend empty state | `frontend/src/components/primitives/EmptyState.test.tsx` | 6 | Vitest + RTL |
 | Frontend run lifecycle | `frontend/src/shared/backend/runLifecycle.test.ts` | 11 | Vitest |
-| Frontend desktop run controller | `frontend/src/shared/backend/useDesktopRunController.test.ts` | 4 | Vitest |
+| Frontend desktop run controller | `frontend/src/shared/backend/useDesktopRunController.test.ts` | 5 | Vitest |
 | Frontend cancel error | `frontend/src/shared/backend/cancelError.test.ts` | 18 | Vitest |
 | Frontend cancel run | `frontend/src/shared/backend/client.cancelRun.test.ts` | 2 | Vitest |
 | Frontend run event client | `frontend/src/shared/backend/client.runEvents.test.ts` | 2 | Vitest |
@@ -74,9 +74,9 @@
 | Frontend shell-hook install | `frontend/src/app/App.shellHooks.test.tsx` | 1 | Vitest + RTL |
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
-| **Frontend subtotal** | | **332** | |
+| **Frontend subtotal** | | **333** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 19 | cargo test |
-| **Total** | | **760** | |
+| **Total** | | **763** | |
 
 ## Backend Tests
 
@@ -223,7 +223,7 @@ new FMEA tests must do the same or validation will reject the request.
 | BOM-compare logic (in-process, 31 tests) | BOM Compare range/set math: opt-in RefDes range expansion (`R200-R205` → R200..R205) while the `analyze` orchestrator never expands by default (hyphens denote pins, e.g. `U200-1` reduces to base `U200`), zero-pad preservation, `analyze` set math (Missing in BOM / BOM Not in Groups, both directions), and the custom per-column value-diff contract (`compare_columns` flags a changed value, omitting it reports none, Numeric rule ignores text formatting) |
 | BOM-compare runtime (in-process, 14 tests) | Runtime validation/option wiring plus cancellation cleanup before promotion in group, custom, and extraction-compare output paths |
 | Failure-Rate runtime (in-process, 4 tests) | Runtime validation labels and cancellation cleanup before output promotion |
-| RefDes runtime (in-process, 31 tests) | Runtime option validation, output projection, cancellation checks during group detection / after extraction / before promotion, and zombie-aware PDF close behavior |
+| RefDes runtime (in-process, 33 tests) | Runtime option validation, output projection, BOM cross-check soft-failure qualification, cancellation checks during group detection / after extraction / before promotion, and zombie-aware PDF close behavior |
 | BOM-compare FMEA detection + sheet naming (in-process, 5 tests) | UX round-2 pair: content-based FMEA detection on the custom path (validated FMEA Level column triggers FMEA-aware mode without a filename hint; explicit-evidence gate so a plain BOM or a substring-only "Record Type" column never misfires; filename fallback unchanged) and the custom-report space-scheme sheet names (`Only In <file>` / `Part Usage` / `Failure Mode Ratio Errors` / `Scope Warnings`) with a no-underscore lockstep guard |
 | Read layer (in-process, 6 tests) | Excel/CSV `NA`/`N/A` literal-text read parity and duplicate-header dedup matching pandas' `.1`/`.2` scheme |
 | RefDes BOM-coverage (in-process, 19 tests) | Reverse-diff of extracted RefDes vs a loaded BOM: `BOM Not Grouped` (Not Extracted / Extracted-Ungrouped / Extracted-Provisional, with Part#/Description), `Extracted Not In BOM`, `Coverage Summary` counts, component-level normalization, unparented-pin rejection, and the sheet writer |
@@ -249,6 +249,7 @@ neither of which exists under jsdom, so the client returns mock data from
 | `frontend/src/components/primitives/HoldButton.test.tsx` | 6 — hold-to-confirm interaction, cancel on release, progress feedback, no confirm when disabled mid-hold |
 | `frontend/src/components/primitives/EmptyState.test.tsx` | 6 — empty state rendering, icon, message, action slot, disabled-action hint |
 | `frontend/src/shared/backend/runLifecycle.test.ts` | 11 — run lifecycle state transitions, settled/disconnected guards, and sticky cancellation |
+| `frontend/src/shared/backend/useDesktopRunController.test.ts` | 5 — status/result terminal ordering, warning-qualified success, duplicate-result idempotency, truthful result-schema-mismatch failure toast, and sticky cancelling reset guard |
 | `frontend/src/shared/backend/cancelError.test.ts` | 18 — cancel error detection, wrapping, propagation across error types, plus `describeBackendError` normalization of raw-string Tauri rejections |
 | `frontend/src/shared/backend/client.cancelRun.test.ts` | 2 — cancel run command dispatch and response handling |
 | `frontend/src/shared/backend/client.runEvents.test.ts` | 2 — production run-event subscription schema parsing |

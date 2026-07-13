@@ -402,9 +402,25 @@ describe("useBackendRunSubscription", () => {
       });
     });
 
+    // The source emits status:success before its result payload. Preserve that
+    // real ordering so this test proves the malformed result deliberately
+    // converts an already-successful phase to terminal failure rather than
+    // stranding a success that the panel cannot render. (Finding H-B.)
+    act(() => {
+      runHandler?.({
+        kind: "status",
+        run_id: "run_bad_result",
+        payload: {
+          status: "success",
+          stage: "Complete",
+          message: "Run completed successfully.",
+        },
+      });
+    });
+    expect(useRunStore.getState().activeRun?.phase).toBe("success");
+
     // A result envelope missing required fields (mode, log_lines, row_count, ...)
-    // must NOT throw out of the listener and strand the run; it must drive a
-    // terminal failure with the validation error surfaced. (Finding H-B.)
+    // must NOT throw out of the listener and strand the run.
     act(() => {
       runHandler?.({
         kind: "result",

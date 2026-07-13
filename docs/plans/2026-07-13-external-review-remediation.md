@@ -436,9 +436,9 @@ written; check the run log) — the backend DID succeed and the output exists. K
 phase conversion itself (the panel must not pretend it can render an unparseable
 result); update the existing test that covers this path.
 
-- [ ] **Step 1:** Failing backend test: cross-check soft-fail run → result
+- [x] **Step 1:** Failing backend test: cross-check soft-fail run → result
   `warning_count >= 1`.
-- [ ] **Step 2:** Implement, green, commit:
+- [x] **Step 2:** Implement, green, commit:
   `RefDes: Count BOM cross-check failure as a warning so the toast qualifies`
 
 **Wave 3 exit:** typecheck + all suites green; CHANGELOG; counts synced; STOP for review.

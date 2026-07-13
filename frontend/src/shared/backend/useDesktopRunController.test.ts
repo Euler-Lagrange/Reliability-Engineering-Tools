@@ -176,6 +176,48 @@ describe("useDesktopRunController terminal handling", () => {
     expect(useNotificationStore.getState().notifications).toHaveLength(1);
   });
 
+  it("truthfully qualifies a completed run whose result payload cannot be displayed", () => {
+    const { result } = renderController();
+
+    act(() => {
+      result.current.armTerminalHandler();
+      result.current.beginAcceptedRun({
+        run_id: "run_bad_result",
+        mode: "desktop-bridge",
+        session_generation: 1,
+      });
+    });
+
+    act(() => {
+      capturedHandler?.(successStatusEvent("run_bad_result"));
+    });
+    expect(useRunStore.getState().activeRun?.phase).toBe("success");
+    expect(useNotificationStore.getState().notifications).toHaveLength(0);
+
+    act(() => {
+      capturedHandler?.({
+        kind: "result",
+        run_id: "run_bad_result",
+        payload: {
+          status: "success",
+          title: "BOM comparison complete",
+          summary: "Compared.",
+        },
+      } as unknown as SidecarRunEvent);
+    });
+
+    expect(useRunStore.getState().activeRun).toMatchObject({
+      phase: "failure",
+      errorCode: "RESULT_SCHEMA_MISMATCH",
+    });
+    expect(result.current.panelErrorCode).toBe("RESULT_SCHEMA_MISMATCH");
+    const notes = useNotificationStore.getState().notifications;
+    expect(notes).toHaveLength(1);
+    expect(notes[0].tone).toBe("error");
+    expect(notes[0].title).toBe("Run completed, but the result could not be displayed");
+    expect(notes[0].detail).toBe("The output file was written; check the run log.");
+  });
+
   it("resetSessionUnlessLive preserves a cancelling run", () => {
     const { result } = renderController();
 

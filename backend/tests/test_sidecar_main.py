@@ -1957,7 +1957,11 @@ def _run_scripted_cancel_scenario(
     extra_body: dict | None = None,
 ) -> tuple[list[dict], dict, dict]:
     release_gate = tmp_path / "release.gate"
-    body = {"releaseGate": str(release_gate), **(extra_body or {})}
+    body = {
+        "workflowId": "piece_part_generate",
+        "releaseGate": str(release_gate),
+        **(extra_body or {}),
+    }
     process, reader = _start_scripted_sidecar(script)
     messages: list[dict] = []
     try:

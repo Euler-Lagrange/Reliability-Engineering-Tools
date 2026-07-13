@@ -279,6 +279,83 @@ def test_execute_run_request_raises_on_invalid_option() -> None:
         execute_run_request(_base_body({"adaptive_orphan_ratio": 5}))
 
 
+@pytest.mark.parametrize(
+    ("bom_outcome", "expected_note"),
+    [
+        ("loader_error", "could not be loaded"),
+        ("empty_result", "0 recognizable RefDes"),
+    ],
+)
+def test_bom_cross_check_soft_failure_counts_as_a_warning(
+    bom_outcome: str,
+    expected_note: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fitz = pytest.importorskip("fitz")
+    from refdes_extractor import bom_loader, extraction_engine
+    from refdes_extractor.bom_loader import BomLoadResult
+    from refdes_test import refdes_test_logic
+
+    pdf_path = tmp_path / "schematic.pdf"
+    doc = fitz.open()
+    doc.new_page()
+    doc.save(pdf_path)
+    doc.close()
+    bom_path = tmp_path / "bom.xlsx"
+    bom_path.touch()
+
+    monkeypatch.setattr(
+        refdes_test_logic,
+        "extract_annotations_from_doc",
+        lambda _doc, **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        refdes_test_logic,
+        "detect_groups_with_fallback",
+        lambda _doc, _annotations, **_kwargs: ([], False, {}),
+    )
+    monkeypatch.setattr(
+        refdes_test_logic,
+        "extract_with_geometry_analysis_detailed",
+        lambda **_kwargs: ([], {"backend_used": "test", "token_diagnostics": {}}),
+    )
+    monkeypatch.setattr(extraction_engine, "cleanup_words_extraction_threads", lambda: 0)
+    monkeypatch.setattr(refdes_runtime, "verify_excel_readable", lambda _path: True)
+
+    if bom_outcome == "loader_error":
+        def fail_bom_load(*_args, **_kwargs):
+            raise RuntimeError("test BOM read failure")
+
+        monkeypatch.setattr(bom_loader, "load_bom_data", fail_bom_load)
+    else:
+        monkeypatch.setattr(
+            bom_loader,
+            "load_bom_data",
+            lambda *_args, **_kwargs: BomLoadResult(refdes=set(), page_map={}),
+        )
+
+    result = execute_run_request({
+        "workflowId": "refdes_extract",
+        "outputStrategyId": "new_workbook_standard",
+        "outputDirectory": str(tmp_path),
+        "inputs": [
+            {"role": "pdf", "path": str(pdf_path)},
+            {"role": "bom", "path": str(bom_path)},
+        ],
+        "options": {},
+    })
+
+    assert result["status"] == "success"
+    assert result["warning_count"] == 1
+    assert result["no_match_count"] == 0
+    assert "BOM cross-check FAILED" in result["title"]
+    assert any(
+        "BOM CROSS-CHECK FAILED" in note and expected_note in note
+        for note in result["notes"]
+    )
+
+
 def test_refdes_cancel_checks_after_engine_and_before_promote(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

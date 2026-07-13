@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Run state stays coherent across races, reconnects, and cross-tool work** —
+  lifecycle phases now share one vocabulary; reconnect only clears runs from
+  the dead sidecar generation; an ack can recover a run when the invoke reply
+  loses the race; workflow and file-inspection controls are guarded during
+  live work; RefDes BOM cross-check soft failures qualify the completion with
+  a warning; and an unreadable result payload now says the output was written
+  but could not be displayed instead of reporting an ordinary execution
+  failure.
 - **Desktop backend failures are safer and more transparent** — stale reader
   and heartbeat tasks can no longer tear down a replacement sidecar session;
   failed webview event delivery now leaves a diagnostic breadcrumb; and an

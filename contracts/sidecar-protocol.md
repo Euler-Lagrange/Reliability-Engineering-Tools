@@ -520,6 +520,7 @@ attempts automatic reconnection with exponential backoff (2s, 4s, 8s, 15s, 30s).
 - The Rust bridge tracks a `session_generation` counter that increments on
   every sidecar respawn. The counter is echoed on the `execute_run` ack and
   on the `backend_session_status` response. Since every reconnect spawns a
-  fresh sidecar session, the frontend clears any active run after a
-  successful reconnect.
+  fresh sidecar session, a successful reconnect clears an active run only
+  when its generation is no newer than the disconnected generation; a run
+  already accepted by the successor session is preserved.
 - Crash restart policy and multi-run queueing remain later work.

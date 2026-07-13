@@ -1023,7 +1023,7 @@ def execute_run_request(
         "notes": notes,
         "log_lines": logs[-LOG_LIMIT:],
         "row_count": total_groups,
-        "warning_count": unverified,
+        "warning_count": unverified + (1 if bom_load_error else 0),
         "no_match_count": unverified,
         "mode": "desktop-bridge",
     }
