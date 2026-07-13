@@ -306,6 +306,39 @@ describe("RefDesExtractorTool numeric tuning fields", () => {
     expect(request.options.prov_distance).toBe(12.5);
   });
 
+  // Wave R follow-up (wiring invariant #1): annotation_page_timeout_seconds
+  // shipped as the backend's 17th validated option with no UI control. It
+  // lives with the other engine-tuning fields in the Advanced panel.
+  it("renders the annotation page timeout in the advanced panel with its default", async () => {
+    const user = userEvent.setup();
+    render(<RefDesExtractorTool />);
+
+    await user.click(screen.getByRole("button", { name: /Advanced controls/i }));
+
+    expect(
+      screen.getByRole("spinbutton", { name: "Annotation page timeout (s)" }),
+    ).toHaveValue(30);
+  });
+
+  it("dispatches the edited annotation page timeout in the run request options", async () => {
+    const user = userEvent.setup();
+    render(<RefDesExtractorTool />);
+
+    await user.click(screen.getByRole("button", { name: /Advanced controls/i }));
+    const timeout = screen.getByRole("spinbutton", {
+      name: "Annotation page timeout (s)",
+    });
+    fireEvent.change(timeout, { target: { value: "60" } });
+    expect(timeout).toHaveValue(60);
+
+    await user.click(screen.getByRole("tab", { name: /^Run$/i }));
+    await user.click(screen.getByRole("button", { name: "Extract" }));
+
+    await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
+    const request = backendMocks.executeRun.mock.calls[0][0];
+    expect(request.options.annotation_page_timeout_seconds).toBe(60);
+  });
+
   it("disables the geometry batch size field when geometry analysis is off", async () => {
     const user = userEvent.setup();
     render(<RefDesExtractorTool />);

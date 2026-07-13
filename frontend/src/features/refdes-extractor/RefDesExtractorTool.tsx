@@ -60,6 +60,7 @@ interface RefDesOptions {
   // reads each key by name. Defaults MUST match the backend dataclass defaults.
   geometry_subprocess_enabled: boolean;
   geometry_batch_timeout_seconds: number;
+  annotation_page_timeout_seconds: number;
   geometry_batch_checkpoint_enabled: boolean;
   pin_assignment_threshold: number;
   refdes_search_radius: number;
@@ -90,6 +91,8 @@ const OPTION_TOOLTIPS: Record<string, string> = {
     "Run geometry analysis in a separate process for crash isolation (slightly slower). Off by default.",
   geometry_batch_timeout_seconds:
     "Maximum seconds spent on one geometry batch before those pages degrade to annotation-only extraction.",
+  annotation_page_timeout_seconds:
+    "Pages whose annotation read exceeds this are skipped with a warning. Raise for very dense schematics.",
   geometry_batch_checkpoint_enabled:
     "Write a JSON progress checkpoint into a _refdes_test_checkpoints folder inside the output directory after each geometry batch — useful for triaging long runs. Off by default so runs don't add files next to your report.",
   pin_assignment_threshold:
@@ -155,6 +158,9 @@ export function RefDesExtractorTool() {
     // Advanced engine tuning — defaults mirror the backend RefDesConfig.
     geometry_subprocess_enabled: false,
     geometry_batch_timeout_seconds: 240.0,
+    // Wave R: per-page annotation-extraction timeout. Keep in lockstep with
+    // the backend RefDesConfig default (refdes_extractor/runtime.py).
+    annotation_page_timeout_seconds: 30.0,
     // Opt-in: writes JSON checkpoints into the user's output folder.
     // Keep in lockstep with the backend RefDesConfig default.
     geometry_batch_checkpoint_enabled: false,
@@ -832,6 +838,23 @@ export function RefDesExtractorTool() {
                           setOptions((prev) => ({
                             ...prev,
                             geometry_subprocess_enabled: next,
+                          }))
+                        }
+                      />
+                    </OptionRow>
+
+                    <OptionRow info={OPTION_TOOLTIPS.annotation_page_timeout_seconds}>
+                      <NumberField
+                        id="refdes-annotation-page-timeout"
+                        label="Annotation page timeout (s)"
+                        value={options.annotation_page_timeout_seconds}
+                        min={1}
+                        step={5}
+                        hint="Seconds per page before its annotations are skipped"
+                        onChange={(next) =>
+                          setOptions((prev) => ({
+                            ...prev,
+                            annotation_page_timeout_seconds: next,
                           }))
                         }
                       />
