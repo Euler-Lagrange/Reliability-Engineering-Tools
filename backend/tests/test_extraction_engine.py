@@ -485,6 +485,50 @@ def test_is_blacklisted_uses_exact_match_not_substring() -> None:
     assert not logic._is_blacklisted("U1")
 
 
+def test_sequence_gap_short_run_emits_individual_placeholders() -> None:
+    """Wave R4: a short numbering hole (<= 3 consecutive missing) keeps
+    today's per-group placeholder rows."""
+    from refdes_extractor.refdes_extractor_logic import detect_sequence_gaps
+
+    rows = detect_sequence_gaps(["DIG-420", "DIG-422"])
+    assert [r["group"] for r in rows] == ["DIG-421 (GROUP NOT DETECTED)"]
+    assert all(r["_is_gap"] for r in rows)
+
+
+def test_sequence_gap_long_run_collapses_to_one_summary_row() -> None:
+    """Wave R4 (user decision): a long hole becomes ONE summary row per run
+    instead of dozens of placeholder rows — visible, never spam."""
+    from refdes_extractor.refdes_extractor_logic import detect_sequence_gaps
+
+    rows = detect_sequence_gaps(["DIG-417", "DIG-450"])
+    assert len(rows) == 1
+    assert rows[0]["group"] == "DIG-418–DIG-449 (RANGE NOT DETECTED — 32 consecutive)"
+    assert rows[0]["_is_gap"] is True
+    assert rows[0]["component count"] == 0
+
+
+def test_sequence_gap_wide_family_is_never_silently_skipped() -> None:
+    """Wave R4 (DIG-4xx incident): the old MAX_GAP_RANGE=100 family-span cap
+    silently disabled gap detection for the whole DIG family, so the user
+    could not tell dropped groups from never-existed ones. Wide families now
+    report through run-collapsed rows and the skip log line is gone."""
+    from refdes_extractor.refdes_extractor_logic import detect_sequence_gaps
+
+    lines: list[str] = []
+    rows = detect_sequence_gaps(["DIG-001", "DIG-450"], log_func=lines.append)
+    assert len(rows) == 1
+    assert "DIG-002–DIG-449 (RANGE NOT DETECTED — 448 consecutive)" == rows[0]["group"]
+    assert not any("Skipping" in line for line in lines)
+
+    # Mixed short + long runs in one family: individual placeholders for the
+    # short hole, one summary for the long one.
+    rows = detect_sequence_gaps(["DIG-001", "DIG-003", "DIG-200"])
+    groups = [r["group"] for r in rows]
+    assert "DIG-002 (GROUP NOT DETECTED)" in groups
+    assert "DIG-004–DIG-199 (RANGE NOT DETECTED — 196 consecutive)" in groups
+    assert len(rows) == 2
+
+
 def test_legacy_hybrid_ungrouped_refdes_survive_as_rows(tmp_path) -> None:
     """Wave R1 parity restore, legacy-fallback twin: the legacy hybrid
     harvester must bucket a RefDes outside every group into UNGROUPED

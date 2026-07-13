@@ -372,7 +372,12 @@ def _parse_group_sequence(group_name: str) -> tuple:
     return None, None
 
 
-MAX_GAP_RANGE = 100  # Maximum gap range to analyze (prevents runaway iteration)
+# Wave R4: gap runs of at most this many consecutive missing numbers emit
+# individual "GROUP NOT DETECTED" placeholder rows; longer runs collapse to a
+# single "RANGE NOT DETECTED" summary row per run. Short interior holes are
+# high-signal (a one-number hole is very likely a real miss); long holes are
+# usually intentional numbering jumps and get one line instead of dozens.
+GAP_RUN_EMIT_LIMIT = 3
 
 
 def detect_sequence_gaps(group_names: list, log_func=None) -> list:
@@ -383,13 +388,24 @@ def detect_sequence_gaps(group_names: list, log_func=None) -> list:
     For example, if groups CPU-001, CPU-002, CPU-004 exist, this detects
     that CPU-003 is missing.
 
+    Wave R4 (DIG-4xx incident): the old ``MAX_GAP_RANGE=100`` family-span cap
+    silently disabled gap detection for any family whose numbering spanned
+    more than 100 — the user could not tell dropped groups from
+    never-existed ones. Detection now works per GAP RUN between consecutive
+    detected numbers: runs of length <= GAP_RUN_EMIT_LIMIT emit individual
+    placeholder rows; longer runs collapse to one summary row per run.
+    Nothing is ever silently skipped, and iteration is bounded by the number
+    of detected groups (long runs are summarized without iterating them).
+
     Args:
         group_names: List of detected group names (can be None or empty)
         log_func: Optional logging callback for gap reporting
 
     Returns:
         List of dicts for missing groups, each containing:
-        - "group": Formatted name like "CPU-003 (GROUP NOT DETECTED)"
+        - "group": "CPU-003 (GROUP NOT DETECTED)" for short runs, or
+          "CPU-004–CPU-199 (RANGE NOT DETECTED — 196 consecutive)" for
+          collapsed long runs
         - "failure mode causes": Empty string
         - "component count": 0
         - "pages": Empty string
@@ -427,36 +443,48 @@ def detect_sequence_gaps(group_names: list, log_func=None) -> list:
         if len(numbers) < 2:
             continue  # Need at least 2 to detect gaps
 
-        min_num, max_num = min(numbers), max(numbers)
-        gap_range = max_num - min_num
-
-        # Skip if range is too large (prevents memory/performance issues)
-        if gap_range > MAX_GAP_RANGE:
-            if log_func:
-                log_func(f"  ⏭ Skipping {prefix}*: sequence range too large ({gap_range} > {MAX_GAP_RANGE})")
-            continue
-
-        existing = set(numbers)
         # Determine consistent width from existing numbers
         max_width = max(w for n, w in number_widths)
 
-        for num in range(min_num, max_num + 1):
-            if num not in existing:
-                # Format with same zero-padding as siblings
-                formatted_num = str(num).zfill(max_width)
-                # Use double-hyphen to distinguish from real groups
-                missing_name = f"{prefix}{formatted_num}"
+        def _gap_row(group_label: str) -> dict:
+            return {
+                "group": group_label,
+                "failure mode causes": "",
+                "component count": 0,
+                "pages": "",
+                "_is_gap": True,  # Internal marker for styling
+            }
 
+        # Walk consecutive detected numbers; each hole between a pair is one
+        # gap RUN. Long runs are summarized without iterating their members,
+        # so a family spanning thousands costs O(detected groups), not O(span).
+        for lower, upper in zip(numbers, numbers[1:]):
+            run_length = upper - lower - 1
+            if run_length <= 0:
+                continue
+
+            if run_length <= GAP_RUN_EMIT_LIMIT:
+                for num in range(lower + 1, upper):
+                    missing_name = f"{prefix}{str(num).zfill(max_width)}"
+                    if log_func:
+                        log_func(f"  ⚠ Gap detected: {missing_name} not found in sequence")
+                    missing_groups.append(
+                        _gap_row(f"{missing_name} (GROUP NOT DETECTED)")
+                    )
+            else:
+                first_name = f"{prefix}{str(lower + 1).zfill(max_width)}"
+                last_name = f"{prefix}{str(upper - 1).zfill(max_width)}"
                 if log_func:
-                    log_func(f"  ⚠ Gap detected: {missing_name} not found in sequence")
-
-                missing_groups.append({
-                    "group": f"{missing_name} (GROUP NOT DETECTED)",
-                    "failure mode causes": "",
-                    "component count": 0,
-                    "pages": "",
-                    "_is_gap": True  # Internal marker for styling
-                })
+                    log_func(
+                        f"  ⚠ Gap run detected: {first_name}–{last_name} "
+                        f"({run_length} consecutive) not found in sequence"
+                    )
+                missing_groups.append(
+                    _gap_row(
+                        f"{first_name}–{last_name} "
+                        f"(RANGE NOT DETECTED — {run_length} consecutive)"
+                    )
+                )
 
     return missing_groups
 

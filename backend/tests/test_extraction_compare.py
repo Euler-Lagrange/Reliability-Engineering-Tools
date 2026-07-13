@@ -51,6 +51,21 @@ def test_gap_rows_are_not_extraction_evidence() -> None:
     assert groups == {"U7": "DIG-076"}
 
 
+def test_range_summary_gap_rows_are_not_extraction_evidence() -> None:
+    # Wave R4: long numbering holes collapse to one "RANGE NOT DETECTED"
+    # summary row per run — like the per-group placeholders, these are
+    # expectations, not extraction evidence, and must never read as groups.
+    df = _sheet(
+        [
+            ("DIG-076 (Verified)", "U7"),
+            ("DIG-418–DIG-449 (RANGE NOT DETECTED — 32 consecutive)", "U99"),
+        ]
+    )
+    groups = load_component_groups(df)
+    assert "U99" not in groups
+    assert groups == {"U7": "DIG-076"}
+
+
 def test_ungrouped_bucket_is_a_named_group() -> None:
     df = _sheet([("UNGROUPED (IN BOM)", "U55")])
     assert load_component_groups(df) == {"U55": "UNGROUPED (IN BOM)"}

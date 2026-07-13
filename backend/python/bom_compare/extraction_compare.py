@@ -99,7 +99,9 @@ def load_component_groups(df: pd.DataFrame) -> Dict[str, str]:
         if not pd.notna(raw_group) or not pd.notna(raw_causes):
             continue
         raw_group = str(raw_group)
-        if "GROUP NOT DETECTED" in raw_group:
+        # Covers both gap-row shapes: per-group "GROUP NOT DETECTED"
+        # placeholders and Wave R4's collapsed "RANGE NOT DETECTED" rows.
+        if "NOT DETECTED" in raw_group:
             continue
         group = _normalize_group(raw_group)
         if not group:
