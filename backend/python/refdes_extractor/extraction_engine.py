@@ -1199,6 +1199,42 @@ def harvest_hybrid(
                             break
 
                     if not my_group:
+                        # Wave R1 parity restore: bucket a valid RefDes outside
+                        # every group into PROVISIONAL / UNGROUPED (IN BOM) /
+                        # UNGROUPED (NOT IN BOM) instead of dropping it —
+                        # mirrors harvest_functional_fmea and matches the
+                        # NextGen hybrid so an engine fallback cannot
+                        # reintroduce the silent loss.
+                        if (
+                            REFDES_RE.fullmatch(text)
+                            and not POWER_SOURCE_RE.match(text)
+                            and not _is_blacklisted(text, config)
+                        ):
+                            base = _strip_suffix(text)
+                            u_is_prov = False
+                            for p_rect in prov_markers:
+                                pcx, pcy = center(p_rect)
+                                if ((cx - pcx)**2 + (cy - pcy)**2)**0.5 < prov_distance:
+                                    u_is_prov = True
+                                    break
+                            if u_is_prov:
+                                if "PROVISIONAL" not in grouped_data:
+                                    grouped_data["PROVISIONAL"] = {"verified": set(), "unverified": set(), "tokens": set(), "pages": set(), "mode": "functional"}
+                                bucket = grouped_data["PROVISIONAL"]
+                                member_key = "unverified" if bucket.get("mode", "functional") == "functional" else "tokens"
+                                bucket.setdefault(member_key, set()).add(base)
+                                bucket["pages"].add(page_idx + 1)
+                                debug_shapes.append((page_idx, rect, (1, 0.5, 0), "PROV"))
+                            else:
+                                if canonicalize_refdes(base) in normalized_bom:
+                                    cat = "UNGROUPED (IN BOM)"
+                                else:
+                                    cat = "UNGROUPED (NOT IN BOM)"
+                                if cat not in grouped_data:
+                                    grouped_data[cat] = {"verified": set(), "unverified": set(), "tokens": set(), "pages": set(), "mode": "functional"}
+                                grouped_data[cat]["unverified"].add(base)
+                                grouped_data[cat]["pages"].add(page_idx + 1)
+                                debug_shapes.append((page_idx, rect, (0.5, 0.5, 0.5), "UNGROUPED"))
                         continue
 
                     is_prov = False

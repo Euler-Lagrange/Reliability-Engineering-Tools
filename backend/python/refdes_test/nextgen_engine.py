@@ -1356,6 +1356,90 @@ def _record_orphan(
     )
 
 
+def _capture_ungrouped_refdes(
+    grouped_data: dict,
+    text: str,
+    rect: tuple,
+    center_xy: tuple,
+    prov_markers: list,
+    prov_distance: float,
+    normalized_bom: set,
+    config,
+    page_idx: int,
+    track_token_page: Callable,
+    dbg: Callable,
+) -> None:
+    """Bucket a RefDes that sits outside every detected group rect.
+
+    Wave R1 parity restore: mirrors the legacy functional-harvest semantics
+    (extraction_engine.harvest_functional_fmea) — PROV-adjacent RefDes go to
+    PROVISIONAL, everything else splits into UNGROUPED (IN BOM) / UNGROUPED
+    (NOT IN BOM). Non-RefDes words (junk, pin fragments, labels) are ignored:
+    only allowlisted-prefix components earn a safety-net row.
+    """
+    if not legacy_logic.REFDES_RE.fullmatch(text):
+        return
+    if legacy_logic.POWER_SOURCE_RE.match(text):
+        return
+    if legacy_logic._is_blacklisted(text, config):
+        return
+
+    cx, cy = center_xy
+    base = legacy_logic.strip_suffix(text)
+
+    is_prov = False
+    for p_rect in prov_markers:
+        pcx, pcy = center(p_rect)
+        if ((cx - pcx) ** 2 + (cy - pcy) ** 2) ** 0.5 < prov_distance:
+            is_prov = True
+            break
+
+    if is_prov:
+        bucket = grouped_data.setdefault(
+            "PROVISIONAL",
+            {
+                "verified": set(),
+                "unverified": set(),
+                "tokens": set(),
+                "pages": set(),
+                "mode": "functional",
+                "token_pages": {},
+            },
+        )
+        # Add to the member set the formatter will actually read for the
+        # bucket's creation-time mode (piece_part prov tokens live in
+        # "tokens"; functional prov tokens live in "unverified").
+        member_key = (
+            "unverified" if bucket.get("mode", "functional") == "functional" else "tokens"
+        )
+        bucket.setdefault(member_key, set()).add(base)
+        bucket["pages"].add(page_idx + 1)
+        track_token_page(bucket, base, page_idx + 1)
+        dbg((page_idx, rect, (1, 0.5, 0), "PROV"))
+        return
+
+    category = (
+        "UNGROUPED (IN BOM)"
+        if canonicalize_refdes(base) in normalized_bom
+        else "UNGROUPED (NOT IN BOM)"
+    )
+    bucket = grouped_data.setdefault(
+        category,
+        {
+            "verified": set(),
+            "unverified": set(),
+            "tokens": set(),
+            "pages": set(),
+            "mode": "functional",
+            "token_pages": {},
+        },
+    )
+    bucket["unverified"].add(base)
+    bucket["pages"].add(page_idx + 1)
+    track_token_page(bucket, base, page_idx + 1)
+    dbg((page_idx, rect, (0.5, 0.5, 0.5), "UNGROUPED"))
+
+
 def harvest_hybrid_nextgen(
     pdf_path: Path,
     groups: list,
@@ -1543,6 +1627,25 @@ def harvest_hybrid_nextgen(
 
                     my_group = _lookup_group(group_grid, cx, cy)
                     if not my_group:
+                        # Wave R1 parity restore (DIG-4xx incident): the legacy
+                        # functional/components harvests bucketed a valid RefDes
+                        # outside every group rect into PROVISIONAL / UNGROUPED
+                        # (IN BOM) / UNGROUPED (NOT IN BOM); the hybrid paths
+                        # silently dropped it. A real component must never
+                        # vanish without a row — capture it before dropping.
+                        _capture_ungrouped_refdes(
+                            grouped_data,
+                            text,
+                            rect,
+                            (cx, cy),
+                            prov_markers,
+                            prov_distance,
+                            normalized_bom,
+                            config,
+                            page_idx,
+                            _track_token_page,
+                            _dbg,
+                        )
                         continue
 
                     is_prov = False

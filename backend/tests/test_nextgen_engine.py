@@ -240,3 +240,60 @@ def test_geometry_checkpoints_are_opt_in() -> None:
     from refdes_extractor.runtime import RefDesConfig
 
     assert RefDesConfig().geometry_batch_checkpoint_enabled is False
+
+
+def _build_words_pdf(tmp_path, words):
+    """Write a single-page PDF with plain text words at given baselines."""
+    import fitz
+
+    doc = fitz.open()
+    page = doc.new_page(width=612, height=792)
+    for text, x, y in words:
+        page.insert_text((x, y), text, fontsize=10)
+    pdf_path = tmp_path / "hybrid.pdf"
+    doc.save(str(pdf_path))
+    doc.close()
+    return pdf_path
+
+
+def test_ungrouped_and_prov_refdes_outside_groups_survive_as_rows(tmp_path) -> None:
+    """Wave R1 parity restore (DIG-4xx incident): a valid RefDes whose word
+    center falls outside every detected group rect must land in the
+    UNGROUPED (IN BOM) / UNGROUPED (NOT IN BOM) buckets (or PROVISIONAL when
+    a PROV marker sits nearby) instead of vanishing without any row. Junk
+    words outside groups must still be dropped."""
+    pdf_path = _build_words_pdf(
+        tmp_path,
+        [
+            ("R55", 100, 100),  # inside the DIG-001 group rect
+            ("C77", 400, 400),  # outside all groups, present in BOM
+            ("L42", 400, 430),  # outside all groups, absent from BOM
+            ("PROV", 400, 500),  # provisional marker
+            ("Q9", 400, 508),  # refdes adjacent to the PROV marker
+            ("HELLO", 400, 560),  # junk word outside groups
+        ],
+    )
+
+    rows = nextgen_engine.harvest_hybrid_nextgen(
+        pdf_path=pdf_path,
+        groups=[(0, "DIG-001", (50, 50, 250, 250))],
+        bom_set={"R55", "C77"},
+        bom_page_map=None,
+        config={},
+        group_modes={(0, "DIG-001"): "functional"},
+        pin_map={},
+        body_rects={},
+    )
+
+    by_group = {row["group"]: row for row in rows}
+    assert by_group["DIG-001 (Verified)"]["failure mode causes"] == "R55"
+    assert by_group["UNGROUPED (IN BOM)"]["failure mode causes"] == "C77"
+    assert by_group["UNGROUPED (IN BOM)"]["pages"] == "1"
+    assert by_group["UNGROUPED (NOT IN BOM)"]["failure mode causes"] == "L42"
+    assert "Q9" in by_group["PROVISIONAL"]["failure mode causes"]
+    # The prov-marked refdes must not double-report as ungrouped.
+    assert "Q9" not in by_group.get("UNGROUPED (NOT IN BOM)", {}).get(
+        "failure mode causes", ""
+    )
+    # Junk outside groups stays dropped — no bucket collects arbitrary words.
+    assert "HELLO" not in " | ".join(str(row) for row in rows)

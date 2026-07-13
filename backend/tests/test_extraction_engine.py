@@ -483,3 +483,47 @@ def test_is_blacklisted_uses_exact_match_not_substring() -> None:
 
     # A genuine RefDes is never blacklisted.
     assert not logic._is_blacklisted("U1")
+
+
+def test_legacy_hybrid_ungrouped_refdes_survive_as_rows(tmp_path) -> None:
+    """Wave R1 parity restore, legacy-fallback twin: the legacy hybrid
+    harvester must bucket a RefDes outside every group into UNGROUPED
+    (IN BOM) / (NOT IN BOM) / PROVISIONAL rows instead of dropping it,
+    matching the NextGen fix so an engine fallback cannot reintroduce the
+    silent loss."""
+    from refdes_extractor.extraction_engine import harvest_hybrid
+    from refdes_extractor.refdes_extractor_logic import _ensure_engine_initialized
+
+    _ensure_engine_initialized()  # bind late-bound REFDES_RE/_is_blacklisted
+
+    doc = fitz.open()
+    page = doc.new_page(width=612, height=792)
+    for text, x, y in [
+        ("R55", 100, 100),  # inside the DIG-001 group rect
+        ("C77", 400, 400),  # outside all groups, present in BOM
+        ("L42", 400, 430),  # outside all groups, absent from BOM
+        ("PROV", 400, 500),  # provisional marker
+        ("Q9", 400, 508),  # refdes adjacent to the PROV marker
+        ("HELLO", 400, 560),  # junk word outside groups
+    ]:
+        page.insert_text((x, y), text, fontsize=10)
+    pdf_path = tmp_path / "legacy_hybrid.pdf"
+    doc.save(str(pdf_path))
+    doc.close()
+
+    rows = harvest_hybrid(
+        pdf_path=pdf_path,
+        groups=[(0, "DIG-001", (50, 50, 250, 250))],
+        bom_set={"R55", "C77"},
+        config={},
+        group_modes={(0, "DIG-001"): "functional"},
+        pin_map={},
+        body_rects={},
+    )
+
+    by_group = {row["group"]: row for row in rows}
+    assert by_group["DIG-001 (Verified)"]["failure mode causes"] == "R55"
+    assert by_group["UNGROUPED (IN BOM)"]["failure mode causes"] == "C77"
+    assert by_group["UNGROUPED (NOT IN BOM)"]["failure mode causes"] == "L42"
+    assert "Q9" in by_group["PROVISIONAL"]["failure mode causes"]
+    assert "HELLO" not in " | ".join(str(row) for row in rows)
