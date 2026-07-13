@@ -400,15 +400,25 @@ def _emit_run_progress(
     )
 
 
-def _emit_run_log(run_id: str, message: str) -> None:
+def _emit_run_log(
+    run_id: str,
+    message: str,
+    *,
+    level: str | None = None,
+) -> None:
     emit(
         "log",
         {
-            "level": _parse_log_level(message),
+            "level": level or _parse_log_level(message),
             "line": message,
         },
         run_id=run_id,
     )
+
+
+def _emit_run_cancelled(run_id: str, message: str) -> None:
+    _emit_run_status(run_id, "cancelled", "Cancelled", message)
+    emit("cancelled", {"message": message}, run_id=run_id)
 
 
 def _run_in_background(run: ActiveRun, body: dict[str, Any]) -> None:
@@ -427,12 +437,18 @@ def _run_in_background(run: ActiveRun, body: dict[str, Any]) -> None:
             ),
             processor_ready_callback=run.bind_processor,
         )
+        if run.cancel_requested.is_set():
+            _emit_run_log(
+                run.run_id,
+                "Cancel arrived after the output was finalized; the run completed "
+                "and the report was written.",
+                level="info",
+            )
         _emit_run_status(run.run_id, "success", "Complete", "Run completed successfully.")
         emit("result", result, run_id=run.run_id)
     except CancellationError as exc:
         message = str(exc) or "Operation cancelled by user."
-        _emit_run_status(run.run_id, "cancelled", "Cancelled", message)
-        emit("cancelled", {"message": message}, run_id=run.run_id)
+        _emit_run_cancelled(run.run_id, message)
     except Exception as exc:  # pragma: no cover - exercised in integration runtime
         # Capture the full traceback so the UI and the file log both have
         # actionable diagnostics. The shared file logger writes to
@@ -442,6 +458,26 @@ def _run_in_background(run: ActiveRun, body: dict[str, Any]) -> None:
         tb = traceback.format_exc()
         message = str(exc) or "Unknown backend execution failure."
         error_code = type(exc).__name__
+        if run.cancel_requested.is_set():
+            _emit_run_log(
+                run.run_id,
+                f"Cancellation superseded error: {error_code}: {message}",
+                level="info",
+            )
+            for line in tb.splitlines():
+                _emit_run_log(run.run_id, line, level="info")
+            try:
+                logging.getLogger("reliability_tools.sidecar").info(
+                    "Cancellation superseded error for run %s: %s: %s",
+                    run.run_id,
+                    error_code,
+                    message,
+                    exc_info=True,
+                )
+            except Exception:  # pragma: no cover - logging must never crash the run
+                pass
+            _emit_run_cancelled(run.run_id, "Operation cancelled by user.")
+            return
         # Stream the traceback into the run log so it's visible in the UI
         # panel even when the user doesn't open the error block.
         for line in tb.splitlines():

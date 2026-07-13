@@ -327,8 +327,10 @@ can resolve the pending promise.
   Validation errors produced by command routers may omit this field.
 
 Run-scoped failures (raised inside the background thread after `ack`) are
-surfaced as `backend_error` terminal events, not as `error` envelopes. See the
-Streamed Run Events section below.
+normally surfaced as `backend_error` terminal events, not as `error` envelopes.
+If an accepted cancellation is already latched when the failure is handled,
+the cancellation supersedes that user-facing outcome as described below. See
+the Streamed Run Events section below.
 
 ## Streamed Run Events
 
@@ -423,13 +425,34 @@ expand the error block.
 3. The processor checks the cancellation token at regular intervals.
 4. When the processor raises `CancellationError`, the sidecar emits
    `status` (cancelled) followed by a `cancelled` terminal event.
+5. If the cancel flag is latched but the processor instead raises another
+   exception, the sidecar first streams an INFO diagnostic prefixed
+   `Cancellation superseded error:` plus the traceback, then emits the same
+   `status` (cancelled) and `cancelled` terminal pair. The diagnostic preserves
+   the underlying failure for support without reporting an accepted cancel as
+   `backend_error`.
+
+`atomic_finalize` is the output commit point. If cancellation arrives after an
+adapter has finalized its output and the adapter returns normally, the report
+is not rolled back or relabelled: the sidecar emits the normal successful
+`result` and first streams this INFO line:
+
+`Cancel arrived after the output was finalized; the run completed and the report was written.`
+
+There is a residual microsecond-scale race between the worker's final check of
+the latched flag and terminal emission/active-run cleanup. A `cancel_run`
+accepted in that interval may not receive the explanatory log and cannot change
+the terminal outcome already selected by the worker. The cancel-command
+`result` is only an acknowledgement; consumers must treat the streamed
+`result`, `cancelled`, or `backend_error` envelope as authoritative.
 
 ### Terminal event guarantees
 
 Every `ack` is eventually followed by exactly one terminal event:
 - `result` on success
-- `cancelled` on cancellation
-- `backend_error` on unhandled failure
+- `cancelled` when cancellation surfaces directly or supersedes a later error
+- `backend_error` on an unhandled failure when no cancellation was latched at
+  terminal selection
 
 The `ACTIVE_RUN` is cleared after the terminal event is emitted.
 

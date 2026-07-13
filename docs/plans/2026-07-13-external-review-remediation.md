@@ -134,16 +134,16 @@ is before group detection — the whole output phase is uncancellable).
    `"Cancel arrived after the output was finalized; the run completed and the report was written."`
    Document this residual (microsecond-scale) window in `contracts/sidecar-protocol.md`.
 
-- [ ] **Step 1:** Failing subprocess test A: send `execute_run` for a workflow whose
+- [x] **Step 1:** Failing subprocess test A: send `execute_run` for a workflow whose
   validation will fail at execute time (e.g. input file deleted between validate and
   execute — the existing sidecar tests show how to stage this), latch `cancel_run`
   immediately after the ack, assert the terminal envelope is `cancelled`, not
   `backend_error`.
-- [ ] **Step 2:** Failing (or characterization) test B: cancel latched after adapter
+- [x] **Step 2:** Failing (or characterization) test B: cancel latched after adapter
   success → terminal is still `result` (success) AND the run log contains the
   "finalized" line.
-- [ ] **Step 3:** Implement; re-run; green. Update the protocol doc in the same commit.
-- [ ] **Step 4:** Commit: `Sidecar: Report cancelled when a latched cancel supersedes an error`
+- [x] **Step 3:** Implement; re-run; green. Update the protocol doc in the same commit.
+- [x] **Step 4:** Commit: `Sidecar: Report cancelled when a latched cancel supersedes an error`
 
 ### Task 1.3: RefDes fallback — stop_event + timeout wrapper
 

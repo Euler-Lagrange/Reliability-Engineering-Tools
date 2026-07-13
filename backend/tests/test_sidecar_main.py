@@ -6,7 +6,9 @@ import queue
 import subprocess
 import sys
 import threading
+import textwrap
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import pandas as pd
@@ -99,6 +101,25 @@ def _start_sidecar() -> tuple[subprocess.Popen[str], _SidecarReader]:
     return process, reader
 
 
+def _start_scripted_sidecar(script: str) -> tuple[subprocess.Popen[str], _SidecarReader]:
+    """Start the real protocol loop with test-controlled route functions."""
+    process = subprocess.Popen(
+        [sys.executable, "-c", textwrap.dedent(script)],
+        cwd=SIDECAR.parent,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        env=SIDECAR_ENV,
+    )
+    reader = _SidecarReader(process)
+    ready_line = reader.read_line().strip()
+    assert ready_line
+    ready_msg = json.loads(ready_line)
+    assert ready_msg["kind"] == "ready"
+    return process, reader
+
+
 def _read_ready_line(process: subprocess.Popen[str]) -> dict:
     """Read the ready message, initializing the shared reader for this process."""
     line = _get_reader(process).read_line().strip()
@@ -108,7 +129,12 @@ def _read_ready_line(process: subprocess.Popen[str]) -> dict:
     return message
 
 
-def _send_command(process: subprocess.Popen[str], request_id: str, command: str, body: dict) -> dict:
+def _write_command(
+    process: subprocess.Popen[str],
+    request_id: str,
+    command: str,
+    body: dict,
+) -> None:
     process.stdin.write(
         json.dumps(
             {
@@ -127,7 +153,32 @@ def _send_command(process: subprocess.Popen[str], request_id: str, command: str,
         + "\n"
     )
     process.stdin.flush()
+
+
+def _send_command(process: subprocess.Popen[str], request_id: str, command: str, body: dict) -> dict:
+    _write_command(process, request_id, command, body)
     return _read_until(process, request_id=request_id)
+
+
+def _read_messages_until(
+    reader: _SidecarReader,
+    predicate: Callable[[dict], bool],
+    *,
+    timeout: float = 30.0,
+) -> tuple[list[dict], dict]:
+    """Retain every ordered message while waiting for a matching envelope."""
+    deadline = time.monotonic() + timeout
+    messages: list[dict] = []
+    while time.monotonic() < deadline:
+        remaining = max(0.1, deadline - time.monotonic())
+        line = reader.read_line(timeout=remaining).strip()
+        if not line:
+            continue
+        message = json.loads(line)
+        messages.append(message)
+        if predicate(message):
+            return messages, message
+    raise AssertionError("Timed out waiting for a matching sidecar message")
 
 
 _READERS: dict[int, _SidecarReader] = {}
@@ -1890,6 +1941,191 @@ def test_sidecar_rejects_refdes_missing_pdf(tmp_path: Path) -> None:
         assert result["payload"]["reason_code"] == "missing_files"
     finally:
         process.kill()
+
+
+# =========================================================================
+# Cancel-latch terminal selection tests
+# =========================================================================
+
+
+def _run_scripted_cancel_scenario(
+    tmp_path: Path,
+    *,
+    script: str,
+    gate_log_line: str,
+    extra_body: dict | None = None,
+) -> tuple[list[dict], dict, dict]:
+    release_gate = tmp_path / "release.gate"
+    body = {"releaseGate": str(release_gate), **(extra_body or {})}
+    process, reader = _start_scripted_sidecar(script)
+    messages: list[dict] = []
+    try:
+        _write_command(process, "req_scripted_execute", "execute_run", body)
+        batch, ack = _read_messages_until(
+            reader,
+            lambda message: message.get("request_id") == "req_scripted_execute",
+        )
+        messages.extend(batch)
+        assert ack["kind"] == "ack"
+        run_id = ack["payload"]["run_id"]
+
+        batch, _gate_log = _read_messages_until(
+            reader,
+            lambda message: (
+                message.get("run_id") == run_id
+                and message.get("kind") == "log"
+                and message.get("payload", {}).get("line") == gate_log_line
+            ),
+        )
+        messages.extend(batch)
+
+        _write_command(
+            process,
+            "req_scripted_cancel",
+            "cancel_run",
+            {"run_id": run_id},
+        )
+        batch, cancel_response = _read_messages_until(
+            reader,
+            lambda message: message.get("request_id") == "req_scripted_cancel",
+        )
+        messages.extend(batch)
+        assert cancel_response["kind"] == "result"
+        assert cancel_response["payload"]["status"] == "cancelling"
+
+        release_gate.touch()
+        batch, terminal = _read_messages_until(
+            reader,
+            lambda message: (
+                message.get("run_id") == run_id
+                and message.get("kind")
+                in {"result", "cancelled", "backend_error"}
+            ),
+        )
+        messages.extend(batch)
+
+        run_events = [
+            message for message in messages if message.get("run_id") == run_id
+        ]
+        return run_events, terminal, cancel_response
+    finally:
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=5)
+
+
+def test_sidecar_latched_cancel_supersedes_background_error(
+    tmp_path: Path,
+) -> None:
+    script = """
+        import time
+        from pathlib import Path
+
+        import sidecar_main as sidecar
+
+        sidecar.route_validate = lambda body: {"ok": True}
+
+        def controlled_execute(body, **callbacks):
+            callbacks["log_callback"]("TEST: background error gate reached")
+            gate = Path(body["releaseGate"])
+            while not gate.exists():
+                time.sleep(0.005)
+            raise RuntimeError("synthetic failure after accepted cancel")
+
+        sidecar.route_execute = controlled_execute
+        raise SystemExit(sidecar.main())
+    """
+
+    events, terminal, _cancel = _run_scripted_cancel_scenario(
+        tmp_path,
+        script=script,
+        gate_log_line="TEST: background error gate reached",
+    )
+
+    assert terminal["kind"] == "cancelled"
+    assert not any(event["kind"] == "backend_error" for event in events)
+    status_values = [
+        event["payload"]["status"]
+        for event in events
+        if event["kind"] == "status"
+    ]
+    assert status_values[-1] == "cancelled"
+
+    diagnostics = [
+        event
+        for event in events
+        if event["kind"] == "log"
+        and event["payload"]["line"].startswith("Cancellation superseded error:")
+    ]
+    assert len(diagnostics) == 1
+    assert diagnostics[0]["payload"]["level"] == "info"
+    assert "RuntimeError" in diagnostics[0]["payload"]["line"]
+    assert "synthetic failure after accepted cancel" in diagnostics[0]["payload"]["line"]
+    assert any(
+        event["kind"] == "log"
+        and event["payload"]["level"] == "info"
+        and "Traceback" in event["payload"]["line"]
+        for event in events
+    )
+    assert events.index(diagnostics[0]) < events.index(terminal)
+
+
+def test_sidecar_late_cancel_after_finalize_keeps_success_and_logs_explanation(
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / "committed-report.xlsx"
+    script = """
+        import time
+        from pathlib import Path
+
+        import sidecar_main as sidecar
+
+        sidecar.route_validate = lambda body: {"ok": True}
+
+        def controlled_execute(body, **callbacks):
+            output = Path(body["outputPath"])
+            output.write_text("committed", encoding="utf-8")
+            callbacks["log_callback"]("TEST: output finalized")
+            gate = Path(body["releaseGate"])
+            while not gate.exists():
+                time.sleep(0.005)
+            return {
+                "status": "success",
+                "output_file": str(output),
+                "mode": "desktop-bridge",
+            }
+
+        sidecar.route_execute = controlled_execute
+        raise SystemExit(sidecar.main())
+    """
+
+    events, terminal, _cancel = _run_scripted_cancel_scenario(
+        tmp_path,
+        script=script,
+        gate_log_line="TEST: output finalized",
+        extra_body={"outputPath": str(output_path)},
+    )
+
+    late_cancel_line = (
+        "Cancel arrived after the output was finalized; the run completed and "
+        "the report was written."
+    )
+    assert terminal["kind"] == "result"
+    assert terminal["payload"]["status"] == "success"
+    assert output_path.exists()
+    assert not any(
+        event["kind"] in {"cancelled", "backend_error"} for event in events
+    )
+
+    late_logs = [
+        event
+        for event in events
+        if event["kind"] == "log"
+        and event["payload"]["line"] == late_cancel_line
+    ]
+    assert len(late_logs) == 1
+    assert late_logs[0]["payload"]["level"] == "info"
+    assert events.index(late_logs[0]) < events.index(terminal)
 
 
 # =========================================================================

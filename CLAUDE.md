@@ -73,7 +73,7 @@ npm run tauri:build:portable  # Release build → src-tauri/target/.../release/
 npm run cargo:test       # Rust bridge unit tests via the repo runner
 
 # Python sidecar (use project venv)
-.venv\Scripts\python.exe -m pytest backend/tests -v    # 400 backend tests (50 sidecar + 27 audit + 12 cancel bridge + 10 output-directory helper + 77 FMEA phase D + 27 failure-rate logic + 15 RefDes extraction-engine + 42 BOM-compare logic + 14 BOM-compare runtime + 9 extraction-compare + 4 failure-rate runtime + 9 read-layer + 19 RefDes BOM-coverage + 6 BOM-loader + 5 OneDrive detection + 3 file-size guard + 4 crash-dump + 12 NextGen engine + 28 RefDes runtime + 12 validation-notes + 7 refdes-prefix config + 3 excel-styles + 5 validate-output-path)
+.venv\Scripts\python.exe -m pytest backend/tests -v    # 402 backend tests (52 sidecar + 27 audit + 12 cancel bridge + 10 output-directory helper + 77 FMEA phase D + 27 failure-rate logic + 15 RefDes extraction-engine + 42 BOM-compare logic + 14 BOM-compare runtime + 9 extraction-compare + 4 failure-rate runtime + 9 read-layer + 19 RefDes BOM-coverage + 6 BOM-loader + 5 OneDrive detection + 3 file-size guard + 4 crash-dump + 12 NextGen engine + 28 RefDes runtime + 12 validation-notes + 7 refdes-prefix config + 3 excel-styles + 5 validate-output-path)
 .venv\Scripts\python.exe backend/python/sidecar_main.py --self-test
 
 # Full release
@@ -170,8 +170,8 @@ The audit runs:
 
 ## Testing
 
-### Backend Tests (400 total)
-- 50 sidecar integration tests in `test_sidecar_main.py` (incl. the RefDes BOM-coverage sheet emission, the extraction_compare validate/execute pair, the refdes-prefix read/write round-trip with HOME isolated to tmp_path + legacy-token grandfathering, and the Batch-6 corrupt-prefix-config warning surface)
+### Backend Tests (402 total)
+- 52 sidecar integration tests in `test_sidecar_main.py` (incl. cancel-latch terminal selection after generic error / finalized success, the RefDes BOM-coverage sheet emission, the extraction_compare validate/execute pair, the refdes-prefix read/write round-trip with HOME isolated to tmp_path + legacy-token grandfathering, and the Batch-6 corrupt-prefix-config warning surface)
 - 27 security-audit tests in `test_security_audit.py` (synthetic positives + live tree scan; incl. subprocess via alias/from-import, os.system/popen/startfile, and ctypes native-import detection)
 - 12 cancel-bridge tests in `test_cancel_bridge.py` (BOM Compare + RefDes bridges plus Failure Rate `FMEALinkerLogic.cancel` binding through `ActiveRun`)
 - 10 output-directory helper tests in `test_output_directory_helpers.py` (incl. Tier-2 #18 preserve-mode output path honoring the chosen folder, and #19 validate-time output-directory warning + the shared `output_directory_validation` helper)

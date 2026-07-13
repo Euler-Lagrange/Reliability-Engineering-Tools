@@ -4,7 +4,7 @@
 
 | Suite | Path | Count | Framework |
 |-------|------|-------|-----------|
-| Backend integration | `backend/tests/test_sidecar_main.py` | 50 | pytest |
+| Backend integration | `backend/tests/test_sidecar_main.py` | 52 | pytest |
 | Backend security audit | `backend/tests/test_security_audit.py` | 27 | pytest |
 | Backend cancel bridge | `backend/tests/test_cancel_bridge.py` | 12 | pytest |
 | Backend output-directory helpers | `backend/tests/test_output_directory_helpers.py` | 10 | pytest |
@@ -27,7 +27,7 @@
 | Backend RefDes runtime | `backend/tests/test_refdes_runtime.py` | 28 | pytest |
 | Backend RefDes validation notes | `backend/tests/test_validation_notes.py` | 12 | pytest |
 | Backend RefDes prefix config | `backend/tests/test_refdes_prefix_config.py` | 7 | pytest |
-| **Backend subtotal** | | **400** | |
+| **Backend subtotal** | | **402** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 5 | Vitest + RTL |
 | Frontend escape layers | `frontend/src/shared/hooks/useEscapeLayer.test.ts` | 4 | Vitest |
@@ -76,7 +76,7 @@
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
 | **Frontend subtotal** | | **306** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 17 | cargo test |
-| **Total** | | **723** | |
+| **Total** | | **725** | |
 
 ## Backend Tests
 
@@ -212,7 +212,7 @@ new FMEA tests must do the same or validation will reject the request.
 | BOM Compare | `test_sidecar_validates_bom_compare_group`, `test_sidecar_executes_bom_compare_group`, `test_sidecar_validates_bom_compare_custom`, `test_sidecar_executes_bom_compare_custom` |
 | Failure Rate | `test_sidecar_validates_failure_rate_link`, `test_sidecar_executes_failure_rate_link` |
 | RefDes Extractor | `test_sidecar_validates_refdes_extract`, `test_sidecar_executes_refdes_extract`, `test_sidecar_rejects_refdes_missing_pdf` |
-| Cancel flow | `test_sidecar_cancels_active_run`, `test_sidecar_cancel_of_nonexistent_run_returns_error` |
+| Cancel flow | `test_sidecar_cancels_active_run`, `test_sidecar_cancel_of_nonexistent_run_returns_error`, `test_sidecar_latched_cancel_supersedes_background_error`, `test_sidecar_late_cancel_after_finalize_keeps_success_and_logs_explanation` |
 | Single-active-run guard | `test_sidecar_rejects_second_execute_while_run_is_active` |
 | Error recovery | `test_sidecar_execute_emits_backend_error_on_missing_columns`, `test_sidecar_remains_responsive_after_failed_run` |
 | Missing-file validation | `test_sidecar_validate_rejects_missing_required_files` |
