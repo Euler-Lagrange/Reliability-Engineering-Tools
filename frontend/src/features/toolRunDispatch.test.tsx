@@ -218,11 +218,34 @@ describe("tool run dispatch", () => {
     refdes.unmount();
   });
 
-  it("FMEA marks mandatory input roles with a Required chip in desktop mode", () => {
+  it("FMEA marks mandatory input roles with a Required chip in desktop mode", async () => {
+    backendMocks.openExcelFile.mockResolvedValue("C:\\real\\Grouping.xlsx");
+    backendMocks.listSheets.mockResolvedValue({
+      path: "C:\\real\\Grouping.xlsx",
+      sheets: ["Grouping"],
+      mode: "desktop-bridge",
+    });
+    backendMocks.inspectInput.mockResolvedValue({
+      mode: "desktop-bridge",
+      sheet: "Grouping",
+      columns: ["Component Group", "Reference Designator"],
+    });
+
+    const user = userEvent.setup();
     render(<FmeaTool />);
+
+    // A fresh desktop FMEA greets with the onboarding EmptyState; enter
+    // through it (loading the grouping role) to reveal the input grid.
+    await user.click(
+      screen.getByRole("button", { name: "Browse for grouping file" }),
+    );
+    await screen.findByText("Grouping workbook");
+
     // piece_part_generate: grouping, bom, failureModes are backend-required;
-    // hda is hidden (inline default), so exactly three chips render.
-    expect(screen.getAllByText("Required")).toHaveLength(3);
+    // hda is hidden (inline default). The chip marks required-AND-unloaded
+    // cards, so with grouping just loaded exactly two chips remain (bom +
+    // failureModes) — the loaded grouping card must NOT carry one.
+    expect(screen.getAllByText("Required")).toHaveLength(2);
   });
 
   it("blocks starting a run while another tool's run is live (cross-tool guard)", async () => {

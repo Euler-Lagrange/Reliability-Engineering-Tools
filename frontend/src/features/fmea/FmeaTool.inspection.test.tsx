@@ -156,8 +156,13 @@ describe("FmeaTool inspection flow", () => {
     renderTool();
     await user.click(screen.getByRole("button", { name: /merge functional fmea/i }));
 
+    // Fresh desktop state greets with the onboarding EmptyState; the first
+    // browse enters through its mode-aware primary action, which reveals
+    // the input grid (and this role's card) immediately.
+    await user.click(
+      screen.getByRole("button", { name: "Browse for functional FMEA" }),
+    );
     const card = functionalFmeaCard();
-    await user.click(within(card).getByRole("button", { name: "Browse" }));
 
     await waitFor(() => {
       expect(within(card).getByRole("button", { name: "Browse" })).toBeEnabled();
@@ -215,8 +220,10 @@ describe("FmeaTool inspection flow", () => {
     renderTool();
     await user.click(screen.getByRole("button", { name: /merge functional fmea/i }));
 
-    const card = functionalFmeaCard();
-    await user.click(within(card).getByRole("button", { name: "Browse" }));
+    // Enter through the onboarding EmptyState's mode-aware browse.
+    await user.click(
+      screen.getByRole("button", { name: "Browse for functional FMEA" }),
+    );
 
     expect(await screen.findByText("Workbook inspection capped")).toBeInTheDocument();
     expect(
@@ -257,9 +264,12 @@ describe("FmeaTool inspection flow", () => {
     // Seed a stale validation card via a blocking validate_run.
     await seedValidationCard(user);
 
-    // Browse a new workbook for the default piece_part_generate Grouping role.
-    const card = inputCard("Grouping workbook");
-    await user.click(within(card).getByRole("button", { name: "Browse" }));
+    // Browse a new workbook for the default piece_part_generate Grouping
+    // role. A blocked validate_run leaves the run idle and the inputs
+    // untouched, so the tool is still pristine — enter via the EmptyState.
+    await user.click(
+      screen.getByRole("button", { name: "Browse for grouping file" }),
+    );
 
     // The stale card must be gone once the new file lands.
     await waitFor(() =>
@@ -308,11 +318,14 @@ describe("FmeaTool inspection flow", () => {
 
     renderTool();
 
-    // Load the grouping workbook (default piece_part_generate workflow) and
-    // wait for the inspection round-trip to settle (Browse re-enabled) so the
-    // mapping dropdowns are populated with the inspected columns.
+    // Load the grouping workbook (default piece_part_generate workflow) via
+    // the onboarding EmptyState, then wait for the inspection round-trip to
+    // settle (Browse re-enabled) so the mapping dropdowns are populated with
+    // the inspected columns.
+    await user.click(
+      screen.getByRole("button", { name: "Browse for grouping file" }),
+    );
     const card = inputCard("Grouping workbook");
-    await user.click(within(card).getByRole("button", { name: "Browse" }));
     await waitFor(() =>
       expect(within(card).getByRole("button", { name: "Browse" })).toBeEnabled(),
     );
@@ -390,9 +403,12 @@ describe("FmeaTool inspection flow", () => {
 
     renderTool();
 
-    // Load a workbook with two sheets so the sheet picker is interactive.
+    // Load a workbook with two sheets so the sheet picker is interactive —
+    // the first browse enters through the onboarding EmptyState.
+    await user.click(
+      screen.getByRole("button", { name: "Browse for grouping file" }),
+    );
     const card = inputCard("Grouping workbook");
-    await user.click(within(card).getByRole("button", { name: "Browse" }));
     await waitFor(() =>
       expect(within(card).getByRole("button", { name: "Browse" })).toBeEnabled(),
     );

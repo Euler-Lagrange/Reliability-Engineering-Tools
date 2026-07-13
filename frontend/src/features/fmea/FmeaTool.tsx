@@ -10,9 +10,10 @@ import { StrategySelector } from "../../components/StrategySelector";
 import { ValidationPreview } from "../../components/ValidationPreview";
 import { WorkflowSelector } from "../../components/WorkflowSelector";
 import { ContextTabs } from "../../components/primitives/ContextTabs";
+import { EmptyState } from "../../components/primitives/EmptyState";
 import { OptionsField } from "../../components/primitives/OptionsField";
 import { ToggleChip } from "../../components/primitives/ToggleChip";
-import { FolderOpen } from "@phosphor-icons/react";
+import { FolderOpen, TreeStructure } from "@phosphor-icons/react";
 import { demoScenarios, outputStrategies, workflowOptions } from "../../mocks/scenarios";
 import type {
   AnalysisContextCard,
@@ -528,6 +529,39 @@ export function FmeaTool() {
   const fileInspectionDisabledReason = anyRunIsLive
     ? FILE_INSPECTION_PAUSED_REASON
     : undefined;
+
+  // Onboarding EmptyState (user decision 2026-07-13) — DESKTOP ONLY. The
+  // browser-mock preview deliberately stages a full demo (UX fix #5 seeded
+  // the demo mapping columns so the preview shows a working tool), so the
+  // pristine gate applies to the desktop runtime alone. Pristine is
+  // mode-INdependent: the four modes share their input slots, so the first
+  // real file browsed in ANY mode (including the target workbook) is
+  // engagement and exits permanently — mode switches never resurrect the
+  // panel (mirrors RefDes' mode-toggle semantics).
+  const isPristine =
+    !IS_BROWSER_MOCK &&
+    inputStates.every((input) => input.isExample === true) &&
+    panelRunMode === "idle";
+
+  const PRISTINE_BROWSE_LABELS: Partial<Record<FileRole, string>> = {
+    grouping: "Browse for grouping file",
+    bom: "Browse for BOM",
+    functionalFmea: "Browse for functional FMEA",
+    existingFmea: "Browse for existing FMEA",
+  };
+  const pristineBrowseRole: FileRole =
+    (FMEA_REQUIRED_ROLES[workflowId] ?? ["bom"])[0];
+  const pristineBrowseLabel =
+    PRISTINE_BROWSE_LABELS[pristineBrowseRole] ?? "Browse for source workbook";
+
+  const handleLoadExample = () => {
+    pushNotification({
+      tone: "info",
+      title: "Example files coming soon",
+      detail:
+        "Bundled example workbooks aren't shipping yet. For now, browse to a real workbook.",
+    });
+  };
   // Per-role token used to discard stale async sheet/inspect/analyze results
   // when the user changes the input under a still-resolving operation.
   const fileRequestSeq = useRoleRequestSequence<FileRole>();
@@ -1012,6 +1046,10 @@ export function FmeaTool() {
               ...input,
               path: pickedPath,
               source: "desktop-bridge",
+              // A real file replaces the seeded placeholder — clears the
+              // pristine EmptyState so the full input grid renders. FMEA
+              // never read this flag before the onboarding panel existed.
+              isExample: false,
               isResolvingSheets: true,
               resolutionError: null,
               tag: "Inspecting",
@@ -1411,13 +1449,33 @@ export function FmeaTool() {
               ) : null}
 
               <div className="setup-block setup-block--full">
-                <InputGrid
-                  inputs={workflowInputs}
-                  onBrowse={handleBrowse}
-                  onSheetChange={handleSheetChange}
-                  browseDisabledReason={fileInspectionDisabledReason}
-                  getDisabledSheetReason={getDisabledSheetReason}
-                />
+                {isPristine ? (
+                  <EmptyState
+                    icon={TreeStructure}
+                    headline="Build or merge an FMEA workbook"
+                    body="Browse for your source workbook, or load the example set to explore the workflow first."
+                    primaryAction={{
+                      label: pristineBrowseLabel,
+                      disabled: anyRunIsLive,
+                      disabledReason: fileInspectionDisabledReason,
+                      onClick: () => {
+                        void handleBrowse(pristineBrowseRole);
+                      },
+                    }}
+                    secondaryAction={{
+                      label: "Load example",
+                      onClick: handleLoadExample,
+                    }}
+                  />
+                ) : (
+                  <InputGrid
+                    inputs={workflowInputs}
+                    onBrowse={handleBrowse}
+                    onSheetChange={handleSheetChange}
+                    browseDisabledReason={fileInspectionDisabledReason}
+                    getDisabledSheetReason={getDisabledSheetReason}
+                  />
+                )}
               </div>
             </div>
           </SectionCard>
