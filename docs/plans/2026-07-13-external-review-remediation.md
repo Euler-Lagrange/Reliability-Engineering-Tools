@@ -235,7 +235,7 @@ heartbeat's existing check-then-kill becomes atomic by going through the same fu
 run_id. No retry, no user surface. Comment why (diagnostic breadcrumb for the
 no-exactly-once caveat).
 
-- [ ] Implement + commit (no test required — logging only):
+- [x] Implement + commit (no test required — logging only):
   `Bridge: Log webview emit failures instead of discarding`
 
 ### Task 2.3: Execute-timeout must not strand a ghost run silently

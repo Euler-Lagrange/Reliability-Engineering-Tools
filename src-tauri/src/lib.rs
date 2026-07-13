@@ -381,7 +381,22 @@ impl SessionShared {
     fn emit_run_event(&self, envelope: &Value) {
         if let Ok(handle_guard) = self.app_handle.lock() {
             if let Some(app_handle) = handle_guard.as_ref() {
-                let _ = app_handle.emit(BACKEND_RUN_EVENT, envelope.clone());
+                if let Err(error) = app_handle.emit(BACKEND_RUN_EVENT, envelope.clone()) {
+                    // Tauri events are best-effort and have no acknowledgement
+                    // or replay. Preserve a stderr breadcrumb so a dropped UI
+                    // event is diagnosable without attempting an unsafe retry.
+                    let kind = envelope
+                        .get("kind")
+                        .and_then(Value::as_str)
+                        .unwrap_or("<missing>");
+                    let run_id = envelope
+                        .get("run_id")
+                        .and_then(Value::as_str)
+                        .unwrap_or("<missing>");
+                    eprintln!(
+                        "reliability-tools: webview emit failed channel={BACKEND_RUN_EVENT} kind={kind} run_id={run_id}: {error}"
+                    );
+                }
             }
         }
     }
@@ -389,7 +404,7 @@ impl SessionShared {
     fn emit_session_event(&self, kind: &str, message: &str) {
         if let Ok(handle_guard) = self.app_handle.lock() {
             if let Some(app_handle) = handle_guard.as_ref() {
-                let _ = app_handle.emit(
+                if let Err(error) = app_handle.emit(
                     BACKEND_SESSION_EVENT,
                     json!({
                         "kind": kind,
@@ -397,7 +412,13 @@ impl SessionShared {
                         "backend": "python-sidecar-session",
                         "message": message,
                     }),
-                );
+                ) {
+                    // Session events have no run identity; spell that out in
+                    // the same best-effort diagnostic shape as run events.
+                    eprintln!(
+                        "reliability-tools: webview emit failed channel={BACKEND_SESSION_EVENT} kind={kind} run_id=n/a: {error}"
+                    );
+                }
             }
         }
     }
