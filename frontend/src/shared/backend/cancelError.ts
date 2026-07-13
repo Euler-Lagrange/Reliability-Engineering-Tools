@@ -52,6 +52,8 @@ export function describeBackendError(error: unknown, fallback: string): string {
  * seconds are environment-configurable, so only that numeric field varies.
  * Anchoring the whole message keeps timeouts from `validate_run` and other
  * synchronous commands on their ordinary error paths.
+ * Keep this pattern in lockstep with the command-timeout error template in
+ * `src-tauri/src/lib.rs` (`SidecarState::send_command_wait`).
  */
 export const EXECUTE_RUN_TIMEOUT_ERROR_PATTERN =
   /^The 'execute_run' command timed out after \d+s\. An input file may be on a disconnected or slow network drive — check the path and try again\.$/;

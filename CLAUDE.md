@@ -312,6 +312,10 @@ against this list.
    re-exported by `fmea/runtime.py`). Backends must reject the sentinel on
    REQUIRED mappings at validate time (`invalid_do_not_map`), not crash at
    execute.
+- **Execute-timeout text is a two-definition coupling.** Keep the command-timeout
+  error template in `src-tauri/src/lib.rs` and `EXECUTE_RUN_TIMEOUT_ERROR_PATTERN`
+  in `frontend/src/shared/backend/cancelError.ts` in lockstep; the frontend
+  intentionally matches the full `execute_run` message except for the seconds.
 7. **Mapping rows derive from real inspected headers** via
    `shared/mapping/deriveMappingRows.ts` (BOM Compare, Failure Rate) or
    `buildFmeaMappingRows` (FMEA). The static fixture rows in

@@ -586,6 +586,10 @@ impl SidecarState {
                 // check on a dead/slow \\server\share). Discard the pending
                 // entry so a late reply is dropped, and surface an actionable
                 // error instead of hanging the UI forever.
+                // Keep this error template in lockstep with
+                // EXECUTE_RUN_TIMEOUT_ERROR_PATTERN in
+                // frontend/src/shared/backend/cancelError.ts; the frontend
+                // intentionally matches the full text except for the seconds.
                 self.shared.discard_pending(&request_id);
                 return Err(format!(
                     "The '{command_name}' command timed out after {}s. An input file may be on a \

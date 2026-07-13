@@ -188,7 +188,7 @@ terminates the assigned sidecar and its assigned descendants.
 
 The bridge creates the child with `CREATE_SUSPENDED`, assigns it to the job,
 then resumes it. This guarantees that the child executes no Python code
-outside the job, but process creation and job assignment are not atomic. A
+outside the job, but process creation and job assignment are not atomic. An
 external force-kill of the bridge after `spawn()` and before
 assignment can leave one unassigned, still-suspended, never-scheduled
 `python.exe`. That process is an accepted inert orphan: it ran no sidecar code
