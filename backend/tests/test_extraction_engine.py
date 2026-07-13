@@ -360,6 +360,42 @@ def test_get_words_with_timeout_surfaces_warning() -> None:
     assert any("timed out" in line for line in lines)
 
 
+def test_group_fallback_routes_all_word_reads_through_timeout_wrapper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from refdes_extractor import refdes_extractor_logic as logic
+
+    class _Page:
+        def get_text(self, _kind):
+            raise AssertionError("group fallback must not call get_text directly")
+
+    page = _Page()
+    calls = []
+
+    def timed_words(page_arg, *, page_num=0, log_func=None):
+        calls.append((page_arg, page_num, log_func))
+        if len(calls) == 1:
+            return [(0, 0, 1, 1, "R1", 0, 0, 0)]
+        return []
+
+    logs: list[str] = []
+    monkeypatch.setattr(logic._engine, "_get_words_with_timeout", timed_words)
+
+    groups, used_fallback, provenance = logic.detect_groups_with_fallback(
+        [page],
+        [],
+        log_func=logs.append,
+    )
+
+    assert groups == []
+    assert used_fallback is False
+    assert provenance == "text_layer"
+    assert calls == [
+        (page, 0, logs.append),
+        (page, 0, logs.append),
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Blacklist matching: the header comment once claimed SUBSTRING matching, but
 # both the code and the _is_blacklisted docstring use EXACT matching. Switching

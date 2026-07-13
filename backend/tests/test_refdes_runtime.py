@@ -363,6 +363,71 @@ def test_refdes_cancel_checks_after_engine_and_before_promote(
     assert not list(pre_promote_dir.glob(".*.part.xlsx"))
 
 
+def test_refdes_runtime_passes_stop_event_to_group_detection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fitz = pytest.importorskip("fitz")
+    from refdes_test import refdes_test_logic
+
+    pdf_path = tmp_path / "schematic.pdf"
+    doc = fitz.open()
+    doc.new_page()
+    doc.save(pdf_path)
+    doc.close()
+    body = {
+        "workflowId": "refdes_extract",
+        "outputStrategyId": "new_workbook_standard",
+        "outputDirectory": str(tmp_path),
+        "inputs": [{"role": "pdf", "path": str(pdf_path)}],
+        "options": {},
+    }
+    captured = {}
+
+    def capture_processor(processor) -> None:
+        captured["processor"] = processor
+
+    def set_cancel_at_group_detection(
+        stage: str,
+        _message: str,
+        _percent: int,
+        _current,
+        _total,
+    ) -> None:
+        if stage == "Detecting groups":
+            captured["processor"].stop_event.set()
+
+    def detect_with_required_stop_event(
+        _doc,
+        _annotations,
+        *,
+        log_func,
+        stop_event,
+    ):
+        assert log_func is not None
+        assert stop_event is captured["processor"].stop_event
+        assert stop_event.is_set()
+        raise CancellationError("Cancelled during group detection")
+
+    monkeypatch.setattr(
+        refdes_test_logic,
+        "extract_annotations_from_doc",
+        lambda _doc, **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        refdes_test_logic,
+        "detect_groups_with_fallback",
+        detect_with_required_stop_event,
+    )
+
+    with pytest.raises(CancellationError, match="group detection"):
+        execute_run_request(
+            body,
+            processor_ready_callback=capture_processor,
+            progress_callback=set_cancel_at_group_detection,
+        )
+
+
 # ----- Batch 5 (2026-07 stability sweep) -------------------------------------
 
 

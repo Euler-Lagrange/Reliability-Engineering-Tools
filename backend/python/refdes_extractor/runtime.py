@@ -805,7 +805,12 @@ def execute_run_request(
 
         # Detect groups from annotations
         emit_progress("Detecting groups", "Detecting component groups...", 14)
-        groups, _used_fallback, _provenance = detect_groups_with_fallback(doc, annotations, log_func=stream_log)
+        groups, _used_fallback, _provenance = detect_groups_with_fallback(
+            doc,
+            annotations,
+            log_func=stream_log,
+            stop_event=bridge.stop_event,
+        )
         stream_log(f"Detected {len(groups)} component groups.")
         emit_progress("Groups detected", "Groups detected.", 18)
 

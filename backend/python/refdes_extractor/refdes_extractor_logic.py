@@ -689,11 +689,18 @@ def detect_groups_with_fallback(doc, annotations, log_func=None, stop_event=None
     if stop_event and stop_event.is_set():
         raise CancellationError("Cancelled during group detection")
 
+    def get_words(page, page_num):
+        return _engine._get_words_with_timeout(
+            page,
+            page_num=page_num,
+            log_func=log_func,
+        )
+
     searchable_text = False
     for page_num, page in enumerate(doc):
         if stop_event and stop_event.is_set():
             raise CancellationError("Cancelled during group detection")
-        if page.get_text("words"):
+        if get_words(page, page_num):
             searchable_text = True
             break
 
@@ -707,6 +714,7 @@ def detect_groups_with_fallback(doc, annotations, log_func=None, stop_event=None
         refdes_pattern=REFDES_RE,
         log_func=log_func,
         stop_event=stop_event,
+        words_getter=get_words,
     )
     if groups:
         if log_func:

@@ -396,6 +396,7 @@ def detect_groups_from_drawings(
     min_container_height: float = 100.0,
     top_band: float = 30.0,
     above_margin: float = 20.0,
+    words_getter: Optional[Callable[[object, int], list]] = None,
 ) -> List[Tuple[int, str, Tuple[float, float, float, float]]]:
     """
     Recover likely group containers from searchable text plus simple vector rectangles.
@@ -427,7 +428,11 @@ def detect_groups_from_drawings(
             break
         _check_cancelled()
 
-        words = page.get_text("words") or []
+        words = (
+            words_getter(page, page_num)
+            if words_getter is not None
+            else page.get_text("words") or []
+        )
         if not words:
             continue
         if text_pages_scanned >= sample_pages:

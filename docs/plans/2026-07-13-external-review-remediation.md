@@ -159,10 +159,10 @@ the bare `page.get_text("words")` probe with the existing timeout wrapper
 (`extraction_engine._get_words_with_timeout` — import it or expose a thin helper; do NOT
 copy-paste its thread logic). Timeout value: reuse the wrapper's existing default.
 
-- [ ] **Step 1:** Failing test: call `detect_groups_with_fallback` with a pre-set
+- [x] **Step 1:** Failing test: call `detect_groups_with_fallback` with a pre-set
   stop_event and a stub doc; assert it raises the cancellation path instead of scanning
   (the function's internal stop checks exist but were inert with `stop_event=None`).
-- [ ] **Step 2:** Implement, green, commit:
+- [x] **Step 2:** Implement, green, commit:
   `RefDes: Wire stop_event + get_text timeout into group-detection fallback`
 
 ### Task 1.4: Zombie-thread-aware document close + analyzer cancel pass-through
