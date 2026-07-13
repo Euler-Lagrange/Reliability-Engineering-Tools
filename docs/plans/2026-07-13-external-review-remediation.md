@@ -330,6 +330,9 @@ Consumer mapping (fix each to the named set):
 - Modify: `frontend/src/shared/backend/useBackendBootstrap.ts` (the unconditional
   `clearActiveRun()` ~60–62; capture generation at disconnect in the subscription
   handler ~135–157)
+- Modify: `src-tauri/src/lib.rs`, `frontend/src/contracts/sidecar.ts`, and
+  `contracts/sidecar-protocol.md` (add the authoritative session generation to
+  bridge session events)
 - Test: `frontend/src/shared/backend/useBackendBootstrap.test.ts` (REWRITE the test that
   encodes "clears any active run when reconnect succeeds" — it encodes the bug)
 
@@ -341,10 +344,10 @@ A run registered on the fresh session (higher generation) survives. Also cancel 
 reconnect timers when any run is accepted on a new session (the accepted response
 carries `session_generation` — compare and clear timers).
 
-- [ ] **Step 1:** Failing test: disconnect at gen 1 → user starts run accepted at gen 2 →
+- [x] **Step 1:** Failing test: disconnect at gen 1 → user starts run accepted at gen 2 →
   scheduled health callback resolves → assert the gen-2 run is STILL active. Keep a
   companion test: gen-1 stale run IS cleared.
-- [ ] **Step 2:** Implement, green, commit:
+- [x] **Step 2:** Implement, green, commit:
   `Bootstrap: Reconnect clears only runs from the dead session generation`
 
 ### Task 3.3: Ack-fallback run registration

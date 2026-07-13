@@ -45,9 +45,9 @@
 | Frontend cancel error | `frontend/src/shared/backend/cancelError.test.ts` | 18 | Vitest |
 | Frontend cancel run | `frontend/src/shared/backend/client.cancelRun.test.ts` | 2 | Vitest |
 | Frontend run event client | `frontend/src/shared/backend/client.runEvents.test.ts` | 2 | Vitest |
-| Frontend contract schemas | `frontend/src/contracts/sidecar.test.ts` | 5 | Vitest |
+| Frontend contract schemas | `frontend/src/contracts/sidecar.test.ts` | 6 | Vitest |
 | Frontend busy reset | `frontend/src/shared/backend/useBackendBusyReset.test.ts` | 9 | Vitest |
-| Frontend backend bootstrap | `frontend/src/shared/backend/useBackendBootstrap.test.ts` | 3 | Vitest |
+| Frontend backend bootstrap | `frontend/src/shared/backend/useBackendBootstrap.test.ts` | 6 | Vitest |
 | Frontend run subscription | `frontend/src/shared/backend/useBackendRunSubscription.test.ts` | 3 | Vitest |
 | Frontend theme registry | `frontend/src/shared/theme/themeRegistry.test.ts` | 10 | Vitest |
 | Frontend app shortcuts | `frontend/src/shared/hooks/useAppShortcuts.test.tsx` | 6 | Vitest + RTL |
@@ -74,9 +74,9 @@
 | Frontend shell-hook install | `frontend/src/app/App.shellHooks.test.tsx` | 1 | Vitest + RTL |
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
-| **Frontend subtotal** | | **315** | |
-| Rust bridge unit | `src-tauri/src/lib.rs` | 18 | cargo test |
-| **Total** | | **742** | |
+| **Frontend subtotal** | | **319** | |
+| Rust bridge unit | `src-tauri/src/lib.rs` | 19 | cargo test |
+| **Total** | | **747** | |
 
 ## Backend Tests
 
@@ -240,7 +240,7 @@ neither of which exists under jsdom, so the client returns mock data from
 | File | Tests |
 |------|-------|
 | `frontend/src/app/App.test.tsx` | 11 — shell render, tool switching, theme application, notification dismissal, workflow switching, CCA visibility, HDA source toggle, output folder, focus management |
-| `frontend/src/contracts/sidecar.test.ts` | 4 — protocol schema gates for run ack, inspect metadata, and nullable Flet config |
+| `frontend/src/contracts/sidecar.test.ts` | 6 — protocol schema gates for session generations, run ack, inspect metadata, nullable Flet config, and RefDes prefix results |
 | `frontend/src/components/CustomSelect.test.tsx` | 3 — keyboard navigation, opt-in empty-value placeholder, no-placeholder default |
 | `frontend/src/components/MappingTable.test.tsx` | 13 — column mapping display, selection, validation, sync, source-aware option labels, required-column marker, optional-unmapped rows neutral + excluded from the unmapped badge |
 | `frontend/src/components/RunStatePanel.test.tsx` | 6 — run state display, progress, result, cancel, error |
@@ -253,7 +253,7 @@ neither of which exists under jsdom, so the client returns mock data from
 | `frontend/src/shared/backend/client.cancelRun.test.ts` | 2 — cancel run command dispatch and response handling |
 | `frontend/src/shared/backend/client.runEvents.test.ts` | 2 — production run-event subscription schema parsing |
 | `frontend/src/shared/backend/useBackendBusyReset.test.ts` | 9 — busy state recovery after run completion, error, or unmount |
-| `frontend/src/shared/backend/useBackendBootstrap.test.ts` | 3 — reconnect backoff, active-run clearing, no overlapping reconnect chains on double-disconnect |
+| `frontend/src/shared/backend/useBackendBootstrap.test.ts` | 6 — generation-aware reconnect clearing, stale-disconnect rejection, pending-timer cancellation, no overlapping reconnect chains, and no-active-run recovery |
 | `frontend/src/shared/backend/useBackendRunSubscription.test.ts` | 3 — shell-level run-event fanout, global log capture, and result-schema validation-failure → terminal failure |
 | `frontend/src/shared/theme/themeRegistry.test.ts` | 10 — theme registry consistency (ids, labels, icons, colorScheme, rail visibility) |
 | `frontend/src/shared/hooks/useRoleRequestSequence.test.ts` | 5 — per-role async request sequencing (stale response suppression) |

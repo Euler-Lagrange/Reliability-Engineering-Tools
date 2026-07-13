@@ -242,6 +242,7 @@ export const backendSessionEventSchema = z.object({
   connected: z.boolean(),
   backend: z.string(),
   message: z.string(),
+  session_generation: z.number().int().nonnegative().optional(),
 });
 
 export const backendSessionStatusResultSchema = z.object({

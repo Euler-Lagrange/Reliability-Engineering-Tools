@@ -55,6 +55,27 @@ All ten commands currently implemented by the sidecar:
 - `request_id` correlates non-run commands.
 - `run_id` correlates long-running executions and cancellation.
 
+## Frontend bridge session events
+
+The Rust bridge emits `backend://session` events to the webview when the
+managed Python session connects or disconnects. These are frontend bridge
+events, not NDJSON messages written by Python. Their payload is:
+
+```json
+{
+  "kind": "disconnected",
+  "connected": false,
+  "backend": "python-sidecar-session",
+  "message": "Python sidecar closed stdout.",
+  "session_generation": 7
+}
+```
+
+`session_generation` identifies the exact managed sidecar session involved in
+the transition. The frontend uses it to clear only runs owned by the dead
+generation; a run accepted by a newer session must survive a late reconnect
+health-check completion.
+
 ## Current Command Payloads
 
 - `health_check`

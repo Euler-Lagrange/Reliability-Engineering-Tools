@@ -16,8 +16,12 @@ export function useBackendBootstrap() {
   useEffect(() => {
     let active = true;
     let unlistenSession: (() => void) | undefined;
+    let unsubscribeRunStore: (() => void) | undefined;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     let reconnectAttempt = 0;
+    let reconnectEpoch = 0;
+    let reconnectSuperseded = false;
+    let disconnectedGeneration: number | null = null;
 
     function attemptReconnect() {
       if (!active) return;
@@ -32,6 +36,7 @@ export function useBackendBootstrap() {
       }
       const delay = RECONNECT_DELAYS[Math.min(reconnectAttempt, RECONNECT_DELAYS.length - 1)];
       reconnectAttempt++;
+      const attemptEpoch = reconnectEpoch;
 
       setBackendState({
         backendStatus: "connecting",
@@ -40,11 +45,18 @@ export function useBackendBootstrap() {
       });
 
       reconnectTimer = setTimeout(() => {
-        if (!active) return;
+        reconnectTimer = undefined;
+        if (!active || attemptEpoch !== reconnectEpoch || reconnectSuperseded) return;
         void backendClient
           .healthCheck()
           .then((result) => {
-            if (!active) return;
+            if (
+              !active ||
+              attemptEpoch !== reconnectEpoch ||
+              reconnectSuperseded
+            ) {
+              return;
+            }
             reconnectAttempt = 0;
             setBackendState({
               backendStatus: "ready",
@@ -52,14 +64,15 @@ export function useBackendBootstrap() {
               backendMessage: `Desktop backend reconnected (${result.backend})`,
               lastBackendCheckAt: new Date().toISOString(),
             });
-            // Any reconnect path in the Rust bridge spawns a fresh sidecar
-            // session — `advance_session_generation` always bumps — so an
-            // active run that predates this reconnect cannot resume. Clear
-            // it unconditionally; per-tool lifecycle hooks will surface the
-            // cancellation to the user.
-            if (useRunStore.getState().activeRun) {
+            const activeRun = useRunStore.getState().activeRun;
+            if (
+              activeRun &&
+              disconnectedGeneration !== null &&
+              activeRun.sessionGeneration <= disconnectedGeneration
+            ) {
               clearActiveRun();
             }
+            disconnectedGeneration = null;
             pushNotification({
               tone: "success",
               title: "Backend reconnected",
@@ -67,7 +80,13 @@ export function useBackendBootstrap() {
             });
           })
           .catch(() => {
-            if (!active) return;
+            if (
+              !active ||
+              attemptEpoch !== reconnectEpoch ||
+              reconnectSuperseded
+            ) {
+              return;
+            }
             if (reconnectAttempt < RECONNECT_DELAYS.length) {
               attemptReconnect();
             } else {
@@ -132,10 +151,51 @@ export function useBackendBootstrap() {
       });
 
     if (backendClient.runtimeMode === "desktop-bridge") {
+      unsubscribeRunStore = useRunStore.subscribe((state, previousState) => {
+        const acceptedRun = state.activeRun;
+        const previousRun = previousState.activeRun;
+        const isNewRegistration =
+          acceptedRun !== null &&
+          (previousRun === null ||
+            previousRun.runId !== acceptedRun.runId ||
+            previousRun.sessionGeneration !== acceptedRun.sessionGeneration);
+
+        if (
+          !isNewRegistration ||
+          disconnectedGeneration === null ||
+          acceptedRun.sessionGeneration <= disconnectedGeneration
+        ) {
+          return;
+        }
+
+        // An accepted run from a newer generation proves that the bridge has
+        // already recovered. Prevent a queued retry (or an in-flight failed
+        // health check) from starting a stale reconnect chain.
+        reconnectSuperseded = true;
+        reconnectAttempt = 0;
+        if (reconnectTimer) {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = undefined;
+        }
+      });
+
       void backendClient.subscribeToSessionEvents((event) => {
         if (!active || event.kind !== "disconnected") {
           return;
         }
+
+        const activeRun = useRunStore.getState().activeRun;
+        if (
+          activeRun &&
+          event.session_generation !== undefined &&
+          activeRun.sessionGeneration > event.session_generation
+        ) {
+          return;
+        }
+        disconnectedGeneration =
+          event.session_generation ?? activeRun?.sessionGeneration ?? null;
+        reconnectEpoch += 1;
+        reconnectSuperseded = false;
 
         setBackendState({
           backendStatus: "disconnected",
@@ -175,6 +235,7 @@ export function useBackendBootstrap() {
     return () => {
       active = false;
       unlistenSession?.();
+      unsubscribeRunStore?.();
       if (reconnectTimer) clearTimeout(reconnectTimer);
     };
   }, [

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  backendSessionEventSchema,
   fletConfigResultSchema,
   inspectionResultSchema,
   refdesPrefixesResultSchema,
@@ -8,6 +9,21 @@ import {
 } from "./sidecar";
 
 describe("sidecar protocol schemas", () => {
+  it("preserves the Rust session generation on backend session events", () => {
+    expect(
+      backendSessionEventSchema.parse({
+        kind: "disconnected",
+        connected: false,
+        backend: "python-sidecar-session",
+        message: "Desktop backend dropped.",
+        session_generation: 7,
+      }),
+    ).toMatchObject({
+      kind: "disconnected",
+      session_generation: 7,
+    });
+  });
+
   it("accepts enriched run ack events emitted by the Rust bridge", () => {
     expect(
       sidecarRunEventSchema.parse({

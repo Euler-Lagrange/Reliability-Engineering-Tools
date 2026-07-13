@@ -403,17 +403,10 @@ impl SessionShared {
     }
 
     fn emit_session_event(&self, kind: &str, message: &str) {
+        let payload = build_session_event_payload(kind, message, self.current_session_generation());
         if let Ok(handle_guard) = self.app_handle.lock() {
             if let Some(app_handle) = handle_guard.as_ref() {
-                if let Err(error) = app_handle.emit(
-                    BACKEND_SESSION_EVENT,
-                    json!({
-                        "kind": kind,
-                        "connected": kind == "connected",
-                        "backend": "python-sidecar-session",
-                        "message": message,
-                    }),
-                ) {
+                if let Err(error) = app_handle.emit(BACKEND_SESSION_EVENT, payload) {
                     // Session events have no run identity; spell that out in
                     // the same best-effort diagnostic shape as run events.
                     eprintln!(
@@ -435,6 +428,16 @@ impl SessionShared {
             self.emit_session_event("disconnected", &message);
         }
     }
+}
+
+fn build_session_event_payload(kind: &str, message: &str, session_generation: u64) -> Value {
+    json!({
+        "kind": kind,
+        "connected": kind == "connected",
+        "backend": "python-sidecar-session",
+        "message": message,
+        "session_generation": session_generation,
+    })
 }
 
 fn kill_managed_session(session: &SessionSlot) {
@@ -1763,10 +1766,10 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{
-        await_ready, candidate_bases, classify_stdout_line, correlation_id,
-        disconnect_if_current, enrich_run_event_for_frontend, merge_disconnect_message,
-        parse_timeout_secs, should_forward_run_event, truncate_crash_value, ReadyOutcome,
-        SessionDisconnectState, StdoutLine,
+        await_ready, build_session_event_payload, candidate_bases, classify_stdout_line,
+        correlation_id, disconnect_if_current, enrich_run_event_for_frontend,
+        merge_disconnect_message, parse_timeout_secs, should_forward_run_event,
+        truncate_crash_value, ReadyOutcome, SessionDisconnectState, StdoutLine,
     };
     use serde_json::json;
     use std::path::PathBuf;
@@ -1775,6 +1778,20 @@ mod tests {
         mpsc, Arc, Mutex,
     };
     use std::time::Duration;
+
+    #[test]
+    fn session_event_payload_includes_the_session_generation() {
+        assert_eq!(
+            build_session_event_payload("disconnected", "Desktop backend dropped.", 7),
+            json!({
+                "kind": "disconnected",
+                "connected": false,
+                "backend": "python-sidecar-session",
+                "message": "Desktop backend dropped.",
+                "session_generation": 7,
+            })
+        );
+    }
 
     #[test]
     fn merge_disconnect_message_appends_fatal_detail() {
