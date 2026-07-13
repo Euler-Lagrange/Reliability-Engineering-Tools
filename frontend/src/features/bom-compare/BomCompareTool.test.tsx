@@ -77,33 +77,65 @@ describe("BomCompareTool custom compare workflow", () => {
   // bomA/bomB roles and the Input Files card rendered an empty grid — no
   // file slots, nothing to browse into.
   it("shows both file slots after switching to Custom Compare", async () => {
+    backendMocks.openExcelFile.mockResolvedValue("C:\\real\\BomA.xlsx");
+    backendMocks.listSheets.mockResolvedValue({
+      path: "C:\\real\\BomA.xlsx",
+      sheets: ["Sheet1"],
+      mode: "desktop-bridge",
+    });
+    backendMocks.inspectInput.mockResolvedValue({
+      mode: "desktop-bridge",
+      sheet: "Sheet1",
+      columns: ["Reference Designator"],
+    });
+
     const user = userEvent.setup();
     render(<BomCompareTool />);
 
     await user.click(screen.getByRole("button", { name: /Custom Compare/i }));
+    // Fresh card greets with the per-workflow EmptyState; entering through it
+    // must reveal BOTH scenario-seeded slots (the original regression: a
+    // missing custom scenario rendered zero slots).
+    await user.click(screen.getByRole("button", { name: "Browse for first BOM" }));
 
-    expect(screen.getByText("File 1")).toBeInTheDocument();
+    expect(await screen.findByText("File 1")).toBeInTheDocument();
     expect(screen.getByText("File 2")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Browse" })).toHaveLength(2);
   });
 
   it("Extraction Compare shows its two slots and hides the mapping card", async () => {
+    backendMocks.openExcelFile.mockResolvedValue("C:\\real\\ExtractA.xlsx");
+    backendMocks.listSheets.mockResolvedValue({
+      path: "C:\\real\\ExtractA.xlsx",
+      sheets: ["RefDes Extraction"],
+      mode: "desktop-bridge",
+    });
+    backendMocks.inspectInput.mockResolvedValue({
+      mode: "desktop-bridge",
+      sheet: "RefDes Extraction",
+      columns: ["Group", "Failure Mode Causes"],
+    });
+
     const user = userEvent.setup();
     render(<BomCompareTool />);
 
     await user.click(screen.getByRole("button", { name: /Extraction Compare/i }));
 
-    expect(screen.getByText("Extraction A (older)")).toBeInTheDocument();
-    expect(screen.getByText("Extraction B (newer)")).toBeInTheDocument();
-    // Fixed extraction-sheet schema: no Column Mapping card for this
-    // workflow (mirrors the custom-only Column Value Comparison gating).
+    // Options gating is independent of the onboarding EmptyState: every
+    // comparison checkbox is inert here — disabled with a hint (Wiring
+    // Invariant #2) — and the mapping card is hidden.
     expect(
       screen.queryByRole("heading", { name: /column mapping/i }),
     ).not.toBeInTheDocument();
-    // Every comparison checkbox is inert here — disabled with a hint
-    // (Wiring Invariant #2), never silently ignored.
     expect(screen.getByLabelText(/ignore dnp/i)).toBeDisabled();
     expect(screen.getAllByText("BOM compare modes only").length).toBeGreaterThan(0);
+
+    // Entering through the card's EmptyState reveals both extraction slots.
+    await user.click(
+      screen.getByRole("button", { name: "Browse for older extraction" }),
+    );
+    expect(await screen.findByText("Extraction A (older)")).toBeInTheDocument();
+    expect(screen.getByText("Extraction B (newer)")).toBeInTheDocument();
   });
 
   // Regression: the browse handlers never cleared `isExample`, so after
@@ -126,15 +158,89 @@ describe("BomCompareTool custom compare workflow", () => {
     const user = userEvent.setup();
     render(<BomCompareTool />);
 
-    // Pristine first contact: the empty state is shown instead of the grid.
-    expect(screen.getByText("Compare two BOMs")).toBeInTheDocument();
+    // Pristine first contact: the empty state is shown instead of the grid,
+    // with the GROUP workflow's own copy (per-workflow EmptyState, 2026-07-13).
+    expect(
+      screen.getByText("Compare a grouping file against a BOM"),
+    ).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Browse for first BOM" }));
+    await user.click(
+      screen.getByRole("button", { name: "Browse for grouping file" }),
+    );
 
     // After a real file lands the grid must appear with BOTH slots.
     expect(await screen.findByText("Grouping workbook")).toBeInTheDocument();
     expect(screen.getByText("BOM workbook")).toBeInTheDocument();
-    expect(screen.queryByText("Compare two BOMs")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Compare a grouping file against a BOM"),
+    ).not.toBeInTheDocument();
+  });
+
+  // User decision (2026-07-13): EVERY workflow card greets fresh with the
+  // onboarding EmptyState — the old `workflowId === default` gate made only
+  // Group vs BOM show the panel while equally-empty Custom/Extraction cards
+  // rendered the slot grid ("one upload look, two menu boxes").
+  it("shows workflow-specific empty-state copy on each fresh card", async () => {
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+
+    expect(
+      screen.getByText("Compare a grouping file against a BOM"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Browse for grouping file" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Custom Compare/i }));
+    expect(screen.getByText("Compare two BOMs")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Browse for first BOM" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Extraction Compare/i }));
+    expect(
+      screen.getByText("Compare two extraction reports"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Browse for older extraction" }),
+    ).toBeInTheDocument();
+  });
+
+  // Per-workflow independence: a real file loaded in one workflow exits
+  // pristine for THAT card only. The per-workflow input cache keeps every
+  // other card's onboarding EmptyState intact, and returning to the loaded
+  // card never resurrects the panel.
+  it("keeps an untouched workflow's empty state after another workflow loads a real file", async () => {
+    backendMocks.openExcelFile.mockResolvedValue("C:\\real\\Grouping.xlsx");
+    backendMocks.listSheets.mockResolvedValue({
+      path: "C:\\real\\Grouping.xlsx",
+      sheets: ["Grouping"],
+      mode: "desktop-bridge",
+    });
+    backendMocks.inspectInput.mockResolvedValue({
+      mode: "desktop-bridge",
+      sheet: "Grouping",
+      columns: ["Component Group", "Reference Designator"],
+    });
+
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Browse for grouping file" }),
+    );
+    expect(await screen.findByText("Grouping workbook")).toBeInTheDocument();
+
+    // Custom Compare is untouched — still greets with ITS empty state.
+    await user.click(screen.getByRole("button", { name: /Custom Compare/i }));
+    expect(screen.getByText("Compare two BOMs")).toBeInTheDocument();
+
+    // Back on Group vs BOM: the grid persists; pristine never resurrects.
+    await user.click(screen.getByRole("button", { name: /Group vs BOM/i }));
+    expect(await screen.findByText("Grouping workbook")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Compare a grouping file against a BOM"),
+    ).not.toBeInTheDocument();
   });
 
   // Regression (Family 1): in desktop mode the tool used to seed inputStates
@@ -287,7 +393,7 @@ describe("BomCompareTool custom compare workflow", () => {
     render(<BomCompareTool />);
 
     // Load a real grouping file in Group vs BOM mode.
-    await user.click(screen.getByRole("button", { name: "Browse for first BOM" }));
+    await user.click(screen.getByRole("button", { name: "Browse for grouping file" }));
     const loadedPath = await screen.findByText("C:\\real\\Grouping.xlsx");
     expect(loadedPath).toBeInTheDocument();
     // Let the post-browse inspect round-trip settle so the slot is fully
@@ -410,7 +516,7 @@ describe("BomCompareTool custom compare workflow", () => {
       await screen.findByText("Select required files: Second BOM."),
     ).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Browse for first BOM" }));
+    await user.click(screen.getByRole("button", { name: "Browse for grouping file" }));
 
     // Once the new file lands the stale card is gone (neutral empty state).
     await screen.findByText("C:\\real\\Grouping.xlsx");
@@ -439,7 +545,7 @@ describe("BomCompareTool custom compare workflow", () => {
     const user = userEvent.setup();
     render(<BomCompareTool />);
 
-    await user.click(screen.getByRole("button", { name: "Browse for first BOM" }));
+    await user.click(screen.getByRole("button", { name: "Browse for grouping file" }));
 
     // The backend's real message must appear verbatim in the resolution note.
     expect(await screen.findByText(backendMessage)).toBeInTheDocument();
@@ -476,7 +582,7 @@ describe("BomCompareTool custom compare workflow", () => {
     const user = userEvent.setup();
     render(<BomCompareTool />);
 
-    await user.click(screen.getByRole("button", { name: "Browse for first BOM" }));
+    await user.click(screen.getByRole("button", { name: "Browse for grouping file" }));
     await screen.findByText("C:\\real\\Grouping.xlsx");
     await waitFor(() => expect(backendMocks.inspectInput).toHaveBeenCalled());
 
@@ -518,7 +624,7 @@ describe("BomCompareTool custom compare workflow", () => {
     const user = userEvent.setup();
     render(<BomCompareTool />);
 
-    await user.click(screen.getByRole("button", { name: "Browse for first BOM" }));
+    await user.click(screen.getByRole("button", { name: "Browse for grouping file" }));
     await screen.findByText("C:\\real\\Grouping.xlsx");
     await waitFor(() => expect(backendMocks.inspectInput).toHaveBeenCalled());
     // Wait for the inspected slot to settle (tag transitions to "Analyzed")
@@ -567,7 +673,7 @@ describe("BomCompareTool custom compare workflow", () => {
     render(<BomCompareTool />);
 
     // Start browsing — listSheets stays pending (isResolvingSheets: true).
-    await user.click(screen.getByRole("button", { name: "Browse for first BOM" }));
+    await user.click(screen.getByRole("button", { name: "Browse for grouping file" }));
     expect(await screen.findByRole("button", { name: "Loading..." })).toBeInTheDocument();
 
     // Switch away while the inspection is still in flight — the outgoing
@@ -644,7 +750,7 @@ describe("BomCompareTool custom compare workflow", () => {
     });
     render(<BomCompareTool />);
 
-    const browse = screen.getByRole("button", { name: "Browse for first BOM" });
+    const browse = screen.getByRole("button", { name: "Browse for grouping file" });
     expect(browse).toBeDisabled();
     expect(browse).toHaveAttribute(
       "title",
@@ -709,7 +815,9 @@ describe("BomCompareTool custom compare workflow", () => {
       columns: ["Reference Designator", "Part Number", "Description"],
     });
     await user.click(screen.getByRole("button", { name: /Custom Compare/i }));
-    await user.click(screen.getAllByRole("button", { name: "Browse" })[0]);
+    // A fresh Custom card greets with its per-workflow EmptyState; the first
+    // browse enters through it, which reveals the grid for the second slot.
+    await user.click(screen.getByRole("button", { name: "Browse for first BOM" }));
     await waitFor(() => expect(backendMocks.inspectInput).toHaveBeenCalledTimes(1));
     await user.click(screen.getAllByRole("button", { name: "Browse" })[1]);
     await waitFor(() => expect(backendMocks.inspectInput).toHaveBeenCalledTimes(2));

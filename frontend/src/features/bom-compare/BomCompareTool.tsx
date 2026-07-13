@@ -562,13 +562,44 @@ export function BomCompareTool() {
     }
   }
 
-  // Pristine = first contact with the tool: still on the default workflow,
-  // all visible inputs are example mocks, no run has started. Switching
-  // workflow is a sign of engagement, so we exit pristine then.
+  // Pristine = THIS workflow's inputs are untouched (example mocks only) and
+  // no run is in flight. Per-workflow by user decision (2026-07-13): every
+  // card greets fresh with the onboarding EmptyState and swaps to the slot
+  // grid once a real file lands for it — the per-workflow input cache keeps
+  // each card's pristine state independent, so loading a file in one
+  // workflow never exits pristine for the others.
   const isPristine =
-    workflowId === baseScenario.workflowId &&
     visibleInputs.every((input) => input.isExample === true) &&
     panelRunMode === "idle";
+
+  // Workflow-specific onboarding copy. Falls back to the custom-compare
+  // wording so a future workflow without an entry renders sensibly instead
+  // of crashing (mirrors the OPTION_META mechanical-label fallback).
+  const PRISTINE_COPY: Partial<
+    Record<WorkflowId, { headline: string; body: string; browseLabel: string }>
+  > = {
+    bom_compare_group: {
+      headline: "Compare a grouping file against a BOM",
+      body: "Browse for your grouping file, or load the example pair to explore the workflow first.",
+      browseLabel: "Browse for grouping file",
+    },
+    bom_compare_custom: {
+      headline: "Compare two BOMs",
+      body: "Browse for your files, or load the example pair to explore the workflow first.",
+      browseLabel: "Browse for first BOM",
+    },
+    extraction_compare: {
+      headline: "Compare two extraction reports",
+      body: "Browse for the older extraction report, or load the example pair to explore the workflow first.",
+      browseLabel: "Browse for older extraction",
+    },
+  };
+  const pristineCopy =
+    PRISTINE_COPY[workflowId] ?? {
+      headline: "Compare two BOMs",
+      body: "Browse for your files, or load the example pair to explore the workflow first.",
+      browseLabel: "Browse for first file",
+    };
 
   const handleLoadExample = () => {
     pushNotification({
@@ -1004,10 +1035,10 @@ export function BomCompareTool() {
               {isPristine ? (
                 <EmptyState
                   icon={GitDiff}
-                  headline="Compare two BOMs"
-                  body="Browse for your files, or load the example pair to explore the workflow first."
+                  headline={pristineCopy.headline}
+                  body={pristineCopy.body}
                   primaryAction={{
-                    label: "Browse for first BOM",
+                    label: pristineCopy.browseLabel,
                     disabled: anyRunIsLive,
                     disabledReason: fileInspectionDisabledReason,
                     onClick: () => {

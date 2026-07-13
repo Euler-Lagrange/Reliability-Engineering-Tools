@@ -172,9 +172,11 @@ describe("tool run dispatch", () => {
     await user.click(screen.getByRole("button", { name: /Custom Compare/i }));
 
     // Browse + inspect BOTH files so the auto-pair effect has headers for
-    // bomA and bomB.
-    const browseButtons = screen.getAllByRole("button", { name: "Browse" });
-    await user.click(browseButtons[0]);
+    // bomA and bomB. A fresh Custom card greets with its per-workflow
+    // EmptyState, so the first browse enters through it.
+    await user.click(
+      screen.getByRole("button", { name: "Browse for first BOM" }),
+    );
     await waitFor(() =>
       expect(backendMocks.inspectInput).toHaveBeenCalledTimes(1),
     );
