@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **RefDes Extractor no longer silently loses parts or groups** (the DIG-4xx
+  incident). A component outside every group rectangle now lands in
+  `UNGROUPED (IN BOM)` / `UNGROUPED (NOT IN BOM)` (or `PROVISIONAL` when
+  prov-marked) instead of vanishing; a text-box group label whose PDF
+  `/Contents` is empty is recovered from its visible appearance text; a page
+  whose annotation extraction times out (now 30 s, tunable via the new
+  `annotation_page_timeout_seconds` option) is named in the run result and
+  qualifies the success toast; and numbering-gap detection no longer disables
+  itself for wide families — short gaps flag individual `GROUP NOT DETECTED`
+  placeholders, long jumps collapse to one `RANGE NOT DETECTED — N
+  consecutive` summary row. Pin labels that collide with a real BOM RefDes
+  are kept and flagged (`bom-collision`) instead of passing silently.
 - **Run state stays coherent across races, reconnects, and cross-tool work** —
   lifecycle phases now share one vocabulary; reconnect only clears runs from
   the dead sidecar generation; an ack can recover a run when the invoke reply

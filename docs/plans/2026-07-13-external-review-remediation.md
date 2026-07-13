@@ -690,6 +690,13 @@ count locations); sidecar self-test green; CHANGELOG complete; STOP for final re
 - `detect_groups_from_drawings` retains an unbounded direct word-read default for
   compatibility. Its sole in-repo production caller supplies the bounded reader,
   but a future direct caller could omit it and reintroduce the hang risk.
+- (Wave R) Pre-existing mixed-mode PROVISIONAL formatter gap: the bucket's
+  mode is fixed at creation while functional prov writes to `unverified` and
+  piece-part prov writes to `tokens` unconditionally — in a doc mixing both
+  modes, whichever kind lands second is invisible in the PROVISIONAL row
+  (both engines, predates Wave R).
+- (Wave R) PyMuPDF `set_info(content="")` silently no-ops — a trap for
+  fixture builders trying to simulate empty-`/Contents` annotations.
 - Generation-guarded teardown prevents an old stdout reader from killing a new
   sidecar, but the old reader can still process buffered frames before EOF. Such
   a frame can refresh the shared heartbeat/fatal-detail state or be forwarded

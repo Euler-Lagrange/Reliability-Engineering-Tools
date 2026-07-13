@@ -10,10 +10,10 @@
 | Backend output-directory helpers | `backend/tests/test_output_directory_helpers.py` | 10 | pytest |
 | Backend FMEA Phase D | `backend/tests/test_fmea_phase_d.py` | 78 | pytest |
 | Backend Failure-Rate logic | `backend/tests/test_failure_rate_logic.py` | 27 | pytest |
-| Backend RefDes extraction-engine | `backend/tests/test_extraction_engine.py` | 18 | pytest |
+| Backend RefDes extraction-engine | `backend/tests/test_extraction_engine.py` | 22 | pytest |
 | Backend BOM-compare logic | `backend/tests/test_bom_compare_logic.py` | 42 | pytest |
 | Backend BOM-compare runtime | `backend/tests/test_bom_compare_runtime.py` | 14 | pytest |
-| Backend extraction compare | `backend/tests/test_extraction_compare.py` | 9 | pytest |
+| Backend extraction compare | `backend/tests/test_extraction_compare.py` | 10 | pytest |
 | Backend Failure-Rate runtime | `backend/tests/test_failure_rate_runtime.py` | 4 | pytest |
 | Backend read-layer (NA + header dedup) | `backend/tests/test_read_layer.py` | 9 | pytest |
 | Backend excel styles | `backend/tests/test_excel_styles.py` | 3 | pytest |
@@ -23,11 +23,11 @@
 | Backend OneDrive detection | `backend/tests/test_onedrive_detection.py` | 5 | pytest |
 | Backend file-size guard | `backend/tests/test_file_guards.py` | 3 | pytest |
 | Backend crash-dump | `backend/tests/test_crash_dump.py` | 4 | pytest |
-| Backend NextGen engine | `backend/tests/test_nextgen_engine.py` | 12 | pytest |
-| Backend RefDes runtime | `backend/tests/test_refdes_runtime.py` | 33 | pytest |
+| Backend NextGen engine | `backend/tests/test_nextgen_engine.py` | 16 | pytest |
+| Backend RefDes runtime | `backend/tests/test_refdes_runtime.py` | 36 | pytest |
 | Backend RefDes validation notes | `backend/tests/test_validation_notes.py` | 12 | pytest |
 | Backend RefDes prefix config | `backend/tests/test_refdes_prefix_config.py` | 7 | pytest |
-| **Backend subtotal** | | **411** | |
+| **Backend subtotal** | | **423** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 5 | Vitest + RTL |
 | Frontend escape layers | `frontend/src/shared/hooks/useEscapeLayer.test.ts` | 4 | Vitest |
@@ -76,7 +76,7 @@
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
 | **Frontend subtotal** | | **333** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 19 | cargo test |
-| **Total** | | **763** | |
+| **Total** | | **775** | |
 
 ## Backend Tests
 
@@ -224,6 +224,7 @@ new FMEA tests must do the same or validation will reject the request.
 | BOM-compare runtime (in-process, 14 tests) | Runtime validation/option wiring plus cancellation cleanup before promotion in group, custom, and extraction-compare output paths |
 | Failure-Rate runtime (in-process, 4 tests) | Runtime validation labels and cancellation cleanup before output promotion |
 | RefDes runtime (in-process, 33 tests) | Runtime option validation, output projection, BOM cross-check soft-failure qualification, cancellation checks during group detection / after extraction / before promotion, and zombie-aware PDF close behavior |
+| RefDes silent-loss hotfix (Wave R, in-process, 12 tests) | DIG-4xx incident closure: UNGROUPED (IN/NOT IN BOM) + PROVISIONAL capture for RefDes outside every group rect (NextGen + legacy-hybrid twin); annotation page-timeout collection with 30s default, config option, and toast-qualifying result notes; empty-`/Contents` FreeText label recovery from the annotation appearance; run-length-aware sequence gaps (short-run placeholders, long-run range-summary rows, no silent family skip) with extraction-compare exclusion; the combined 3-page incident regression; bom-collision pin disposition |
 | BOM-compare FMEA detection + sheet naming (in-process, 5 tests) | UX round-2 pair: content-based FMEA detection on the custom path (validated FMEA Level column triggers FMEA-aware mode without a filename hint; explicit-evidence gate so a plain BOM or a substring-only "Record Type" column never misfires; filename fallback unchanged) and the custom-report space-scheme sheet names (`Only In <file>` / `Part Usage` / `Failure Mode Ratio Errors` / `Scope Warnings`) with a no-underscore lockstep guard |
 | Read layer (in-process, 6 tests) | Excel/CSV `NA`/`N/A` literal-text read parity and duplicate-header dedup matching pandas' `.1`/`.2` scheme |
 | RefDes BOM-coverage (in-process, 19 tests) | Reverse-diff of extracted RefDes vs a loaded BOM: `BOM Not Grouped` (Not Extracted / Extracted-Ungrouped / Extracted-Provisional, with Part#/Description), `Extracted Not In BOM`, `Coverage Summary` counts, component-level normalization, unparented-pin rejection, and the sheet writer |
