@@ -273,7 +273,7 @@ outside the job; an external force-kill of the bridge between `spawn()` and assi
 can leave one *suspended, never-scheduled* `python.exe` (inert orphan). Name the
 accepted residual risk and why `PROC_THREAD_ATTRIBUTE_JOB_LIST` was deferred.
 
-- [ ] Doc/comment edits + commit: `Docs: Qualify the sidecar orphan guarantee honestly`
+- [x] Doc/comment edits + commit: `Docs: Qualify the sidecar orphan guarantee honestly`
 
 **Wave 2 exit:** suites green; CHANGELOG; STOP for review.
 
@@ -689,3 +689,8 @@ count locations); sidecar self-test green; CHANGELOG complete; STOP for final re
   per-file counts for the contract, command-palette, run-lifecycle, and BOM
   Compare suites even though the primary inventory and aggregate suite count are
   current. Reconciling historical inventory drift is outside this remediation.
+- `CLAUDE.md`'s Windows Job Object gotcha correctly requires assignment for live
+  sidecar cleanup but compresses the guarantee and omits the accepted
+  pre-assignment suspended-process residual. Task 2.4's documentation scope is
+  `docs/ARCHITECTURE.md` plus the Rust source comments; reconcile the shorter
+  contributor note in a later documentation sweep.

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Desktop backend failures are safer and more transparent** — stale reader
+  and heartbeat tasks can no longer tear down a replacement sidecar session;
+  failed webview event delivery now leaves a diagnostic breadcrumb; and an
+  `execute_run` acceptance timeout is shown as “still preparing” rather than a
+  definitive run failure. The Windows lifecycle documentation now also states
+  the exact Job Object boundary: assigned process trees die with the bridge,
+  while a force-kill in the narrow pre-assignment gap can leave one inert,
+  still-suspended `python.exe`.
 - **Cancellation now stays truthful through backend completion** — every report
   runtime checks the write/verify/promote boundary; a latched cancel supersedes
   a later backend exception without hiding its diagnostics; committed output

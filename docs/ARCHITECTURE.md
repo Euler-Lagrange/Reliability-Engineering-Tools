@@ -181,12 +181,21 @@ pending request with the same message, and emits a session event.
 
 On Windows the bridge wraps the spawned Python sidecar in a Win32 **Job
 Object** with the `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` flag set (see the
-`windows_job` module at the top of `src-tauri/src/lib.rs`). When the bridge
-process exits — cleanly or via crash — Windows tears down the job, which
-in turn terminates every process assigned to it. That guarantees the
-sidecar is never orphaned, even if a Rust panic bypasses the
-`on_window_event` `Destroyed` handler. macOS/Linux rely on their POSIX
-parent-death signals instead and do not need the extra scaffolding.
+`windows_job` module at the top of `src-tauri/src/lib.rs`). Once
+`AssignProcessToJobObject` succeeds, closing the bridge-owned job handle —
+including when Windows closes it after a bridge crash or force-kill —
+terminates the assigned sidecar and its assigned descendants.
+
+The bridge creates the child with `CREATE_SUSPENDED`, assigns it to the job,
+then resumes it. This guarantees that the child executes no Python code
+outside the job, but process creation and job assignment are not atomic. A
+external force-kill of the bridge after `spawn()` and before
+assignment can leave one unassigned, still-suspended, never-scheduled
+`python.exe`. That process is an accepted inert orphan: it ran no sidecar code
+and could not spawn descendants. Eliminating even this residual requires a
+creation-time `PROC_THREAD_ATTRIBUTE_JOB_LIST`; that lower-level Windows
+process-creation integration is explicitly deferred. macOS/Linux rely on
+their POSIX parent-death signals instead and do not need the extra scaffolding.
 
 ### Fatal-error detail merge
 
@@ -572,7 +581,7 @@ window keydown Escape listener.
 | Events missing after tool switch | something subscribed outside `useBackendRunSubscription` |
 | Generic error but log has the real one | a catch bypassing `describeBackendError` (Tauri rejects with raw strings) |
 | "nan"/internal columns in output | writer guards in `excel_styles`; underscore-strip in the tool writer |
-| Sidecar orphaned after a crash | Windows Job Object assignment in `src-tauri/lib.rs` |
+| Sidecar appears orphaned after a crash | A suspended `python.exe` can be the accepted `spawn()` → assignment residual; it never ran. A running survivor means the post-assignment guarantee failed. Inspect the Job Object assignment/resume sequence in `src-tauri/src/lib.rs`; eliminating that residual window requires the deferred `PROC_THREAD_ATTRIBUTE_JOB_LIST` creation path. |
 | Vitest flakes under load | RTL `asyncUtilTimeout` in `vitest.setup.ts` (root-caused 2026-07: cold lazy-chunk imports vs the 1000ms RTL default - NOT vitest testTimeout) |
 | Slow report writing | PERF_BASELINES.md + the StyleArray cache |
 | A control does nothing | Wiring Invariants #1/#2 (CLAUDE.md): trace handler -> state -> payload -> backend reader |

@@ -27,8 +27,9 @@ mod windows_job {
 
     // NtResumeProcess is an undocumented but stable-across-versions NT API
     // (available since NT 4.0). Used to resume a sidecar spawned with
-    // CREATE_SUSPENDED after it has been assigned to the Job Object, so the
-    // child never runs outside the job even for a single scheduler tick.
+    // CREATE_SUSPENDED after it has been assigned to the Job Object. This
+    // prevents child code from running before assignment; it does not make
+    // process creation and job assignment one atomic Windows operation.
     #[link(name = "ntdll")]
     extern "system" {
         fn NtResumeProcess(process: HANDLE) -> i32;
@@ -47,9 +48,9 @@ mod windows_job {
     unsafe impl Sync for WindowsJobObject {}
 
     /// Resume every thread of a child process that was spawned with
-    /// `CREATE_SUSPENDED`. Called by the bridge after the child has been
-    /// safely assigned to the Job Object, so there is no window in which the
-    /// child runs outside the job.
+    /// `CREATE_SUSPENDED`. Called only after Job Object assignment, so no
+    /// child code runs outside the job. A bridge exit between `spawn()` and
+    /// assignment can still leave the unassigned child suspended and inert.
     pub fn resume_child(child: &Child) -> Result<(), String> {
         let handle = child.as_raw_handle() as HANDLE;
         // NTSTATUS values >= 0 mean success.
@@ -1084,12 +1085,13 @@ fn await_ready<R>(rx: &mpsc::Receiver<Result<R, String>>, timeout: Duration) -> 
 fn spawn_managed_sidecar(session: SessionSlot, shared: Arc<SessionShared>) -> Result<ManagedSidecar, String> {
     // On Windows, create the Job Object BEFORE spawning the child, then spawn
     // the child with CREATE_SUSPENDED, assign to the job, and only then resume.
-    // This eliminates two orphan-the-child races:
-    //   (a) WindowsJobObject::create() failing after the child is already live.
-    //   (b) The parent panicking between spawn() and AssignProcessToJobObject.
-    // With CREATE_SUSPENDED the child's primary thread is suspended until after
-    // the job has accepted it, so it can never run outside the job even for a
-    // single scheduler tick.
+    // Creating the job first avoids a live child when job creation fails, and
+    // CREATE_SUSPENDED guarantees that no child code runs before assignment.
+    // The spawn -> AssignProcessToJobObject pair is not atomic, however: a
+    // external force-kill of the bridge in that narrow gap can
+    // leave one unassigned, never-scheduled python.exe suspended and inert.
+    // Creation-time PROC_THREAD_ATTRIBUTE_JOB_LIST would close that final gap,
+    // but its lower-level Windows process-creation integration is deferred.
     #[cfg(target_os = "windows")]
     let job = WindowsJobObject::create()?;
 
