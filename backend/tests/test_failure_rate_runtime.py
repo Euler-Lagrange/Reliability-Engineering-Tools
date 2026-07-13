@@ -11,7 +11,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
+from common.cancellation import CancellationError
 from failure_rate import runtime as fr_runtime
 from shared.pre_run_validation import DO_NOT_MAP_SENTINEL
 
@@ -100,3 +102,29 @@ def test_failure_rate_missing_mapping_uses_display_label(tmp_path: Path) -> None
     assert result["reason_code"] == "missing_mappings"
     assert "FMEA: failure mode ratio" in result["toast_text"]
     assert "fmea_ratio" not in result["toast_text"]
+
+
+def test_failure_rate_cancel_after_verify_cleans_temp_and_skips_promote(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = {}
+
+    def capture_processor(processor) -> None:
+        captured["processor"] = processor
+
+    def cancel_after_verify(temp_path: Path) -> bool:
+        assert Path(temp_path).exists()
+        captured["processor"].cancel.cancel()
+        return True
+
+    monkeypatch.setattr(fr_runtime, "verify_excel_readable", cancel_after_verify)
+
+    with pytest.raises(CancellationError):
+        fr_runtime.execute_run_request(
+            _build_body(tmp_path),
+            processor_ready_callback=capture_processor,
+        )
+
+    assert not list(tmp_path.glob("FailureRate_Link_*.xlsx"))
+    assert not list(tmp_path.glob(".*.part.xlsx"))

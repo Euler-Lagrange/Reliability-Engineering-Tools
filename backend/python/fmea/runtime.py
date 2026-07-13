@@ -997,14 +997,18 @@ def execute_run_request(
                     log_func=stream_log_callback,
                     failure_modes_standard=failure_modes_standard,
                 )
+                processor.cancel.check("Cancelled before finalizing output")
             finally:
                 wb.close()
-            if not verify_excel_readable(tmp_output):
+            output_is_readable = verify_excel_readable(tmp_output)
+            processor.cancel.check("Cancelled before finalizing output")
+            if not output_is_readable:
                 raise FileAccessError(
                     f"Post-write verification failed for {tmp_output}; workbook did not open.",
                     file_path=str(tmp_output),
                     operation="write",
                 )
+            processor.cancel.check("Cancelled before finalizing output")
             atomic_finalize(tmp_output, output_path, log_func=stream_log_callback)
         except Exception:
             try:
@@ -1017,12 +1021,16 @@ def execute_run_request(
         tmp_output = atomic_write_path(output_path)
         try:
             write_excel_report(dataframe, tmp_output, processor)
-            if not verify_excel_readable(tmp_output):
+            processor.cancel.check("Cancelled before finalizing output")
+            output_is_readable = verify_excel_readable(tmp_output)
+            processor.cancel.check("Cancelled before finalizing output")
+            if not output_is_readable:
                 raise FileAccessError(
                     f"Post-write verification failed for {tmp_output}; workbook did not open.",
                     file_path=str(tmp_output),
                     operation="write",
                 )
+            processor.cancel.check("Cancelled before finalizing output")
             atomic_finalize(tmp_output, output_path, log_func=stream_log_callback)
         except Exception:
             try:

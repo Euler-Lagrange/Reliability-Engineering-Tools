@@ -358,12 +358,16 @@ def execute_run_request(
     tmp_output = atomic_write_path(output_path)
     try:
         logic.save_results(str(tmp_output))
-        if not verify_excel_readable(tmp_output):
+        logic.cancel.check("Cancelled before finalizing output")
+        output_is_readable = verify_excel_readable(tmp_output)
+        logic.cancel.check("Cancelled before finalizing output")
+        if not output_is_readable:
             raise FileAccessError(
                 f"Post-write verification failed for {tmp_output}; workbook did not open.",
                 file_path=str(tmp_output),
                 operation="write",
             )
+        logic.cancel.check("Cancelled before finalizing output")
         atomic_finalize(tmp_output, output_path, log_func=stream_log)
     except Exception:
         try:

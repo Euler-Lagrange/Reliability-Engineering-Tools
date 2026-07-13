@@ -14,6 +14,7 @@ import pandas as pd
 import pytest
 
 from bom_compare import runtime as bom_runtime
+from common.cancellation import CancellationError
 from shared.pre_run_validation import DO_NOT_MAP_SENTINEL
 
 
@@ -193,6 +194,103 @@ def _build_custom_body(tmp_path: Path) -> dict:
         ],
         "options": {"key_mode": "refdes_list"},
     }
+
+
+def _build_extraction_compare_body(tmp_path: Path) -> dict:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    rev_a_path = tmp_path / "extract_rev_a.xlsx"
+    rev_b_path = tmp_path / "extract_rev_b.xlsx"
+    pd.DataFrame(
+        [{
+            "Group": "DIG-076 (Verified)",
+            "Failure Mode Causes": "U7, U9",
+            "Component Count": 2,
+            "Pages": "3",
+        }]
+    ).to_excel(rev_a_path, index=False)
+    pd.DataFrame(
+        [{
+            "Group": "DIG-076 (Verified)",
+            "Failure Mode Causes": "U7",
+            "Component Count": 1,
+            "Pages": "3",
+        }]
+    ).to_excel(rev_b_path, index=False)
+    return {
+        "workflowId": "extraction_compare",
+        "outputStrategyId": "new_workbook_standard",
+        "outputDirectory": str(tmp_path),
+        "inputs": [
+            _input_state("extractionA", "Extraction A (older)", rev_a_path),
+            _input_state("extractionB", "Extraction B (newer)", rev_b_path),
+        ],
+        "mappings": [],
+        "options": {},
+    }
+
+
+def _assert_cancel_after_verify_skips_promote(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    body: dict,
+    output_pattern: str,
+) -> None:
+    captured = {}
+
+    def capture_processor(processor) -> None:
+        captured["processor"] = processor
+
+    def cancel_after_verify(temp_path: Path) -> bool:
+        assert Path(temp_path).exists()
+        captured["processor"].cancel.cancel()
+        return True
+
+    monkeypatch.setattr(bom_runtime, "verify_excel_readable", cancel_after_verify)
+
+    with pytest.raises(CancellationError):
+        bom_runtime.execute_run_request(
+            body,
+            processor_ready_callback=capture_processor,
+        )
+
+    assert not list(tmp_path.glob(output_pattern))
+    assert not list(tmp_path.glob(".*.part.xlsx"))
+
+
+def test_group_compare_cancel_after_verify_cleans_temp_and_skips_promote(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _assert_cancel_after_verify_skips_promote(
+        tmp_path,
+        monkeypatch,
+        _build_group_body(tmp_path),
+        "BomCompare_Group_*.xlsx",
+    )
+
+
+def test_custom_compare_cancel_after_verify_cleans_temp_and_skips_promote(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _assert_cancel_after_verify_skips_promote(
+        tmp_path,
+        monkeypatch,
+        _build_custom_body(tmp_path),
+        "BomCompare_Custom_*.xlsx",
+    )
+
+
+def test_extraction_compare_cancel_after_verify_cleans_temp_and_skips_promote(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _assert_cancel_after_verify_skips_promote(
+        tmp_path,
+        monkeypatch,
+        _build_extraction_compare_body(tmp_path),
+        "ExtractionCompare_*.xlsx",
+    )
 
 
 def test_custom_compare_required_mapping_sentinel_blocks_validation(tmp_path: Path) -> None:

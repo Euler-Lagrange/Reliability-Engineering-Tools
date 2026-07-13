@@ -479,12 +479,16 @@ def _run_group_compare(
     tmp_output = atomic_write_path(output_path)
     try:
         write_excel_report(results, str(tmp_output))
-        if not verify_excel_readable(tmp_output):
+        bridge.cancel.check("Cancelled before finalizing output")
+        output_is_readable = verify_excel_readable(tmp_output)
+        bridge.cancel.check("Cancelled before finalizing output")
+        if not output_is_readable:
             raise FileAccessError(
                 f"Post-write verification failed for {tmp_output}; workbook did not open.",
                 file_path=str(tmp_output),
                 operation="write",
             )
+        bridge.cancel.check("Cancelled before finalizing output")
         atomic_finalize(tmp_output, output_path, log_func=log)
     except Exception:
         try:
@@ -568,12 +572,16 @@ def _run_extraction_compare(
         write_extraction_compare_excel(result, wb, name_a=name_a, name_b=name_b)
         wb.save(str(tmp_output))
         wb.close()
-        if not verify_excel_readable(tmp_output):
+        bridge.cancel.check("Cancelled before finalizing output")
+        output_is_readable = verify_excel_readable(tmp_output)
+        bridge.cancel.check("Cancelled before finalizing output")
+        if not output_is_readable:
             raise FileAccessError(
                 f"Post-write verification failed for {tmp_output}; workbook did not open.",
                 file_path=str(tmp_output),
                 operation="write",
             )
+        bridge.cancel.check("Cancelled before finalizing output")
         atomic_finalize(tmp_output, output_path, log_func=log)
     except Exception:
         try:
@@ -696,12 +704,16 @@ def _run_custom_compare(
     tmp_output = atomic_write_path(output_path)
     try:
         write_bom_compare_excel(result, str(tmp_output), bom_a_name=name_a, bom_b_name=name_b)
-        if not verify_excel_readable(tmp_output):
+        bridge.cancel.check("Cancelled before finalizing output")
+        output_is_readable = verify_excel_readable(tmp_output)
+        bridge.cancel.check("Cancelled before finalizing output")
+        if not output_is_readable:
             raise FileAccessError(
                 f"Post-write verification failed for {tmp_output}; workbook did not open.",
                 file_path=str(tmp_output),
                 operation="write",
             )
+        bridge.cancel.check("Cancelled before finalizing output")
         atomic_finalize(tmp_output, output_path, log_func=log)
     except Exception:
         try:

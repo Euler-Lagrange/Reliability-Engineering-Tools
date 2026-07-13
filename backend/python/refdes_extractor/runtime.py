@@ -840,6 +840,8 @@ def execute_run_request(
         cleanup_words_extraction_threads()
         doc.close()
 
+    bridge.cancel.check()
+
     # --- Validation notes (runtime-side annotation; engines untouched) ---
     # Adds the "validation notes" column (cross-group duplicate ordinals,
     # ambiguous-assignment flags from the diagnostics accumulator,
@@ -896,6 +898,8 @@ def execute_run_request(
                 f"extraction sheet is unaffected."
             )
 
+    bridge.cancel.check()
+
     # --- Write Excel (90-98%) ---
     emit_status("running", "Writing workbook", "Writing extraction results...")
     emit_progress("Writing workbook", "Writing...", 92)
@@ -927,12 +931,16 @@ def execute_run_request(
         _safe_write_coverage(wb)
         wb.save(str(tmp_output))
         wb.close()
-        if not verify_excel_readable(tmp_output):
+        bridge.cancel.check("Cancelled before finalizing output")
+        output_is_readable = verify_excel_readable(tmp_output)
+        bridge.cancel.check("Cancelled before finalizing output")
+        if not output_is_readable:
             raise FileAccessError(
                 f"Post-write verification failed for {tmp_output}; workbook did not open.",
                 file_path=str(tmp_output),
                 operation="write",
             )
+        bridge.cancel.check("Cancelled before finalizing output")
         atomic_finalize(tmp_output, output_path, log_func=stream_log)
     except Exception:
         try:

@@ -21,7 +21,9 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from common.cancellation import CancellationError
 from common.exceptions import ValidationError
+from fmea import runtime as fmea_runtime
 from fmea.fmea_generator_logic import FMEAProcessor, _index_to_suffix, write_excel_report
 from fmea.runtime import execute_run_request, validate_run_request
 
@@ -4303,6 +4305,146 @@ def test_post_write_verification_failure_raises_file_access_error(
     monkeypatch.setattr("fmea.runtime.verify_excel_readable", lambda _p: False)
     with pytest.raises(FileAccessError):
         execute_run_request(body)
+
+
+def _build_runtime_cancellation_body(
+    tmp_path: Path,
+    *,
+    preserve_formatting: bool,
+) -> tuple[dict, Path | None]:
+    paths = _write_fixture(
+        tmp_path,
+        bom_rows=[
+            {
+                "Reference Designator": "R100",
+                "Part Number": "RES-1",
+                "Description": "Resistor",
+                "BAE HDA Commodity I": "Resistor",
+                "BAE HDA Commodity II": "Chip",
+                "Part Usage": "1",
+            }
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "CPU-001",
+                "Reference Designator": "R100",
+                "Function Description": "Support",
+                "Schematic Page": "1",
+            }
+        ],
+        fm_rows=[
+            {
+                "FMD-2016 Commodity Type 1": "Resistor",
+                "FMD-2016 Commodity Type 2": "Chip",
+                "Failure Mode": "Open",
+                "Failure Mode Ratio": 1.0,
+            }
+        ],
+    )
+    body = {
+        "workflowId": "piece_part_generate",
+        "outputStrategyId": (
+            "existing_workbook_preserve_formatting"
+            if preserve_formatting
+            else "new_workbook_standard"
+        ),
+        "outputDirectory": str(tmp_path),
+        "options": {"failureModesStandard": "FMD-2016"},
+        "inputs": [
+            _state("grouping", paths["grouping"]),
+            _state("bom", paths["bom"]),
+            _state("failureModes", paths["fm"]),
+        ],
+        "mappings": [],
+    }
+
+    target_path = None
+    if preserve_formatting:
+        from openpyxl import Workbook
+
+        target_path = tmp_path / "target_fmea.xlsx"
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "FMEA"
+        ws.append([
+            "FMEA-ID",
+            "FMEA Level",
+            "Failure Mode Causes",
+            "Function Description",
+            "Failure Mode",
+            "Failure Mode Ratio",
+        ])
+        ws.append([
+            "CPU-001",
+            "Circuit Block",
+            "R100",
+            "Support",
+            "",
+            "",
+        ])
+        wb.save(target_path)
+        wb.close()
+        body["inputs"].append(_state("targetWorkbook", target_path, sheet="FMEA"))
+
+    return body, target_path
+
+
+def _assert_fmea_cancel_after_verify_skips_promote(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    preserve_formatting: bool,
+) -> None:
+    body, target_path = _build_runtime_cancellation_body(
+        tmp_path,
+        preserve_formatting=preserve_formatting,
+    )
+    captured = {}
+
+    def capture_processor(processor) -> None:
+        captured["processor"] = processor
+
+    def cancel_after_verify(temp_path: Path) -> bool:
+        assert Path(temp_path).exists()
+        captured["processor"].cancel.cancel()
+        return True
+
+    monkeypatch.setattr(fmea_runtime, "verify_excel_readable", cancel_after_verify)
+
+    with pytest.raises(CancellationError):
+        execute_run_request(body, processor_ready_callback=capture_processor)
+
+    pattern = (
+        "target_fmea_DarkStar_*.xlsx"
+        if preserve_formatting
+        else "DarkStarFMEA_Standard_*.xlsx"
+    )
+    assert not list(tmp_path.glob(pattern))
+    assert not list(tmp_path.glob(".*.part.xlsx"))
+    if target_path is not None:
+        assert target_path.exists()
+
+
+def test_fmea_standard_cancel_after_verify_cleans_temp_and_skips_promote(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _assert_fmea_cancel_after_verify_skips_promote(
+        tmp_path,
+        monkeypatch,
+        preserve_formatting=False,
+    )
+
+
+def test_fmea_preserve_cancel_after_verify_cleans_temp_and_skips_promote(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _assert_fmea_cancel_after_verify_skips_promote(
+        tmp_path,
+        monkeypatch,
+        preserve_formatting=True,
+    )
 
 
 def test_negative_part_usage_survives_as_data_quality_warning(

@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+from common.cancellation import CancellationError
 from common.exceptions import ValidationError
+from refdes_extractor import runtime as refdes_runtime
 from refdes_extractor.runtime import (
     _results_dataframe,
     _validate_options,
@@ -273,6 +277,90 @@ def test_execute_run_request_raises_on_invalid_option() -> None:
     pytest.importorskip("fitz")
     with pytest.raises(ValidationError):
         execute_run_request(_base_body({"adaptive_orphan_ratio": 5}))
+
+
+def test_refdes_cancel_checks_after_engine_and_before_promote(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fitz = pytest.importorskip("fitz")
+    from refdes_test import refdes_test_logic
+
+    monkeypatch.setattr(
+        refdes_test_logic,
+        "extract_annotations_from_doc",
+        lambda _doc, **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        refdes_test_logic,
+        "detect_groups_with_fallback",
+        lambda _doc, _annotations, **_kwargs: ([], False, {}),
+    )
+
+    def build_body(case_dir: Path) -> dict:
+        case_dir.mkdir(parents=True, exist_ok=True)
+        pdf_path = case_dir / "schematic.pdf"
+        doc = fitz.open()
+        doc.new_page()
+        doc.save(pdf_path)
+        doc.close()
+        return {
+            "workflowId": "refdes_extract",
+            "outputStrategyId": "new_workbook_standard",
+            "outputDirectory": str(case_dir),
+            "inputs": [{"role": "pdf", "path": str(pdf_path)}],
+            "options": {},
+        }
+
+    post_engine_dir = tmp_path / "post-engine"
+
+    def cancel_before_engine_return(**kwargs):
+        kwargs["stop_event"].set()
+        return [], {"backend_used": "test", "token_diagnostics": {}}
+
+    monkeypatch.setattr(
+        refdes_test_logic,
+        "extract_with_geometry_analysis_detailed",
+        cancel_before_engine_return,
+    )
+    monkeypatch.setattr(refdes_runtime, "verify_excel_readable", lambda _path: True)
+
+    with pytest.raises(CancellationError):
+        execute_run_request(build_body(post_engine_dir))
+
+    assert not list(post_engine_dir.glob("RefDesExtract_*.xlsx"))
+    assert not list(post_engine_dir.glob(".*.part.xlsx"))
+
+    pre_promote_dir = tmp_path / "pre-promote"
+    captured = {}
+
+    monkeypatch.setattr(
+        refdes_test_logic,
+        "extract_with_geometry_analysis_detailed",
+        lambda **_kwargs: (
+            [],
+            {"backend_used": "test", "token_diagnostics": {}},
+        ),
+    )
+
+    def capture_processor(processor) -> None:
+        captured["processor"] = processor
+
+    def cancel_after_verify(temp_path: Path) -> bool:
+        assert Path(temp_path).exists()
+        captured["processor"].cancel.cancel()
+        return True
+
+    monkeypatch.setattr(refdes_runtime, "verify_excel_readable", cancel_after_verify)
+
+    with pytest.raises(CancellationError):
+        execute_run_request(
+            build_body(pre_promote_dir),
+            processor_ready_callback=capture_processor,
+        )
+
+    assert not list(pre_promote_dir.glob("RefDesExtract_*.xlsx"))
+    assert not list(pre_promote_dir.glob(".*.part.xlsx"))
 
 
 # ----- Batch 5 (2026-07 stability sweep) -------------------------------------

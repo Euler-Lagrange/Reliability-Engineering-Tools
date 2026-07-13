@@ -99,7 +99,7 @@ reporting). RefDes additionally gets a `bridge.cancel.check()` after the extract
 engine returns and before coverage/annotation post-processing (currently the last check
 is before group detection — the whole output phase is uncancellable).
 
-- [ ] **Step 1:** For each tool, write a failing test: start a run against tiny fixture
+- [x] **Step 1:** For each tool, write a failing test: start a run against tiny fixture
   inputs with a cancel latched via the tool's cancel bridge *after* the compare/generate
   phase but *before* promote. Recommended technique (already used in
   `test_fmea_phase_d.py`'s write-phase cancellation test — mirror it): monkeypatch
@@ -107,12 +107,12 @@ is before group detection — the whole output phase is uncancellable).
   run raises `CancellationError` and **no final output file exists** (only-temp-cleaned).
   One test per tool path = 6 tests (fmea standard, fmea preserve, bom group, bom custom,
   extraction compare, failure rate, refdes → 7).
-- [ ] **Step 2:** Run them; confirm each fails because the run completes successfully.
-- [ ] **Step 3:** Implement the checks. Keep them one-liners
+- [x] **Step 2:** Run them; confirm each fails because the run completes successfully.
+- [x] **Step 3:** Implement the checks. Keep them one-liners
   (`bridge.cancel.check("Cancelled before finalizing output")` or the tool's equivalent);
   do not restructure the write blocks.
-- [ ] **Step 4:** Full backend suite green.
-- [ ] **Step 5:** Commit: `Runtimes: Check cancellation across write/verify/promote`
+- [x] **Step 4:** Full backend suite green.
+- [x] **Step 5:** Commit: `Runtimes: Check cancellation across write/verify/promote`
 
 ### Task 1.2: Cancel-aware terminal reporting in `_run_in_background`
 
