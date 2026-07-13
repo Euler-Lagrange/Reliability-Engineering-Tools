@@ -118,15 +118,46 @@ def extract_annotations_from_doc(
     def _extract_page(page_ref: "fitz.Page", page_num: int, result: dict) -> None:
         try:
             page_annots = []
+            recovered = 0
+            words_cache = None
             annots = page_ref.annots()
             if annots:
                 for ann in annots:
                     info = dict(ann.info or {})
-                    info["rect"] = tuple(ann.rect.normalize())
+                    rect = tuple(ann.rect.normalize())
+                    if not str(info.get("content") or "").strip():
+                        # Wave R3 (DIG-4xx trigger): some tools store FreeText
+                        # only in the appearance stream — PyMuPDF's
+                        # info["content"] reads /Contents only, so the label
+                        # arrives empty and the group silently vanishes.
+                        # Recover the visible text from the page textpage
+                        # clipped to the annotation rect (annotation
+                        # appearance text IS part of the page textpage). This
+                        # runs inside the page's timeout thread, so the extra
+                        # read stays bounded by page_timeout.
+                        if words_cache is None:
+                            words_cache = page_ref.get_text("words") or []
+                        x0, y0, x1, y1 = rect
+                        inside = [
+                            w
+                            for w in words_cache
+                            if x0 <= (w[0] + w[2]) / 2 <= x1
+                            and y0 <= (w[1] + w[3]) / 2 <= y1
+                            and (w[4] or "").strip()
+                        ]
+                        recovered_text = " ".join(
+                            (w[4] or "").strip()
+                            for w in sorted(inside, key=lambda w: (w[1], w[0]))
+                        )
+                        if recovered_text:
+                            info["content"] = recovered_text
+                            recovered += 1
+                    info["rect"] = rect
                     info["page"] = page_num
                     info["type"] = ann.type[1]
                     page_annots.append(info)
             result["result"] = page_annots
+            result["recovered"] = recovered
             result["done"] = True
         except Exception as e:
             _logger.warning(f"Page {page_num + 1} annotation extraction error: {e}")
@@ -145,8 +176,8 @@ def extract_annotations_from_doc(
             with _thread_lock:
                 if thread in _active_threads:
                     _active_threads.remove(thread)
-            return result["result"], False
-        return [], True
+            return result["result"], False, result.get("recovered", 0)
+        return [], True, 0
 
     def _wait_for_threads(timeout_each: float = 2.0) -> int:
         with _thread_lock:
@@ -169,7 +200,7 @@ def extract_annotations_from_doc(
             if stop_event and stop_event.is_set():
                 raise CancellationError("Cancelled during annotation extraction.")
 
-            page_annots, timed_out = _extract_with_timeout(page_ref, i)
+            page_annots, timed_out, recovered = _extract_with_timeout(page_ref, i)
             if timed_out:
                 annot_timeout_count += 1
                 if timed_out_pages is not None:
@@ -187,6 +218,11 @@ def extract_annotations_from_doc(
                     break
             else:
                 annotations.extend(page_annots)
+                if recovered:
+                    log(
+                        f"Recovered text for {recovered} annotation(s) with "
+                        f"empty content on page {i + 1}"
+                    )
     finally:
         zombie_count = _wait_for_threads(timeout_each=2.0)
         if zombie_count > 0:

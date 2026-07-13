@@ -291,6 +291,42 @@ def test_annotation_extraction_timeout_collects_pages_and_continues() -> None:
     assert any("timed out" in line and "Page 2" in line for line in lines)
 
 
+def test_empty_contents_freetext_text_is_recovered_from_appearance(tmp_path) -> None:
+    """Wave R3 (DIG-4xx trigger): a FreeText whose /Contents is empty while
+    its visible text lives only in the appearance stream must have its text
+    recovered from the page textpage clipped to the annotation rect — an
+    empty-content group label previously vanished silently (no label, no
+    group, no components, no log)."""
+    import fitz
+
+    from refdes_test.refdes_test_logic import extract_annotations_from_doc
+
+    doc = fitz.open()
+    page = doc.new_page(width=612, height=792)
+    ann = page.add_freetext_annot(fitz.Rect(50, 50, 200, 80), "DIG-418", fontsize=12)
+    # Real-world trigger: some tools store FreeText only in the appearance
+    # stream. Clearing /Contents at the xref level reproduces it exactly.
+    doc.xref_set_key(ann.xref, "Contents", "()")
+    pdf_path = tmp_path / "empty_contents.pdf"
+    doc.save(str(pdf_path))
+    doc.close()
+
+    reopened = fitz.open(str(pdf_path))
+    try:
+        lines: list[str] = []
+        annotations = extract_annotations_from_doc(reopened, log_func=lines.append)
+    finally:
+        reopened.close()
+
+    freetexts = [a for a in annotations if a.get("type") == "FreeText"]
+    assert freetexts, "fixture must produce a FreeText annotation"
+    assert freetexts[0]["content"] == "DIG-418"
+    assert any(
+        "Recovered text for 1 annotation" in line and "page 1" in line
+        for line in lines
+    )
+
+
 def _build_words_pdf(tmp_path, words):
     """Write a single-page PDF with plain text words at given baselines."""
     import fitz
