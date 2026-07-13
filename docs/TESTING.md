@@ -75,8 +75,8 @@
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
 | **Frontend subtotal** | | **306** | |
-| Rust bridge unit | `src-tauri/src/lib.rs` | 17 | cargo test |
-| **Total** | | **732** | |
+| Rust bridge unit | `src-tauri/src/lib.rs` | 18 | cargo test |
+| **Total** | | **733** | |
 
 ## Backend Tests
 

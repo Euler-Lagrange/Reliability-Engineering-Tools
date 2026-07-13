@@ -428,6 +428,54 @@ fn disconnect_managed_session(session: &SessionSlot, shared: &Arc<SessionShared>
     shared.handle_disconnect(message);
 }
 
+trait SessionDisconnectState {
+    fn generation_matches(&self, expected_generation: u64) -> bool;
+    fn complete_disconnect(&self, message: String);
+}
+
+impl SessionDisconnectState for SessionShared {
+    fn generation_matches(&self, expected_generation: u64) -> bool {
+        self.session_generation
+            .lock()
+            .map(|generation| *generation == expected_generation)
+            .unwrap_or(false)
+    }
+
+    fn complete_disconnect(&self, message: String) {
+        self.handle_disconnect(message);
+    }
+}
+
+fn disconnect_if_current<T, S, F>(
+    session: &Arc<Mutex<Option<T>>>,
+    state: &S,
+    expected_generation: u64,
+    message: String,
+    terminate: F,
+) -> bool
+where
+    S: SessionDisconnectState,
+    F: FnOnce(T),
+{
+    // Keep the session slot locked across identity selection, termination, and
+    // disconnect bookkeeping. `ensure_session` uses the same session ->
+    // generation lock order while spawning/installing a successor, so stale
+    // per-session tasks cannot act on state belonging to a newer generation.
+    let Ok(mut session_guard) = session.lock() else {
+        return false;
+    };
+    if !state.generation_matches(expected_generation) {
+        return false;
+    }
+
+    let Some(active_session) = session_guard.take() else {
+        return false;
+    };
+    terminate(active_session);
+    state.complete_disconnect(message);
+    true
+}
+
 struct SidecarState {
     session: SessionSlot,
     shared: Arc<SessionShared>,
@@ -661,6 +709,7 @@ fn classify_stdout_line(raw: &str) -> StdoutLine {
 }
 
 fn spawn_stdout_reader(stdout: ChildStdout, shared: Arc<SessionShared>, session: SessionSlot) {
+    let my_generation = shared.current_session_generation();
     thread::spawn(move || {
         let mut reader = BufReader::new(stdout);
         let mut line = String::new();
@@ -669,10 +718,12 @@ fn spawn_stdout_reader(stdout: ChildStdout, shared: Arc<SessionShared>, session:
             line.clear();
             match reader.read_line(&mut line) {
                 Ok(0) => {
-                    disconnect_managed_session(
+                    disconnect_if_current(
                         &session,
-                        &shared,
+                        shared.as_ref(),
+                        my_generation,
                         "Python sidecar closed stdout.".to_string(),
+                        |active_session| active_session.kill(),
                     );
                     break;
                 }
@@ -773,10 +824,12 @@ fn spawn_stdout_reader(stdout: ChildStdout, shared: Arc<SessionShared>, session:
                     }
                 }
                 Err(error) => {
-                    disconnect_managed_session(
+                    disconnect_if_current(
                         &session,
-                        &shared,
+                        shared.as_ref(),
+                        my_generation,
                         format!("Failed while waiting for python sidecar output: {error}"),
+                        |active_session| active_session.kill(),
                     );
                     break;
                 }
@@ -804,10 +857,12 @@ fn spawn_heartbeat_supervisor(shared: Arc<SessionShared>, session: SessionSlot) 
             }
 
             if shared.heartbeat_overdue() {
-                disconnect_managed_session(
+                disconnect_if_current(
                     &session,
-                    &shared,
+                    shared.as_ref(),
+                    my_generation,
                     "Python sidecar heartbeat timed out — backend may have crashed or hung.".to_string(),
+                    |active_session| active_session.kill(),
                 );
                 break;
             }
@@ -1682,12 +1737,16 @@ pub fn run() {
 mod tests {
     use super::{
         await_ready, candidate_bases, classify_stdout_line, correlation_id,
-        enrich_run_event_for_frontend, merge_disconnect_message, parse_timeout_secs,
-        should_forward_run_event, truncate_crash_value, ReadyOutcome, StdoutLine,
+        disconnect_if_current, enrich_run_event_for_frontend, merge_disconnect_message,
+        parse_timeout_secs, should_forward_run_event, truncate_crash_value, ReadyOutcome,
+        SessionDisconnectState, StdoutLine,
     };
     use serde_json::json;
     use std::path::PathBuf;
-    use std::sync::mpsc;
+    use std::sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        mpsc, Arc, Mutex,
+    };
     use std::time::Duration;
 
     #[test]
@@ -1713,6 +1772,81 @@ mod tests {
         assert_eq!(
             message,
             "Python sidecar closed stdout. Details: Unhandled exception: RuntimeError: boom"
+        );
+    }
+
+    #[test]
+    fn disconnect_if_current_preserves_a_successor_session() {
+        struct FakeDisconnectState {
+            generation: Mutex<u64>,
+            connected: AtomicBool,
+            disconnect_count: AtomicUsize,
+            last_message: Mutex<Option<String>>,
+        }
+
+        impl SessionDisconnectState for FakeDisconnectState {
+            fn generation_matches(&self, expected_generation: u64) -> bool {
+                self.generation
+                    .lock()
+                    .map(|generation| *generation == expected_generation)
+                    .unwrap_or(false)
+            }
+
+            fn complete_disconnect(&self, message: String) {
+                self.connected.store(false, Ordering::SeqCst);
+                self.disconnect_count.fetch_add(1, Ordering::SeqCst);
+                *self.last_message.lock().unwrap() = Some(message);
+            }
+        }
+
+        let stale_generation = 1;
+        let current_generation = 2;
+        let state = FakeDisconnectState {
+            generation: Mutex::new(current_generation),
+            connected: AtomicBool::new(true),
+            disconnect_count: AtomicUsize::new(0),
+            last_message: Mutex::new(None),
+        };
+        let session = Arc::new(Mutex::new(Some("successor")));
+        let kill_count = Arc::new(AtomicUsize::new(0));
+
+        let stale_kill_count = kill_count.clone();
+        let stale_disconnected = disconnect_if_current(
+            &session,
+            &state,
+            stale_generation,
+            "stale reader exited".to_string(),
+            move |_| {
+                stale_kill_count.fetch_add(1, Ordering::SeqCst);
+            },
+        );
+
+        assert!(!stale_disconnected);
+        assert_eq!(*session.lock().unwrap(), Some("successor"));
+        assert_eq!(kill_count.load(Ordering::SeqCst), 0);
+        assert!(state.connected.load(Ordering::SeqCst));
+        assert_eq!(state.disconnect_count.load(Ordering::SeqCst), 0);
+        assert!(state.last_message.lock().unwrap().is_none());
+
+        let current_kill_count = kill_count.clone();
+        let current_disconnected = disconnect_if_current(
+            &session,
+            &state,
+            current_generation,
+            "current reader exited".to_string(),
+            move |_| {
+                current_kill_count.fetch_add(1, Ordering::SeqCst);
+            },
+        );
+
+        assert!(current_disconnected);
+        assert!(session.lock().unwrap().is_none());
+        assert_eq!(kill_count.load(Ordering::SeqCst), 1);
+        assert!(!state.connected.load(Ordering::SeqCst));
+        assert_eq!(state.disconnect_count.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            state.last_message.lock().unwrap().as_deref(),
+            Some("current reader exited")
         );
     }
 

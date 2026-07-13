@@ -217,14 +217,14 @@ the disconnect bookkeeping. `shutdown()` and explicit `force_disconnect` paths k
 unconditional behavior (they act on behalf of the whole app, not one session). The
 heartbeat's existing check-then-kill becomes atomic by going through the same function.
 
-- [ ] **Step 1:** Failing unit test for the guard itself: construct the shared state,
+- [x] **Step 1:** Failing unit test for the guard itself: construct the shared state,
   advance the generation past the caller's, call `disconnect_if_current`, assert the
   current session survives; matching-generation call kills it. (Test the state machine,
   not a real child process — factor the identity check so it's testable without
   spawning python.)
-- [ ] **Step 2:** Implement; wire reader + heartbeat through it; `npm run cargo:test`
+- [x] **Step 2:** Implement; wire reader + heartbeat through it; `npm run cargo:test`
   green; full app suites still green.
-- [ ] **Step 3:** Commit: `Bridge: Teardown paths kill only their own session generation`
+- [x] **Step 3:** Commit: `Bridge: Teardown paths kill only their own session generation`
 
 ### Task 2.2: Log dropped webview emits
 
@@ -680,3 +680,12 @@ count locations); sidecar self-test green; CHANGELOG complete; STOP for final re
 - `detect_groups_from_drawings` retains an unbounded direct word-read default for
   compatibility. Its sole in-repo production caller supplies the bounded reader,
   but a future direct caller could omit it and reintroduce the hang risk.
+- Generation-guarded teardown prevents an old stdout reader from killing a new
+  sidecar, but the old reader can still process buffered frames before EOF. Such
+  a frame can refresh the shared heartbeat/fatal-detail state or be forwarded
+  after enrichment with the successor's generation. Retiring stale readers from
+  all frame processing needs a separate event-session identity design.
+- The detailed frontend inventory in `docs/TESTING.md` has pre-existing stale
+  per-file counts for the contract, command-palette, run-lifecycle, and BOM
+  Compare suites even though the primary inventory and aggregate suite count are
+  current. Reconciling historical inventory drift is outside this remediation.
