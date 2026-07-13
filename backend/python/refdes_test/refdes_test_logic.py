@@ -119,7 +119,6 @@ def extract_annotations_from_doc(
         try:
             page_annots = []
             recovered = 0
-            words_cache = None
             annots = page_ref.annots()
             if annots:
                 for ann in annots:
@@ -130,25 +129,18 @@ def extract_annotations_from_doc(
                         # only in the appearance stream — PyMuPDF's
                         # info["content"] reads /Contents only, so the label
                         # arrives empty and the group silently vanishes.
-                        # Recover the visible text from the page textpage
-                        # clipped to the annotation rect (annotation
-                        # appearance text IS part of the page textpage). This
-                        # runs inside the page's timeout thread, so the extra
+                        # Recover from the annotation's OWN appearance text
+                        # (never the page textpage clipped to the rect: a
+                        # self-labeled group box legitimately contains member
+                        # words, which would pollute the recovered label).
+                        # Runs inside the page's timeout thread, so the extra
                         # read stays bounded by page_timeout.
-                        if words_cache is None:
-                            words_cache = page_ref.get_text("words") or []
-                        x0, y0, x1, y1 = rect
-                        inside = [
-                            w
-                            for w in words_cache
-                            if x0 <= (w[0] + w[2]) / 2 <= x1
-                            and y0 <= (w[1] + w[3]) / 2 <= y1
-                            and (w[4] or "").strip()
-                        ]
-                        recovered_text = " ".join(
-                            (w[4] or "").strip()
-                            for w in sorted(inside, key=lambda w: (w[1], w[0]))
-                        )
+                        try:
+                            recovered_text = " ".join(
+                                str(ann.get_text("text") or "").split()
+                            )
+                        except Exception:
+                            recovered_text = ""
                         if recovered_text:
                             info["content"] = recovered_text
                             recovered += 1

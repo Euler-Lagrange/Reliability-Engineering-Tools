@@ -17,6 +17,117 @@ from refdes_extractor.runtime import (
 )
 
 
+def test_dig4xx_combined_silent_loss_regression(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Wave R5: the test that would have caught the DIG-4xx incident. One
+    run through the REAL pipeline exercises every silent-loss fix at once:
+
+    * R1 — a valid RefDes outside every group lands in UNGROUPED (IN BOM);
+    * R2 — a page whose annotation extraction times out becomes a result
+      note + warning_count, and later pages still contribute;
+    * R3 — a group label whose /Contents is empty is recovered from its
+      appearance text and its group extracts normally;
+    * R4 — a long numbering hole surfaces as ONE range summary row and the
+      per-family gap note names the family.
+    """
+    import time
+
+    fitz = pytest.importorskip("fitz")
+    from openpyxl import Workbook, load_workbook
+
+    # --- fixture PDF: 3 pages. Self-labeled FreeText groups use the
+    # annotation's own rect, so member words must sit inside those rects. ---
+    doc = fitz.open()
+    page1 = doc.new_page(width=612, height=792)
+    page1.add_freetext_annot(fitz.Rect(50, 40, 300, 200), "DIG-001", fontsize=10)
+    page1.insert_text((100, 150), "R55", fontsize=10)  # inside DIG-001 rect
+    ann5 = page1.add_freetext_annot(fitz.Rect(320, 40, 560, 200), "DIG-005", fontsize=10)
+    page1.insert_text((400, 120), "U12", fontsize=10)  # inside DIG-005 rect
+    page1.insert_text((100, 700), "C77", fontsize=10)  # outside all groups, in BOM
+    doc.xref_set_key(ann5.xref, "Contents", "()")  # R3 trigger: appearance-only label
+
+    page2 = doc.new_page(width=612, height=792)  # the page that times out (R2)
+    page2.add_freetext_annot(fitz.Rect(50, 40, 300, 200), "DIG-010", fontsize=10)
+
+    page3 = doc.new_page(width=612, height=792)
+    page3.add_freetext_annot(fitz.Rect(50, 40, 300, 200), "DIG-020", fontsize=10)
+
+    pdf_path = tmp_path / "dig4xx.pdf"
+    doc.save(str(pdf_path))
+    doc.close()
+
+    # --- fixture BOM ---
+    bom_path = tmp_path / "bom.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "BOM"
+    ws.append(["Reference Designator"])
+    for refdes in ("R55", "U12", "C77"):
+        ws.append([refdes])
+    wb.save(bom_path)
+
+    # --- deterministic page-2 timeout: real annots(), slowed on page index 1 ---
+    real_annots = fitz.Page.annots
+
+    def slow_annots(self, *args, **kwargs):
+        if self.number == 1:
+            time.sleep(0.6)
+        return real_annots(self, *args, **kwargs)
+
+    monkeypatch.setattr(fitz.Page, "annots", slow_annots)
+
+    result = execute_run_request(
+        {
+            "workflowId": "refdes_extract",
+            "outputStrategyId": "new_workbook_standard",
+            "outputDirectory": str(tmp_path),
+            "inputs": [
+                {"role": "pdf", "path": str(pdf_path)},
+                {"role": "bom", "path": str(bom_path), "selectedSheet": "BOM"},
+            ],
+            "options": {"annotation_page_timeout_seconds": 0.2},
+        }
+    )
+
+    # R2: the timed-out page is a first-class warning.
+    assert result["warning_count"] >= 1
+    assert any("timed out on page 2" in note for note in result["notes"])
+
+    # R4: the per-family gap note names the DIG family.
+    assert any("DIG" in note and "not detected" in note.lower() for note in result["notes"])
+
+    # Row-level assertions from the written workbook.
+    out_files = list(tmp_path.glob("RefDesExtract_*.xlsx"))
+    assert len(out_files) == 1
+    out_wb = load_workbook(out_files[0])
+    try:
+        sheet = out_wb.worksheets[0]
+        headers = [c.value for c in sheet[1]]
+        group_idx = headers.index("Group")
+        causes_idx = headers.index("Failure Mode Causes")
+        rows = {
+            str(r[group_idx].value): str(r[causes_idx].value or "")
+            for r in sheet.iter_rows(min_row=2)
+        }
+    finally:
+        out_wb.close()
+
+    # R3: the appearance-only DIG-005 label was recovered and extracted.
+    assert "U12" in rows.get("DIG-005 (Verified)", "")
+    # R1: the out-of-group C77 surfaces in the UNGROUPED bucket.
+    assert "C77" in rows.get("UNGROUPED (IN BOM)", "")
+    # R4: the long hole between DIG-005 and DIG-020 is one summary row.
+    assert any(
+        "RANGE NOT DETECTED" in name and "consecutive" in name for name in rows
+    )
+    # R2 side effect: page 2's DIG-010 vanished (that IS the incident) — but
+    # page 3's DIG-020 still extracted, proving the run continued.
+    assert not any(name.startswith("DIG-010") for name in rows)
+    assert any(name.startswith("DIG-020") for name in rows)
+
+
 def test_annotation_timeout_option_plumbed_and_surfaces_warning(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

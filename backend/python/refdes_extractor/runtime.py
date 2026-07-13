@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import re
 import threading
 import tempfile
 from dataclasses import dataclass, fields
@@ -1013,6 +1014,26 @@ def execute_run_request(
         notes.append(
             f"Annotation extraction timed out on page {_timeout_page}; that "
             f"page's groups and components are missing from this report."
+        )
+
+    # Wave R4: per-family numbering-gap totals, so expected-but-missing
+    # groups are visible in the result summary, not only as sheet rows.
+    # Collapsed range rows encode their span as "N consecutive".
+    gap_missing_by_family: dict[str, int] = {}
+    for _row in results:
+        if not _row.get("_is_gap"):
+            continue
+        _name = str(_row.get("group", ""))
+        _family_match = re.match(r"^([A-Za-z]+)", _name)
+        _family = _family_match.group(1) if _family_match else _name
+        _range_match = re.search(r"(\d+) consecutive", _name)
+        gap_missing_by_family[_family] = gap_missing_by_family.get(_family, 0) + (
+            int(_range_match.group(1)) if _range_match else 1
+        )
+    for _family, _missing in sorted(gap_missing_by_family.items()):
+        notes.append(
+            f"{_family}*: {_missing} expected group number(s) not detected in "
+            f"the numbering sequence — see the NOT DETECTED rows."
         )
 
     _orphan_count = len((details or {}).get("orphan_pins") or [])
