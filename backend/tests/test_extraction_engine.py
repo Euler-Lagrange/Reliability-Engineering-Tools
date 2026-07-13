@@ -396,6 +396,60 @@ def test_group_fallback_routes_all_word_reads_through_timeout_wrapper(
     ]
 
 
+def test_cleanup_returns_zero_when_thread_finishes_during_join(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from refdes_extractor import extraction_engine as engine
+
+    class _FinishesDuringJoin:
+        def __init__(self) -> None:
+            self.alive = True
+            self.join_calls = 0
+
+        def is_alive(self) -> bool:
+            return self.alive
+
+        def join(self, *, timeout: float) -> None:
+            self.join_calls += 1
+            self.alive = False
+
+    thread = _FinishesDuringJoin()
+    registry = [thread]
+    monkeypatch.setattr(engine, "_words_extraction_threads", registry)
+
+    remaining = engine.cleanup_words_extraction_threads(timeout_per_thread=0.0)
+
+    assert remaining == 0
+    assert thread.join_calls == 1
+    assert registry == []
+
+
+def test_cleanup_retains_threads_still_alive_after_join(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from refdes_extractor import extraction_engine as engine
+
+    class _StillAlive:
+        def __init__(self) -> None:
+            self.join_calls = 0
+
+        def is_alive(self) -> bool:
+            return True
+
+        def join(self, *, timeout: float) -> None:
+            self.join_calls += 1
+
+    thread = _StillAlive()
+    registry = [thread]
+    monkeypatch.setattr(engine, "_words_extraction_threads", registry)
+
+    assert engine.cleanup_words_extraction_threads(timeout_per_thread=0.0) == 1
+    assert registry == [thread]
+    assert engine.cleanup_words_extraction_threads(timeout_per_thread=0.0) == 1
+    assert registry == [thread]
+    assert thread.join_calls == 2
+
+
 # ---------------------------------------------------------------------------
 # Blacklist matching: the header comment once claimed SUBSTRING matching, but
 # both the code and the _is_blacklisted docstring use EXACT matching. Switching

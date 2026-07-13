@@ -183,10 +183,10 @@ already knows), **skip `doc.close()`** and emit a run-log WARNING
 Deliberately leaking one fitz document beats a C-level crash — the module's own comments
 say so.
 
-- [ ] **Step 1:** Failing test: monkeypatch cleanup to report 1 zombie; assert
+- [x] **Step 1:** Failing test: monkeypatch cleanup to report 1 zombie; assert
   `doc.close` is NOT called and the warning is logged. Second test: zero zombies →
   close IS called.
-- [ ] **Step 2:** Implement both changes, green, commit:
+- [x] **Step 2:** Implement both changes, green, commit:
   `RefDes/FMEA: Guard doc close on zombie threads; cancellable analyzer re-read`
 
 **Wave 1 exit:** suites green; CHANGELOG entry; counts synced; STOP for review.
@@ -669,3 +669,14 @@ count locations); sidecar self-test green; CHANGELOG complete; STOP for final re
 ## Discovered out-of-scope
 
 (Implementing agent: append items here instead of fixing them.)
+
+- `sidecar_main._parse_log_level` recognizes embedded `" WARNING:"` text but not
+  the common leading `"WARNING:"` form (or an unprefixed semantic warning), so
+  many streamed warning lines are currently classified as INFO.
+- Direct legacy/NextGen RefDes engine entry points that own their own fitz
+  document still leave document closure to a context manager even if word-thread
+  cleanup reports a survivor. The desktop runtime-supplied document path is now
+  guarded, but the direct API ownership paths need a separate lifecycle design.
+- `detect_groups_from_drawings` retains an unbounded direct word-read default for
+  compatibility. Its sole in-repo production caller supplies the bounded reader,
+  but a future direct caller could omit it and reintroduce the hang risk.

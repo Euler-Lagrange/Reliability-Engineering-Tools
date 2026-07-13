@@ -1967,7 +1967,10 @@ def harvest_hybrid_nextgen(
         finally:
             zombie_count = legacy_engine.cleanup_words_extraction_threads(timeout_per_thread=2.0)
             if zombie_count > 0:
-                log(f"Cleaned up {zombie_count} background word extraction thread(s)")
+                log(
+                    f"WARNING: {zombie_count} background word extraction thread(s) "
+                    f"still running after cleanup"
+                )
 
     _fold_token_pages_into_diagnostics(grouped_data, diagnostics)
 

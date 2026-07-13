@@ -428,6 +428,92 @@ def test_refdes_runtime_passes_stop_event_to_group_detection(
         )
 
 
+def _run_refdes_doc_cleanup_case(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    remaining_threads: int,
+) -> tuple[object, list[str]]:
+    fitz = pytest.importorskip("fitz")
+    from refdes_extractor import extraction_engine
+    from refdes_test import refdes_test_logic
+
+    class _FakeDocument:
+        def __init__(self) -> None:
+            self.close_calls = 0
+
+        def __len__(self) -> int:
+            return 1
+
+        def close(self) -> None:
+            self.close_calls += 1
+
+    pdf_path = tmp_path / "schematic.pdf"
+    pdf_path.touch()
+    body = {
+        "workflowId": "refdes_extract",
+        "outputStrategyId": "new_workbook_standard",
+        "outputDirectory": str(tmp_path),
+        "inputs": [{"role": "pdf", "path": str(pdf_path)}],
+        "options": {},
+    }
+    fake_doc = _FakeDocument()
+    logs: list[str] = []
+
+    monkeypatch.setattr(fitz, "open", lambda _path: fake_doc)
+    monkeypatch.setattr(
+        extraction_engine,
+        "cleanup_words_extraction_threads",
+        lambda: remaining_threads,
+    )
+
+    def stop_after_open(*_args, **_kwargs):
+        raise RuntimeError("stop after PDF open")
+
+    monkeypatch.setattr(
+        refdes_test_logic,
+        "extract_annotations_from_doc",
+        stop_after_open,
+    )
+
+    with pytest.raises(RuntimeError, match="stop after PDF open"):
+        execute_run_request(body, log_callback=logs.append)
+
+    return fake_doc, logs
+
+
+def test_refdes_zombie_extraction_thread_skips_pdf_close_and_warns(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_doc, logs = _run_refdes_doc_cleanup_case(
+        tmp_path,
+        monkeypatch,
+        remaining_threads=1,
+    )
+    warning = (
+        "1 extraction thread(s) still running; leaving the PDF handle open to "
+        "avoid a native crash."
+    )
+
+    assert fake_doc.close_calls == 0
+    assert logs.count(warning) == 1
+
+
+def test_refdes_zero_extraction_threads_closes_pdf(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_doc, logs = _run_refdes_doc_cleanup_case(
+        tmp_path,
+        monkeypatch,
+        remaining_threads=0,
+    )
+
+    assert fake_doc.close_calls == 1
+    assert not any("leaving the PDF handle open" in line for line in logs)
+
+
 # ----- Batch 5 (2026-07 stability sweep) -------------------------------------
 
 

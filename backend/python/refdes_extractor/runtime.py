@@ -842,8 +842,16 @@ def execute_run_request(
             doc=doc,
         )
     finally:
-        cleanup_words_extraction_threads()
-        doc.close()
+        remaining_threads = cleanup_words_extraction_threads()
+        if remaining_threads > 0:
+            warning = (
+                f"{remaining_threads} extraction thread(s) still running; leaving "
+                f"the PDF handle open to avoid a native crash."
+            )
+            _logger.warning(warning)
+            stream_log(warning)
+        else:
+            doc.close()
 
     bridge.cancel.check()
 

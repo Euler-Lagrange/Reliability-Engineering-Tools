@@ -270,21 +270,28 @@ def cleanup_words_extraction_threads(timeout_per_thread: float = 2.0) -> int:
         timeout_per_thread: Maximum seconds to wait for each thread
 
     Returns:
-        Number of threads that were still running (zombies cleaned up)
+        Number of threads still running after the cleanup wait. Survivors stay
+        registered so an outer document owner can make a safe close decision.
     """
     with _words_thread_lock:
         threads_to_wait = list(_words_extraction_threads)
         _words_extraction_threads.clear()
 
-    zombie_count = 0
+    survivors = []
     for thread in threads_to_wait:
         if thread.is_alive():
-            zombie_count += 1
             thread.join(timeout=timeout_per_thread)
             if thread.is_alive():
                 _logger.warning(f"Words extraction thread did not finish within {timeout_per_thread}s cleanup window")
+                survivors.append(thread)
 
-    return zombie_count
+    if survivors:
+        with _words_thread_lock:
+            for thread in survivors:
+                if thread not in _words_extraction_threads:
+                    _words_extraction_threads.append(thread)
+
+    return len(survivors)
 
 
 # =============================================================================
@@ -811,7 +818,10 @@ def harvest_components(
             # CRITICAL: Wait for any zombie word extraction threads before document closes
             zombie_count = cleanup_words_extraction_threads(timeout_per_thread=2.0)
             if zombie_count > 0:
-                log(f"Cleaned up {zombie_count} background word extraction thread(s)")
+                log(
+                    f"WARNING: {zombie_count} background word extraction thread(s) "
+                    f"still running after cleanup"
+                )
 
     return _format_results(grouped_data)
 
@@ -990,7 +1000,10 @@ def harvest_functional_fmea(
             # CRITICAL: Wait for any zombie threads before document closes
             zombie_count = cleanup_words_extraction_threads(timeout_per_thread=2.0)
             if zombie_count > 0:
-                log(f"Cleaned up {zombie_count} background word extraction thread(s)")
+                log(
+                    f"WARNING: {zombie_count} background word extraction thread(s) "
+                    f"still running after cleanup"
+                )
 
     return _format_functional_results(grouped_data, log)
 
@@ -1576,7 +1589,10 @@ def harvest_hybrid(
             # CRITICAL: Wait for any zombie threads before document closes
             zombie_count = cleanup_words_extraction_threads(timeout_per_thread=2.0)
             if zombie_count > 0:
-                log(f"Cleaned up {zombie_count} background word extraction thread(s)")
+                log(
+                    f"WARNING: {zombie_count} background word extraction thread(s) "
+                    f"still running after cleanup"
+                )
 
     results = _format_hybrid_results(grouped_data, group_modes, bom_set, log)
 

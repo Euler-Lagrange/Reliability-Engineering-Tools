@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Cancellation now stays truthful through backend completion** — every report
+  runtime checks the write/verify/promote boundary; a latched cancel supersedes
+  a later backend exception without hiding its diagnostics; committed output
+  remains a reported success with an explanatory log; RefDes fallback reads are
+  bounded and cancellable; live extraction threads prevent an unsafe PDF close;
+  and FMEA template re-reads receive the active cancellation callback.
+
 ### Changed
 
 - **BOM Compare Custom Compare report sheets renamed** to the same human

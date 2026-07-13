@@ -589,6 +589,9 @@ def analyze_template(
         header_row=header_row - 1,
         sheet_name=fmea_sheet_name,
         log_func=_log,
+        cancel_check=(
+            cancel_token.is_cancelled if cancel_token is not None else None
+        ),
     )
     _log(f"Read {len(df)} data rows from '{fmea_sheet_name}'")
 

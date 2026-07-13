@@ -21,7 +21,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from common.cancellation import CancellationError
+from common.cancellation import CancellationError, CancellationToken
 from common.exceptions import ValidationError
 from fmea import runtime as fmea_runtime
 from fmea.fmea_generator_logic import FMEAProcessor, _index_to_suffix, write_excel_report
@@ -4445,6 +4445,55 @@ def test_fmea_preserve_cancel_after_verify_cleans_temp_and_skips_promote(
         monkeypatch,
         preserve_formatting=True,
     )
+
+
+def test_analyze_template_passes_cancel_check_to_table_reader(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from openpyxl import Workbook
+
+    from fmea import fmea_template_analyzer as analyzer
+
+    target_path = tmp_path / "target_fmea.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "FMEA"
+    ws.append([
+        "FMEA-ID",
+        "FMEA Level",
+        "Failure Mode Causes",
+        "Function Description",
+        "Failure Mode",
+        "Failure Mode Ratio",
+    ])
+    ws.append([
+        "CPU-001",
+        "Circuit Block",
+        "R100",
+        "Support",
+        "",
+        "",
+    ])
+    wb.save(target_path)
+    wb.close()
+
+    cancel_token = CancellationToken()
+
+    def cancel_inside_reader(*_args, cancel_check=None, **_kwargs):
+        assert callable(cancel_check)
+        cancel_token.cancel()
+        assert cancel_check() is True
+        raise CancellationError("Cancelled during table read")
+
+    monkeypatch.setattr(analyzer, "try_read_table", cancel_inside_reader)
+
+    with pytest.raises(CancellationError, match="table read"):
+        analyzer.analyze_template(
+            str(target_path),
+            sheet_name="FMEA",
+            cancel_token=cancel_token,
+        )
 
 
 def test_negative_part_usage_survives_as_data_quality_warning(
