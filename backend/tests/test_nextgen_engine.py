@@ -242,6 +242,55 @@ def test_geometry_checkpoints_are_opt_in() -> None:
     assert RefDesConfig().geometry_batch_checkpoint_enabled is False
 
 
+def test_annotation_extraction_timeout_collects_pages_and_continues() -> None:
+    """Wave R2: a page whose annots() call exceeds page_timeout is skipped
+    with its 1-based page number reported through timed_out_pages, while
+    other pages' annotations survive. The default timeout is 30s (the old
+    hardcoded 10s was exceeded by real dense schematic sheets)."""
+    import inspect
+    import time
+
+    from refdes_test.refdes_test_logic import extract_annotations_from_doc
+
+    assert (
+        inspect.signature(extract_annotations_from_doc)
+        .parameters["page_timeout"]
+        .default
+        == 30.0
+    )
+
+    class _Rect:
+        def normalize(self):
+            return (0.0, 0.0, 10.0, 10.0)
+
+    class _Ann:
+        info = {"content": "DIG-001"}
+        rect = _Rect()
+        type = (2, "FreeText")
+
+    class _OkPage:
+        def annots(self):
+            return [_Ann()]
+
+    class _SlowPage:
+        def annots(self):
+            time.sleep(0.4)
+            return [_Ann()]
+
+    lines: list[str] = []
+    timed_out: list[int] = []
+    annotations = extract_annotations_from_doc(
+        [_OkPage(), _SlowPage(), _OkPage()],
+        log_func=lines.append,
+        page_timeout=0.05,
+        timed_out_pages=timed_out,
+    )
+
+    assert len(annotations) == 2
+    assert timed_out == [2]
+    assert any("timed out" in line and "Page 2" in line for line in lines)
+
+
 def _build_words_pdf(tmp_path, words):
     """Write a single-page PDF with plain text words at given baselines."""
     import fitz

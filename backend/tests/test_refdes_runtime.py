@@ -17,6 +17,72 @@ from refdes_extractor.runtime import (
 )
 
 
+def test_annotation_timeout_option_plumbed_and_surfaces_warning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Wave R2: annotation_page_timeout_seconds is a validated RefDesConfig
+    option, the runtime forwards it into annotation extraction, and a
+    timed-out page becomes a result note + warning_count increment instead
+    of a log-only whisper (the DIG-4xx incident shipped with zero visible
+    warning surface)."""
+    fitz = pytest.importorskip("fitz")
+    from refdes_test import refdes_test_logic
+
+    captured: dict = {}
+
+    def fake_extract_annotations(
+        doc,
+        stop_event=None,
+        log_func=None,
+        page_timeout=None,
+        max_timeouts=3,
+        timed_out_pages=None,
+    ):
+        captured["page_timeout"] = page_timeout
+        if timed_out_pages is not None:
+            timed_out_pages.append(2)
+        return []
+
+    monkeypatch.setattr(
+        refdes_test_logic, "extract_annotations_from_doc", fake_extract_annotations
+    )
+    monkeypatch.setattr(
+        refdes_test_logic,
+        "detect_groups_with_fallback",
+        lambda _doc, _annotations, **_kwargs: ([], False, {}),
+    )
+    monkeypatch.setattr(
+        refdes_test_logic,
+        "extract_with_geometry_analysis_detailed",
+        lambda **_kwargs: ([], {"backend_used": "test", "token_diagnostics": {}}),
+    )
+    monkeypatch.setattr(refdes_runtime, "verify_excel_readable", lambda _path: True)
+
+    pdf_path = tmp_path / "schematic.pdf"
+    doc = fitz.open()
+    doc.new_page()
+    doc.save(pdf_path)
+    doc.close()
+
+    result = execute_run_request(
+        {
+            "workflowId": "refdes_extract",
+            "outputStrategyId": "new_workbook_standard",
+            "outputDirectory": str(tmp_path),
+            "inputs": [{"role": "pdf", "path": str(pdf_path)}],
+            "options": {"annotation_page_timeout_seconds": 45},
+        }
+    )
+
+    assert captured["page_timeout"] == 45
+    assert result["warning_count"] >= 1
+    assert any("timed out on page 2" in note for note in result["notes"])
+    # The option is a first-class validated field: bad values fail validation.
+    bad = _validate_options({"annotation_page_timeout_seconds": 0})
+    assert any(name == "annotation_page_timeout_seconds" for name, _ in bad)
+
+
 def test_adaptive_orphan_threshold_zero_is_valid() -> None:
     # Adversarial-review fix: 0 is a legitimate threshold ("trigger full geometry
     # even with zero orphans"), the frontend control allows a minimum of 0, and

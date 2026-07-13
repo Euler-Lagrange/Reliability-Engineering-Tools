@@ -84,14 +84,22 @@ def extract_annotations_from_doc(
     doc: "fitz.Document",
     stop_event=None,
     log_func=None,
-    page_timeout: float = 10.0,
+    page_timeout: float = 30.0,
     max_timeouts: int = 3,
+    timed_out_pages: Optional[List[int]] = None,
 ) -> List[dict]:
     """
     Extract PDF annotations from an already-open document with per-page timeouts.
 
     Handles zombie thread cleanup internally so the caller can safely continue
     using the document after this returns.
+
+    Wave R2: ``page_timeout`` defaults to 30s (the old 10s was exceeded by
+    real dense schematic sheets, silently dropping every group on the page)
+    and is runtime-configurable via ``annotation_page_timeout_seconds``.
+    When ``timed_out_pages`` is provided, each skipped page's 1-based number
+    is appended so the caller can surface the loss in the run result instead
+    of only the log.
 
     Returns:
         List of annotation dicts with rect, page, type keys.
@@ -164,6 +172,8 @@ def extract_annotations_from_doc(
             page_annots, timed_out = _extract_with_timeout(page_ref, i)
             if timed_out:
                 annot_timeout_count += 1
+                if timed_out_pages is not None:
+                    timed_out_pages.append(i + 1)
                 log(
                     f"WARNING: Page {i + 1}: annotation extraction timed out "
                     f"after {page_timeout:.0f}s - skipping annotations"

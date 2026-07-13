@@ -70,6 +70,11 @@ class RefDesConfig:
     adaptive_orphan_ratio: float = 0.30
     adaptive_max_pages: int = 10
     pinlist_prefers_annotation_mode: bool = True
+    # Wave R2: per-page annotation-extraction timeout. A page that exceeds it
+    # loses ALL its annotations (groups + components), so the default is
+    # generous and the value is user-tunable. Keep in lockstep with the
+    # extract_annotations_from_doc default in refdes_test_logic.py.
+    annotation_page_timeout_seconds: float = 30.0
 
     @classmethod
     def from_options(cls, options: dict[str, Any]) -> RefDesConfig:
@@ -234,6 +239,7 @@ _POSITIVE_NUMBER_OPTIONS = frozenset({
     "prov_distance",
     "pin_assignment_threshold",
     "refdes_search_radius",
+    "annotation_page_timeout_seconds",
 })
 
 # Counts / sizes / pages — must be a whole number >= 1.
@@ -785,6 +791,7 @@ def execute_run_request(
     emit_status("running", "Opening PDF", "Opening schematic PDF...")
     emit_progress("Opening PDF", "Opening PDF...", 9)
 
+    annot_timeout_pages: list[int] = []
     doc = fitz.open(str(pdf_path))
     try:
         stream_log(f"Opened PDF: {Path(pdf_path).name} ({len(doc)} pages)")
@@ -797,6 +804,8 @@ def execute_run_request(
         emit_progress("Extracting annotations", "Extracting annotations...", 10)
         annotations = extract_annotations_from_doc(
             doc, stop_event=bridge.stop_event, log_func=stream_log,
+            page_timeout=config.annotation_page_timeout_seconds,
+            timed_out_pages=annot_timeout_pages,
         )
         stream_log(f"Found {len(annotations)} annotations.")
         emit_progress("Extracting annotations", "Annotations extracted.", 13)
@@ -998,6 +1007,14 @@ def execute_run_request(
             f"'Coverage Summary', 'BOM Not Grouped', and 'Extracted Not In BOM' sheets."
         )
 
+    # Wave R2: a timed-out page lost EVERY annotation on it — that must be
+    # visible in the result (and qualify the success toast), not only the log.
+    for _timeout_page in annot_timeout_pages:
+        notes.append(
+            f"Annotation extraction timed out on page {_timeout_page}; that "
+            f"page's groups and components are missing from this report."
+        )
+
     _orphan_count = len((details or {}).get("orphan_pins") or [])
     if _orphan_count:
         notes.append(
@@ -1023,7 +1040,11 @@ def execute_run_request(
         "notes": notes,
         "log_lines": logs[-LOG_LIMIT:],
         "row_count": total_groups,
-        "warning_count": unverified + (1 if bom_load_error else 0),
+        # BOM cross-check soft-failure and timed-out annotation pages both
+        # count as warnings so the frontend success toast qualifies.
+        "warning_count": unverified
+        + (1 if bom_load_error else 0)
+        + len(annot_timeout_pages),
         "no_match_count": unverified,
         "mode": "desktop-bridge",
     }
