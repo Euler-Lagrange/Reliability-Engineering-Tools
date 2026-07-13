@@ -253,6 +253,7 @@ export function RefDesExtractorTool() {
     beginAcceptedRun,
     resetSession: resetDesktopRunSession,
     resetSessionUnlessLive: resetDesktopRunSessionUnlessLive,
+    handleExecuteRunDispatchError,
     armTerminalHandler,
     cancel: cancelDesktopRun,
     guardCrossToolRun,
@@ -566,6 +567,9 @@ export function RefDesExtractorTool() {
       armTerminalHandler();
       beginAcceptedRun(await backendClient.executeRun(runRequest));
     } catch (error) {
+      if (handleExecuteRunDispatchError(error)) {
+        return;
+      }
       const detail = describeBackendError(error, "Unknown backend execution failure");
       // Fix 2 (Family 2): guarded reset — must not clobber a live sibling run.
       resetDesktopRunSessionUnlessLive();

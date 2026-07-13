@@ -253,11 +253,11 @@ the tool must NOT show a generic failure. Show a warning toast:
 title `"Backend is still preparing the run"`, detail
 `"Validation is taking unusually long (large or cloud-synced files). The run will attach automatically if the backend accepts it."`
 and leave local state idle. Recovery happens via Wave 3's ack-fallback registration
-(Task 3.4) — note the pairing in a comment. Non-timeout errors keep today's behavior.
+(Task 3.3) — note the pairing in a comment. Non-timeout errors keep today's behavior.
 
-- [ ] **Step 1:** Failing test: mock `executeRun` to reject with the timeout message;
+- [x] **Step 1:** Failing test: mock `executeRun` to reject with the timeout message;
   assert warning toast (not error) and no session reset side effects.
-- [ ] **Step 2:** Implement, green, commit:
+- [x] **Step 2:** Implement, green, commit:
   `Tools: Treat execute-timeout as acceptance-unknown, not failure`
 
 ### Task 2.4: Honesty fixes — orphan guarantee + false race comment

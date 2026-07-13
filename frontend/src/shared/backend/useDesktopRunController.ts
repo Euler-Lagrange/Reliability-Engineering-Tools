@@ -15,7 +15,12 @@ import {
   useRunStore,
 } from "../../stores/runStore";
 import { backendClient } from "./client";
-import { buildCancelNotification } from "./cancelError";
+import {
+  buildCancelNotification,
+  EXECUTE_RUN_TIMEOUT_NOTIFICATION_DETAIL,
+  EXECUTE_RUN_TIMEOUT_NOTIFICATION_TITLE,
+  isExecuteRunTimeoutError,
+} from "./cancelError";
 import { buildRunTimeline, useBackendRunLifecycle } from "./runLifecycle";
 
 /**
@@ -362,6 +367,31 @@ export function useDesktopRunController(
   }
 
   /**
+   * Handle the one invoke failure whose outcome is not known: Rust stopped
+   * waiting for the execute_run ack, but the sidecar may still accept it.
+   * Keep the local projection idle and do not reset it; Wave 3 Task 3.3's
+   * ack-fallback registration will attach a later streamed ack automatically.
+   */
+  function handleExecuteRunDispatchError(error: unknown): boolean {
+    if (!isExecuteRunTimeoutError(error)) {
+      return false;
+    }
+
+    setBackendState({
+      backendStatus: "ready",
+      backendMode: "desktop-bridge",
+      backendMessage: EXECUTE_RUN_TIMEOUT_NOTIFICATION_DETAIL,
+      lastBackendCheckAt: new Date().toISOString(),
+    });
+    pushNotification({
+      tone: "warning",
+      title: EXECUTE_RUN_TIMEOUT_NOTIFICATION_TITLE,
+      detail: EXECUTE_RUN_TIMEOUT_NOTIFICATION_DETAIL,
+    });
+    return true;
+  }
+
+  /**
    * Cross-tool run guard (holistic-review follow-up #1). Returns true —
    * after toasting which tool owns the live run — when ANOTHER tool's run
    * is still in flight, so `handleStartRun` can bail before sending
@@ -389,6 +419,7 @@ export function useDesktopRunController(
     beginAcceptedRun,
     resetSession,
     resetSessionUnlessLive,
+    handleExecuteRunDispatchError,
     guardCrossToolRun,
     armTerminalHandler,
     cancel,

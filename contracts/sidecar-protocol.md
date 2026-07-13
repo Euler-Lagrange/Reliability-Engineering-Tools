@@ -165,6 +165,20 @@ All ten commands currently implemented by the sidecar:
     - `outputDirectory` — string | null, optional. Same semantics as
       `validate_run` above.
   - immediate response: `ack` (see Streamed Run Events below)
+  - desktop-bridge acceptance timeout:
+    - Rust waits for the `ack` for at most the command timeout (60 seconds by
+      default; configurable through `RELIABILITY_TOOLS_COMMAND_TIMEOUT_SECS`).
+      At the default, the exact rejection text is:
+      `The 'execute_run' command timed out after 60s. An input file may be on a disconnected or slow network drive — check the path and try again.`
+      A configured timeout changes only the numeric seconds field.
+    - This rejection means **acceptance unknown**, not run failure. Rust removes
+      only the timed-out request correlation; it does not cancel the command,
+      kill the sidecar, or disconnect the session. If the sidecar later accepts
+      the command, its `ack` is still forwarded on the run-event stream.
+    - The frontend therefore remains locally idle and shows an
+      acceptance-unknown warning instead of a failure. Wave 3 Task 3.3 will
+      add ack-fallback registration to consume that late streamed `ack` and
+      attach the accepted run to the UI.
   - terminal result payload (emitted as `result` kind):
     - `status`
     - `title`

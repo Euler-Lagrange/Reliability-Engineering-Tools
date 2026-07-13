@@ -486,6 +486,7 @@ export function FmeaTool() {
     beginAcceptedRun,
     resetSession: resetDesktopRunSession,
     resetSessionUnlessLive: resetDesktopRunSessionUnlessLive,
+    handleExecuteRunDispatchError,
     armTerminalHandler,
     cancel: cancelDesktopRun,
     guardCrossToolRun,
@@ -1231,6 +1232,9 @@ export function FmeaTool() {
       armTerminalHandler();
       beginAcceptedRun(await backendClient.executeRun(runRequest));
     } catch (error) {
+      if (handleExecuteRunDispatchError(error)) {
+        return;
+      }
       const detail = describeBackendError(error, "Unknown backend execution failure");
       // Fix 2 (Family 2): guarded reset — must not clobber a live sibling run.
       resetDesktopRunSessionUnlessLive();

@@ -48,6 +48,25 @@ export function describeBackendError(error: unknown, fallback: string): string {
 }
 
 /**
+ * Exact Rust bridge template for an `execute_run` command timeout. The timeout
+ * seconds are environment-configurable, so only that numeric field varies.
+ * Anchoring the whole message keeps timeouts from `validate_run` and other
+ * synchronous commands on their ordinary error paths.
+ */
+export const EXECUTE_RUN_TIMEOUT_ERROR_PATTERN =
+  /^The 'execute_run' command timed out after \d+s\. An input file may be on a disconnected or slow network drive — check the path and try again\.$/;
+
+export const EXECUTE_RUN_TIMEOUT_NOTIFICATION_TITLE =
+  "Backend is still preparing the run";
+
+export const EXECUTE_RUN_TIMEOUT_NOTIFICATION_DETAIL =
+  "Validation is taking unusually long (large or cloud-synced files). The run will attach automatically if the backend accepts it.";
+
+export function isExecuteRunTimeoutError(error: unknown): boolean {
+  return EXECUTE_RUN_TIMEOUT_ERROR_PATTERN.test(describeBackendError(error, ""));
+}
+
+/**
  * Cancel-specific alias of {@link describeBackendError} that keeps the cancel
  * path's historical default detail string. Retained as a named export so the
  * cancel handlers and their tests keep their existing API.

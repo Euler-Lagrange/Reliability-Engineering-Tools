@@ -18,6 +18,12 @@ const backendMocks = vi.hoisted(() => ({
   inspectInput: vi.fn(),
 }));
 
+const EXECUTE_RUN_TIMEOUT_ERROR =
+  "The 'execute_run' command timed out after 60s. An input file may be on a disconnected or slow network drive — check the path and try again.";
+const ACCEPTANCE_UNKNOWN_TITLE = "Backend is still preparing the run";
+const ACCEPTANCE_UNKNOWN_DETAIL =
+  "Validation is taking unusually long (large or cloud-synced files). The run will attach automatically if the backend accepts it.";
+
 vi.mock("../shared/backend/client", () => ({
   backendClient: {
     runtimeMode: "desktop-bridge",
@@ -341,5 +347,99 @@ describe("tool run dispatch", () => {
     });
     // The failing validation must short-circuit before execute_run.
     expect(backendMocks.executeRun).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      tool: "FMEA",
+      renderTool: () => render(<FmeaTool />),
+      startLabel: "Generate FMEA",
+    },
+    {
+      tool: "BOM Compare",
+      renderTool: () => render(<BomCompareTool />),
+      startLabel: "Compare",
+    },
+    {
+      tool: "Failure Rate",
+      renderTool: () => render(<FailureRateTool />),
+      startLabel: "Link Rates",
+    },
+    {
+      tool: "RefDes Extractor",
+      renderTool: () => render(<RefDesExtractorTool />),
+      startLabel: "Extract",
+    },
+  ])(
+    "$tool treats an execute timeout as acceptance-unknown without resetting the run",
+    async ({ renderTool, startLabel }) => {
+      backendMocks.executeRun.mockRejectedValueOnce(EXECUTE_RUN_TIMEOUT_ERROR);
+      renderTool();
+
+      await runTool(startLabel);
+
+      await waitFor(() => {
+        expect(useNotificationStore.getState().notifications).toEqual([
+          expect.objectContaining({
+            tone: "warning",
+            title: ACCEPTANCE_UNKNOWN_TITLE,
+            detail: ACCEPTANCE_UNKNOWN_DETAIL,
+          }),
+        ]);
+      });
+      expect(useRunStore.getState().activeRun).toBeNull();
+      expect(useShellStore.getState().backendStatus).toBe("ready");
+      expect(screen.getByRole("button", { name: startLabel })).toBeEnabled();
+    },
+  );
+
+  it("preserves a late-ack run registered before the timeout rejection is handled", async () => {
+    const lateAckRun = buildActiveRunFromAccepted({
+      runId: "run_late_ack",
+      toolId: "dark_star_fmea",
+      sessionGeneration: 1,
+    });
+    backendMocks.executeRun.mockImplementationOnce(async () => {
+      // Model the narrow race that Wave 3 Task 3.3 closes: the streamed ack
+      // registers the run just before the timed-out invoke rejects in React.
+      useRunStore.setState({ activeRun: lateAckRun });
+      throw EXECUTE_RUN_TIMEOUT_ERROR;
+    });
+    render(<FmeaTool />);
+
+    await runTool("Generate FMEA");
+
+    await waitFor(() => {
+      expect(useNotificationStore.getState().notifications).toEqual([
+        expect.objectContaining({
+          tone: "warning",
+          title: ACCEPTANCE_UNKNOWN_TITLE,
+        }),
+      ]);
+    });
+    expect(useRunStore.getState().activeRun).toEqual(lateAckRun);
+  });
+
+  it("keeps a validate_run timeout on the ordinary error path", async () => {
+    const validationTimeout = EXECUTE_RUN_TIMEOUT_ERROR.replace(
+      "'execute_run'",
+      "'validate_run'",
+    );
+    backendMocks.validateRun.mockRejectedValueOnce(validationTimeout);
+    render(<FmeaTool />);
+
+    await runTool("Generate FMEA");
+
+    await waitFor(() => {
+      expect(useNotificationStore.getState().notifications).toEqual([
+        expect.objectContaining({
+          tone: "error",
+          title: "FMEA run failed",
+          detail: validationTimeout,
+        }),
+      ]);
+    });
+    expect(backendMocks.executeRun).not.toHaveBeenCalled();
+    expect(useShellStore.getState().backendStatus).toBe("error");
   });
 });
