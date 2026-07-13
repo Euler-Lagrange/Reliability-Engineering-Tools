@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Every tool now greets a fresh setup with the onboarding panel.** The
+  "browse or load an example" EmptyState that previously appeared only on
+  BOM Compare's default card now shows per workflow card in BOM Compare
+  (with workflow-specific copy) and, for the first time, in the FMEA
+  Generator (mode-aware browse button; first real file in any mode switches
+  permanently to the input grid). Failure Rate and RefDes already behaved
+  this way and gained locking tests.
+- **RefDes Advanced options gain "Annotation page timeout (s)"** — the UI
+  control for the new `annotation_page_timeout_seconds` backend option
+  (default 30); raise it for very dense schematics.
+
 ### Fixed
 
 - **RefDes Extractor no longer silently loses parts or groups** (the DIG-4xx

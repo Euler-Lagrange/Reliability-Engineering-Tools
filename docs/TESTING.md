@@ -59,11 +59,12 @@
 | Frontend keep-alive shell | `frontend/src/app/App.keepalive.test.tsx` | 2 | Vitest + RTL |
 | Frontend FMEA tool | `frontend/src/features/fmea/FmeaTool.test.tsx` | 13 | Vitest + RTL |
 | Frontend FMEA inspection | `frontend/src/features/fmea/FmeaTool.inspection.test.tsx` | 5 | Vitest + RTL |
+| Frontend FMEA onboarding | `frontend/src/features/fmea/FmeaTool.pristine.test.tsx` | 4 | Vitest + RTL |
 | Frontend mapping columns | `frontend/src/features/fmea/mappingColumns.test.ts` | 27 | Vitest |
 | Frontend mapping analysis | `frontend/src/features/fmea/mappingAnalysis.test.ts` | 5 | Vitest |
-| Frontend BOM Compare tool | `frontend/src/features/bom-compare/BomCompareTool.test.tsx` | 22 | Vitest + RTL |
-| Frontend Failure Rate tool | `frontend/src/features/failure-rate/FailureRateTool.test.tsx` | 3 | Vitest + RTL |
-| Frontend RefDes Extractor tool | `frontend/src/features/refdes-extractor/RefDesExtractorTool.test.tsx` | 15 | Vitest + RTL |
+| Frontend BOM Compare tool | `frontend/src/features/bom-compare/BomCompareTool.test.tsx` | 24 | Vitest + RTL |
+| Frontend Failure Rate tool | `frontend/src/features/failure-rate/FailureRateTool.test.tsx` | 5 | Vitest + RTL |
+| Frontend RefDes Extractor tool | `frontend/src/features/refdes-extractor/RefDesExtractorTool.test.tsx` | 17 | Vitest + RTL |
 | Frontend number field | `frontend/src/components/primitives/NumberField.test.tsx` | 6 | Vitest + RTL |
 | Frontend mapping derivation | `frontend/src/shared/mapping/deriveMappingRows.test.ts` | 6 | Vitest |
 | Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 18 | Vitest + RTL |
@@ -74,9 +75,9 @@
 | Frontend shell-hook install | `frontend/src/app/App.shellHooks.test.tsx` | 1 | Vitest + RTL |
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
-| **Frontend subtotal** | | **333** | |
+| **Frontend subtotal** | | **343** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 19 | cargo test |
-| **Total** | | **775** | |
+| **Total** | | **785** | |
 
 ## Backend Tests
 
@@ -265,9 +266,10 @@ neither of which exists under jsdom, so the client returns mock data from
 | `frontend/src/features/fmea/FmeaTool.test.tsx` | 13 — FMEA tool rendering, workflow selection, input validation, run integration, mapping-override survival across output-strategy and FMD-standard changes, mode-aware required marker on Failure Mode Causes in merge modes, owner-only selector locking, cross-tool inspection pause |
 | `frontend/src/features/fmea/FmeaTool.inspection.test.tsx` | 5 — sheet selection interactivity during background aggregation, inspection cap warning display, stale-validation clears on browse/sheet change, orphaned-override pruning |
 | `frontend/src/features/toolRunDispatch.test.tsx` | 18 — FMEA (option-key payload incl. hdaSource), BOM Compare, Failure Rate, and RefDes workflow dispatch from React tools, validation-failure (execute_run skipped), all six BOM Compare options reach the backend, Custom Compare column pairs reach `options.compare_columns`, desktop mode never seeds demo validation content (M9), FMEA Required chips on mandatory input roles, the cross-tool run guard (blocks + toasts while another tool's run is live; terminal runs don't block), exact bridge execute-timeout acceptance-unknown warnings across all four tools, late-ack run preservation across the timeout catch, and a negative assertion that the corresponding validate timeout remains an error |
-| `frontend/src/features/bom-compare/BomCompareTool.test.tsx` | 15 — custom-compare slots, pristine exit, workflow round-trip cache, interrupted-inspection recovery, double-start guard, raw-string error surfacing, real-header mapping derivation, dispatch payloads, group-only prov checkbox disabled in custom, column-pair picker auto-pairs in custom / hidden in group, owner-only selector locking, cross-tool inspection pause |
-| `frontend/src/features/failure-rate/FailureRateTool.test.tsx` | 3 — stale-validation clears on browse, real-header mapping derivation, cross-tool inspection pause |
-| `frontend/src/features/refdes-extractor/RefDesExtractorTool.test.tsx` | 15 — piece-part pinlist slot, pristine behavior, empty-input dispatch, cross-tool inspection pause, adaptive-geometry gating, numeric tuning fields (render, dispatch, geometry gating), and the advanced-controls disclosure (collapsed by default, hover tooltips, and the 9 advanced params reaching the payload) |
+| `frontend/src/features/bom-compare/BomCompareTool.test.tsx` | 24 — custom-compare slots, per-workflow pristine EmptyState (workflow-specific copy, cross-workflow independence, no-resurrect round-trip), workflow round-trip cache, interrupted-inspection recovery, double-start guard, raw-string error surfacing, real-header mapping derivation, dispatch payloads, group-only prov checkbox disabled in custom, column-pair picker auto-pairs in custom / hidden in group, owner-only selector locking, cross-tool inspection pause |
+| `frontend/src/features/failure-rate/FailureRateTool.test.tsx` | 5 — stale-validation clears on browse, real-header mapping derivation, cross-tool inspection pause, and the onboarding-EmptyState conformance pair (fresh greeting, exit-on-first-file) |
+| `frontend/src/features/refdes-extractor/RefDesExtractorTool.test.tsx` | 17 — piece-part pinlist slot, pristine behavior, empty-input dispatch, cross-tool inspection pause, adaptive-geometry gating, numeric tuning fields (render, dispatch, geometry gating), the advanced-controls disclosure (collapsed by default, hover tooltips, advanced params reaching the payload), and the annotation-page-timeout control (default 30, edited value dispatched as `annotation_page_timeout_seconds`) |
+| `frontend/src/features/fmea/FmeaTool.pristine.test.tsx` | 4 — desktop onboarding EmptyState: four-mode greeting with mode-aware browse labels + M9 no-example-paths seed, exit-and-never-resurrect across modes, cross-tool pause hint, Load-example coming-soon secondary |
 | `frontend/src/components/primitives/NumberField.test.tsx` | 6 — numeric field value/onChange parsing, NaN guard, min clamp, min/max/step/disabled forwarding |
 | `frontend/src/shared/mapping/deriveMappingRows.test.ts` | 6 — mapping-row derivation from inspected headers (exact match, no match, fixture fallback) |
 | `frontend/src/features/fmea/mappingColumns.test.ts` | 27 — column synonym matching, priority ordering, ambiguity resolution, FMD override-key migration |
