@@ -105,6 +105,11 @@ def test_orphan_records_carry_the_pinned_disposition_vocabulary() -> None:
     assert ORPHAN_EXCLUDED == "excluded"
     assert ORPHAN_PASSIVE_PREFIX == "passive-prefix"
     assert ORPHAN_BOX_CONTAINS_BODY == "box-contains-body"
+    # Wave R6: kept-pin ambiguity flag; the runtime excludes this literal from
+    # the dropped-pins note, so it is part of the pinned vocabulary.
+    from refdes_test.nextgen_engine import ORPHAN_BOM_COLLISION
+
+    assert ORPHAN_BOM_COLLISION == "bom-collision"
 
     diag: dict = {}
     _record_orphan(
@@ -240,6 +245,27 @@ def test_geometry_checkpoints_are_opt_in() -> None:
     from refdes_extractor.runtime import RefDesConfig
 
     assert RefDesConfig().geometry_batch_checkpoint_enabled is False
+
+
+def test_bom_collision_flags_kept_pin_without_dropping() -> None:
+    """Wave R6 (legacy '[?]' parity): a pin label that also names a real BOM
+    RefDes is recorded as a kept-pin ambiguity flag + run-log WARNING; labels
+    with no BOM twin record nothing."""
+    from refdes_test.nextgen_engine import ORPHAN_BOM_COLLISION, _flag_bom_collision
+
+    diag: dict = {}
+    lines: list[str] = []
+    bom = _normalize_bom_set({"U7"})
+
+    _flag_bom_collision(diag, lines.append, 3, "DIG-076", "U7", bom)
+    assert diag["orphan_pins"][0]["disposition"] == ORPHAN_BOM_COLLISION
+    assert diag["orphan_pins"][0]["group"] == "DIG-076"
+    assert "KEPT" in diag["orphan_pins"][0]["detail"]
+    assert any("WARNING" in line and "U7" in line for line in lines)
+
+    # Negative: an ordinary numeric pin label records nothing.
+    _flag_bom_collision(diag, lines.append, 3, "DIG-076", "38", bom)
+    assert len(diag["orphan_pins"]) == 1
 
 
 def test_annotation_extraction_timeout_collects_pages_and_continues() -> None:

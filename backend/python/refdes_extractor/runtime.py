@@ -1036,11 +1036,23 @@ def execute_run_request(
             f"the numbering sequence — see the NOT DETECTED rows."
         )
 
-    _orphan_count = len((details or {}).get("orphan_pins") or [])
+    # Wave R6: "bom-collision" records are ambiguity FLAGS for pins that were
+    # kept, not drops — exclude them from the dropped-pins count. Literal kept
+    # in lockstep with ORPHAN_BOM_COLLISION in refdes_test/nextgen_engine.py.
+    _orphan_records = (details or {}).get("orphan_pins") or []
+    _orphan_count = sum(
+        1 for o in _orphan_records if o.get("disposition") != "bom-collision"
+    )
     if _orphan_count:
         notes.append(
             f"{_orphan_count} pin{'s' if _orphan_count != 1 else ''} dropped before "
             f"output — see the 'Orphan Pins' sheet."
+        )
+    _collision_count = len(_orphan_records) - _orphan_count
+    if _collision_count:
+        notes.append(
+            f"{_collision_count} pin label{'s' if _collision_count != 1 else ''} "
+            f"also match a BOM RefDes (kept, flagged) — see the 'Orphan Pins' sheet."
         )
     if ambiguous_tokens:
         notes.append(

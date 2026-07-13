@@ -1294,6 +1294,10 @@ ORPHAN_PINLIST_FILTERED = "pinlist-filtered"
 ORPHAN_EXCLUDED = "excluded"
 ORPHAN_PASSIVE_PREFIX = "passive-prefix"
 ORPHAN_BOX_CONTAINS_BODY = "box-contains-body"
+# Wave R6 (legacy "[?]" marker parity): the pin is KEPT — this disposition is
+# an ambiguity flag, not a drop. The runtime's "pins dropped before output"
+# note excludes it by literal; keep the string in lockstep with runtime.py.
+ORPHAN_BOM_COLLISION = "bom-collision"
 
 
 def _adopt_harvest_diagnostics(diagnostics: Optional[dict], local: Optional[dict]) -> None:
@@ -1353,6 +1357,41 @@ def _record_orphan(
             "disposition": disposition,
             "detail": detail,
         }
+    )
+
+
+def _flag_bom_collision(
+    diagnostics: Optional[dict],
+    log: Callable,
+    page_num: int,
+    group_name: str,
+    pin_text: str,
+    normalized_bom: set,
+) -> None:
+    """Wave R6 (legacy ``[?]`` marker parity): a pin LABEL that also names a
+    real BOM RefDes is a genuine mis-parenting risk — the geometry pass may
+    have adopted a component as a pin. The pin is KEPT; this only records the
+    ambiguity on the diagnostics sheets and warns in the run log."""
+    if not normalized_bom or not pin_text:
+        return
+    canon = canonicalize_refdes(pin_text)
+    if not canon or canon not in normalized_bom:
+        return
+    log(
+        f"WARNING: pin label '{pin_text}' in {group_name} also matches a BOM "
+        f"RefDes — pin kept, but verify it is not a component "
+        f"(see Orphan Pins / Component Detail)."
+    )
+    _record_orphan(
+        diagnostics,
+        page=page_num,
+        group=group_name,
+        pin_text=pin_text,
+        disposition=ORPHAN_BOM_COLLISION,
+        detail=(
+            "Pin label matches a BOM RefDes; the pin was KEPT — this record "
+            "is an ambiguity flag, not a drop."
+        ),
     )
 
 
@@ -1933,6 +1972,10 @@ def harvest_hybrid_nextgen(
                                             detail=f"{val} is not in the pinlist.",
                                         )
                                         continue
+                                    _flag_bom_collision(
+                                        diagnostics, log, page_idx + 1,
+                                        group_name, text, normalized_bom,
+                                    )
                                     grouped_data[group_name]["tokens"].add(val)
                                     grouped_data[group_name]["pages"].add(page_idx + 1)
                                     _track_token_page(grouped_data[group_name], val, page_idx + 1)
@@ -2048,6 +2091,10 @@ def harvest_hybrid_nextgen(
                                 )
                                 continue
 
+                        _flag_bom_collision(
+                            diagnostics, log, page_idx + 1,
+                            group_name, text, normalized_bom,
+                        )
                         grouped_data[group_name]["tokens"].add(val)
                         grouped_data[group_name]["pages"].add(page_idx + 1)
                         _track_token_page(grouped_data[group_name], val, page_idx + 1)

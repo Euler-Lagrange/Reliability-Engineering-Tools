@@ -128,6 +128,63 @@ def test_dig4xx_combined_silent_loss_regression(
     assert any(name.startswith("DIG-020") for name in rows)
 
 
+def test_bom_collision_orphans_do_not_count_as_dropped_pins(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Wave R6: 'bom-collision' orphan records flag pins that were KEPT — the
+    'N pins dropped before output' note must exclude them, and they get their
+    own kept-and-flagged note instead."""
+    fitz = pytest.importorskip("fitz")
+    from refdes_test import refdes_test_logic
+
+    monkeypatch.setattr(
+        refdes_test_logic, "extract_annotations_from_doc", lambda _doc, **_kw: []
+    )
+    monkeypatch.setattr(
+        refdes_test_logic,
+        "detect_groups_with_fallback",
+        lambda _doc, _annotations, **_kwargs: ([], False, {}),
+    )
+    monkeypatch.setattr(
+        refdes_test_logic,
+        "extract_with_geometry_analysis_detailed",
+        lambda **_kwargs: (
+            [],
+            {
+                "backend_used": "test",
+                "token_diagnostics": {},
+                "orphan_pins": [
+                    {"page": 1, "group": "G", "pin_text": "U7",
+                     "disposition": "bom-collision", "detail": "kept"},
+                    {"page": 1, "group": "G", "pin_text": "38",
+                     "disposition": "excluded", "detail": "dropped"},
+                ],
+            },
+        ),
+    )
+    monkeypatch.setattr(refdes_runtime, "verify_excel_readable", lambda _path: True)
+
+    pdf_path = tmp_path / "schematic.pdf"
+    doc = fitz.open()
+    doc.new_page()
+    doc.save(pdf_path)
+    doc.close()
+
+    result = execute_run_request(
+        {
+            "workflowId": "refdes_extract",
+            "outputStrategyId": "new_workbook_standard",
+            "outputDirectory": str(tmp_path),
+            "inputs": [{"role": "pdf", "path": str(pdf_path)}],
+            "options": {},
+        }
+    )
+
+    assert any(n.startswith("1 pin dropped before output") for n in result["notes"])
+    assert any("match a BOM RefDes (kept, flagged)" in n for n in result["notes"])
+
+
 def test_annotation_timeout_option_plumbed_and_surfaces_warning(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
