@@ -93,6 +93,47 @@ describe("FailureRateTool stale validation handling", () => {
     );
   });
 
+  // Conformance (app-wide EmptyState consistency, 2026-07-13): every tool
+  // greets a fresh desktop state with the onboarding EmptyState.
+  it("greets a fresh desktop state with the onboarding EmptyState", () => {
+    render(<FailureRateTool />);
+
+    expect(screen.getByText("Link failure rates")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Browse for parts list" }),
+    ).toBeInTheDocument();
+    // The slot grid stays hidden until a real file lands.
+    expect(screen.queryByText("Prediction workbook")).not.toBeInTheDocument();
+    expect(screen.queryByText("FMEA workbook")).not.toBeInTheDocument();
+  });
+
+  // Conformance: the first real file swaps the panel for the grid with both
+  // slots visible.
+  it("exits pristine on the first real file and shows both slots", async () => {
+    backendMocks.openExcelFile.mockResolvedValue("C:\\real\\Predictions.xlsx");
+    backendMocks.listSheets.mockResolvedValue({
+      path: "C:\\real\\Predictions.xlsx",
+      sheets: ["Predictions"],
+      mode: "desktop-bridge",
+    });
+    backendMocks.inspectInput.mockResolvedValue({
+      mode: "desktop-bridge",
+      sheet: "Predictions",
+      columns: ["Reference Designator", "Failure Rate"],
+    });
+
+    const user = userEvent.setup();
+    render(<FailureRateTool />);
+
+    await user.click(
+      screen.getByRole("button", { name: "Browse for parts list" }),
+    );
+
+    expect(await screen.findByText("Prediction workbook")).toBeInTheDocument();
+    expect(screen.getByText("FMEA workbook")).toBeInTheDocument();
+    expect(screen.queryByText("Link failure rates")).not.toBeInTheDocument();
+  });
+
   // Regression (Fix 2): a stale validate_run result stranded in the Preview
   // tab after the user changed an input file — the previous run's validation
   // cards kept describing the OLD file. Browsing a new file must clear them.
