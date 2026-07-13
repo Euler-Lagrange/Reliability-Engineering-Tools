@@ -252,6 +252,9 @@ export function useBackendRunLifecycle(toolId: ToolId) {
   return {
     session,
     beginAcceptedRun(accepted: ExecuteRunAcceptedResult) {
+      if (useRunStore.getState().activeRun?.runId === accepted.run_id) {
+        return;
+      }
       setActiveRun(
         buildActiveRunFromAccepted({
           runId: accepted.run_id,

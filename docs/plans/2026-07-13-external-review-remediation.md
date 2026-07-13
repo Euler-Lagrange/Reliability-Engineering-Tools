@@ -356,9 +356,16 @@ carries `session_generation` — compare and clear timers).
 - Modify: `frontend/src/shared/backend/useBackendRunSubscription.ts` (~14–18 drop gate)
 - Modify: `frontend/src/shared/backend/runLifecycle.ts` (`beginAcceptedRun` idempotency;
   the `case "ack": return null` projector arm stays null for *registered* runs)
-- Possibly modify: `backend/python/sidecar_main.py` ack payload (additive only) + zod
-  schema + `contracts/sidecar-protocol.md`, IF the ack payload lacks what's needed
-- Test: `frontend/src/shared/backend/useBackendRunSubscription.test.ts`
+- Modify: `frontend/src/app/toolRegistry.tsx`, `frontend/src/stores/runStore.ts`
+  (derive workflow ownership from existing workflow collections; preserve ack timestamp)
+- Modify: `frontend/src/features/failure-rate/FailureRateTool.tsx`,
+  `frontend/src/features/refdes-extractor/RefDesExtractorTool.tsx` (dispatch from those
+  same workflow collections instead of duplicate literals)
+- Modify: `backend/python/sidecar_main.py` ack payload (additive only) + zod schema +
+  `contracts/sidecar-protocol.md`
+- Test: `frontend/src/shared/backend/useBackendRunSubscription.test.ts`,
+  `client.runEvents.test.ts`, `frontend/src/contracts/sidecar.test.ts`, and
+  `backend/tests/test_sidecar_main.py`
 
 **Semantics:** When an `ack` run event arrives and **no** active run is registered,
 register the run from the ack (runId, sessionGeneration, toolId, workflowId, startedAt).
@@ -374,11 +381,11 @@ This closes both verified windows: fast-terminal-before-registration (F1) and th
 timeout ghost run (F2/Task 2.3) — the late ack now attaches the run to the UI, making
 it visible and cancellable.
 
-- [ ] **Step 1:** Failing tests: (a) ack with no active run → run registered with correct
+- [x] **Step 1:** Failing tests: (a) ack with no active run → run registered with correct
   toolId; subsequent `status`/`result` events apply. (b) ack for already-registered
   runId → state unchanged. (c) `beginAcceptedRun` after ack-registration of the same
   runId → phase/logs preserved.
-- [ ] **Step 2:** Implement, green, commit:
+- [x] **Step 2:** Implement, green, commit:
   `Subscription: Register runs from ack when the invoke response lost the race`
 
 ### Task 3.4: Disable run-invalidating controls during live phases

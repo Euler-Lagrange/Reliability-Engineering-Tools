@@ -196,10 +196,10 @@ health-check completion.
       only the timed-out request correlation; it does not cancel the command,
       kill the sidecar, or disconnect the session. If the sidecar later accepts
       the command, its `ack` is still forwarded on the run-event stream.
-    - The frontend therefore remains locally idle and shows an
-      acceptance-unknown warning instead of a failure. Wave 3 Task 3.3 will
-      add ack-fallback registration to consume that late streamed `ack` and
-      attach the accepted run to the UI.
+    - The frontend therefore shows an acceptance-unknown warning instead of a
+      failure. Its shell-level run subscription consumes any later streamed
+      `ack`, derives the owning tool from `workflow_id`, and attaches the
+      accepted run to the UI.
   - terminal result payload (emitted as `result` kind):
     - `status`
     - `title`
@@ -389,17 +389,17 @@ command (execute_run)
 **`ack`** — emitted immediately when `execute_run` is accepted.
 ```json
 { "accepted": true, "run_id": "run_abc123", "mode": "desktop-bridge",
-  "session_generation": 3 }
+  "workflow_id": "bom_compare_custom", "session_generation": 3 }
 ```
 
-`session_generation` (added in 0.4.1) is a monotonically increasing counter
-that the Rust bridge increments every time it spawns a fresh sidecar
-process. The Rust bridge owns this field: Python emits the raw `ack`, and
-Rust enriches the streamed run event before forwarding it to the frontend.
-The frontend records the value with the active run for diagnostics. On
-reconnect, the frontend clears any active run because every reconnect path
-spawns a fresh sidecar session and no terminal event can arrive from the
-previous process.
+Python includes `workflow_id` so the shell-level subscription can recover the
+owning tool if the streamed ack reaches the frontend before the invoke promise
+resolves (or after that promise times out). `session_generation` (added in
+0.4.1) is a monotonically increasing counter that the Rust bridge increments
+every time it spawns a fresh sidecar process. The Rust bridge owns that field:
+it enriches Python's raw streamed ack before forwarding it to the frontend.
+On reconnect, the frontend clears only runs from the disconnected generation;
+a run already accepted by a newer sidecar session is preserved.
 
 **`status`** — phase transition during a run.
 ```json

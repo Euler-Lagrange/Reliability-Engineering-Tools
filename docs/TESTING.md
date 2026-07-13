@@ -48,7 +48,7 @@
 | Frontend contract schemas | `frontend/src/contracts/sidecar.test.ts` | 6 | Vitest |
 | Frontend busy reset | `frontend/src/shared/backend/useBackendBusyReset.test.ts` | 9 | Vitest |
 | Frontend backend bootstrap | `frontend/src/shared/backend/useBackendBootstrap.test.ts` | 6 | Vitest |
-| Frontend run subscription | `frontend/src/shared/backend/useBackendRunSubscription.test.ts` | 3 | Vitest |
+| Frontend run subscription | `frontend/src/shared/backend/useBackendRunSubscription.test.ts` | 8 | Vitest |
 | Frontend theme registry | `frontend/src/shared/theme/themeRegistry.test.ts` | 10 | Vitest |
 | Frontend app shortcuts | `frontend/src/shared/hooks/useAppShortcuts.test.tsx` | 6 | Vitest + RTL |
 | Frontend role-request sequence | `frontend/src/shared/hooks/useRoleRequestSequence.test.ts` | 5 | Vitest |
@@ -74,9 +74,9 @@
 | Frontend shell-hook install | `frontend/src/app/App.shellHooks.test.tsx` | 1 | Vitest + RTL |
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
-| **Frontend subtotal** | | **319** | |
+| **Frontend subtotal** | | **324** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 19 | cargo test |
-| **Total** | | **747** | |
+| **Total** | | **752** | |
 
 ## Backend Tests
 
@@ -254,7 +254,7 @@ neither of which exists under jsdom, so the client returns mock data from
 | `frontend/src/shared/backend/client.runEvents.test.ts` | 2 — production run-event subscription schema parsing |
 | `frontend/src/shared/backend/useBackendBusyReset.test.ts` | 9 — busy state recovery after run completion, error, or unmount |
 | `frontend/src/shared/backend/useBackendBootstrap.test.ts` | 6 — generation-aware reconnect clearing, stale-disconnect rejection, pending-timer cancellation, no overlapping reconnect chains, and no-active-run recovery |
-| `frontend/src/shared/backend/useBackendRunSubscription.test.ts` | 3 — shell-level run-event fanout, global log capture, and result-schema validation-failure → terminal failure |
+| `frontend/src/shared/backend/useBackendRunSubscription.test.ts` | 8 — ack-fallback ownership/ordering/idempotency, inactive cross-tool replacement, live-run protection, shell-level fanout, global logs, and schema-mismatch failure |
 | `frontend/src/shared/theme/themeRegistry.test.ts` | 10 — theme registry consistency (ids, labels, icons, colorScheme, rail visibility) |
 | `frontend/src/shared/hooks/useRoleRequestSequence.test.ts` | 5 — per-role async request sequencing (stale response suppression) |
 | `frontend/src/shared/hooks/useCopyToClipboard.test.ts` | 3 — clipboard write, success feedback, error handling |

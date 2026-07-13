@@ -781,6 +781,7 @@ def handle_command(message: dict[str, Any]) -> None:
                 "accepted": True,
                 "run_id": run_id,
                 "mode": "desktop-bridge",
+                "workflow_id": str(body["workflowId"]).strip(),
             },
             request_id=request_id,
             run_id=run_id,

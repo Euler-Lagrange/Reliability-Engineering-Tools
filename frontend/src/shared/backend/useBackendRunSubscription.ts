@@ -1,18 +1,55 @@
 import { useEffect, useEffectEvent } from "react";
 import { executeRunResultSchema, type SidecarRunEvent } from "../../contracts/sidecar";
+import { resolveToolIdForWorkflow } from "../../app/toolRegistry";
 import { useGlobalLogStore } from "../../stores/globalLogStore";
-import { useRunStore, type ActiveRunState } from "../../stores/runStore";
+import {
+  buildActiveRunFromAccepted,
+  useRunStore,
+  type ActiveRunState,
+} from "../../stores/runStore";
 import { backendClient } from "./client";
-import { patchFromRunEvent } from "./runLifecycle";
+import { INACTIVE_PHASES, patchFromRunEvent } from "./runLifecycle";
 
 export function useBackendRunSubscription() {
   const appendRunLog = useRunStore((state) => state.appendLog);
   const patchActiveRun = useRunStore((state) => state.patchActiveRun);
+  const setActiveRun = useRunStore((state) => state.setActiveRun);
   const appendGlobalLog = useGlobalLogStore((state) => state.appendLog);
   const runtimeMode = backendClient.runtimeMode;
 
   const handleRunEvent = useEffectEvent((event: SidecarRunEvent) => {
     const current = useRunStore.getState().activeRun;
+    if (event.kind === "ack") {
+      if (current?.runId === event.run_id) {
+        return;
+      }
+
+      const currentIsReplaceable =
+        current === null ||
+        INACTIVE_PHASES.some((phase) => phase === current.phase);
+      if (!currentIsReplaceable) {
+        return;
+      }
+
+      const toolId = resolveToolIdForWorkflow(event.payload.workflow_id);
+      if (!toolId) {
+        console.error(
+          `Ignoring run ack with unknown workflow_id: ${event.payload.workflow_id}`,
+        );
+        return;
+      }
+
+      setActiveRun(
+        buildActiveRunFromAccepted({
+          runId: event.run_id,
+          toolId,
+          sessionGeneration: event.payload.session_generation,
+          startedAt: event.timestamp,
+        }),
+      );
+      return;
+    }
+
     if (!current || event.run_id !== current.runId) {
       return;
     }

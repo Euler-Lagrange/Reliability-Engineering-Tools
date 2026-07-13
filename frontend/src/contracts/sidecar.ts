@@ -128,11 +128,12 @@ export const validateRunResultSchema = z.object({
   mode: backendModeSchema,
 });
 
-// ``session_generation`` is mandatory here but is NOT emitted by the Python
-// sidecar's ack (sidecar_main only sends accepted/run_id/mode). The Rust bridge
-// injects it onto every ack payload in ``enrich_run_event_for_frontend``
-// (src-tauri/src/lib.rs). A future browser-mock sidecar emulator must populate
-// it too, or this schema's parse of the ack will fail.
+// ``session_generation`` is mandatory here but is NOT emitted by Python's raw
+// streamed ack (sidecar_main sends accepted/run_id/mode/workflow_id). The Rust
+// bridge injects it in ``enrich_run_event_for_frontend`` (src-tauri/src/lib.rs).
+// ``workflow_id`` is intentionally required only by runAckEnvelopeSchema below:
+// Rust's invoke response does not return it. A future browser-mock sidecar
+// emulator must still populate ``session_generation`` in accepted responses.
 export const executeRunAcceptedResultSchema = z.object({
   run_id: z.string(),
   mode: backendModeSchema,
@@ -194,6 +195,7 @@ export const runAckEnvelopeSchema = runEnvelopeBaseSchema.extend({
   kind: z.literal("ack"),
   payload: executeRunAcceptedResultSchema.extend({
     accepted: z.boolean().optional(),
+    workflow_id: z.string().min(1),
   }),
 });
 

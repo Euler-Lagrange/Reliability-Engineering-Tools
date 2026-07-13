@@ -51,6 +51,7 @@ describe("backendClient run-event subscription", () => {
           run_id: "run_001",
           mode: "desktop-bridge",
           session_generation: 5,
+          workflow_id: "bom_compare_custom",
         },
       },
     });
@@ -58,7 +59,10 @@ describe("backendClient run-event subscription", () => {
     expect(handler).toHaveBeenCalledWith(
       expect.objectContaining({
         kind: "ack",
-        payload: expect.objectContaining({ session_generation: 5 }),
+        payload: expect.objectContaining({
+          session_generation: 5,
+          workflow_id: "bom_compare_custom",
+        }),
       }),
     );
   });

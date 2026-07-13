@@ -152,6 +152,7 @@ export function buildActiveRunFromAccepted(args: {
   runId: string;
   toolId: ToolId;
   sessionGeneration: number;
+  startedAt?: string;
 }): ActiveRunState {
   return {
     runId: args.runId,
@@ -175,7 +176,7 @@ export function buildActiveRunFromAccepted(args: {
     errorMessage: null,
     errorCode: null,
     errorTraceback: null,
-    startedAt: new Date().toISOString(),
+    startedAt: args.startedAt ?? new Date().toISOString(),
     finishedAt: null,
     isDisconnected: false,
   };

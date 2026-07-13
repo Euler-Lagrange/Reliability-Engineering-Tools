@@ -831,6 +831,7 @@ def test_sidecar_executes_phase4_standard_run(tmp_path: Path) -> None:
         _read_ready_line(process)
         ack = _send_command(process, "req_execute", "execute_run", _build_phase4_run_body(tmp_path))
         assert ack["kind"] == "ack"
+        assert ack["payload"]["workflow_id"] == "piece_part_generate"
         run_id = ack["payload"]["run_id"]
 
         status = _read_until(process, run_id=run_id, kind="status")

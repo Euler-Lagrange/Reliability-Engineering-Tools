@@ -319,7 +319,7 @@ export function RefDesExtractorTool() {
 
   function buildRunRequest(): RunRequestBody {
     return {
-      workflowId: "refdes_extract",
+      workflowId: baseScenario.workflowId,
       outputStrategyId: "new_workbook_standard",
       inputs: visibleInputs
         .filter((i) => Boolean(i.path))

@@ -7,7 +7,14 @@ import {
   Pulse,
   TreeStructure,
 } from "@phosphor-icons/react";
+import {
+  bomCompareWorkflowOptions,
+  failureRateDemoScenarios,
+  refdesDemoScenarios,
+  workflowOptions,
+} from "../mocks/scenarios";
 import type { ToolId } from "../stores/shellStore";
+import type { WorkflowId } from "./types";
 
 const FmeaTool = lazy(() =>
   import("../features/fmea/FmeaTool").then((module) => ({ default: module.FmeaTool })),
@@ -40,6 +47,7 @@ export interface ToolDefinition {
   description: string;
   icon: Icon;
   status: "active" | "placeholder";
+  workflowIds: readonly WorkflowId[];
   component: LazyExoticComponent<ComponentType>;
 }
 
@@ -51,6 +59,7 @@ export const toolDefinitions: ToolDefinition[] = [
     description: "Generate piece-part FMEA workbooks from grouping, BOM, and failure mode sources.",
     icon: TreeStructure,
     status: "active",
+    workflowIds: workflowOptions.map((workflow) => workflow.id),
     component: FmeaTool,
   },
   {
@@ -60,6 +69,7 @@ export const toolDefinitions: ToolDefinition[] = [
     description: "Compare grouping files or two BOMs to find missing, extra, and mismatched RefDes.",
     icon: GitDiff,
     status: "active",
+    workflowIds: bomCompareWorkflowOptions.map((workflow) => workflow.id),
     component: BomCompareTool,
   },
   {
@@ -69,6 +79,7 @@ export const toolDefinitions: ToolDefinition[] = [
     description: "Link prediction failure rates to FMEA failure modes with configurable unit conversion.",
     icon: Pulse,
     status: "active",
+    workflowIds: failureRateDemoScenarios.map((scenario) => scenario.workflowId),
     component: FailureRateTool,
   },
   {
@@ -78,6 +89,7 @@ export const toolDefinitions: ToolDefinition[] = [
     description: "Extract and verify RefDes from annotated schematic PDFs with adaptive geometry analysis.",
     icon: Cpu,
     status: "active",
+    workflowIds: refdesDemoScenarios.map((scenario) => scenario.workflowId),
     component: RefDesTool,
   },
   {
@@ -87,6 +99,15 @@ export const toolDefinitions: ToolDefinition[] = [
     description: "Theme selection, backend diagnostics, and application info.",
     icon: Faders,
     status: "active",
+    workflowIds: [],
     component: SettingsTool,
   },
 ];
+
+export function resolveToolIdForWorkflow(workflowId: string): ToolId | null {
+  return (
+    toolDefinitions.find((tool) =>
+      tool.workflowIds.some((candidate) => candidate === workflowId),
+    )?.id ?? null
+  );
+}

@@ -216,7 +216,7 @@ export function FailureRateTool() {
 
   function buildRunRequest(): RunRequestBody {
     return {
-      workflowId: "failure_rate_link",
+      workflowId: baseScenario.workflowId,
       outputStrategyId: "new_workbook_standard",
       inputs: inputStates.map((input) => ({
         role: input.role,

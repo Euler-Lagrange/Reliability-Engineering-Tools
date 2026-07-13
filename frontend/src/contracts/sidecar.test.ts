@@ -38,6 +38,7 @@ describe("sidecar protocol schemas", () => {
           run_id: "run_001",
           mode: "desktop-bridge",
           session_generation: 3,
+          workflow_id: "bom_compare_custom",
         },
       }),
     ).toMatchObject({
@@ -45,6 +46,7 @@ describe("sidecar protocol schemas", () => {
       payload: {
         run_id: "run_001",
         session_generation: 3,
+        workflow_id: "bom_compare_custom",
       },
     });
   });
