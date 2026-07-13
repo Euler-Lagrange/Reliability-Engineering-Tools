@@ -40,8 +40,8 @@
 | Frontend command palette | `frontend/src/components/primitives/CommandPalette.test.tsx` | 8 | Vitest + RTL |
 | Frontend hold button | `frontend/src/components/primitives/HoldButton.test.tsx` | 6 | Vitest + RTL |
 | Frontend empty state | `frontend/src/components/primitives/EmptyState.test.tsx` | 5 | Vitest + RTL |
-| Frontend run lifecycle | `frontend/src/shared/backend/runLifecycle.test.ts` | 9 | Vitest |
-| Frontend desktop run controller | `frontend/src/shared/backend/useDesktopRunController.test.ts` | 3 | Vitest |
+| Frontend run lifecycle | `frontend/src/shared/backend/runLifecycle.test.ts` | 11 | Vitest |
+| Frontend desktop run controller | `frontend/src/shared/backend/useDesktopRunController.test.ts` | 4 | Vitest |
 | Frontend cancel error | `frontend/src/shared/backend/cancelError.test.ts` | 18 | Vitest |
 | Frontend cancel run | `frontend/src/shared/backend/client.cancelRun.test.ts` | 2 | Vitest |
 | Frontend run event client | `frontend/src/shared/backend/client.runEvents.test.ts` | 2 | Vitest |
@@ -74,9 +74,9 @@
 | Frontend shell-hook install | `frontend/src/app/App.shellHooks.test.tsx` | 1 | Vitest + RTL |
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
-| **Frontend subtotal** | | **312** | |
+| **Frontend subtotal** | | **315** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 18 | cargo test |
-| **Total** | | **739** | |
+| **Total** | | **742** | |
 
 ## Backend Tests
 
@@ -248,7 +248,7 @@ neither of which exists under jsdom, so the client returns mock data from
 | `frontend/src/components/primitives/CommandPalette.test.tsx` | 5 — command palette open, search, select, keyboard navigation, dismiss |
 | `frontend/src/components/primitives/HoldButton.test.tsx` | 6 — hold-to-confirm interaction, cancel on release, progress feedback, no confirm when disabled mid-hold |
 | `frontend/src/components/primitives/EmptyState.test.tsx` | 5 — empty state rendering, icon, message, action slot |
-| `frontend/src/shared/backend/runLifecycle.test.ts` | 6 — run lifecycle state transitions (ack, progress, result, cancel, error, reset) |
+| `frontend/src/shared/backend/runLifecycle.test.ts` | 11 — run lifecycle state transitions, settled/disconnected guards, and sticky cancellation |
 | `frontend/src/shared/backend/cancelError.test.ts` | 18 — cancel error detection, wrapping, propagation across error types, plus `describeBackendError` normalization of raw-string Tauri rejections |
 | `frontend/src/shared/backend/client.cancelRun.test.ts` | 2 — cancel run command dispatch and response handling |
 | `frontend/src/shared/backend/client.runEvents.test.ts` | 2 — production run-event subscription schema parsing |

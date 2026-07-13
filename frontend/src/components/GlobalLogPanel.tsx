@@ -9,6 +9,7 @@ import {
 } from "../stores/globalLogStore";
 import { useRunStore } from "../stores/runStore";
 import { useShellStore, type ToolId } from "../stores/shellStore";
+import { LIVE_PHASES } from "../shared/backend/runLifecycle";
 
 /**
  * Map the active-run phase (plus idle / disconnected state) onto one of
@@ -27,7 +28,7 @@ function deriveLogStatusDot(
   if (hasError || phase === "failure") return "bad";
   if (phase === "cancelled") return "warn";
   if (phase === "success") return "good";
-  if (phase === "starting" || phase === "running" || phase === "cancelling") return "active";
+  if (LIVE_PHASES.some((livePhase) => livePhase === phase)) return "active";
   return "idle";
 }
 

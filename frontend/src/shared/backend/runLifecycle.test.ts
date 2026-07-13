@@ -160,6 +160,26 @@ describe("patchFromRunEvent terminal guard", () => {
     expect(patch?.phase).toBe("cancelling");
   });
 
+  it("keeps cancelling sticky when a late running status arrives", () => {
+    const current = buildCurrent("run_sticky_cancelling", "cancelling");
+    const patch = patchFromRunEvent(
+      current,
+      statusEvent("run_sticky_cancelling", "running"),
+      (p) => p,
+    );
+    expect(patch).toBeNull();
+  });
+
+  it("rejects every status event after the run is disconnected", () => {
+    const current = buildCurrent("run_disconnected", "disconnected");
+    const patch = patchFromRunEvent(
+      current,
+      statusEvent("run_disconnected", "running"),
+      (p) => p,
+    );
+    expect(patch).toBeNull();
+  });
+
   it("does not block a terminal status when the phase is already terminal", () => {
     // terminal current + terminal incoming: the guard must only drop late
     // NON-terminal statuses, so a (duplicate) terminal status still applies.

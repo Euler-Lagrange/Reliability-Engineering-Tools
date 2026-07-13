@@ -1,5 +1,9 @@
 import { create } from "zustand";
 import type { RunEventTemplate, RunMode } from "../app/types";
+import {
+  INACTIVE_PHASES,
+  SETTLED_PHASES,
+} from "../shared/backend/runLifecycle";
 import type { ToolId } from "./shellStore";
 
 /**
@@ -92,12 +96,12 @@ export const useRunStore = create<RunStoreState>((set) => ({
       if (!state.activeRun) {
         return state;
       }
-      // Only flip if the run was still alive — finished runs stay finished.
-      const wasTerminal =
-        state.activeRun.phase === "success" ||
-        state.activeRun.phase === "failure" ||
-        state.activeRun.phase === "cancelled";
-      if (wasTerminal) {
+      // Only flip if the run was still alive — settled runs stay settled.
+      const currentPhase = state.activeRun.phase;
+      const wasSettled = SETTLED_PHASES.some(
+        (phase) => phase === currentPhase,
+      );
+      if (wasSettled) {
         return state;
       }
       return {
@@ -124,13 +128,6 @@ export const TOOL_RUN_LABELS: Record<ToolId, string> = {
   settings: "Settings",
 };
 
-const TERMINAL_PHASES: ReadonlySet<RunMode> = new Set([
-  "success",
-  "failure",
-  "cancelled",
-  "disconnected",
-]);
-
 /**
  * Return the live run that would conflict with starting a run in
  * ``toolId``, or null when starting is safe. The backend already rejects a
@@ -143,7 +140,9 @@ export function findLiveRunConflict(toolId: ToolId): ActiveRunState | null {
   if (!activeRun || activeRun.toolId === toolId) {
     return null;
   }
-  return TERMINAL_PHASES.has(activeRun.phase) ? null : activeRun;
+  return INACTIVE_PHASES.some((phase) => phase === activeRun.phase)
+    ? null
+    : activeRun;
 }
 
 /**

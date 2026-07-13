@@ -296,7 +296,7 @@ Fixes round-2 F1/F3/F5/F6/F7/F8/F9 and round-1's Browse-during-run cancel delay.
 - Test: `frontend/src/shared/backend/runLifecycle.test.ts`, `useBackendBusyReset.test.ts`,
   `useDesktopRunController.test.ts`
 
-**DECIDED semantics — exactly two exported sets, all five current call sites re-derived
+**DECIDED semantics — exactly three exported sets, all five current call sites re-derived
 from them (delete the local copies):**
 
 ```ts
@@ -318,11 +318,11 @@ Consumer mapping (fix each to the named set):
 - controller terminal effect: fire on `INACTIVE_PHASES` members it handles today.
 - `resetSessionUnlessLive`: protect `LIVE_PHASES` (this adds `cancelling` — the F6 fix).
 
-- [ ] **Step 1:** Failing tests: (a) `running` status after `cancelling` → patch is null;
+- [x] **Step 1:** Failing tests: (a) `running` status after `cancelling` → patch is null;
   (b) `running` status after `disconnected` → null; (c) `resetSessionUnlessLive` with a
   `cancelling` run → session survives; (d) existing guard behaviors still pass.
-- [ ] **Step 2:** Implement, typecheck + vitest green.
-- [ ] **Step 3:** Commit: `Lifecycle: One terminal vocabulary; sticky cancelling/disconnected`
+- [x] **Step 2:** Implement, typecheck + vitest green.
+- [x] **Step 3:** Commit: `Lifecycle: One terminal vocabulary; sticky cancelling/disconnected`
 
 ### Task 3.2: Generation-aware reconnect clearing
 

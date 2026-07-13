@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useRunStore } from "../../stores/runStore";
 import { useShellStore } from "../../stores/shellStore";
-import type { RunMode } from "../../app/types";
+import { SETTLED_PHASES } from "./runLifecycle";
 
 /**
  * Phase B4 — release the shell's "Backend busy" chip whenever the active
@@ -40,19 +40,16 @@ import type { RunMode } from "../../app/types";
  * the plan explicitly kept as "redundant-but-harmless safety nets" in
  * each tool component's catch-on-validation-error path.
  */
-const TERMINAL_RUN_PHASES: ReadonlySet<RunMode> = new Set<RunMode>([
-  "cancelled",
-  "success",
-  "failure",
-]);
-
 export function useBackendBusyReset() {
   const activeRunPhase = useRunStore((state) => state.activeRun?.phase ?? "idle");
   const backendStatus = useShellStore((state) => state.backendStatus);
   const setBackendState = useShellStore((state) => state.setBackendState);
 
   useEffect(() => {
-    if (TERMINAL_RUN_PHASES.has(activeRunPhase) && backendStatus === "busy") {
+    if (
+      SETTLED_PHASES.some((phase) => phase === activeRunPhase) &&
+      backendStatus === "busy"
+    ) {
       setBackendState({
         backendStatus: "ready",
         backendMessage: null,

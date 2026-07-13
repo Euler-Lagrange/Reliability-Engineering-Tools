@@ -21,7 +21,13 @@ import {
   EXECUTE_RUN_TIMEOUT_NOTIFICATION_TITLE,
   isExecuteRunTimeoutError,
 } from "./cancelError";
-import { buildRunTimeline, useBackendRunLifecycle } from "./runLifecycle";
+import {
+  INACTIVE_PHASES,
+  LIVE_PHASES,
+  SETTLED_PHASES,
+  buildRunTimeline,
+  useBackendRunLifecycle,
+} from "./runLifecycle";
 
 /**
  * Clone the demo-scenario input states for tool-local `useState` seeding.
@@ -103,7 +109,7 @@ export function buildTimeline(
       if (index === runIndex) status = "active";
     }
 
-    if (runMode === "success" || runMode === "failure") {
+    if (SETTLED_PHASES.some((phase) => phase === runMode)) {
       status = "completed";
     }
 
@@ -212,7 +218,7 @@ export function useDesktopRunController(
     }
 
     const phase = desktopRunSession.phase;
-    if (!["success", "failure", "cancelled", "disconnected"].includes(phase)) {
+    if (!INACTIVE_PHASES.some((inactivePhase) => inactivePhase === phase)) {
       return;
     }
 
@@ -311,10 +317,13 @@ export function useDesktopRunController(
       return false;
     }
 
+    const isLive = LIVE_PHASES.some(
+      (phase) => phase === desktopRunSession.phase,
+    );
     if (
       !desktopRunSession.runId ||
-      (desktopRunSession.phase !== "starting" &&
-        desktopRunSession.phase !== "running")
+      !isLive ||
+      desktopRunSession.phase === "cancelling"
     ) {
       return true;
     }
@@ -339,7 +348,8 @@ export function useDesktopRunController(
 
   /**
    * Fix 2 (Family 2) defense-in-depth: a catch-path reset that REFUSES to
-   * clear a live (``starting``/``running``) run belonging to this tool.
+   * clear a live (``starting``/``running``/``cancelling``) run belonging to
+   * this tool.
    *
    * The double-click bug let a second `handleStartRun` reach its catch (its
    * `executeRun` rejected by Python's single-active-run guard) and call the
@@ -358,7 +368,7 @@ export function useDesktopRunController(
     if (
       current &&
       current.toolId === toolId &&
-      (current.phase === "starting" || current.phase === "running")
+      LIVE_PHASES.some((phase) => phase === current.phase)
     ) {
       // A live run for this tool is in flight — leave it alone.
       return;

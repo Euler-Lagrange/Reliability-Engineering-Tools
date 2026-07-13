@@ -16,6 +16,12 @@ import type { ToolId } from "../../stores/shellStore";
 // Re-export so existing import paths keep working.
 export { MAX_LOG_LINES };
 
+// Single source of truth for lifecycle membership. Consumers import these
+// arrays rather than restating phase literals in their own modules.
+export const SETTLED_PHASES = ["success", "failure", "cancelled"] as const satisfies readonly RunMode[];
+export const INACTIVE_PHASES = [...SETTLED_PHASES, "disconnected"] as const satisfies readonly RunMode[];
+export const LIVE_PHASES = ["starting", "running", "cancelling"] as const satisfies readonly RunMode[];
+
 export interface ManagedRunSession<ResultT> {
   runId: string | null;
   phase: RunMode;
@@ -114,16 +120,28 @@ export function patchFromRunEvent(
       // don't reset state if a duplicate ack comes through.
       return null;
     case "status": {
-      // Terminal guard: a late NON-terminal status — notably "cancelling",
-      // emitted if a cancel is processed in the narrow window between a run's
-      // result and cleanup — must not clobber an already-settled terminal phase.
-      // Without this the UI sticks in "Cancelling..." forever (no further
-      // terminal event ever arrives). Mirrors markDisconnected's wasTerminal
-      // guard. The normal running -> cancelling -> cancelled path is unaffected
-      // (running is non-terminal) and a genuine later terminal still applies.
-      const isTerminalPhase = (p: unknown) =>
-        p === "success" || p === "failure" || p === "cancelled";
-      if (isTerminalPhase(current.phase) && !isTerminalPhase(event.payload.status)) {
+      const incomingIsSettled = SETTLED_PHASES.some(
+        (phase) => phase === event.payload.status,
+      );
+      const currentIsSettled = SETTLED_PHASES.some(
+        (phase) => phase === current.phase,
+      );
+
+      // Disconnection belongs to a dead session generation. Streamed status
+      // frames cannot revive it; only reconnect handling or a newly accepted
+      // run may replace that state.
+      if (current.phase === "disconnected") {
+        return null;
+      }
+
+      // Cancelling is sticky until a genuinely settled status arrives. A late
+      // running frame must not regress the UI and reopen run-invalidating UI.
+      if (current.phase === "cancelling" && !incomingIsSettled) {
+        return null;
+      }
+
+      // A late non-settled status must not clobber an already-settled phase.
+      if (currentIsSettled && !incomingIsSettled) {
         return null;
       }
       return {
@@ -133,12 +151,7 @@ export function patchFromRunEvent(
         statusMessage: event.payload.message,
         errorMessage: event.payload.status === "failure" ? event.payload.message : null,
         steps: upsertStep(current.steps, event.payload.stage, event.payload.message, current.progress),
-        finishedAt:
-          event.payload.status === "success" ||
-          event.payload.status === "failure" ||
-          event.payload.status === "cancelled"
-            ? new Date().toISOString()
-            : current.finishedAt,
+        finishedAt: incomingIsSettled ? new Date().toISOString() : current.finishedAt,
       };
     }
     case "progress":
@@ -202,7 +215,7 @@ export function buildRunTimeline<ResultT>(session: ManagedRunSession<ResultT>): 
   return session.steps.map((step, index) => {
     const isLast = index === session.steps.length - 1;
     const status: RunEvent["status"] =
-      isLast && (session.phase === "starting" || session.phase === "running" || session.phase === "cancelling")
+      isLast && LIVE_PHASES.some((phase) => phase === session.phase)
         ? "active"
         : "completed";
 

@@ -175,4 +175,24 @@ describe("useDesktopRunController terminal handling", () => {
     });
     expect(useNotificationStore.getState().notifications).toHaveLength(1);
   });
+
+  it("resetSessionUnlessLive preserves a cancelling run", () => {
+    const { result } = renderController();
+
+    act(() => {
+      result.current.beginAcceptedRun({
+        run_id: "run_cancelling",
+        mode: "desktop-bridge",
+        session_generation: 1,
+      });
+      useRunStore.getState().patchActiveRun({ phase: "cancelling" });
+    });
+
+    act(() => {
+      result.current.resetSessionUnlessLive();
+    });
+
+    expect(useRunStore.getState().activeRun?.runId).toBe("run_cancelling");
+    expect(useRunStore.getState().activeRun?.phase).toBe("cancelling");
+  });
 });

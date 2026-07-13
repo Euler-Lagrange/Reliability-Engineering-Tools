@@ -1,4 +1,5 @@
 import type { RunEvent, RunMode, RunResult } from "../app/types";
+import { LIVE_PHASES } from "../shared/backend/runLifecycle";
 import { OPEN_FOLDER_LABEL } from "../shared/backend/fileManager";
 import { HoldButton } from "./primitives/HoldButton";
 
@@ -80,9 +81,9 @@ export function RunStatePanel({
   startDisabledReason,
   onRevealOutput,
 }: RunStatePanelProps) {
-  const isBusy = runMode === "starting" || runMode === "running" || runMode === "cancelling";
-  const canCancel = runMode === "starting" || runMode === "running";
-  const isActiveRun = runMode === "starting" || runMode === "running";
+  const isBusy = LIVE_PHASES.some((phase) => phase === runMode);
+  const canCancel = isBusy && runMode !== "cancelling";
+  const isActiveRun = canCancel;
   const startButtonDisabled = isBusy || startDisabled;
   const showStartDisabledReason =
     !isBusy && startDisabled && typeof startDisabledReason === "string" && startDisabledReason.length > 0;
