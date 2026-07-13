@@ -408,9 +408,9 @@ delay `cancel_run` (verified head-of-line finding). Hint text:
 disabled only within the tool that owns the live run (they trigger
 `resetSessionUnlessLive`, which Task 3.1 already hardened — this is defense in depth).
 
-- [ ] **Step 1:** Failing tests: selector honors `disabled`; InputGrid Browse disabled
+- [x] **Step 1:** Failing tests: selector honors `disabled`; InputGrid Browse disabled
   with hint when a cross-tool run is live.
-- [ ] **Step 2:** Implement, green, commit:
+- [x] **Step 2:** Implement, green, commit:
   `UI: Disable Browse and workflow controls during live runs`
 
 ### Task 3.5: RefDes cross-check failure produces a qualified outcome

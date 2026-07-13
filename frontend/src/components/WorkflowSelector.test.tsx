@@ -64,4 +64,34 @@ describe("WorkflowSelector", () => {
     await user.click(screen.getByRole("button", { name: /piece-part from bom only/i }));
     expect(onSelect).toHaveBeenCalledWith("bom_only");
   });
+
+  test("disables every card without changing aria-pressed selection", async () => {
+    const user = userEvent.setup();
+    const onSelect = vi.fn();
+    render(
+      <WorkflowSelector
+        workflows={workflows}
+        selectedWorkflowId="piece_part_generate"
+        onSelect={onSelect}
+        disabled
+      />,
+    );
+
+    const selected = screen.getByRole("button", { name: /piece-part from grouping file/i });
+    const other = screen.getByRole("button", { name: /piece-part from bom only/i });
+
+    expect(selected).toBeDisabled();
+    expect(other).toBeDisabled();
+    expect(selected).toHaveAttribute("aria-disabled", "true");
+    expect(other).toHaveAttribute("aria-disabled", "true");
+    expect(selected).toHaveAttribute("aria-pressed", "true");
+    expect(other).toHaveAttribute("aria-pressed", "false");
+    expect(other).toHaveAttribute(
+      "title",
+      "Workflow cannot be changed while this tool has an active run.",
+    );
+
+    await user.click(other);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
 });

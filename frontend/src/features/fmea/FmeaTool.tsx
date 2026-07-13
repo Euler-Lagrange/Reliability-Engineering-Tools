@@ -1,5 +1,8 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
-import { InputGrid } from "../../components/InputGrid";
+import {
+  FILE_INSPECTION_PAUSED_REASON,
+  InputGrid,
+} from "../../components/InputGrid";
 import { MappingTable } from "../../components/MappingTable";
 import { RunStatePanel } from "../../components/RunStatePanel";
 import { SectionCard } from "../../components/SectionCard";
@@ -40,6 +43,7 @@ import {
 } from "../../shared/backend/client";
 import { describeBackendError } from "../../shared/backend/cancelError";
 import { parentDirectoryForPath } from "../../shared/backend/fileManager";
+import { LIVE_PHASES } from "../../shared/backend/runLifecycle";
 import {
   buildTimeline,
   cloneInputs,
@@ -50,6 +54,7 @@ import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
 import { useRoleRequestSequence } from "../../shared/hooks/useRoleRequestSequence";
 import { useNotificationStore } from "../../stores/notificationStore";
 import { usePreviewStore } from "../../stores/previewStore";
+import { useRunStore } from "../../stores/runStore";
 import { useShellStore } from "../../stores/shellStore";
 
 const baseScenario = demoScenarios[0];
@@ -513,6 +518,16 @@ export function FmeaTool() {
     mockLogLines: runLogLines,
     mockCancelledNotice: cancelledNotice,
   });
+  const activeRun = useRunStore((state) => state.activeRun);
+  const storedRunIsLive =
+    !!activeRun && LIVE_PHASES.some((phase) => phase === activeRun.phase);
+  const owningRunIsLive =
+    LIVE_PHASES.some((phase) => phase === panelRunMode) ||
+    (storedRunIsLive && activeRun.toolId === "dark_star_fmea");
+  const anyRunIsLive = owningRunIsLive || storedRunIsLive;
+  const fileInspectionDisabledReason = anyRunIsLive
+    ? FILE_INSPECTION_PAUSED_REASON
+    : undefined;
   // Per-role token used to discard stale async sheet/inspect/analyze results
   // when the user changes the input under a still-resolving operation.
   const fileRequestSeq = useRoleRequestSequence<FileRole>();
@@ -1304,6 +1319,7 @@ export function FmeaTool() {
                     workflows={workflowOptions}
                     selectedWorkflowId={workflowId}
                     onSelect={setWorkflowId}
+                    disabled={owningRunIsLive}
                   />
                 </OptionsField>
               </div>
@@ -1399,6 +1415,7 @@ export function FmeaTool() {
                   inputs={workflowInputs}
                   onBrowse={handleBrowse}
                   onSheetChange={handleSheetChange}
+                  browseDisabledReason={fileInspectionDisabledReason}
                   getDisabledSheetReason={getDisabledSheetReason}
                 />
               </div>
@@ -1426,6 +1443,7 @@ export function FmeaTool() {
                     strategies={outputStrategies}
                     selectedStrategyId={outputStrategyId}
                     onSelect={setOutputStrategyId}
+                    disabled={owningRunIsLive}
                   />
                 </OptionsField>
               </div>
@@ -1436,6 +1454,7 @@ export function FmeaTool() {
                     inputs={outputInputs}
                     onBrowse={handleBrowse}
                     onSheetChange={handleSheetChange}
+                    browseDisabledReason={fileInspectionDisabledReason}
                     getDisabledSheetReason={getDisabledSheetReason}
                   />
                 </div>

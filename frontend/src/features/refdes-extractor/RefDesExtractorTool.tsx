@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CustomSelect } from "../../components/CustomSelect";
-import { InputGrid } from "../../components/InputGrid";
+import {
+  FILE_INSPECTION_PAUSED_REASON,
+  InputGrid,
+} from "../../components/InputGrid";
 import { RunStatePanel } from "../../components/RunStatePanel";
 import { SectionCard } from "../../components/SectionCard";
 import { ValidationPreview } from "../../components/ValidationPreview";
@@ -26,6 +29,7 @@ import type {
 import { backendClient, type RunRequestBody } from "../../shared/backend/client";
 import { describeBackendError } from "../../shared/backend/cancelError";
 import { parentDirectoryForPath } from "../../shared/backend/fileManager";
+import { LIVE_PHASES } from "../../shared/backend/runLifecycle";
 import {
   buildTimeline,
   cloneInputs,
@@ -36,6 +40,7 @@ import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
 import { useRoleRequestSequence } from "../../shared/hooks/useRoleRequestSequence";
 import { useNotificationStore } from "../../stores/notificationStore";
 import { usePreviewStore } from "../../stores/previewStore";
+import { useRunStore } from "../../stores/runStore";
 import { useShellStore } from "../../stores/shellStore";
 
 type ExtractionMode = "functional" | "piece_part";
@@ -278,6 +283,13 @@ export function RefDesExtractorTool() {
     mockLogLines: runLogLines,
     mockCancelledNotice: cancelledNotice,
   });
+  const activeRunPhase = useRunStore((state) => state.activeRun?.phase);
+  const panelRunIsLive = LIVE_PHASES.some((phase) => phase === panelRunMode);
+  const anyRunIsLive =
+    panelRunIsLive || LIVE_PHASES.some((phase) => phase === activeRunPhase);
+  const fileInspectionDisabledReason = anyRunIsLive
+    ? FILE_INSPECTION_PAUSED_REASON
+    : undefined;
 
   async function handleRevealOutput(path: string) {
     try {
@@ -628,6 +640,8 @@ export function RefDesExtractorTool() {
                   body="Pick a schematic PDF and BOM to extract reference designators. Piece-part extraction can also use an optional pinlist."
                   primaryAction={{
                     label: "Browse for schematic",
+                    disabled: anyRunIsLive,
+                    disabledReason: fileInspectionDisabledReason,
                     onClick: () => {
                       if (firstInputRole) {
                         void handleBrowse(firstInputRole);
@@ -640,7 +654,12 @@ export function RefDesExtractorTool() {
                   }}
                 />
               ) : (
-                <InputGrid inputs={visibleInputs} onBrowse={handleBrowse} onSheetChange={handleSheetChange} />
+                <InputGrid
+                  inputs={visibleInputs}
+                  onBrowse={handleBrowse}
+                  onSheetChange={handleSheetChange}
+                  browseDisabledReason={fileInspectionDisabledReason}
+                />
               )}
             </SectionCard>
 

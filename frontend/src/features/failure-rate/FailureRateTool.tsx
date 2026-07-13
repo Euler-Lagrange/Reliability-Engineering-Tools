@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CustomSelect } from "../../components/CustomSelect";
-import { InputGrid } from "../../components/InputGrid";
+import {
+  FILE_INSPECTION_PAUSED_REASON,
+  InputGrid,
+} from "../../components/InputGrid";
 import { MappingTable } from "../../components/MappingTable";
 import { RunStatePanel } from "../../components/RunStatePanel";
 import { SectionCard } from "../../components/SectionCard";
@@ -30,6 +33,7 @@ import { deriveMappingRows } from "../../shared/mapping/deriveMappingRows";
 import { buildWorkbookColumnUnion } from "../fmea/mappingAnalysis";
 import { describeBackendError } from "../../shared/backend/cancelError";
 import { parentDirectoryForPath } from "../../shared/backend/fileManager";
+import { LIVE_PHASES } from "../../shared/backend/runLifecycle";
 import {
   buildTimeline,
   cloneInputs,
@@ -40,6 +44,7 @@ import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
 import { useRoleRequestSequence } from "../../shared/hooks/useRoleRequestSequence";
 import { useNotificationStore } from "../../stores/notificationStore";
 import { usePreviewStore } from "../../stores/previewStore";
+import { useRunStore } from "../../stores/runStore";
 import { useShellStore } from "../../stores/shellStore";
 
 /**
@@ -178,6 +183,13 @@ export function FailureRateTool() {
     mockLogLines: runLogLines,
     mockCancelledNotice: cancelledNotice,
   });
+  const activeRunPhase = useRunStore((state) => state.activeRun?.phase);
+  const panelRunIsLive = LIVE_PHASES.some((phase) => phase === panelRunMode);
+  const anyRunIsLive =
+    panelRunIsLive || LIVE_PHASES.some((phase) => phase === activeRunPhase);
+  const fileInspectionDisabledReason = anyRunIsLive
+    ? FILE_INSPECTION_PAUSED_REASON
+    : undefined;
 
   async function handleRevealOutput(path: string) {
     try {
@@ -602,6 +614,8 @@ export function FailureRateTool() {
                   body="Select a parts list to enrich with failure rate data. Outputs are written alongside the original workbook."
                   primaryAction={{
                     label: "Browse for parts list",
+                    disabled: anyRunIsLive,
+                    disabledReason: fileInspectionDisabledReason,
                     onClick: () => {
                       if (firstInputRole) {
                         void handleBrowse(firstInputRole);
@@ -618,6 +632,7 @@ export function FailureRateTool() {
                   inputs={inputStates}
                   onBrowse={handleBrowse}
                   onSheetChange={handleSheetChange}
+                  browseDisabledReason={fileInspectionDisabledReason}
                   getDisabledSheetReason={(input) => {
                     // Sheet picker disabledReason — surfaced as a muted
                     // caption below the disabled CustomSelect via

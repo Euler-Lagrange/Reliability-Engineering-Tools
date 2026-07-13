@@ -16,6 +16,8 @@ export interface EmptyStateAction {
   label: string;
   onClick: () => void;
   icon?: PhosphorIcon;
+  disabled?: boolean;
+  disabledReason?: string;
 }
 
 export interface EmptyStateProps {
@@ -55,6 +57,9 @@ export function EmptyState({
               type="button"
               className="empty-state__action empty-state__action--primary"
               onClick={primaryAction.onClick}
+              disabled={primaryAction.disabled}
+              aria-disabled={primaryAction.disabled}
+              title={primaryAction.disabledReason}
             >
               {primaryAction.icon ? (
                 <primaryAction.icon size={14} weight="bold" aria-hidden="true" />
@@ -67,6 +72,9 @@ export function EmptyState({
               type="button"
               className="empty-state__action empty-state__action--secondary"
               onClick={secondaryAction.onClick}
+              disabled={secondaryAction.disabled}
+              aria-disabled={secondaryAction.disabled}
+              title={secondaryAction.disabledReason}
             >
               {secondaryAction.icon ? (
                 <secondaryAction.icon size={14} weight="bold" aria-hidden="true" />

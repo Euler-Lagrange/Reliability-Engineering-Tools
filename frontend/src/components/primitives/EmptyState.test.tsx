@@ -44,6 +44,30 @@ describe("EmptyState", () => {
     expect(secondary).toHaveBeenCalledTimes(1);
   });
 
+  test("disables an action and exposes its reason as a title hint", () => {
+    const primary = vi.fn();
+    const reason = "File inspection is paused while a run is active.";
+    render(
+      <EmptyState
+        icon={FileText}
+        headline="Start"
+        primaryAction={{
+          label: "Browse",
+          onClick: primary,
+          disabled: true,
+          disabledReason: reason,
+        }}
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: "Browse" });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("aria-disabled", "true");
+    expect(button).toHaveAttribute("title", reason);
+    fireEvent.click(button);
+    expect(primary).not.toHaveBeenCalled();
+  });
+
   test("compact variant applies the modifier class", () => {
     const { container } = render(
       <EmptyState icon={FileText} headline="Compact" compact />,

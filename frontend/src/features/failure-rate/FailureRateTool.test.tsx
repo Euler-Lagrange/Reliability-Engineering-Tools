@@ -1,8 +1,8 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FailureRateTool } from "./FailureRateTool";
-import { useRunStore } from "../../stores/runStore";
+import { buildActiveRunFromAccepted, useRunStore } from "../../stores/runStore";
 import { useShellStore } from "../../stores/shellStore";
 import { useNotificationStore } from "../../stores/notificationStore";
 
@@ -72,6 +72,27 @@ beforeEach(() => {
 });
 
 describe("FailureRateTool stale validation handling", () => {
+  it("pauses pristine Browse while another tool owns a live run", () => {
+    act(() => {
+      useRunStore.getState().setActiveRun(
+        buildActiveRunFromAccepted({
+          runId: "live_fmea_run",
+          toolId: "dark_star_fmea",
+          sessionGeneration: 1,
+        }),
+      );
+      useRunStore.getState().patchActiveRun({ phase: "running" });
+    });
+    render(<FailureRateTool />);
+
+    const browse = screen.getByRole("button", { name: "Browse for parts list" });
+    expect(browse).toBeDisabled();
+    expect(browse).toHaveAttribute(
+      "title",
+      "File inspection is paused while a run is active.",
+    );
+  });
+
   // Regression (Fix 2): a stale validate_run result stranded in the Preview
   // tab after the user changed an input file — the previous run's validation
   // cards kept describing the OLD file. Browsing a new file must clear them.

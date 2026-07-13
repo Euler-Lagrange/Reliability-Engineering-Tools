@@ -1,5 +1,8 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
-import { InputGrid } from "../../components/InputGrid";
+import {
+  FILE_INSPECTION_PAUSED_REASON,
+  InputGrid,
+} from "../../components/InputGrid";
 import { MappingTable } from "../../components/MappingTable";
 import { RunStatePanel } from "../../components/RunStatePanel";
 import { SectionCard } from "../../components/SectionCard";
@@ -35,6 +38,7 @@ import { deriveMappingRows } from "../../shared/mapping/deriveMappingRows";
 import { buildWorkbookColumnUnion } from "../fmea/mappingAnalysis";
 import { describeBackendError } from "../../shared/backend/cancelError";
 import { parentDirectoryForPath } from "../../shared/backend/fileManager";
+import { LIVE_PHASES } from "../../shared/backend/runLifecycle";
 import {
   buildTimeline,
   cloneInputs,
@@ -45,6 +49,7 @@ import { ErrorBoundary } from "../../shared/errors/ErrorBoundary";
 import { useRoleRequestSequence } from "../../shared/hooks/useRoleRequestSequence";
 import { useNotificationStore } from "../../stores/notificationStore";
 import { usePreviewStore } from "../../stores/previewStore";
+import { useRunStore } from "../../stores/runStore";
 import { useShellStore } from "../../stores/shellStore";
 
 const workflowInputRoles: Partial<Record<WorkflowId, FileRole[]>> = {
@@ -324,6 +329,16 @@ export function BomCompareTool() {
     mockLogLines: runLogLines,
     mockCancelledNotice: cancelledNotice,
   });
+  const activeRun = useRunStore((state) => state.activeRun);
+  const storedRunIsLive =
+    !!activeRun && LIVE_PHASES.some((phase) => phase === activeRun.phase);
+  const owningRunIsLive =
+    LIVE_PHASES.some((phase) => phase === panelRunMode) ||
+    (storedRunIsLive && activeRun.toolId === "bom_compare");
+  const anyRunIsLive = owningRunIsLive || storedRunIsLive;
+  const fileInspectionDisabledReason = anyRunIsLive
+    ? FILE_INSPECTION_PAUSED_REASON
+    : undefined;
 
   // Reset state when workflow changes
   useEffect(() => {
@@ -976,6 +991,7 @@ export function BomCompareTool() {
                 workflows={bomCompareWorkflowOptions}
                 selectedWorkflowId={workflowId}
                 onSelect={setWorkflowId}
+                disabled={owningRunIsLive}
               />
             </SectionCard>
 
@@ -992,6 +1008,8 @@ export function BomCompareTool() {
                   body="Browse for your files, or load the example pair to explore the workflow first."
                   primaryAction={{
                     label: "Browse for first BOM",
+                    disabled: anyRunIsLive,
+                    disabledReason: fileInspectionDisabledReason,
                     onClick: () => {
                       if (firstInputRole) {
                         void handleBrowse(firstInputRole);
@@ -1008,6 +1026,7 @@ export function BomCompareTool() {
                   inputs={visibleInputs}
                   onBrowse={handleBrowse}
                   onSheetChange={handleSheetChange}
+                  browseDisabledReason={fileInspectionDisabledReason}
                   getDisabledSheetReason={(input) => {
                     // Sheet picker disabledReason — surfaced as a muted
                     // caption below the disabled CustomSelect via

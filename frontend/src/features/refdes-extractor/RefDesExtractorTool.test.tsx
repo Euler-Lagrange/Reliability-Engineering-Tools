@@ -73,6 +73,27 @@ beforeEach(() => {
 });
 
 describe("RefDesExtractorTool piece-part mode", () => {
+  it("pauses pristine Browse while another tool owns a live run", () => {
+    act(() => {
+      useRunStore.getState().setActiveRun(
+        buildActiveRunFromAccepted({
+          runId: "live_fmea_run",
+          toolId: "dark_star_fmea",
+          sessionGeneration: 1,
+        }),
+      );
+      useRunStore.getState().patchActiveRun({ phase: "running" });
+    });
+    render(<RefDesExtractorTool />);
+
+    const browse = screen.getByRole("button", { name: "Browse for schematic" });
+    expect(browse).toBeDisabled();
+    expect(browse).toHaveAttribute(
+      "title",
+      "File inspection is paused while a run is active.",
+    );
+  });
+
   // Regression: refdesInputs.pinlist existed in the mocks but was never
   // seeded into the demo scenario, so piece_part mode computed roles
   // ["pdf", "bom", "pinlist"] yet the pinlist picker never rendered —

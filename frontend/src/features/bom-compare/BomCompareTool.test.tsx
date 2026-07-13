@@ -603,7 +603,7 @@ describe("BomCompareTool custom compare workflow", () => {
   // job. The change-effect used the unguarded resetDesktopRunSession, which
   // cleared a live run from the store (dropping its events/result and blocking
   // the next run). The guarded variant must leave a live run untouched.
-  it("does not clobber a live run when the workflow is switched mid-run", async () => {
+  it("disables workflow changes without clobbering the owning live run", async () => {
     const user = userEvent.setup();
     render(<BomCompareTool />);
 
@@ -619,10 +619,38 @@ describe("BomCompareTool custom compare workflow", () => {
       useRunStore.getState().patchActiveRun({ phase: "running" });
     });
 
-    await user.click(screen.getByRole("button", { name: /Custom Compare/i }));
+    const selected = screen.getByRole("button", { name: /Group vs BOM/i });
+    const other = screen.getByRole("button", { name: /Custom Compare/i });
+    expect(selected).toBeDisabled();
+    expect(other).toBeDisabled();
+    expect(selected).toHaveAttribute("aria-pressed", "true");
+    expect(other).toHaveAttribute("aria-pressed", "false");
+    await user.click(other);
 
     expect(useRunStore.getState().activeRun?.runId).toBe("live_bc_run");
     expect(useRunStore.getState().activeRun?.phase).toBe("running");
+  });
+
+  it("pauses pristine Browse app-wide without locking this tool's workflow selector", () => {
+    act(() => {
+      useRunStore.getState().setActiveRun(
+        buildActiveRunFromAccepted({
+          runId: "live_fmea_run",
+          toolId: "dark_star_fmea",
+          sessionGeneration: 1,
+        }),
+      );
+      useRunStore.getState().patchActiveRun({ phase: "running" });
+    });
+    render(<BomCompareTool />);
+
+    const browse = screen.getByRole("button", { name: "Browse for first BOM" });
+    expect(browse).toBeDisabled();
+    expect(browse).toHaveAttribute(
+      "title",
+      "File inspection is paused while a run is active.",
+    );
+    expect(screen.getByRole("button", { name: /Custom Compare/i })).toBeEnabled();
   });
 
   // Regression (#17): a finished run's terminal phase lingers in the store, so

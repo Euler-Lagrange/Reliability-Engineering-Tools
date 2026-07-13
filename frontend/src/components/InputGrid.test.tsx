@@ -66,3 +66,36 @@ describe("InputGrid copy-path buttons", () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith("C:/data/a.xlsx");
   });
 });
+
+describe("InputGrid inspection controls", () => {
+  test("disables Browse and sheet inspection with the supplied reason", () => {
+    const onBrowse = vi.fn();
+    const onSheetChange = vi.fn();
+    const reason = "File inspection is paused while a run is active.";
+    const input = makeInput({
+      role: "bom",
+      label: "BOM",
+      sheets: [{ id: "sheet1", label: "Sheet1" }],
+      selectedSheet: "Sheet1",
+    });
+
+    render(
+      <InputGrid
+        inputs={[input]}
+        onBrowse={onBrowse}
+        onSheetChange={onSheetChange}
+        browseDisabledReason={reason}
+      />,
+    );
+
+    const browse = screen.getByRole("button", { name: "Browse" });
+    expect(browse).toBeDisabled();
+    expect(browse).toHaveAttribute("title", reason);
+    fireEvent.click(browse);
+    expect(onBrowse).not.toHaveBeenCalled();
+
+    const sheet = screen.getByRole("combobox", { name: "BOM sheet" });
+    expect(sheet).toBeDisabled();
+    expect(screen.getByText(reason)).toBeInTheDocument();
+  });
+});

@@ -299,7 +299,7 @@ describe("FmeaTool — Phase 5 mapping row visibility", () => {
   // Regression (#16): switching workflow mode MID-RUN must not orphan the
   // backend job — the change-effect's reset must be guarded so a live run
   // survives.
-  test("does not clobber a live run when the workflow mode is switched mid-run", async () => {
+  test("disables workflow changes without clobbering the owning live run", async () => {
     const user = userEvent.setup();
     renderApp();
     await waitForFmeaTool();
@@ -315,7 +315,13 @@ describe("FmeaTool — Phase 5 mapping row visibility", () => {
       useRunStore.getState().patchActiveRun({ phase: "running" });
     });
 
-    await user.click(screen.getByRole("button", { name: /piece-part from bom only/i }));
+    const selected = screen.getByRole("button", { name: /piece-part from grouping file/i });
+    const other = screen.getByRole("button", { name: /piece-part from bom only/i });
+    expect(selected).toBeDisabled();
+    expect(other).toBeDisabled();
+    expect(selected).toHaveAttribute("aria-pressed", "true");
+    expect(other).toHaveAttribute("aria-pressed", "false");
+    await user.click(other);
 
     expect(useRunStore.getState().activeRun?.runId).toBe("live_fmea_workflow");
     expect(useRunStore.getState().activeRun?.phase).toBe("running");
@@ -323,7 +329,7 @@ describe("FmeaTool — Phase 5 mapping row visibility", () => {
 
   // Regression (#16): the SEPARATE output-strategy change-effect must also use
   // the guarded reset so switching strategy mid-run can't orphan the job.
-  test("does not clobber a live run when the output strategy is switched mid-run", async () => {
+  test("disables output-strategy changes without clobbering the owning live run", async () => {
     const user = userEvent.setup();
     renderApp();
     await waitForFmeaTool();
@@ -339,11 +345,47 @@ describe("FmeaTool — Phase 5 mapping row visibility", () => {
       useRunStore.getState().patchActiveRun({ phase: "running" });
     });
 
-    await user.click(
-      screen.getByRole("button", { name: /existing workbook \(preserve formatting\)/i }),
-    );
+    const selected = screen.getByRole("button", { name: /new workbook/i });
+    const other = screen.getByRole("button", {
+      name: /existing workbook \(preserve formatting\)/i,
+    });
+    expect(selected).toBeDisabled();
+    expect(other).toBeDisabled();
+    expect(selected).toHaveAttribute("aria-pressed", "true");
+    expect(other).toHaveAttribute("aria-pressed", "false");
+    await user.click(other);
 
     expect(useRunStore.getState().activeRun?.runId).toBe("live_fmea_strategy");
     expect(useRunStore.getState().activeRun?.phase).toBe("running");
+  }, FMEA_TOOL_TEST_TIMEOUT_MS);
+
+  test("pauses file inspection app-wide without locking this tool's selectors", async () => {
+    renderApp();
+    await waitForFmeaTool();
+
+    act(() => {
+      useRunStore.getState().setActiveRun(
+        buildActiveRunFromAccepted({
+          runId: "live_bom_compare",
+          toolId: "bom_compare",
+          sessionGeneration: 1,
+        }),
+      );
+      useRunStore.getState().patchActiveRun({ phase: "running" });
+    });
+
+    const reason = "File inspection is paused while a run is active.";
+    const browseButtons = screen.getAllByRole("button", { name: "Browse" });
+    expect(browseButtons.length).toBeGreaterThan(0);
+    for (const button of browseButtons) {
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute("title", reason);
+    }
+    expect(
+      screen.getByRole("button", { name: /piece-part from bom only/i }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: /existing workbook \(preserve formatting\)/i }),
+    ).toBeEnabled();
   }, FMEA_TOOL_TEST_TIMEOUT_MS);
 });

@@ -7,6 +7,8 @@ interface InputGridProps {
   inputs: InputFileState[];
   onBrowse?: (role: FileRole) => void;
   onSheetChange?: (role: FileRole, sheet: string) => void;
+  /** When present, all file-inspection controls are disabled with this hint. */
+  browseDisabledReason?: string;
   /**
    * Optional per-input disabled reason for the sheet picker. Returning a
    * string surfaces a muted caption under the disabled select and wires
@@ -18,6 +20,9 @@ interface InputGridProps {
 }
 
 type InputCardState = "pending" | "active" | "loaded";
+
+export const FILE_INSPECTION_PAUSED_REASON =
+  "File inspection is paused while a run is active.";
 
 /**
  * Per-card copy-to-clipboard button. Each instance owns its own
@@ -75,7 +80,13 @@ function classifyInputStates(inputs: InputFileState[]): InputCardState[] {
   });
 }
 
-export function InputGrid({ inputs, onBrowse, onSheetChange, getDisabledSheetReason }: InputGridProps) {
+export function InputGrid({
+  inputs,
+  onBrowse,
+  onSheetChange,
+  browseDisabledReason,
+  getDisabledSheetReason,
+}: InputGridProps) {
   const states = classifyInputStates(inputs);
 
   return (
@@ -84,8 +95,14 @@ export function InputGrid({ inputs, onBrowse, onSheetChange, getDisabledSheetRea
         const showExampleStyling =
           !!input.isExample && input.source !== "desktop-bridge" && !!input.path;
         const displayPath = showExampleStyling ? `Example: ${input.path}` : input.path;
-        const sheetDisabled = !onSheetChange || input.isResolvingSheets || input.sheets.length === 0;
-        const sheetDisabledReason = sheetDisabled ? getDisabledSheetReason?.(input) : undefined;
+        const inspectionPaused = !!browseDisabledReason;
+        const sheetDisabled =
+          inspectionPaused || !onSheetChange || input.isResolvingSheets || input.sheets.length === 0;
+        const sheetDisabledReason = inspectionPaused
+          ? browseDisabledReason
+          : sheetDisabled
+            ? getDisabledSheetReason?.(input)
+            : undefined;
         const canCopyPath = !!input.path;
         const state = states[index];
 
@@ -146,7 +163,8 @@ export function InputGrid({ inputs, onBrowse, onSheetChange, getDisabledSheetRea
                 type="button"
                 className="ghost-button"
                 onClick={() => onBrowse?.(input.role)}
-                disabled={!onBrowse || input.isResolvingSheets || input.isAnalyzing}
+                disabled={inspectionPaused || !onBrowse || input.isResolvingSheets || input.isAnalyzing}
+                title={browseDisabledReason}
               >
                 {input.isResolvingSheets ? "Loading..." : input.isAnalyzing ? "Analyzing..." : "Browse"}
               </button>
