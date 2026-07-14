@@ -33,6 +33,7 @@ REASON_CODE_LABELS = {
     "SCOPE_PP_ONLY": "Scope Mismatch: Piece-Part Only",
     "SCOPE_UNCLASSIFIED_ONLY": "Scope Mismatch: Unclassified Row Type Only",
     "AMBIGUOUS_IDENTITY": "Ambiguous Identity: Duplicate RefDes and Failure Mode",
+    "SHEET_NAME_CONFLICT": "Sheet Name Conflict: User Sheet Preserved",
 }
 
 

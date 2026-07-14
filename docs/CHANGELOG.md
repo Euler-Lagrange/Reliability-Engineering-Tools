@@ -22,6 +22,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **FMEA preserve-formatting merges now protect user workbook content at the
+  cell, row-identity, and sheet boundaries** — blank generated values no longer
+  replace existing text or formulas; genuine replacements are recorded on a
+  `Merge Changes` audit sheet; duplicate row identities are flagged instead of
+  guessed; normalized group-ID collisions block the merge before an output is
+  created; and diagnostic sheets are replaced only when their ownership marker
+  proves they were tool-authored. A colliding user sheet is preserved and the
+  generated diagnostics use a `(Generated)` suffix with a warning and issue row;
+  the selected main FMEA sheet is never eligible for diagnostic replacement.
 - **RefDes Extractor no longer silently loses parts or groups** (the DIG-4xx
   incident). A component outside every group rectangle now lands in
   `UNGROUPED (IN BOM)` / `UNGROUPED (NOT IN BOM)` (or `PROVISIONAL` when

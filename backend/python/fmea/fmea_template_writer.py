@@ -33,9 +33,11 @@ from common.refdes_utils import canonicalize_refdes
 from fmea.fmea_generator_logic import (
     ROW_TYPE_COL,
     SUMMARY_SHEET_BANNERS,
+    TOOL_SHEET_MARKER,
     build_summary_frames,
     normalize_func_base_id,
     output_headers_for,
+    prepend_tool_sheet_banner,
 )
 from fmea.fmea_template_analyzer import (
     CellStyle,
@@ -63,6 +65,15 @@ _ISSUE_HEADERS = [
     "Failure Mode",
     "Details",
 ]
+_TEMPLATE_DIAGNOSTIC_SHEET_NAMES = (
+    "Template_Merge_Summary",
+    "Merge Changes",
+    "Template_Merge_Issues",
+)
+_KNOWN_DIAGNOSTIC_SHEET_NAMES = (
+    *SUMMARY_SHEET_BANNERS.keys(),
+    *_TEMPLATE_DIAGNOSTIC_SHEET_NAMES,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -788,7 +799,13 @@ def write_template_preserved(
     # ------------------------------------------------------------------
     # 7. Write summary sheets (matching existing write_excel_report pattern)
     # ------------------------------------------------------------------
-    _write_summary_sheets(wb, processor, result, log)
+    _write_summary_sheets(
+        wb,
+        processor,
+        result,
+        log,
+        protected_sheet_name=template_map.fmea_sheet_name,
+    )
 
     # ------------------------------------------------------------------
     # 8. Save workbook
@@ -842,14 +859,122 @@ def _find_circuit_block_row(
     return None
 
 
+def _generated_sheet_name(base_name: str, index: int = 1) -> str:
+    """Build a capped generated-sheet alias using the shared sanitizer."""
+    from bom_compare.bom_compare_logic import sanitize_sheet_name
+
+    suffix = " (Generated)" if index == 1 else f" (Generated {index})"
+    safe_base = sanitize_sheet_name(base_name, max_len=31 - len(suffix))
+    return f"{safe_base}{suffix}"
+
+
+def _find_sheet_name(wb, candidate: str) -> Optional[str]:
+    """Find an existing title using Excel's case-insensitive semantics."""
+    candidate_key = candidate.casefold()
+    return next(
+        (name for name in wb.sheetnames if name.casefold() == candidate_key),
+        None,
+    )
+
+
+def _is_tool_owned_sheet(wb, sheet_name: str) -> bool:
+    value = wb[sheet_name].cell(row=1, column=1).value
+    return isinstance(value, str) and value.startswith(TOOL_SHEET_MARKER)
+
+
+def _is_protected_sheet(sheet_name: str, protected_sheet_name: str) -> bool:
+    return sheet_name.casefold() == protected_sheet_name.casefold()
+
+
+def _preclean_owned_diagnostic_sheets(
+    wb,
+    protected_sheet_name: str,
+) -> None:
+    """Remove only known, marker-owned diagnostics from a previous run."""
+    known_titles = {
+        title.casefold()
+        for base_name in _KNOWN_DIAGNOSTIC_SHEET_NAMES
+        for title in (
+            base_name,
+            *(_generated_sheet_name(base_name, index) for index in range(1, 100)),
+        )
+    }
+    for sheet_name in list(wb.sheetnames):
+        if (
+            sheet_name.casefold() in known_titles
+            and not _is_protected_sheet(sheet_name, protected_sheet_name)
+            and _is_tool_owned_sheet(wb, sheet_name)
+        ):
+            del wb[sheet_name]
+
+
+def _resolve_tool_sheet_name(
+    wb,
+    requested_name: str,
+    result: TemplateWriteResult,
+    log_func: Callable[[str], None],
+    protected_sheet_name: str,
+) -> str:
+    """Resolve a diagnostic title without ever deleting a user-owned sheet."""
+    existing_name = _find_sheet_name(wb, requested_name)
+    if existing_name is None:
+        return requested_name
+    if (
+        not _is_protected_sheet(existing_name, protected_sheet_name)
+        and _is_tool_owned_sheet(wb, existing_name)
+    ):
+        del wb[existing_name]
+        return requested_name
+
+    generated_name = ""
+    for index in range(1, 100):
+        candidate = _generated_sheet_name(requested_name, index)
+        existing_candidate = _find_sheet_name(wb, candidate)
+        if existing_candidate is None:
+            generated_name = candidate
+            break
+        if (
+            not _is_protected_sheet(existing_candidate, protected_sheet_name)
+            and _is_tool_owned_sheet(wb, existing_candidate)
+        ):
+            del wb[existing_candidate]
+            generated_name = candidate
+            break
+    if not generated_name:
+        raise ProcessingError(
+            f"Could not create a generated sheet name for '{requested_name}' "
+            "without replacing an existing user sheet.",
+            context="template_write",
+        )
+
+    detail = (
+        f"Preserved user-owned sheet '{existing_name}'; wrote generated "
+        f"diagnostics to '{generated_name}'."
+    )
+    log_func(f"Template merge WARNING: {detail}")
+    result.issue_rows.append({
+        "ReasonCode": "SHEET_NAME_CONFLICT",
+        "Source": "Workbook",
+        "Excel Row": None,
+        "Group ID": "",
+        "RefDes": "",
+        "Failure Mode": "",
+        "Details": detail,
+    })
+    return generated_name
+
+
 def _write_summary_sheets(wb, processor, result: TemplateWriteResult,
-                          log_func: Callable[[str], None]) -> None:
+                          log_func: Callable[[str], None], *,
+                          protected_sheet_name: str) -> None:
     """Add diagnostic summary sheets to the workbook.
 
     Mirrors the pattern in ``write_excel_report`` — adds sheets only when
     there is data to report.
     """
     from openpyxl.styles import Font
+
+    _preclean_owned_diagnostic_sheets(wb, protected_sheet_name)
 
     # Template merge summary. The last two rows are a legend for the values
     # the writer puts in the Diagnostic column — without them the flags read
@@ -881,26 +1006,29 @@ def _write_summary_sheets(wb, processor, result: TemplateWriteResult,
         ),
     ])
 
-    sheet_name = "Template_Merge_Summary"
-    # Ensure unique sheet name
-    if sheet_name in wb.sheetnames:
-        # Remove existing sheet before re-creating
-        del wb[sheet_name]
-
+    sheet_name = _resolve_tool_sheet_name(
+        wb, "Template_Merge_Summary", result, log_func, protected_sheet_name
+    )
     ws_summary = wb.create_sheet(sheet_name)
     ws_summary.cell(row=1, column=1, value="Metric").font = Font(bold=True)
     ws_summary.cell(row=1, column=2, value="Value").font = Font(bold=True)
     for row_idx, (metric, value) in enumerate(summary_data, start=2):
         ws_summary.cell(row=row_idx, column=1, value=metric)
         ws_summary.cell(row=row_idx, column=2, value=value)
+    prepend_tool_sheet_banner(
+        ws_summary,
+        f"{TOOL_SHEET_MARKER} - Summary of preserve-formatting merge activity "
+        "and diagnostic flags.",
+        2,
+    )
 
     if result.merge_changes:
-        changes_name = "Merge Changes"
-        if changes_name in wb.sheetnames:
-            del wb[changes_name]
+        changes_name = _resolve_tool_sheet_name(
+            wb, "Merge Changes", result, log_func, protected_sheet_name
+        )
         ws_changes = wb.create_sheet(changes_name)
         banner = (
-            "Generated by Reliability Tools - non-blank generated values "
+            f"{TOOL_SHEET_MARKER} - non-blank generated values "
             "that replaced existing workbook values."
         )
         ws_changes.cell(row=1, column=1, value=banner).font = Font(bold=True)
@@ -934,12 +1062,18 @@ def _write_summary_sheets(wb, processor, result: TemplateWriteResult,
                     cell.data_type = "s"
         ws_changes.freeze_panes = "A3"
 
+    # Processor sheets can add SHEET_NAME_CONFLICT rows, so render them
+    # before the issues sheet and render issues last.
+    _write_processor_summaries(
+        wb, processor, result, log_func, protected_sheet_name
+    )
+
     # Issues sheet (if any). Structured issue rows carry stable reason codes;
     # legacy merge notes remain visible in the Details column.
     if result.issues or result.issue_rows:
-        issues_name = "Template_Merge_Issues"
-        if issues_name in wb.sheetnames:
-            del wb[issues_name]
+        issues_name = _resolve_tool_sheet_name(
+            wb, "Template_Merge_Issues", result, log_func, protected_sheet_name
+        )
         ws_issues = wb.create_sheet(issues_name)
         for col_idx, header in enumerate(_ISSUE_HEADERS, start=1):
             ws_issues.cell(row=1, column=col_idx, value=header).font = Font(bold=True)
@@ -961,12 +1095,20 @@ def _write_summary_sheets(wb, processor, result: TemplateWriteResult,
                     ws_issues.cell(row=row_idx, column=col_idx),
                     issue.get(header),
                 )
+        prepend_tool_sheet_banner(
+            ws_issues,
+            f"{TOOL_SHEET_MARKER} - Rows and workbook conditions requiring review.",
+            len(_ISSUE_HEADERS),
+        )
 
-    # Add processor summary sheets (No_Matches, Missing_HDA, etc.)
-    _write_processor_summaries(wb, processor, log_func)
 
-
-def _write_processor_summaries(wb, processor, log_func: Callable[[str], None]) -> None:
+def _write_processor_summaries(
+    wb,
+    processor,
+    result: TemplateWriteResult,
+    log_func: Callable[[str], None],
+    protected_sheet_name: str,
+) -> None:
     """Write the processor diagnostic sheets to the workbook.
 
     Consumes ``build_summary_frames`` — the single source of truth shared
@@ -980,11 +1122,12 @@ def _write_processor_summaries(wb, processor, log_func: Callable[[str], None]) -
     frames = build_summary_frames(processor)
 
     written = 0
-    for sheet_name, frame in frames.items():
+    for requested_name, frame in frames.items():
         if frame.empty:
             continue
-        if sheet_name in wb.sheetnames:
-            del wb[sheet_name]
+        sheet_name = _resolve_tool_sheet_name(
+            wb, requested_name, result, log_func, protected_sheet_name
+        )
         ws = wb.create_sheet(sheet_name)
         for col_idx, header in enumerate(frame.columns, start=1):
             ws.cell(row=1, column=col_idx, value=str(header)).font = Font(bold=True)
@@ -998,20 +1141,9 @@ def _write_processor_summaries(wb, processor, log_func: Callable[[str], None]) -
                 else:
                     cell.value = val
         # Same explanation banners the new-workbook writer prepends.
-        banner = SUMMARY_SHEET_BANNERS.get(sheet_name)
+        banner = SUMMARY_SHEET_BANNERS.get(requested_name)
         if banner and len(frame.columns) > 0:
-            ws.insert_rows(1)
-            ws.cell(row=1, column=1, value=banner)
-            try:
-                ws.merge_cells(
-                    start_row=1, start_column=1,
-                    end_row=1, end_column=len(frame.columns),
-                )
-            except ValueError:
-                # Single-column frames can't be merged; ignore.
-                pass
-            # Pin banner + header together (matches the new-workbook writer).
-            ws.freeze_panes = "A3"
+            prepend_tool_sheet_banner(ws, banner, len(frame.columns))
         written += 1
 
     if written:

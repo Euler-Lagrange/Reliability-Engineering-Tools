@@ -178,11 +178,15 @@ def _write_wave4_preserve_target(
     output_name: str,
     processor: FMEAProcessor | None = None,
     log_messages: list[str] | None = None,
+    source_path: Path | str | None = None,
+    sheet_name: str = "FMEA",
 ):
     from fmea.fmea_template_analyzer import analyze_template
     from fmea.fmea_template_writer import write_template_preserved
 
-    template_map, workbook = analyze_template(str(fixture.path), sheet_name="FMEA")
+    template_map, workbook = analyze_template(
+        str(source_path or fixture.path), sheet_name=sheet_name
+    )
     output_path = fixture.path.with_name(output_name)
     try:
         result = write_template_preserved(
@@ -214,6 +218,19 @@ def _worksheet_records(ws, required_header: str) -> list[dict]:
         }
         for row in range(header_row + 1, ws.max_row + 1)
     ]
+
+
+def _wave4_validation_processor(*, warning_sum: float = 1.1) -> FMEAProcessor:
+    processor = FMEAProcessor()
+    processor.fmr_warnings.append(
+        {
+            "RefDes": "R1",
+            "Sum": warning_sum,
+            "Ratios": "0.5, 0.6",
+            "ReasonCode": "FMR_SUM_MISMATCH",
+        }
+    )
+    return processor
 
 
 def test_preserve_blank_generated_effect_never_overwrites_user_text(
@@ -714,6 +731,256 @@ def test_preserve_colliding_group_ids_block_before_workbook_mutation(
     assert fixture.path.read_bytes() == original_bytes
     assert not list(tmp_path.glob("preserve_target_DarkStar_*.xlsx"))
     assert not list(tmp_path.glob(".*.part.xlsx"))
+
+
+def test_preserve_user_validation_sheet_survives_generated_name_collision(
+    preserve_target_factory,
+) -> None:
+    from fmea.fmea_generator_logic import TOOL_SHEET_MARKER
+
+    fixture = preserve_target_factory()
+    logs: list[str] = []
+
+    output_path, _ = _write_wave4_preserve_target(
+        fixture,
+        _wave4_generated_group(),
+        output_name="owned_sheet_collision.xlsx",
+        processor=_wave4_validation_processor(),
+        log_messages=logs,
+    )
+
+    fixture.assert_cells(
+        output_path,
+        {
+            ("Validation_Warnings", "A1"): "User-authored validation register",
+            ("Validation_Warnings", "A2"): "Waiver 17 remains open",
+            ("Validation_Warnings", "B2"): "Owner: Reliability",
+        },
+    )
+    with fixture.open(output_path) as workbook:
+        generated_name = "Validation_Warnings (Generated)"
+        assert generated_name in workbook.sheetnames
+        generated_sheet = workbook[generated_name]
+        assert str(generated_sheet["A1"].value).startswith(TOOL_SHEET_MARKER)
+        assert generated_sheet["A2"].value == "RefDes"
+
+        issues = _worksheet_records(
+            workbook["Template_Merge_Issues"], "ReasonCode"
+        )
+        conflicts = [
+            row for row in issues if row["ReasonCode"] == "SHEET_NAME_CONFLICT"
+        ]
+        assert len(conflicts) == 1
+        assert "Validation_Warnings" in conflicts[0]["Details"]
+        assert generated_name in conflicts[0]["Details"]
+
+    assert any(
+        " WARNING:" in message
+        and "Validation_Warnings" in message
+        and "Validation_Warnings (Generated)" in message
+        for message in logs
+    )
+
+
+def test_preserve_selected_main_sheet_is_never_deleted_as_owned_diagnostic(
+    preserve_target_factory,
+) -> None:
+    from fmea.fmea_generator_logic import TOOL_SHEET_MARKER
+
+    def configure(workbook, _fixture) -> None:
+        main_sheet = workbook["FMEA"]
+        main_sheet.title = "No_Matches"
+        main_sheet["A1"] = f"{TOOL_SHEET_MARKER} - historical main FMEA title"
+
+    fixture = preserve_target_factory(configure=configure)
+    processor = FMEAProcessor()
+    processor.no_matches.append(("U9", "PN-9"))
+    processor.no_match_details.append(("U9", "PN-9", "No failure mode"))
+
+    output_path, _ = _write_wave4_preserve_target(
+        fixture,
+        _wave4_generated_group(),
+        output_name="protected_main_sheet.xlsx",
+        processor=processor,
+        sheet_name="No_Matches",
+    )
+
+    fixture.assert_cells(
+        output_path,
+        {
+            ("No_Matches", "A1"): (
+                f"{TOOL_SHEET_MARKER} - historical main FMEA title"
+            ),
+            ("No_Matches", "L9"): "Calibration-critical note",
+        },
+    )
+    with fixture.open(output_path) as workbook:
+        generated_name = "No_Matches (Generated)"
+        assert generated_name in workbook.sheetnames
+        assert str(workbook[generated_name]["A1"].value).startswith(
+            TOOL_SHEET_MARKER
+        )
+
+
+def test_tool_authored_diagnostic_sheets_all_begin_with_ownership_marker(
+    tmp_path: Path,
+) -> None:
+    from openpyxl import load_workbook
+
+    from fmea.fmea_generator_logic import (
+        NEW_REFDES_SHEET_NAME,
+        PART_USAGE_DIAGNOSTICS_SHEET_NAME,
+        TOOL_SHEET_MARKER,
+    )
+
+    processor = _wave4_validation_processor()
+    processor.no_matches.append(("U9", "PN-9"))
+    processor.no_match_details.append(("U9", "PN-9", "No failure mode"))
+    processor.unmatched_hda.append(("U8", "PN-8"))
+    processor.group_missing_in_bom.append(("CPU-009", "U7"))
+    processor.bom_missing_ref_rows.append((14, "missing"))
+    processor.bom_duplicate_refdes.append(("U6", 2))
+    processor.bom_additions.append(
+        {
+            "ref_des": "U5-A",
+            "base_refdes": "U5",
+            "usage_fraction": "1/2",
+            "part_number": "PN-5",
+            "description": "Processor",
+            "hda1": "Microcircuit",
+            "hda2": "Digital",
+            "fmd1": "Microcircuit",
+            "fmd2": "Digital",
+            "source_workflow": "piece_part_generate",
+            "notes": "",
+        }
+    )
+    processor.part_usage_discrepancies.append(
+        {"refdes": "U4", "mapped_count": 3, "computed_count": 2, "diff": -1}
+    )
+    output_path = tmp_path / "all_diagnostics.xlsx"
+
+    write_excel_report(
+        pd.DataFrame([{"FMEA-ID": "CPU-001-A", "_row_type": "circuit_block"}]),
+        output_path,
+        processor,
+    )
+
+    expected_sheets = {
+        "No_Matches",
+        "Missing_HDA",
+        "Group_Missing_BOM",
+        "BOM_Missing_Refs",
+        "BOM_Duplicate_Refs",
+        "Validation_Warnings",
+        NEW_REFDES_SHEET_NAME,
+        PART_USAGE_DIAGNOSTICS_SHEET_NAME,
+    }
+    workbook = load_workbook(output_path)
+    try:
+        assert expected_sheets <= set(workbook.sheetnames)
+        for sheet_name in expected_sheets:
+            sheet = workbook[sheet_name]
+            assert str(sheet["A1"].value).startswith(TOOL_SHEET_MARKER), sheet_name
+            assert sheet.freeze_panes == "A3", sheet_name
+    finally:
+        workbook.close()
+
+
+def test_preserve_second_run_replaces_owned_sheets_in_place(
+    preserve_target_factory,
+) -> None:
+    from fmea.fmea_generator_logic import TOOL_SHEET_MARKER
+
+    fixture = preserve_target_factory()
+    first_output, _ = _write_wave4_preserve_target(
+        fixture,
+        _wave4_generated_group(
+            piece_part_values={"Local Effect": "First generated effect"}
+        ),
+        output_name="owned_first.xlsx",
+        processor=_wave4_validation_processor(warning_sum=1.1),
+    )
+    second_output, _ = _write_wave4_preserve_target(
+        fixture,
+        _wave4_generated_group(
+            piece_part_values={"Local Effect": "Second generated effect"}
+        ),
+        output_name="owned_second.xlsx",
+        processor=_wave4_validation_processor(warning_sum=1.2),
+        source_path=first_output,
+    )
+
+    with fixture.open(second_output) as workbook:
+        expected_owned = {
+            "Template_Merge_Summary",
+            "Template_Merge_Issues",
+            "Merge Changes",
+            "Validation_Warnings (Generated)",
+        }
+        assert expected_owned <= set(workbook.sheetnames)
+        assert not any(name.endswith("1") for name in workbook.sheetnames)
+        for sheet_name in expected_owned:
+            assert str(workbook[sheet_name]["A1"].value).startswith(
+                TOOL_SHEET_MARKER
+            ), sheet_name
+
+        validation_rows = _worksheet_records(
+            workbook["Validation_Warnings (Generated)"], "RefDes"
+        )
+        assert len(validation_rows) == 1
+        assert validation_rows[0]["Issue"] == "Sum=1.2 (expected 1.0)"
+
+        changes = _worksheet_records(workbook["Merge Changes"], "Excel Row")
+        local_changes = [row for row in changes if row["Column"] == "Local Effect"]
+        assert len(local_changes) == 1
+        assert local_changes[0]["Previous Value"] == "First generated effect"
+        assert local_changes[0]["New Value"] == "Second generated effect"
+
+    fixture.assert_cells(
+        second_output,
+        {
+            ("Validation_Warnings", "A1"): "User-authored validation register",
+            ("Validation_Warnings", "A2"): "Waiver 17 remains open",
+        },
+    )
+
+
+def test_preserve_second_run_removes_stale_owned_conditional_sheets(
+    preserve_target_factory,
+) -> None:
+    fixture = preserve_target_factory()
+    first_output, _ = _write_wave4_preserve_target(
+        fixture,
+        _wave4_generated_group(
+            piece_part_values={"Local Effect": "Stable generated effect"}
+        ),
+        output_name="stale_first.xlsx",
+        processor=_wave4_validation_processor(),
+    )
+    second_output, _ = _write_wave4_preserve_target(
+        fixture,
+        _wave4_generated_group(
+            piece_part_values={"Local Effect": "Stable generated effect"}
+        ),
+        output_name="stale_second.xlsx",
+        processor=FMEAProcessor(),
+        source_path=first_output,
+    )
+
+    with fixture.open(second_output) as workbook:
+        assert "Validation_Warnings" in workbook.sheetnames
+        assert "Validation_Warnings (Generated)" not in workbook.sheetnames
+        assert "Merge Changes" not in workbook.sheetnames
+        assert "Template_Merge_Summary" in workbook.sheetnames
+        assert "Template_Merge_Issues" in workbook.sheetnames
+    fixture.assert_cells(
+        second_output,
+        {
+            ("Validation_Warnings", "A1"): "User-authored validation register",
+            ("Validation_Warnings", "A2"): "Waiver 17 remains open",
+        },
+    )
 
 
 # ----- D2/D5/D10: Inheritance + BOM Additions sheet ---------------------------
@@ -4508,8 +4775,9 @@ def test_template_preserve_writes_diagnostic_summary_sheets(tmp_path: Path) -> N
         # The paste-back banner must survive the preserve path too.
         banner_cell = output[NEW_REFDES_SHEET_NAME].cell(row=1, column=1).value
         assert banner_cell and str(banner_cell).startswith(
-            "These rows are RefDes variants"
+            "Generated by Reliability Tools"
         ), banner_cell
+        assert "These rows are RefDes variants" in str(banner_cell), banner_cell
         # Batch 2: the Part Usage Diagnostics banner must too.
         pu_banner = output["Part Usage Diagnostics"].cell(row=1, column=1).value
         assert pu_banner and "Mapped Count" in str(pu_banner), pu_banner
@@ -4779,7 +5047,13 @@ def test_template_merge_summary_explains_diagnostic_flags() -> None:
 
     wb = Workbook()
     result = TemplateWriteResult(groups_matched=1, pp_rows_flagged=2)
-    _write_summary_sheets(wb, FMEAProcessor(), result, lambda msg: None)
+    _write_summary_sheets(
+        wb,
+        FMEAProcessor(),
+        result,
+        lambda msg: None,
+        protected_sheet_name="FMEA",
+    )
 
     ws = wb["Template_Merge_Summary"]
     rows = [

@@ -539,11 +539,11 @@ Otherwise it is a USER sheet: do not delete; write the tool sheet as
 `<name> (Generated)` (apply Excel's 31-char cap via the existing sanitize helper),
 log a WARNING, and add a `Template_Merge_Issues` row reason `SHEET_NAME_CONFLICT`.
 
-- [ ] **Step 1:** Failing tests: (a) user sheet named `Validation_Warnings` with content
+- [x] **Step 1:** Failing tests: (a) user sheet named `Validation_Warnings` with content
   survives byte-identical; tool output lands on `Validation_Warnings (Generated)`;
   issues row present; (b) second run over a previous output replaces the tool-authored
   sheets in place (marker match → delete+recreate).
-- [ ] **Step 2:** Implement (banner constant + guard), green, commit:
+- [x] **Step 2:** Implement (banner constant + guard), green, commit:
   `FMEA: Ownership-marked diagnostic sheets; never delete user sheets`
 
 ### Task 4.4: Insertion rebasing + false-comment fix + lossy-feature preflight
