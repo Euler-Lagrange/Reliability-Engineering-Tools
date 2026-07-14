@@ -786,7 +786,13 @@ def make_run_id() -> str:
     return f"{ts}-{secrets.token_hex(2)}"
 
 
-def build_output_filename(tool_id: str, mode: Optional[str] = None, suffix: str = ".xlsx") -> str:
+def build_output_filename(
+    tool_id: str,
+    mode: Optional[str] = None,
+    suffix: str = ".xlsx",
+    *,
+    output_directory: Optional[Path] = None,
+) -> str:
     """Build a standardized output filename for any tool.
 
     Format: {ToolId}_{Mode}_{YYYYMMDD_HHMMSS}.{ext}
@@ -795,6 +801,10 @@ def build_output_filename(tool_id: str, mode: Optional[str] = None, suffix: str 
         tool_id: Tool identifier (e.g., "BOM_Compare")
         mode: Optional mode descriptor (e.g., "Group")
         suffix: File extension including leading dot (default ".xlsx")
+
+        output_directory: When provided, select the first unused filename in this
+            directory, trying the base name and then suffixes ``(2)`` through
+            ``(99)``.
 
     Returns:
         Filename string like "BOM_Compare_Group_20260316_143022.xlsx"
@@ -809,7 +819,27 @@ def build_output_filename(tool_id: str, mode: Optional[str] = None, suffix: str 
         parts.append(mode)
     parts.append(ts)
     base = "_".join(parts)
-    return f"{base}{suffix}"
+    raw_name = f"{base}{suffix}"
+    if output_directory is None:
+        return raw_name
+
+    candidate = Path(output_directory) / raw_name
+    if not candidate.exists():
+        return raw_name
+
+    for index in range(2, 100):
+        alternate = candidate.with_name(
+            f"{candidate.stem} ({index}){candidate.suffix}"
+        )
+        if not alternate.exists():
+            return alternate.name
+
+    from .exceptions import ValidationError
+
+    raise ValidationError(
+        f"No available output filename remained through suffix (99) for "
+        f"'{raw_name}'. Move or rename existing outputs and re-run."
+    )
 
 
 def write_snapshot(app_name: str, snapshot: dict, output_path: str = None) -> Optional[Path]:

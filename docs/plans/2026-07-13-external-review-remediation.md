@@ -651,12 +651,12 @@ After each `ws.insert_rows(insert_at, amount)`:
   ValidationError beyond). Wire it into BOTH `build_output_filename` and
   `build_template_output_path` so every tool benefits.
 
-- [ ] **Step 1:** Failing tests: (a) touch the target file mid-merge (monkeypatch the
+- [x] **Step 1:** Failing tests: (a) touch the target file mid-merge (monkeypatch the
   writer to modify mtime) → ValidationError, no output file; (b) inserted row's column-H
   cell carries column-H's prototype number format, not column A's; (c) preserve output
   name contains `_Merged_` and no `DarkStar`; (d) pre-existing output at the derived
   name → new file gets ` (2)` suffix, original untouched.
-- [ ] **Step 2:** Implement, green, commit:
+- [x] **Step 2:** Implement, green, commit:
   `FMEA preserve: Snapshot fingerprint, per-column styles, Merged naming, no-clobber outputs`
 
 ### Task 4.7: Protection warning + docs truthfulness sweep

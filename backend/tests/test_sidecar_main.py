@@ -1084,7 +1084,7 @@ def test_sidecar_executes_template_preserve_run(tmp_path: Path) -> None:
         assert result["payload"]["status"] == "success"
         assert result["payload"]["row_count"] > 0
         assert result["payload"]["output_file"]
-        assert "DarkStar" in result["payload"]["output_file"]
+        assert "_Merged_" in result["payload"]["output_file"]
 
         output_path = Path(result["payload"]["output_file"])
         assert output_path.exists()

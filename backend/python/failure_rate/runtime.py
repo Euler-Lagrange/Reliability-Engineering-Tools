@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import tempfile
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
@@ -12,6 +11,7 @@ from common import (
     atomic_write_path,
     atomic_finalize,
     verify_excel_readable,
+    build_output_filename,
     validate_explicit_output_directory,
 )
 from common.exceptions import FileAccessError, ValidationError
@@ -266,6 +266,14 @@ def _build_failure_rate_output_preview(
     )
 
 
+def _build_output_name(output_directory: Path | None = None) -> str:
+    return build_output_filename(
+        "FailureRate",
+        "Link",
+        output_directory=output_directory,
+    )
+
+
 def execute_run_request(
     body: dict[str, Any],
     *,
@@ -293,8 +301,7 @@ def execute_run_request(
         explicit_directory=body.get("outputDirectory"),
         log_callback=stream_log,
     )
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = output_directory / f"FailureRate_Link_{timestamp}.xlsx"
+    output_path = output_directory / _build_output_name(output_directory)
 
     def emit_status(status: str, stage: str, message: str) -> None:
         if status_callback:

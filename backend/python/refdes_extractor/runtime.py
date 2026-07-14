@@ -6,7 +6,6 @@ import re
 import threading
 import tempfile
 from dataclasses import dataclass, fields
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
@@ -21,6 +20,7 @@ from common import (
     atomic_write_path,
     atomic_finalize,
     verify_excel_readable,
+    build_output_filename,
     validate_explicit_output_directory,
 )
 from common.excel_styles import StylePresets, style_header_only, style_worksheet
@@ -656,6 +656,13 @@ def _write_extraction_sheet(ws, results) -> pd.DataFrame:
     return df
 
 
+def _build_output_name(output_directory: Path | None = None) -> str:
+    return build_output_filename(
+        "RefDesExtract",
+        output_directory=output_directory,
+    )
+
+
 def execute_run_request(
     body: dict[str, Any],
     *,
@@ -692,8 +699,7 @@ def execute_run_request(
         explicit_directory=body.get("outputDirectory"),
         log_callback=stream_log,
     )
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = output_directory / f"RefDesExtract_{timestamp}.xlsx"
+    output_path = output_directory / _build_output_name(output_directory)
     # Built AFTER output resolution so geometry-batch checkpoints have a
     # destination (they early-return without out_folder).
     config_cm = config.to_config_manager(out_folder=str(output_directory))

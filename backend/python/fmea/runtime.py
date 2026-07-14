@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import re
 import tempfile
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
@@ -11,6 +10,7 @@ from common.exceptions import FileAccessError, ValidationError
 from common import (
     atomic_write_path,
     atomic_finalize,
+    build_output_filename,
     validate_explicit_output_directory,
     verify_excel_readable,
 )
@@ -660,15 +660,21 @@ def _resolve_output_directory(
     return Path(tempfile.gettempdir())
 
 
-def _build_output_name(workflow_id: str) -> str:
+def _build_output_name(
+    workflow_id: str,
+    output_directory: Path | None = None,
+) -> str:
     suffixes = {
         "bom_only": "BomOnly",
         "fill_gaps": "FillGaps",
         "functional_to_piecepart": "FromFunctional",
     }
     suffix = suffixes.get(workflow_id, "Standard")
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    return f"DarkStarFMEA_{suffix}_{timestamp}.xlsx"
+    return build_output_filename(
+        "MergedFMEA",
+        suffix,
+        output_directory=output_directory,
+    )
 
 
 def _emit_status(
@@ -782,7 +788,15 @@ def execute_run_request(
         explicit_directory=explicit_output_directory,
         log_callback=stream_log_callback,
     )
-    output_path = output_directory / _build_output_name(workflow_id)
+    output_strategy_id = str(body.get("outputStrategyId", "")).strip()
+    use_template_preserve = (
+        output_strategy_id == "existing_workbook_preserve_formatting"
+    )
+    collision_directory = None if use_template_preserve else output_directory
+    output_path = output_directory / _build_output_name(
+        workflow_id,
+        output_directory=collision_directory,
+    )
 
     def runtime_status_callback(message: str) -> None:
         nonlocal current_stage_message
@@ -937,9 +951,6 @@ def execute_run_request(
             status_callback=runtime_status_callback,
         )
 
-    output_strategy_id = str(body.get("outputStrategyId", "")).strip()
-    use_template_preserve = output_strategy_id == "existing_workbook_preserve_formatting"
-
     _emit_status(
         status_callback,
         status="running",
@@ -959,7 +970,10 @@ def execute_run_request(
     # no UI control must get a control or be removed).
 
     if use_template_preserve:
-        from fmea.fmea_template_analyzer import analyze_template as _analyze_template
+        from fmea.fmea_template_analyzer import (
+            analyze_template as _analyze_template,
+            verify_workbook_fingerprint,
+        )
         from fmea.fmea_template_writer import (
             write_template_preserved,
             build_template_output_path,
@@ -971,7 +985,7 @@ def execute_run_request(
         # the resolver's fallback) instead of always writing next to the template.
         output_path = Path(
             build_template_output_path(
-                target_path, mode="DarkStar", output_directory=output_directory
+                target_path, mode="Merged", output_directory=output_directory
             )
         )
 
@@ -1020,6 +1034,11 @@ def execute_run_request(
                     file_path=str(tmp_output),
                     operation="write",
                 )
+            processor.cancel.check("Cancelled before finalizing output")
+            verify_workbook_fingerprint(
+                target_path,
+                template_map.source_fingerprint,
+            )
             processor.cancel.check("Cancelled before finalizing output")
             atomic_finalize(tmp_output, output_path, log_func=stream_log_callback)
         except Exception:

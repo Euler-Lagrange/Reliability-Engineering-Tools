@@ -16,6 +16,8 @@ for the Phase D logic.
 
 from __future__ import annotations
 
+import os
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -185,6 +187,20 @@ def _wave4_generated_group_with_new_rows(count: int = 1) -> pd.DataFrame:
         for index in range(1, count + 1)
     ]
     return pd.concat([generated, pd.DataFrame(new_rows)], ignore_index=True)
+
+
+def _advance_file_mtime(path: Path) -> None:
+    stat = path.stat()
+    os.utime(
+        path,
+        ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000),
+    )
+
+
+class _FixedOutputDatetime(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return cls(2026, 7, 14, 1, 2, 3, tzinfo=tz)
 
 
 def _write_wave4_preserve_target(
@@ -806,7 +822,7 @@ def test_preserve_colliding_group_ids_block_before_workbook_mutation(
         execute_run_request(body)
 
     assert fixture.path.read_bytes() == original_bytes
-    assert not list(tmp_path.glob("preserve_target_DarkStar_*.xlsx"))
+    assert not list(tmp_path.glob("preserve_target_Merged_*.xlsx"))
     assert not list(tmp_path.glob(".*.part.xlsx"))
 
 
@@ -1442,6 +1458,145 @@ def test_analyzer_rejects_missing_identity_column(
     finally:
         if loaded_workbook is not None:
             loaded_workbook.close()
+
+
+def test_analyzer_rechecks_fingerprint_before_table_reread(
+    monkeypatch,
+    preserve_target_factory,
+) -> None:
+    from fmea import fmea_template_analyzer as analyzer
+
+    fixture = preserve_target_factory()
+    real_build_column_map = analyzer._build_column_map
+    table_reader_called = False
+
+    def build_map_then_change_target(*args, **kwargs):
+        column_map = real_build_column_map(*args, **kwargs)
+        _advance_file_mtime(fixture.path)
+        return column_map
+
+    def unexpected_table_reader(*args, **kwargs):
+        nonlocal table_reader_called
+        table_reader_called = True
+        pytest.fail("pandas re-read ran after the target fingerprint changed")
+
+    monkeypatch.setattr(analyzer, "_build_column_map", build_map_then_change_target)
+    monkeypatch.setattr(analyzer, "try_read_table", unexpected_table_reader)
+
+    with pytest.raises(
+        ValidationError,
+        match=(
+            r"The target workbook changed on disk while the merge was running "
+            r"\(is it open in Excel or syncing\?\)\. No output was written — "
+            r"close it and re-run\."
+        ),
+    ):
+        analyzer.analyze_template(str(fixture.path), sheet_name="FMEA")
+
+    assert table_reader_called is False
+
+
+@pytest.mark.parametrize(
+    "failure_hook",
+    ["_detect_fmea_sheet", "try_read_table", "classify_fmea_rows"],
+)
+def test_analyzer_closes_loaded_workbook_when_analysis_raises(
+    monkeypatch,
+    preserve_target_factory,
+    failure_hook: str,
+) -> None:
+    from fmea import fmea_template_analyzer as analyzer
+
+    fixture = preserve_target_factory()
+    real_load_workbook = analyzer.load_workbook
+    close_calls: list[Path] = []
+
+    def tracked_load_workbook(*args, **kwargs):
+        workbook = real_load_workbook(*args, **kwargs)
+        real_close = workbook.close
+
+        def tracked_close() -> None:
+            close_calls.append(fixture.path)
+            real_close()
+
+        workbook.close = tracked_close
+        return workbook
+
+    def fail_analysis(*args, **kwargs):
+        raise ValidationError("forced analyzer failure")
+
+    monkeypatch.setattr(analyzer, "load_workbook", tracked_load_workbook)
+    monkeypatch.setattr(analyzer, failure_hook, fail_analysis)
+
+    with pytest.raises(ValidationError, match="forced analyzer failure"):
+        analyzer.analyze_template(str(fixture.path), sheet_name="FMEA")
+
+    assert close_calls == [fixture.path]
+
+
+def test_analyzer_transfers_open_workbook_ownership_on_success(
+    monkeypatch,
+    preserve_target_factory,
+) -> None:
+    from fmea import fmea_template_analyzer as analyzer
+
+    fixture = preserve_target_factory()
+    real_load_workbook = analyzer.load_workbook
+    close_calls = 0
+
+    def tracked_load_workbook(*args, **kwargs):
+        nonlocal close_calls
+        workbook = real_load_workbook(*args, **kwargs)
+        real_close = workbook.close
+
+        def tracked_close() -> None:
+            nonlocal close_calls
+            close_calls += 1
+            real_close()
+
+        workbook.close = tracked_close
+        return workbook
+
+    monkeypatch.setattr(analyzer, "load_workbook", tracked_load_workbook)
+
+    _template_map, workbook = analyzer.analyze_template(
+        str(fixture.path),
+        sheet_name="FMEA",
+    )
+    assert close_calls == 0
+
+    workbook.close()
+    assert close_calls == 1
+
+
+def test_preserve_insert_uses_each_columns_piece_part_style(
+    preserve_target_factory,
+) -> None:
+    def configure(workbook, _fixture) -> None:
+        worksheet = workbook["FMEA"]
+        worksheet["A9"].number_format = "@"
+        worksheet["H9"].number_format = "0.0000%"
+
+    fixture = preserve_target_factory(configure=configure)
+
+    output_path, _ = _write_wave4_preserve_target(
+        fixture,
+        _wave4_generated_group_with_new_rows(),
+        output_name="per_column_insert_styles.xlsx",
+    )
+
+    with fixture.open(output_path) as workbook:
+        worksheet = workbook["FMEA"]
+        assert worksheet["A10"].number_format == "@"
+        assert worksheet["H10"].number_format == "0.0000%"
+        diagnostic_column = next(
+            column
+            for column in range(1, worksheet.max_column + 1)
+            if worksheet.cell(row=fixture.header_row, column=column).value
+            == "Diagnostic"
+        )
+        assert diagnostic_column > 12
+        assert worksheet.cell(row=10, column=diagnostic_column).number_format == "@"
 
 
 # ----- D2/D5/D10: Inheritance + BOM Additions sheet ---------------------------
@@ -5768,9 +5923,9 @@ def _assert_fmea_cancel_after_verify_skips_promote(
         execute_run_request(body, processor_ready_callback=capture_processor)
 
     pattern = (
-        "target_fmea_DarkStar_*.xlsx"
+        "target_fmea_Merged_*.xlsx"
         if preserve_formatting
-        else "DarkStarFMEA_Standard_*.xlsx"
+        else "MergedFMEA_Standard_*.xlsx"
     )
     assert not list(tmp_path.glob(pattern))
     assert not list(tmp_path.glob(".*.part.xlsx"))
@@ -5798,6 +5953,78 @@ def test_fmea_preserve_cancel_after_verify_cleans_temp_and_skips_promote(
         monkeypatch,
         preserve_formatting=True,
     )
+
+
+def test_fmea_preserve_rechecks_target_fingerprint_before_promote(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fmea import fmea_template_writer as template_writer
+
+    body, target_path = _build_runtime_cancellation_body(
+        tmp_path,
+        preserve_formatting=True,
+    )
+    assert target_path is not None
+    original_bytes = target_path.read_bytes()
+    real_write = template_writer.write_template_preserved
+    finalize_called = False
+
+    def write_then_change_target(*args, **kwargs):
+        result = real_write(*args, **kwargs)
+        _advance_file_mtime(target_path)
+        return result
+
+    monkeypatch.setattr(
+        template_writer,
+        "write_template_preserved",
+        write_then_change_target,
+    )
+
+    def unexpected_finalize(*args, **kwargs):
+        nonlocal finalize_called
+        finalize_called = True
+        pytest.fail("stale target reached atomic_finalize")
+
+    monkeypatch.setattr(fmea_runtime, "atomic_finalize", unexpected_finalize)
+
+    with pytest.raises(
+        ValidationError,
+        match=(
+            r"The target workbook changed on disk while the merge was running "
+            r"\(is it open in Excel or syncing\?\)\. No output was written — "
+            r"close it and re-run\."
+        ),
+    ):
+        execute_run_request(body)
+
+    assert not list(tmp_path.glob("target_fmea_Merged_*.xlsx"))
+    assert not list(tmp_path.glob(".*.part.xlsx"))
+    assert target_path.exists()
+    assert target_path.read_bytes() == original_bytes
+    assert finalize_called is False
+
+
+def test_fmea_preserve_collision_uses_suffix_two_without_clobber(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import common.utils as common_utils
+
+    monkeypatch.setattr(common_utils, "datetime", _FixedOutputDatetime)
+    body, _target_path = _build_runtime_cancellation_body(
+        tmp_path,
+        preserve_formatting=True,
+    )
+    existing = tmp_path / "target_fmea_Merged_20260714_010203.xlsx"
+    existing.write_bytes(b"pre-existing user output")
+
+    result = execute_run_request(body)
+
+    selected = tmp_path / "target_fmea_Merged_20260714_010203 (2).xlsx"
+    assert Path(result["output_file"]) == selected
+    assert selected.exists()
+    assert existing.read_bytes() == b"pre-existing user output"
 
 
 def test_analyze_template_passes_cancel_check_to_table_reader(

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import threading
 import tempfile
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
@@ -15,6 +14,7 @@ from common import (
     atomic_write_path,
     atomic_finalize,
     verify_excel_readable,
+    build_output_filename,
     validate_explicit_output_directory,
 )
 from common.exceptions import FileAccessError, ValidationError
@@ -177,12 +177,21 @@ def _resolve_output_directory(
     return Path(tempfile.gettempdir())
 
 
-def _build_output_name(workflow_id: str) -> str:
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+def _build_output_name(
+    workflow_id: str,
+    output_directory: Path | None = None,
+) -> str:
     if workflow_id == "extraction_compare":
-        return f"ExtractionCompare_{timestamp}.xlsx"
+        return build_output_filename(
+            "ExtractionCompare",
+            output_directory=output_directory,
+        )
     suffix = "Group" if workflow_id == "bom_compare_group" else "Custom"
-    return f"BomCompare_{suffix}_{timestamp}.xlsx"
+    return build_output_filename(
+        "BomCompare",
+        suffix,
+        output_directory=output_directory,
+    )
 
 
 def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
@@ -354,7 +363,10 @@ def execute_run_request(
         explicit_directory=body.get("outputDirectory"),
         log_callback=stream_log,
     )
-    output_path = output_directory / _build_output_name(workflow_id)
+    output_path = output_directory / _build_output_name(
+        workflow_id,
+        output_directory=output_directory,
+    )
 
     def emit_status(status: str, stage: str, message: str) -> None:
         if status_callback:

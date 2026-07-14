@@ -18,7 +18,6 @@ template analyzer (Phase 1) which produces the TemplateMap consumed here.
 import time
 from copy import copy
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
@@ -31,6 +30,7 @@ from common.excel_styles import sanitize_for_excel
 from common.exceptions import FileAccessError, ProcessingError
 from common.logger import get_tool_logger
 from common.refdes_utils import canonicalize_refdes
+from common.utils import build_output_filename
 from fmea.fmea_generator_logic import (
     ROW_TYPE_COL,
     SUMMARY_SHEET_BANNERS,
@@ -667,11 +667,14 @@ def _merge_group_piece_parts(
         for offset, row_dict in enumerate(new_rows):
             target_row = insert_at + offset
 
-            # Clone style from prototype
-            if group.pp_style:
+            # Clone each analyzed column's own prototype. Columns appended by
+            # this writer fall back to column A's piece-part style.
+            if group.pp_styles:
+                fallback_style = group.pp_styles[1]
                 for col in range(1, ws.max_column + 1):
                     _apply_cell_style(
-                        ws.cell(row=target_row, column=col), group.pp_style
+                        ws.cell(row=target_row, column=col),
+                        group.pp_styles.get(col, fallback_style),
                     )
 
             # Write data
@@ -1342,7 +1345,11 @@ def build_template_output_path(
         The suffixed output path, preserving the original extension.
     """
     p = Path(original_path)
-    date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    new_name = f"{p.stem}_{mode}_{date_str}{p.suffix}"
     parent = Path(output_directory) if output_directory else p.parent
+    new_name = build_output_filename(
+        p.stem,
+        mode,
+        p.suffix,
+        output_directory=parent,
+    )
     return str(parent / new_name)
