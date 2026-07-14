@@ -25,12 +25,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **FMEA preserve-formatting merges now protect user workbook content at the
   cell, row-identity, and sheet boundaries** — blank generated values no longer
   replace existing text or formulas; genuine replacements are recorded on a
-  `Merge Changes` audit sheet; duplicate row identities are flagged instead of
-  guessed; normalized group-ID collisions block the merge before an output is
-  created; and diagnostic sheets are replaced only when their ownership marker
-  proves they were tool-authored. A colliding user sheet is preserved and the
-  generated diagnostics use a `(Generated)` suffix with a warning and issue row;
-  the selected main FMEA sheet is never eligible for diagnostic replacement.
+  `Merge Changes` audit sheet, while numerically equivalent values such as `1.0`
+  and `"1"` retain the user's original cell type; duplicate row identities are
+  flagged instead of guessed; normalized group-ID collisions, an unrecognizable
+  header row, or missing required identity columns block the merge before an
+  output is created;
+  and diagnostic sheets are replaced only when their ownership marker proves
+  they were tool-authored. A colliding user sheet is preserved and the generated
+  diagnostics use a `(Generated)` suffix with a warning and issue row; the
+  selected main FMEA sheet is never eligible for diagnostic replacement.
+  Insertions now rebase merged ranges and custom row dimensions, apply each
+  column's own piece-part style, and warn when validations, conditional formats,
+  tables, formulas, or hyperlinks cannot be rebased. Drawing/image loss is
+  warned even in the packaged no-Pillow build; protected sheets now show an
+  analysis warning and run-log warning. Source fingerprints are checked before
+  the analyzer re-read and final promotion so a workbook changed by Excel or
+  sync software fails closed without promoting stale output.
 - **RefDes Extractor no longer silently loses parts or groups** (the DIG-4xx
   incident). A component outside every group rectangle now lands in
   `UNGROUPED (IN BOM)` / `UNGROUPED (NOT IN BOM)` (or `PROVISIONAL` when
@@ -67,6 +77,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and FMEA template re-reads receive the active cancellation callback.
 
 ### Changed
+
+- **FMEA output filenames now say `Merged` instead of the internal `DarkStar`
+  codename.** Standard outputs use `MergedFMEA_*`; preserve-formatting copies use
+  `*_Merged_<timestamp>.xlsx`. If a derived name already exists, all tools select
+  ` (2)` through ` (99)` rather than replacing the existing output. Update any
+  scripts or shortcuts that match the old filename tokens.
 
 - **BOM Compare Custom Compare report sheets renamed** to the same human
   naming scheme the Group vs BOM report already used: `Only In <file>`,

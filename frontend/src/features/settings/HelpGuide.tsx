@@ -164,14 +164,22 @@ const SECTIONS: GuideSection[] = [
           </li>
           <li>
             <strong>Output strategy</strong>: New Workbook (fresh, simplest to
-            review) or Existing Workbook / Preserve Formatting (rows merged into
-            a copy of your FMEA; formatting kept, new columns appended at the
-            far right).
+            review) or Existing Workbook / Preserve Formatting (writes a new
+            copy; the original is never the output target). Blank generated
+            cells leave existing nonblank cells unchanged; different nonblank
+            values replace them and are audited on <code>Merge Changes</code>.
           </li>
           <li>
             <strong>Part Usage</strong>: leave unmapped to auto-count instances.
             If you map it and it disagrees with the computed count, the row is
             flagged and listed on the Part Usage Diagnostics sheet.
+          </li>
+          <li>
+            <strong>Local / Next Higher / End Effect</strong>: generated
+            circuit-block values can flow to component rows. In Preserve
+            Formatting, a generated blank keeps existing text; a different
+            nonblank value replaces it and is audited on{" "}
+            <code>Merge Changes</code>.
           </li>
         </ul>
         <h3>Reading the output</h3>
@@ -190,17 +198,48 @@ const SECTIONS: GuideSection[] = [
             [<code key="s">FMEA Gen New RefDes</code>, "Variants found in the source but not the BOM, with inherited data — a paste-back list for your BOM."],
             [<code key="s">Part Usage Diagnostics</code>, "Mapped vs computed instance counts (Diff = Computed − Mapped)."],
             [<code key="s">Template_Merge_Summary</code>, "Preserve-mode merge counts + a legend for the two Diagnostic flags: NOT IN BOM - Review and NEW - Added by generator."],
+            [<code key="s">Merge Changes</code>, "Every nonblank replacement: Excel row, RefDes, FMEA-ID, column, previous value, and new value."],
+            [<code key="s">Template_Merge_Issues</code>, "Review items such as AMBIGUOUS_IDENTITY, NOT_REBASED_FEATURES, SHEET_NAME_CONFLICT, and DUPLICATE_TEMPLATE_HEADER."],
           ]}
         />
-        <h3>Limitations to know</h3>
+        <h3>Preserve-formatting rules and limits</h3>
         <ul>
           <li>
-            Preserve-Formatting appends any new generator columns at the far
-            right of your sheet — it never reorders your existing columns.
+            Output uses <code>&lt;target&gt;_Merged_&lt;timestamp&gt;.xlsx</code>.
+            If that name exists, the tool tries <code> (2)</code> through{" "}
+            <code> (99)</code> instead of replacing an earlier output.
+          </li>
+          <li>
+            Numeric equivalents such as <code>1.0</code> and <code>&quot;1&quot;</code>{" "}
+            count as unchanged. A genuinely different nonblank value updates
+            the copied cell and appears on <code>Merge Changes</code>.
+          </li>
+          <li>
+            Row identity is never guessed. Ambiguous matches are flagged;
+            group-ID collisions, an unrecognizable header row, and missing
+            identity columns block output before workbook mutation. Duplicate
+            header labels warn, record <code>DUPLICATE_TEMPLATE_HEADER</code>,
+            and use the last physical column.
+          </li>
+          <li>
+            Existing columns are not reordered; new generator columns are
+            appended at the far right. Inserted rows use each column&rsquo;s own
+            piece-part style. Merged ranges and custom row dimensions are
+            rebased around inserted rows.
+          </li>
+          <li>
+            Data-validation, conditional-formatting, table, formula, and
+            hyperlink references below inserted rows are not rebased. The run
+            warns and records <code>NOT_REBASED_FEATURES</code> for review.
           </li>
           <li>
             Cell-level rich-text runs are flattened to plain cell text when the
             copied workbook is loaded and saved.
+          </li>
+          <li>
+            Images and shapes are dropped with a warning; review all drawings
+            and charts in the output. Protected sheets are modified without a
+            password after an analysis-card and run-log warning.
           </li>
           <li>
             Template analysis caps the target workbook at 50&nbsp;MB to protect

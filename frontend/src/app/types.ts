@@ -182,6 +182,7 @@ export interface AnalysisContextCard {
   title: string;
   detail: string;
   metrics: string[];
+  warning?: string;
 }
 
 export interface PreviewRow {

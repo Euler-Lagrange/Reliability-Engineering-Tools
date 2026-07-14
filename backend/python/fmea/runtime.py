@@ -1013,6 +1013,12 @@ def execute_run_request(
                     f"(row {collision.duplicate_row}) collapse to the same ID "
                     f"'{collision.normalized_id}'. Give them distinct IDs and re-run."
                 )
+        if wb[template_map.fmea_sheet_name].protection.sheet:
+            stream_log_callback(
+                "FMEA preserve WARNING: Sheet "
+                f"'{template_map.fmea_sheet_name}' is protected — "
+                "the merge will modify it without the password."
+            )
         tmp_output = atomic_write_path(output_path)
         try:
             try:

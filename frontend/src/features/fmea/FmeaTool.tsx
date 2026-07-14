@@ -427,6 +427,9 @@ function buildAnalysisCards(
         template.freezePanes ? `Freeze ${template.freezePanes}` : "No freeze panes",
         ...(template.columnCapApplied ? [`Scanned ${template.columnsScanned} columns`] : []),
       ],
+      warning: template.protectedSheet
+        ? "Sheet is protected — the merge will modify it without the password."
+        : undefined,
     });
   }
 

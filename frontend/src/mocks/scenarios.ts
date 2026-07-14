@@ -127,10 +127,10 @@ const warningHeavyMessages: ValidationMessage[] = [
   },
   {
     id: "err-1",
-    severity: "error",
+    severity: "warning",
     area: "Target Workbook",
-    title: "Protected footer region collides with planned inserts",
-    detail: "Planner would require workbook review before formatting-preserved output can continue.",
+    title: "Protected sheet will be modified",
+    detail: "The merge writes to a copy without the sheet password; review the protected-sheet warning and output workbook.",
   },
 ];
 
@@ -204,8 +204,8 @@ export const outputStrategies: OutputStrategy[] = [
     id: "existing_workbook_preserve_formatting",
     title: "Existing Workbook (Preserve Formatting)",
     summary:
-      "Writes the new piece-part rows directly into the selected functional or piece-part FMEA workbook. Any new columns are appended at the very end of the sheet. All existing rows, data, formatting, fonts, and column widths are preserved.",
-    badge: "High trust",
+      "Writes into a new copy of the selected FMEA. Blank generated cells keep existing text; real replacements are audited, and known workbook-feature limits are warned for review.",
+    badge: "Review-aware",
   },
 ];
 
@@ -294,7 +294,7 @@ const failureEvents = [
   {
     id: "event-f3",
     title: "Inspect workbook constraints",
-    detail: "Planner found a protected footer region under the insertion boundary.",
+    detail: "Template analysis found a protected sheet that the output copy will modify without a password.",
     progress: 71,
   },
 ];
@@ -329,7 +329,7 @@ export const demoScenarios: DemoScenario[] = [
         status: "success",
         title: "Prototype run completed",
         summary: "216 output rows were planned with one manual column review still visible in the UI.",
-        outputFile: "DarkStar_PiecePart_20260403_1012.xlsx",
+        outputFile: "MergedFMEA_Standard_20260403_101200.xlsx",
         primaryMetric: "216 planned rows",
         secondaryMetric: "92% auto-mapped",
         notes: ["No backend work was executed.", "Workbook output is illustrative only."],
@@ -360,7 +360,7 @@ export const demoScenarios: DemoScenario[] = [
         status: "success",
         title: "Gap-fill simulation completed",
         summary: "14 missing rows were identified and staged into a workbook copy plan.",
-        outputFile: "DarkStar_GapFill_20260403_1035.xlsx",
+        outputFile: "Customer_FMEA_Merged_20260403_103500.xlsx",
         primaryMetric: "14 gap rows",
         secondaryMetric: "2 workbook notes",
         notes: ["Preserve-formatting path shown.", "No file was written."],
@@ -380,8 +380,8 @@ export const demoScenarios: DemoScenario[] = [
         id: "v-3",
         severity: "info",
         area: "Planner",
-        title: "Merged-header region preserved in workbook plan",
-        detail: "The generator keeps the target workbook explicit and shows planner confidence before execution.",
+        title: "Workbook constraints included in merge review",
+        detail: "The generator keeps the target explicit and reports features that need review after row insertion.",
       },
     ],
     previewRows,
@@ -390,11 +390,11 @@ export const demoScenarios: DemoScenario[] = [
       result: {
         status: "success",
         title: "Formatting-preserved plan ready",
-        summary: "Planner isolated 4 protected regions and still staged all row updates into a workbook copy.",
-        outputFile: "DarkStar_PreserveFmt_20260403_1108.xlsx",
-        primaryMetric: "4 protected regions",
-        secondaryMetric: "0 unsafe overwrites",
-        notes: ["Planner/executor behavior is simulated.", "Target workbook remains read-only in this prototype."],
+        summary: "The simulated merge wrote a reviewable workbook copy and surfaced its protected-sheet warning.",
+        outputFile: "Customer_FMEA_Merged_20260403_110800.xlsx",
+        primaryMetric: "1 protected sheet",
+        secondaryMetric: "Changes audited",
+        notes: ["Planner/executor behavior is simulated.", "The original target remains unchanged; the copy is the output."],
       },
     },
   },
@@ -445,7 +445,7 @@ export const demoScenarios: DemoScenario[] = [
         status: "success",
         title: "Workbook plan simulation finished",
         summary: "The generator reached a review-ready state with clean completion messaging and output metadata.",
-        outputFile: "DarkStar_RunSuccess_20260403_1131.xlsx",
+        outputFile: "Customer_FMEA_Merged_20260403_113100.xlsx",
         primaryMetric: "5 timeline stages",
         secondaryMetric: "100% run completion",
         notes: ["No backend call occurred.", "This fixture exists only to evaluate UX."],

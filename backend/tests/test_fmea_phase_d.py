@@ -6027,6 +6027,32 @@ def test_fmea_preserve_collision_uses_suffix_two_without_clobber(
     assert existing.read_bytes() == b"pre-existing user output"
 
 
+def test_fmea_preserve_logs_warning_before_modifying_protected_sheet(
+    tmp_path: Path,
+) -> None:
+    from openpyxl import load_workbook
+
+    body, target_path = _build_runtime_cancellation_body(
+        tmp_path,
+        preserve_formatting=True,
+    )
+    assert target_path is not None
+    workbook = load_workbook(target_path)
+    try:
+        workbook["FMEA"].protection.sheet = True
+        workbook.save(target_path)
+    finally:
+        workbook.close()
+
+    logs: list[str] = []
+    execute_run_request(body, log_callback=logs.append)
+
+    assert logs.count(
+        "FMEA preserve WARNING: Sheet 'FMEA' is protected — "
+        "the merge will modify it without the password."
+    ) == 1
+
+
 def test_analyze_template_passes_cancel_check_to_table_reader(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

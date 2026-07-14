@@ -85,9 +85,9 @@ Choose one before running.
   preserved as-is.
 - **Fill Gaps (Advanced)** (`fill_gaps`) — takes an existing functional or
   piece-part FMEA and adds piece-part rows for any BOM components that are
-  missing from it. Any new columns are appended at the very end of the
-  sheet. All existing rows, data, formatting, fonts, and column widths are
-  preserved when the preserve-formatting output strategy is used.
+  missing from it. With Preserve Formatting, blank generated values leave
+  existing nonblank cells alone; different nonblank values update the output
+  copy and are recorded on `Merge Changes`.
 
 ### Failure Modes Standard
 
@@ -102,11 +102,11 @@ library down to the matching standard.
 - **New Workbook** (`new_workbook_standard`) — writes a fresh workbook with
   all generator columns and summary sheets. Good for first-time generation.
 - **Existing Workbook (Preserve Formatting)**
-  (`existing_workbook_preserve_formatting`) — writes new piece-part rows
-  directly into the selected functional or piece-part FMEA workbook. Any
-  new columns are appended at the very end of the sheet. All existing rows,
-  data, formatting, fonts, and column widths are preserved. This is the
-  default strategy for the Fill Gaps workflow.
+  (`existing_workbook_preserve_formatting`) — reads the selected functional or
+  piece-part FMEA as a template and writes a separate merged copy. The original
+  is never the output target. New columns are appended at the far right; known
+  preservation limits are warned and listed below. This is the default strategy
+  for the Fill Gaps workflow.
 
 ### HDA Source Toggle
 
@@ -135,18 +135,27 @@ The mapping table supports bulk operations alongside per-row dropdowns:
 - **Per-row help panels** — expand a row to see the column description and
   the kind of content the backend expects.
 
-### Merge Column Scope (Fill Gaps only)
+### Preserve-formatting safety and limits
 
-When the Fill Gaps workflow is selected, a **Merge Column Scope** picker
-appears with two modes:
-
-- **Merge All Columns** (default) — every generated column is written into
-  the target workbook.
-- **Select Columns to Merge** — shows a checkbox list of the template
-  columns detected by the analyzer. Only checked columns are written.
-
-The scope only applies to Fill Gaps runs; switching to any other workflow
-clears the column selection.
+- Blank generated values never overwrite existing nonblank cells. Numeric
+  equivalents such as `1.0` and `"1"` count as unchanged. Every genuinely
+  different nonblank replacement is written to `Merge Changes` with Excel row,
+  RefDes, FMEA-ID, column, previous value, and new value.
+- Row identity is never guessed. Ambiguity is reported; group-ID collisions and
+  an unrecognizable header row or missing identity columns block output.
+  Duplicate header labels warn, record `DUPLICATE_TEMPLATE_HEADER`, and use the
+  last physical column.
+- Existing columns stay in place and inserted rows use per-column styles.
+  Merged ranges and custom row dimensions are rebased around insertions.
+- Data-validation, conditional-formatting, table, formula, and hyperlink
+  references below inserted rows are not rebased; `NOT_REBASED_FEATURES` warns
+  reviewers. Rich text is flattened. Images and shapes are dropped with a
+  warning, and drawings/charts require review.
+- Protected sheets are modified without a password after a UI and run-log
+  warning. `Template_Merge_Issues` also reports `AMBIGUOUS_IDENTITY`,
+  `SHEET_NAME_CONFLICT`, and `NOT_REBASED_FEATURES` when applicable.
+- Outputs use `<target>_Merged_<timestamp>.xlsx`; occupied names advance through
+  ` (2)` to ` (99)` rather than replacing a previous output.
 
 ### BOM Inheritance
 
@@ -187,11 +196,13 @@ FMEA when the workflow is Merge Functional → Piece-Part), mapped to
 
 ### Limitations
 
-- Fill Gaps does not rewrite or re-score existing rows; it only adds new ones.
+- Fill Gaps can update an existing copied row when a generated nonblank value
+  genuinely differs; inspect `Merge Changes` for every such replacement.
 - Parts that are in the BOM but have no entry in the failure-modes library
   are reported as no-match and listed in the run summary.
-- Existing Workbook (Preserve Formatting) requires that the template sheet
-  already has the column headers you plan to use.
+- Preserve Formatting fails closed when it cannot identify the header row or
+  the RefDes and Failure Mode identity columns. Unmapped generator columns are
+  appended at the far right.
 
 ---
 

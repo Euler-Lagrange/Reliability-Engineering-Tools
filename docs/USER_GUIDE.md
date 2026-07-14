@@ -94,7 +94,7 @@ The two **Merge** modes are the only ones that show and use the effect columns
 | Strategy | Behavior |
 |----------|----------|
 | **New Workbook** | Fresh output workbook with all generator columns and summary sheets. Simplest to review, diff, and archive. |
-| **Existing Workbook (Preserve Formatting)** | Writes the new piece-part rows into a copy of the selected FMEA workbook. Existing rows, formatting, fonts, and column widths are kept; new columns are appended at the far right. |
+| **Existing Workbook (Preserve Formatting)** | Writes into a new copy of the selected FMEA workbook; the original is never the output target. Blank generated cells do not replace existing nonblank cells. Different nonblank values do replace them and are listed on `Merge Changes`. New columns are appended at the far right. See the preservation limits below. |
 
 ### 2.4 Column mapping
 
@@ -112,7 +112,7 @@ behind each row's info icon.
 | Failure Mode Ratio | Yes | Fraction of the failure rate for this mode (e.g. `0.43`). |
 | Part Usage | No | Times the part appears. **Leave unmapped to auto-count.** If you map it and it disagrees with the computed count, the row is highlighted and flagged — see below. |
 | FMEA Level | Derived | Not mappable. Header rows get `Circuit Block`; component rows get `Piece Part`. |
-| Local / Next Higher / End Effect | No (merge only) | Preserved from the source FMEA; component rows inherit the circuit-block value unless overridden. |
+| Local / Next Higher / End Effect | No (merge only) | Component rows can inherit generated circuit-block effects. During Preserve Formatting, a generated blank leaves existing text unchanged; a different nonblank value replaces it and is audited on `Merge Changes`. |
 
 ### 2.5 Output workbook
 
@@ -122,7 +122,8 @@ that carry an FMR/Part-Usage validation flag, and **red** rows that matched no
 failure mode. The Part Usage column is written as a fraction (e.g. `1/3`).
 
 **Diagnostic sheets** appear only when they have content. Both output strategies
-now emit the same set (preserve-formatting no longer drops them).
+emit the same common diagnostics (preserve-formatting no longer drops them);
+the merge audit sheets are preserve-only and are labeled below.
 
 | Sheet | Meaning |
 |-------|---------|
@@ -134,15 +135,34 @@ now emit the same set (preserve-formatting no longer drops them).
 | `Validation_Warnings` | FMR-sum and Part-Usage issues, each with a plain-language **Reason Code** (see table below). |
 | `FMEA Gen New RefDes` | RefDes variants found in the source but not in the BOM, whose data was inherited from a matching base component. Columns: RefDes, Base RefDes, Usage, Part Number, Part Description, HDA/FMD commodities, Source Workflow, Notes. **The sheet banner says to review and copy these into your BOM.** |
 | `Part Usage Diagnostics` | Rows where the mapped BOM Part Usage disagrees with the count the generator computed. Columns: RefDes, **Mapped Count**, **Computed Count**, **Diff** (Computed − Mapped). Banner explains: Mapped Count = `round(1 / usage)`. |
+| `Merge Changes` *(preserve only)* | Audit of each nonblank replacement: Excel row, RefDes, FMEA-ID, column, previous value, and new value. |
+| `Template_Merge_Issues` *(preserve only)* | Merge review items. Reason codes include `AMBIGUOUS_IDENTITY`, `NOT_REBASED_FEATURES`, `SHEET_NAME_CONFLICT`, and `DUPLICATE_TEMPLATE_HEADER`. |
 
-**Preserve-Formatting mode** adds:
+**Preserve-Formatting merge rules and limits:**
 
-- `Template_Merge_Summary` — counts of matched / unmatched / new groups and
-  updated / inserted / flagged rows, plus a two-row **legend** explaining the
-  two diagnostic flags below.
-- `Template_Merge_Issues` — any problems hit during the merge (only if present).
-- Cell-level rich-text runs are flattened to plain cell text when the copied
-  workbook is loaded and saved.
+- The original workbook is read as a template and remains unchanged. Output is
+  a new `<target>_Merged_<timestamp>.xlsx` copy. If that name exists, the tool
+  tries ` (2)` through ` (99)` instead of replacing an earlier output.
+- Blank generated values never overwrite an existing nonblank cell. Numeric
+  equivalents such as `1.0` and `"1"` are treated as unchanged. A genuinely
+  different nonblank value overwrites the copied cell and is recorded on
+  `Merge Changes`.
+- Row identity is never guessed. Ambiguous matches are flagged; normalized
+  group-ID collisions, an unrecognizable header row, and missing identity
+  columns block output before workbook mutation. Duplicate header labels warn,
+  record `DUPLICATE_TEMPLATE_HEADER`, and use the last physical column.
+- Existing columns are not reordered. New generator columns are appended at
+  the far right. Inserted rows copy each column's own piece-part style. Merged
+  ranges and custom row dimensions are rebased around inserted rows.
+- Data-validation, conditional-formatting, table, formula, and hyperlink
+  references below an insertion are **not rebased**. The run warns and writes a
+  `NOT_REBASED_FEATURES` review item when these features are present.
+- Cell-level rich-text runs are flattened to plain text. Images and shapes are
+  dropped with a warning; review all drawings and charts in the output.
+- A protected sheet is modified without its password after a warning in the
+  analysis card and run log.
+- `Template_Merge_Summary` counts matched/unmatched/new groups and
+  updated/inserted/flagged rows, with a legend for the diagnostic flags below.
 - In the merged sheet, the Diagnostic column may read:
   - **`NOT IN BOM - Review`** — this template row has no matching generated row;
     its RefDes is absent from the current BOM. Verify the part, then update the

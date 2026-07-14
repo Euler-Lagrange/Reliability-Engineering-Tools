@@ -233,6 +233,50 @@ describe("FmeaTool inspection flow", () => {
     expect(screen.getByText(/Scanned 100 columns/i)).toBeInTheDocument();
   }, FMEA_INSPECTION_TEST_TIMEOUT_MS);
 
+  test("warns when preserve-formatting will modify a protected sheet", async () => {
+    const user = userEvent.setup();
+
+    mockBackendClient.openExcelFile.mockResolvedValue("C:\\target.xlsx");
+    mockBackendClient.listSheets.mockResolvedValue({
+      path: "C:\\target.xlsx",
+      sheets: ["FMEA"],
+      mode: "desktop-bridge",
+    });
+    mockBackendClient.analyzeTemplate.mockResolvedValue({
+      path: "C:\\target.xlsx",
+      sheet: "FMEA",
+      header_row: 3,
+      columns: ["FMEA-ID", "Failure Mode Causes", "Failure Mode"],
+      merged_range_count: 2,
+      freeze_panes: "A4",
+      protected_sheet: true,
+      rows_scanned: 0,
+      header_rows_scanned: 3,
+      columns_scanned: 3,
+      row_cap_applied: false,
+      column_cap_applied: false,
+      header_search_cap_applied: false,
+      mode: "desktop-bridge",
+    });
+
+    renderTool();
+    await user.click(
+      screen.getByRole("button", {
+        name: /existing workbook \(preserve formatting\)/i,
+      }),
+    );
+    await user.click(
+      within(inputCard("Target workbook")).getByRole("button", {
+        name: "Browse",
+      }),
+    );
+
+    const warning = await screen.findByText(
+      "Sheet is protected — the merge will modify it without the password.",
+    );
+    expect(warning).toHaveClass("status-chip--warning");
+  }, FMEA_INSPECTION_TEST_TIMEOUT_MS);
+
   // Fix 2 (parity with BOM Compare / Failure Rate): a stale validate_run
   // result must not survive an input change. FmeaTool previously cleared
   // validations only at init, on workflow-change, and after validate_run, so

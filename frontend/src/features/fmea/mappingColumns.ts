@@ -149,7 +149,7 @@ export const FMEA_COLUMN_METADATA: readonly FmeaColumnMetadata[] = [
   {
     canonical: "Local Effect",
     help:
-      "Effect of the failure at the component level (e.g. `No output voltage`). Preserved from your existing FMEA during merge. If a circuit-block row has a Local Effect value, component rows under it will inherit that value unless overridden by component-specific entries.",
+      "Effect of the failure at the component level (e.g. `No output voltage`). Component rows can inherit a generated circuit-block value. In Preserve Formatting, a generated blank leaves existing text unchanged; a different nonblank value replaces it and is recorded on Merge Changes.",
     origin: "merge_only",
     required: false,
     isVisibleInMode: isMergeMode,
@@ -157,7 +157,7 @@ export const FMEA_COLUMN_METADATA: readonly FmeaColumnMetadata[] = [
   {
     canonical: "Next Higher Effect",
     help:
-      "Effect propagated to the next assembly level (e.g. `Power supply fails to regulate`). Preserved and inherited the same way as Local Effect.",
+      "Effect propagated to the next assembly level (e.g. `Power supply fails to regulate`). It follows the same inheritance and blank-safe, audited replacement rules as Local Effect.",
     origin: "merge_only",
     required: false,
     isVisibleInMode: isMergeMode,
@@ -165,7 +165,7 @@ export const FMEA_COLUMN_METADATA: readonly FmeaColumnMetadata[] = [
   {
     canonical: "End Effect",
     help:
-      "Final system-level consequence (e.g. `Mission abort`). Preserved and inherited from the circuit-block row by default.",
+      "Final system-level consequence (e.g. `Mission abort`). It follows the same inheritance and blank-safe, audited replacement rules as Local Effect.",
     origin: "merge_only",
     required: false,
     isVisibleInMode: isMergeMode,

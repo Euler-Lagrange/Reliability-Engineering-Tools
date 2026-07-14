@@ -117,6 +117,11 @@ export function ValidationPreview({
                     {metric}
                   </span>
                 ))}
+                {card.warning ? (
+                  <span className="status-chip status-chip--warning">
+                    {card.warning}
+                  </span>
+                ) : null}
               </div>
             </article>
           ))}

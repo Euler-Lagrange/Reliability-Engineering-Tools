@@ -679,9 +679,9 @@ After each `ws.insert_rows(insert_at, amount)`:
   incl. the `DarkStar` → `Merged` filename rename notice)
 - Test: `frontend/src/features/fmea/FmeaTool.inspection.test.tsx` (protection chip)
 
-- [ ] **Step 1:** Failing test: analysis result with `protected_sheet: true` renders the
+- [x] **Step 1:** Failing test: analysis result with `protected_sheet: true` renders the
   warning chip.
-- [ ] **Step 2:** Implement + full docs sweep, green, commit:
+- [x] **Step 2:** Implement + full docs sweep, green, commit:
   `FMEA preserve: Surface sheet protection; make the docs tell the truth`
 
 **Wave 4 exit:** full suites green (expect substantial new-test growth — sync all four
