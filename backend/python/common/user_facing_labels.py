@@ -35,6 +35,7 @@ REASON_CODE_LABELS = {
     "AMBIGUOUS_IDENTITY": "Ambiguous Identity: Duplicate RefDes and Failure Mode",
     "SHEET_NAME_CONFLICT": "Sheet Name Conflict: User Sheet Preserved",
     "NOT_REBASED_FEATURES": "Workbook Features Not Rebased After Row Insertion",
+    "DUPLICATE_TEMPLATE_HEADER": "Duplicate Template Header",
 }
 
 

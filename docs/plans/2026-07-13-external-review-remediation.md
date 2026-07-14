@@ -610,11 +610,11 @@ After each `ws.insert_rows(insert_at, amount)`:
 - Missing RefDes or Failure-Mode template mapping: friendly `ValidationError` instead of
   silent `("", "")` identity keys.
 
-- [ ] **Step 1:** Failing tests: (a) combined "Part Number / Part Description" column
+- [x] **Step 1:** Failing tests: (a) combined "Part Number / Part Description" column
   claimed once, second field appended as new column + warning; (b) headerless sheet →
   ValidationError, not a row-1 guess; (c) template without a detectable RefDes column →
   ValidationError.
-- [ ] **Step 2:** Implement, green, commit:
+- [x] **Step 2:** Implement, green, commit:
   `FMEA analyzer: Injective mapping; fail closed on headers and identity columns`
 
 ### Task 4.6: Snapshot fingerprint + per-column insert styles + naming

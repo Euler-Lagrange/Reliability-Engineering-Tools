@@ -120,7 +120,7 @@ def test_analyzer_warns_when_no_pillow_load_drops_embedded_image(
         warnings = [
             message
             for message in logs
-            if "Template analysis WARNING:" in message
+            if "Template analysis WARNING: workbook contains" in message
         ]
         assert len(warnings) == 1
         assert "images/shapes" in warnings[0]

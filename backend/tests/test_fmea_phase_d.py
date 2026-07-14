@@ -1243,6 +1243,207 @@ def test_analyzer_warns_once_for_images_and_charts_across_workbook(
         workbook.close()
 
 
+def test_analyzer_maps_combined_template_column_only_once(
+    preserve_target_factory,
+) -> None:
+    def configure(workbook, fixture) -> None:
+        worksheet = workbook["FMEA"]
+        worksheet.cell(
+            row=fixture.header_row,
+            column=fixture.columns["Component Part Number"],
+            value="Part Number / Part Description",
+        )
+        worksheet.cell(
+            row=fixture.header_row,
+            column=fixture.columns["Component Part Description"],
+            value="User Notes",
+        )
+        worksheet.cell(
+            row=fixture.header_row,
+            column=13,
+            value="Function Description",
+        )
+
+    fixture = preserve_target_factory(configure=configure)
+    logs: list[str] = []
+
+    output_path, _ = _write_wave4_preserve_target(
+        fixture,
+        _wave4_generated_group(piece_part_values={
+            "Component Part Number": "PN-GENERATED",
+            "Component Part Description": "Generated description",
+        }),
+        output_name="combined_column_injective.xlsx",
+        log_messages=logs,
+    )
+
+    collision_warnings = [
+        message
+        for message in logs
+        if "Component Part Number" in message
+        and "Component Part Description" in message
+    ]
+    assert len(collision_warnings) == 1
+
+    with fixture.open(output_path) as workbook:
+        worksheet = workbook["FMEA"]
+        headers = {
+            worksheet.cell(row=fixture.header_row, column=column).value: column
+            for column in range(1, worksheet.max_column + 1)
+        }
+        assert worksheet.cell(row=9, column=4).value == "PN-GENERATED"
+        assert worksheet.cell(row=9, column=5).value == "Sense resistor"
+        description_column = headers["Component Part Description"]
+        assert description_column > 13
+        assert worksheet.cell(row=9, column=description_column).value == (
+            "Generated description"
+        )
+
+
+def test_analyzer_case_variant_duplicate_fuzzy_match_uses_last_column() -> None:
+    from openpyxl import Workbook
+
+    from fmea.fmea_template_analyzer import _build_column_map
+
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.append(["FMEA-ID", "RefDes", "REFDES", "Failure Mode"])
+    logs: list[str] = []
+
+    column_map = _build_column_map(worksheet, 1, log_func=logs.append)
+
+    matched_header = column_map.canonical_map["Failure Mode Causes"]
+    assert matched_header == "REFDES"
+    assert column_map.col_to_index[matched_header] == 3
+    assert any(
+        "DUPLICATE_TEMPLATE_HEADER" in message
+        and "columns 2, 3" in message
+        for message in logs
+    )
+    workbook.close()
+
+
+def test_analyzer_duplicate_header_warns_and_reaches_issues_sheet(
+    preserve_target_factory,
+) -> None:
+    def configure(workbook, fixture) -> None:
+        worksheet = workbook["FMEA"]
+        worksheet.cell(
+            row=fixture.header_row,
+            column=13,
+            value="Engineering Notes",
+        )
+
+    fixture = preserve_target_factory(configure=configure)
+    logs: list[str] = []
+
+    from fmea.fmea_template_analyzer import analyze_template
+
+    template_map, analyzed_workbook = analyze_template(
+        str(fixture.path), sheet_name="FMEA"
+    )
+    try:
+        assert template_map.column_map.col_to_index["Engineering Notes"] == 13
+    finally:
+        analyzed_workbook.close()
+
+    output_path, result = _write_wave4_preserve_target(
+        fixture,
+        _wave4_generated_group(),
+        output_name="duplicate_template_header.xlsx",
+        log_messages=logs,
+    )
+
+    duplicate_warnings = [
+        message
+        for message in logs
+        if "DUPLICATE_TEMPLATE_HEADER" in message
+    ]
+    assert len(duplicate_warnings) == 1
+    assert "columns 12, 13" in duplicate_warnings[0]
+    duplicate_issues = [
+        issue
+        for issue in result.issue_rows
+        if issue["ReasonCode"] == "DUPLICATE_TEMPLATE_HEADER"
+    ]
+    assert len(duplicate_issues) == 1
+    assert "column 13" in duplicate_issues[0]["Details"]
+
+    with fixture.open(output_path) as workbook:
+        exported = _worksheet_records(
+            workbook["Template_Merge_Issues"], "ReasonCode"
+        )
+        assert len(
+            [
+                row
+                for row in exported
+                if row["ReasonCode"] == "DUPLICATE_TEMPLATE_HEADER"
+            ]
+        ) == 1
+
+
+def test_analyzer_rejects_header_row_with_only_one_known_column() -> None:
+    from openpyxl import Workbook
+
+    from fmea.fmea_template_analyzer import _detect_header_row
+
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "FMEA"
+    worksheet.append(["FMEA-ID", "Unrelated notes", "Owner"])
+
+    with pytest.raises(
+        ValidationError,
+        match=(
+            r"Couldn't find the FMEA header row in sheet 'FMEA' "
+            r"\(looked in the first 10 rows for columns like FMEA-ID, "
+            r"Reference Designator, Failure Mode\)\."
+        ),
+    ):
+        _detect_header_row(worksheet)
+    workbook.close()
+
+
+@pytest.mark.parametrize(
+    ("header_to_replace", "missing_label"),
+    [
+        ("Failure Mode Causes", r"Failure Mode Causes \(RefDes\)"),
+        ("Failure Mode", "Failure Mode"),
+    ],
+)
+def test_analyzer_rejects_missing_identity_column(
+    preserve_target_factory,
+    header_to_replace: str,
+    missing_label: str,
+) -> None:
+    def configure(workbook, fixture) -> None:
+        worksheet = workbook["FMEA"]
+        worksheet.cell(
+            row=fixture.header_row,
+            column=fixture.columns[header_to_replace],
+            value="Unrecognized identity field",
+        )
+
+    fixture = preserve_target_factory(configure=configure)
+    from fmea.fmea_template_analyzer import analyze_template
+
+    loaded_workbook = None
+    try:
+        with pytest.raises(
+            ValidationError,
+            match=(
+                rf"Couldn't find the required identity column '{missing_label}' "
+                rf"in sheet 'FMEA'\. Add or rename it and re-run\."
+            ),
+        ):
+            _template_map, loaded_workbook = analyze_template(
+                str(fixture.path), sheet_name="FMEA"
+            )
+    finally:
+        if loaded_workbook is not None:
+            loaded_workbook.close()
+
+
 # ----- D2/D5/D10: Inheritance + BOM Additions sheet ---------------------------
 
 

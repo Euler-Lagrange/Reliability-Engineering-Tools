@@ -160,6 +160,7 @@ class ColumnMap:
     col_to_index: Dict[str, int]         # header_name -> 1-based col index
     canonical_map: Dict[str, str]        # OUTPUT_HEADER_name -> original_header_name
     extra_cols: List[str]                # OUTPUT_HEADERS not found in original
+    analysis_issue_rows: List[Dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -342,6 +343,14 @@ def _detect_header_row(ws, max_scan: int = 10) -> int:
             best_score = score
             best_row = row_num
 
+    if best_score < 2:
+        from common import ValidationError
+        raise ValidationError(
+            f"Couldn't find the FMEA header row in sheet '{ws.title}' "
+            f"(looked in the first {max_scan} rows for columns like FMEA-ID, "
+            "Reference Designator, Failure Mode)."
+        )
+
     return best_row
 
 
@@ -379,33 +388,89 @@ def _build_column_map(
     # Read original headers from the worksheet
     original_headers = []
     col_to_index: Dict[str, int] = {}
+    header_positions: Dict[str, List[Tuple[str, int]]] = {}
     for cell in ws[header_row]:
         header_val = str(cell.value).strip() if cell.value is not None else ""
         original_headers.append(header_val)
         if header_val:
             col_to_index[header_val] = cell.column  # 1-based
+            header_positions.setdefault(header_val.casefold(), []).append(
+                (header_val, cell.column)
+            )
 
-    # Build case-insensitive lookup for exact matching
-    headers_lower = {h.lower(): h for h in original_headers if h}
+    analysis_issue_rows: List[Dict[str, Any]] = []
+    for occurrences in header_positions.values():
+        if len(occurrences) < 2:
+            continue
+        selected_header, selected_column = occurrences[-1]
+        columns = ", ".join(str(column) for _, column in occurrences)
+        details = (
+            f"Header '{selected_header}' appears in columns {columns}; the "
+            f"last occurrence (column {selected_column}) will be used."
+        )
+        analysis_issue_rows.append({
+            "ReasonCode": "DUPLICATE_TEMPLATE_HEADER",
+            "Source": "Template",
+            "Excel Row": header_row,
+            "Group ID": "",
+            "RefDes": "",
+            "Failure Mode": "",
+            "Details": details,
+        })
+        if log_func:
+            log_func(
+                "Template analysis WARNING: DUPLICATE_TEMPLATE_HEADER: "
+                f"{details}"
+            )
+
+    # Last-occurrence lookup keeps duplicate-header behavior consistent for
+    # both exact matches and labels returned by the shared fuzzy detector.
+    headers_casefold_last = {
+        h.casefold(): h for h in original_headers if h
+    }
 
     canonical_map: Dict[str, str] = {}
     extra_cols: List[str] = []
+    claimed_destinations: Dict[int, str] = {}
 
+    def claim_destination(output_header: str, matched_header: str) -> None:
+        column_index = col_to_index[matched_header]
+        prior_output = claimed_destinations.get(column_index)
+        if prior_output is not None:
+            extra_cols.append(output_header)
+            if log_func:
+                log_func(
+                    "Template analysis WARNING: template column "
+                    f"'{matched_header}' (column {column_index}) resolves to both "
+                    f"'{prior_output}' and '{output_header}'. Keeping it for "
+                    f"'{prior_output}'; '{output_header}' will be appended as a "
+                    "new column."
+                )
+            return
+        claimed_destinations[column_index] = output_header
+        canonical_map[output_header] = matched_header
+
+    unmatched_headers: List[str] = []
     for output_header in target_headers:
-        # Step 1: Exact case-insensitive match
-        matched = headers_lower.get(output_header.lower())
+        # Claim every exact match before any fuzzy match can take its column.
+        matched = headers_casefold_last.get(output_header.casefold())
         if matched:
-            canonical_map[output_header] = matched
-            continue
+            claim_destination(output_header, matched)
+        else:
+            unmatched_headers.append(output_header)
 
-        # Step 2: detect_column with synonyms
+    for output_header in unmatched_headers:
+        # Then resolve remaining outputs through the shared synonym detector.
         synonym_key = synonym_map.get(output_header)
         if synonym_key:
             try:
                 synonyms = get_synonyms(synonym_key)
                 found = detect_column(original_headers, synonyms, substring_match=True)
                 if found:
-                    canonical_map[output_header] = found
+                    found = headers_casefold_last.get(
+                        str(found).casefold(), found
+                    )
+                    claim_destination(output_header, found)
                     continue
             except KeyError:
                 pass  # Unknown synonym key; fall through
@@ -429,6 +494,35 @@ def _build_column_map(
         col_to_index=col_to_index,
         canonical_map=canonical_map,
         extra_cols=extra_cols,
+        analysis_issue_rows=analysis_issue_rows,
+    )
+
+
+def _require_identity_columns(column_map: ColumnMap, sheet_name: str) -> None:
+    """Fail before classification when a safe row identity cannot be built."""
+    required = (
+        ("Failure Mode Causes", "Failure Mode Causes (RefDes)"),
+        ("Failure Mode", "Failure Mode"),
+    )
+    missing = []
+    for output_header, user_label in required:
+        original_header = column_map.canonical_map.get(output_header)
+        if not original_header or not column_map.col_to_index.get(original_header):
+            missing.append(user_label)
+
+    if not missing:
+        return
+
+    from common import ValidationError
+    if len(missing) == 1:
+        raise ValidationError(
+            f"Couldn't find the required identity column '{missing[0]}' in "
+            f"sheet '{sheet_name}'. Add or rename it and re-run."
+        )
+    quoted = ", ".join(f"'{label}'" for label in missing)
+    raise ValidationError(
+        f"Couldn't find the required identity columns {quoted} in sheet "
+        f"'{sheet_name}'. Add or rename them and re-run."
     )
 
 
@@ -674,6 +768,7 @@ def analyze_template(
         log_func=_log,
         failure_modes_standard=failure_modes_standard,
     )
+    _require_identity_columns(column_map, fmea_sheet_name)
 
     if cancel_token:
         cancel_token.check()

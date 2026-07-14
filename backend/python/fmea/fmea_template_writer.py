@@ -760,7 +760,12 @@ def write_template_preserved(
     """
     log = log_func or _noop_log
     cancel = cancel_token or CancellationToken()
-    result = TemplateWriteResult(output_path=output_path)
+    result = TemplateWriteResult(
+        output_path=output_path,
+        issue_rows=[
+            dict(issue) for issue in template_map.column_map.analysis_issue_rows
+        ],
+    )
 
     # ------------------------------------------------------------------
     # 1. Get the FMEA worksheet
