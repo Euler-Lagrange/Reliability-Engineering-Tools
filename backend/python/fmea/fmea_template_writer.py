@@ -43,6 +43,7 @@ from fmea.fmea_template_analyzer import (
     FunctionGroup,
     TemplateMap,
     capture_cell_style,
+    normalize_failure_mode_identity,
 )
 
 _logger = get_tool_logger("fmea_template_writer")
@@ -53,6 +54,15 @@ _logger = get_tool_logger("fmea_template_writer")
 _CANCEL_CHECK_INTERVAL = 50      # Rows between cancellation checks
 _GIL_YIELD_INTERVAL = 100       # Rows between GIL yields for UI repaint
 _DIAGNOSTIC_COL = "Diagnostic"   # Generator diagnostic column name
+_ISSUE_HEADERS = [
+    "ReasonCode",
+    "Source",
+    "Excel Row",
+    "Group ID",
+    "RefDes",
+    "Failure Mode",
+    "Details",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -88,6 +98,7 @@ class GroupMergeResult:
     insert_at: int = 0
     blanks_skipped: Dict[str, int] = field(default_factory=dict)
     merge_changes: List[MergeChange] = field(default_factory=list)
+    issue_rows: List[Dict[str, Any]] = field(default_factory=list)
     issues: List[str] = field(default_factory=list)
 
 
@@ -102,6 +113,7 @@ class TemplateWriteResult:
     pp_rows_flagged: int = 0
     blanks_skipped: Dict[str, int] = field(default_factory=dict)
     merge_changes: List[MergeChange] = field(default_factory=list)
+    issue_rows: List[Dict[str, Any]] = field(default_factory=list)
     extra_cols_appended: List[str] = field(default_factory=list)
     output_path: str = ""
     issues: List[str] = field(default_factory=list)
@@ -223,6 +235,79 @@ def _build_generated_index(
     return index
 
 
+def _build_generated_identity_map(
+    rows: List[Dict[str, Any]],
+) -> Dict[Tuple[str, str], List[Dict[str, Any]]]:
+    """Index generated piece-part rows by the merge identity key."""
+    rows_by_identity: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+    for row_dict in rows:
+        refdes_raw = row_dict.get("Failure Mode Causes", "")
+        refdes = (
+            canonicalize_refdes(str(refdes_raw)) if pd.notna(refdes_raw) else ""
+        )
+        fm_raw = row_dict.get("Failure Mode", "")
+        failure_mode = (
+            normalize_failure_mode_identity(fm_raw) if pd.notna(fm_raw) else ""
+        )
+        rows_by_identity.setdefault((refdes, failure_mode), []).append(row_dict)
+    return rows_by_identity
+
+
+def _issue_text(value: Any) -> str:
+    """Render a generated identity field without exposing pandas NaN text."""
+    return "" if _is_blank_value(value) else str(value)
+
+
+def _remove_ambiguous_identities(
+    template_rows: Dict[Tuple[str, str], List[int]],
+    generated_rows: Dict[Tuple[str, str], List[Dict[str, Any]]],
+    *,
+    group_id: str,
+    result: Any,
+) -> None:
+    """Remove non-1:1 duplicate keys and record every affected row."""
+    ambiguous_keys = sorted(
+        key
+        for key in set(template_rows) | set(generated_rows)
+        if len(template_rows.get(key, [])) > 1
+        or len(generated_rows.get(key, [])) > 1
+    )
+    for refdes, failure_mode in ambiguous_keys:
+        template_matches = template_rows.pop((refdes, failure_mode), [])
+        generated_matches = generated_rows.pop((refdes, failure_mode), [])
+        counts = (
+            f"Identity matches {len(template_matches)} template row(s) and "
+            f"{len(generated_matches)} generated row(s); pairing is not exactly 1:1."
+        )
+        for excel_row in template_matches:
+            result.issue_rows.append({
+                "ReasonCode": "AMBIGUOUS_IDENTITY",
+                "Source": "Template",
+                "Excel Row": excel_row,
+                "Group ID": group_id,
+                "RefDes": refdes,
+                "Failure Mode": failure_mode,
+                "Details": f"Template row left completely untouched. {counts}",
+            })
+        for row_dict in generated_matches:
+            fmea_id = _issue_text(row_dict.get("FMEA-ID", ""))
+            part_number = _issue_text(
+                row_dict.get("Component Part Number", "")
+            )
+            result.issue_rows.append({
+                "ReasonCode": "AMBIGUOUS_IDENTITY",
+                "Source": "Generated",
+                "Excel Row": None,
+                "Group ID": group_id,
+                "RefDes": refdes,
+                "Failure Mode": failure_mode,
+                "Details": (
+                    f"Generated row was not inserted (FMEA-ID '{fmea_id}', "
+                    f"part number '{part_number}'). {counts}"
+                ),
+            })
+
+
 def _resolve_col_index(
     col_name: str,
     column_map: ColumnMap,
@@ -312,6 +397,7 @@ def _merge_group_piece_parts(
     column_map: ColumnMap,
     extra_col_indices: Dict[str, int],
     log_func: Optional[Callable[[str], None]] = None,
+    flag_missing_template_rows: bool = True,
 ) -> GroupMergeResult:
     """Merge generated piece-part rows into a single template function group.
 
@@ -338,15 +424,17 @@ def _merge_group_piece_parts(
     # Build match index from generated piece-part rows
     # Use list-of-dicts to preserve ALL rows for duplicate (RefDes, FM) keys
     # (e.g., dual op-amps with same RefDes in different circuit blocks).
-    gen_rows_map: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
-    for row_dict in gen_pp_rows:
-        # Failure Mode Causes is the RefDes column in generated output
-        refdes_raw = row_dict.get("Failure Mode Causes", "")
-        refdes = canonicalize_refdes(str(refdes_raw)) if pd.notna(refdes_raw) else ""
-        fm_raw = row_dict.get("Failure Mode", "")
-        fm = str(fm_raw).strip().upper() if pd.notna(fm_raw) else ""
-        key = (refdes, fm)
-        gen_rows_map.setdefault(key, []).append(row_dict)
+    gen_rows_map = _build_generated_identity_map(gen_pp_rows)
+
+    # A duplicate identity on either side is unsafe to pair positionally.
+    # Remove the entire key before matching so template rows are untouched
+    # and generated rows cannot fall through to the insertion path.
+    _remove_ambiguous_identities(
+        template_rows,
+        gen_rows_map,
+        group_id=group.group_id,
+        result=result,
+    )
 
     # ------------------------------------------------------------------
     # 2. MATCH template rows to generated rows
@@ -356,6 +444,8 @@ def _merge_group_piece_parts(
 
     for key, excel_rows in template_rows.items():
         gen_list = gen_rows_map.pop(key, [])
+        if not gen_list and not flag_missing_template_rows:
+            continue
         # Pair template rows 1:1 with generated rows
         for i, excel_row in enumerate(excel_rows):
             if i < len(gen_list):
@@ -579,14 +669,21 @@ def write_template_preserved(
         # Consume matched groups so only truly new groups remain for the
         # append-at-end pass.
         gen_pp_rows = gen_index.pop(group.group_id, [])
+        has_template_duplicates = any(
+            len(excel_rows) > 1 for excel_rows in group.pp_index.values()
+        )
 
-        if gen_pp_rows:
+        if gen_pp_rows or has_template_duplicates:
             merge_result = _merge_group_piece_parts(
                 ws, group, gen_pp_rows,
                 template_map.column_map, extra_col_indices,
                 log_func=log,
+                flag_missing_template_rows=bool(gen_pp_rows),
             )
-            result.groups_matched += 1
+            if gen_pp_rows:
+                result.groups_matched += 1
+            else:
+                result.groups_unmatched += 1
             result.pp_rows_updated += merge_result.pp_updated
             result.pp_rows_inserted += merge_result.pp_inserted
             result.pp_rows_flagged += merge_result.pp_flagged
@@ -594,11 +691,19 @@ def write_template_preserved(
                 for change in result.merge_changes:
                     if change.excel_row >= merge_result.insert_at:
                         change.excel_row += merge_result.pp_inserted
+                for issue in result.issue_rows:
+                    excel_row = issue.get("Excel Row")
+                    if (
+                        isinstance(excel_row, int)
+                        and excel_row >= merge_result.insert_at
+                    ):
+                        issue["Excel Row"] = excel_row + merge_result.pp_inserted
             for column, count in merge_result.blanks_skipped.items():
                 result.blanks_skipped[column] = (
                     result.blanks_skipped.get(column, 0) + count
                 )
             result.merge_changes.extend(merge_result.merge_changes)
+            result.issue_rows.extend(merge_result.issue_rows)
             result.issues.extend(merge_result.issues)
         else:
             result.groups_unmatched += 1
@@ -621,6 +726,20 @@ def write_template_preserved(
 
         for group_id, pp_rows in gen_index.items():
             cancel.check()
+
+            generated_rows = _build_generated_identity_map(pp_rows)
+            _remove_ambiguous_identities(
+                {}, generated_rows, group_id=group_id, result=result
+            )
+            pp_rows = [
+                row for rows in generated_rows.values() for row in rows
+            ]
+            if not pp_rows:
+                log(
+                    f"Skipped new group '{group_id}': all generated rows "
+                    "had ambiguous identities"
+                )
+                continue
 
             # Write a circuit-block header row for the new group
             # Find the first circuit_block row in generated_df for this group
@@ -815,15 +934,33 @@ def _write_summary_sheets(wb, processor, result: TemplateWriteResult,
                     cell.data_type = "s"
         ws_changes.freeze_panes = "A3"
 
-    # Issues sheet (if any)
-    if result.issues:
+    # Issues sheet (if any). Structured issue rows carry stable reason codes;
+    # legacy merge notes remain visible in the Details column.
+    if result.issues or result.issue_rows:
         issues_name = "Template_Merge_Issues"
         if issues_name in wb.sheetnames:
             del wb[issues_name]
         ws_issues = wb.create_sheet(issues_name)
-        ws_issues.cell(row=1, column=1, value="Issue").font = Font(bold=True)
-        for row_idx, issue in enumerate(result.issues, start=2):
-            ws_issues.cell(row=row_idx, column=1, value=issue)
+        for col_idx, header in enumerate(_ISSUE_HEADERS, start=1):
+            ws_issues.cell(row=1, column=col_idx, value=header).font = Font(bold=True)
+        issue_rows = [
+            {
+                "ReasonCode": "",
+                "Source": "Merge",
+                "Excel Row": None,
+                "Group ID": "",
+                "RefDes": "",
+                "Failure Mode": "",
+                "Details": issue,
+            }
+            for issue in result.issues
+        ] + result.issue_rows
+        for row_idx, issue in enumerate(issue_rows, start=2):
+            for col_idx, header in enumerate(_ISSUE_HEADERS, start=1):
+                _write_plain_cell(
+                    ws_issues.cell(row=row_idx, column=col_idx),
+                    issue.get(header),
+                )
 
     # Add processor summary sheets (No_Matches, Missing_HDA, etc.)
     _write_processor_summaries(wb, processor, log_func)

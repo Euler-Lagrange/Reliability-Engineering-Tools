@@ -128,6 +128,16 @@ class FunctionGroup:
     pp_style: Optional[CellStyle] = None
 
 
+@dataclass(frozen=True)
+class GroupIdCollision:
+    """Two template groups that collapse to one normalized identity."""
+    normalized_id: str
+    first_raw_id: str
+    first_row: int
+    duplicate_raw_id: str
+    duplicate_row: int
+
+
 @dataclass
 class TemplateMap:
     """Complete structural analysis of an FMEA workbook."""
@@ -136,6 +146,12 @@ class TemplateMap:
     groups: List[FunctionGroup]
     group_by_id: Dict[str, FunctionGroup]
     total_data_rows: int
+    group_id_collisions: List[GroupIdCollision] = field(default_factory=list)
+
+
+def normalize_failure_mode_identity(value: Any) -> str:
+    """Normalize failure-mode identity without loosening its text meaning."""
+    return " ".join(str(value).split()).upper()
 
 
 # =============================================================================
@@ -473,7 +489,7 @@ def _build_function_groups(
             if fm_col_idx > 0:
                 cell_val = ws.cell(row=row_num, column=fm_col_idx).value
                 if cell_val is not None and pd.notna(cell_val):
-                    fm_val = str(cell_val).strip().upper()
+                    fm_val = normalize_failure_mode_identity(cell_val)
 
             key = (refdes_val, fm_val)
             if key not in current_group.pp_index:
@@ -628,15 +644,21 @@ def analyze_template(
         cancel_token=cancel_token, log_func=_log,
     )
 
-    # Build ID lookup — use first occurrence; warn on duplicates
+    # Build ID lookup and retain every normalized collision as a hard signal
+    # for the runtime's pre-mutation validation gate.
     group_by_id: Dict[str, FunctionGroup] = {}
+    group_id_collisions: List[GroupIdCollision] = []
     for grp in groups:
         if grp.group_id:
             if grp.group_id in group_by_id:
-                _log(f"WARNING: Duplicate normalized group ID '{grp.group_id}' "
-                     f"(raw: '{grp.group_id_raw}' at row {grp.cb_start_row}, "
-                     f"first seen at row {group_by_id[grp.group_id].cb_start_row}). "
-                     f"Each instance will be processed independently.")
+                first = group_by_id[grp.group_id]
+                group_id_collisions.append(GroupIdCollision(
+                    normalized_id=grp.group_id,
+                    first_raw_id=first.group_id_raw,
+                    first_row=first.cb_start_row,
+                    duplicate_raw_id=grp.group_id_raw,
+                    duplicate_row=grp.cb_start_row,
+                ))
             else:
                 group_by_id[grp.group_id] = grp
 
@@ -648,6 +670,7 @@ def analyze_template(
         groups=groups,
         group_by_id=group_by_id,
         total_data_rows=total_data_rows,
+        group_id_collisions=group_id_collisions,
     )
 
     _log(

@@ -987,6 +987,18 @@ def execute_run_request(
             log_func=stream_log_callback,
             failure_modes_standard=failure_modes_standard,
         )
+        if template_map.group_id_collisions:
+            collision = template_map.group_id_collisions[0]
+            try:
+                wb.close()
+            finally:
+                raise ValidationError(
+                    f"Function groups '{collision.first_raw_id}' "
+                    f"(row {collision.first_row}) and "
+                    f"'{collision.duplicate_raw_id}' "
+                    f"(row {collision.duplicate_row}) collapse to the same ID "
+                    f"'{collision.normalized_id}'. Give them distinct IDs and re-run."
+                )
         tmp_output = atomic_write_path(output_path)
         try:
             try:

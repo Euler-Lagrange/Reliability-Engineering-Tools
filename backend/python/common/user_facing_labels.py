@@ -32,6 +32,7 @@ REASON_CODE_LABELS = {
     "SCOPE_CB_ONLY": "Scope Mismatch: Circuit Block Only",
     "SCOPE_PP_ONLY": "Scope Mismatch: Piece-Part Only",
     "SCOPE_UNCLASSIFIED_ONLY": "Scope Mismatch: Unclassified Row Type Only",
+    "AMBIGUOUS_IDENTITY": "Ambiguous Identity: Duplicate RefDes and Failure Mode",
 }
 
 
@@ -85,4 +86,3 @@ def to_user_facing_text(value: Any) -> Any:
 
     mapped = STATUS_LABELS.get(value, value)
     return expand_reliability_abbreviations(mapped)
-

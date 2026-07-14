@@ -515,11 +515,11 @@ not copy its fixture shape.
   (internal-whitespace collapse) on BOTH sides — closes the verified
   `"OPEN  CIRCUIT"` mismatch without loosening anything else.
 
-- [ ] **Step 1:** Failing tests: (a) two `U1/OPEN` template rows + two generated →
+- [x] **Step 1:** Failing tests: (a) two `U1/OPEN` template rows + two generated →
   neither touched, both flagged, unmanaged "Engineering Notes" cells untouched;
   (b) colliding group IDs → ValidationError naming both, workbook file unchanged;
   (c) `OPEN  CIRCUIT` (double space) matches `OPEN CIRCUIT`.
-- [ ] **Step 2:** Implement, green, commit:
+- [x] **Step 2:** Implement, green, commit:
   `FMEA preserve: Never guess identity — flag ambiguity, block colliding groups`
 
 ### Task 4.3: Sheet ownership markers

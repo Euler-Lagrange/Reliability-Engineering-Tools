@@ -198,6 +198,24 @@ def _write_wave4_preserve_target(
     return output_path, result
 
 
+def _worksheet_records(ws, required_header: str) -> list[dict]:
+    """Read a diagnostic sheet whose banner may move its header row."""
+    header_row = next(
+        row
+        for row in range(1, ws.max_row + 1)
+        if required_header in [cell.value for cell in ws[row]]
+    )
+    headers = [cell.value for cell in ws[header_row]]
+    return [
+        {
+            header: ws.cell(row=row, column=column).value
+            for column, header in enumerate(headers, start=1)
+            if header
+        }
+        for row in range(header_row + 1, ws.max_row + 1)
+    ]
+
+
 def test_preserve_blank_generated_effect_never_overwrites_user_text(
     preserve_target_factory,
 ) -> None:
@@ -387,6 +405,315 @@ def test_preserve_merge_change_row_rebases_after_later_upper_insertion(
         )
         assert changed_row == 10
         assert changes["A3"].value == changed_row
+
+
+def test_preserve_ambiguous_two_by_two_identity_leaves_user_rows_untouched(
+    preserve_target_factory,
+) -> None:
+    fixture = preserve_target_factory()
+    generated = pd.DataFrame(
+        [
+            {"FMEA-ID": "CPU-001-A", "_row_type": "circuit_block"},
+            {
+                "FMEA-ID": "CPU-001-U1-GEN-B",
+                "Failure Mode Causes": "U1",
+                "Component Part Number": "GENERATED-B",
+                "Failure Mode": "OPEN",
+                "Local Effect": "Generated local B",
+                "_row_type": "piece_part",
+            },
+            {
+                "FMEA-ID": "CPU-001-U1-GEN-A",
+                "Failure Mode Causes": "U1",
+                "Component Part Number": "GENERATED-A",
+                "Failure Mode": "OPEN",
+                "Local Effect": "Generated local A",
+                "_row_type": "piece_part",
+            },
+        ]
+    )
+
+    output_path, result = _write_wave4_preserve_target(
+        fixture,
+        generated,
+        output_name="ambiguous_two_by_two.xlsx",
+    )
+
+    fixture.assert_cells(
+        output_path,
+        {
+            ("FMEA", "A5"): "CPU-001-U1-A",
+            ("FMEA", "D5"): "PN-U1-A",
+            ("FMEA", "H5"): "Hand-authored local effect A",
+            ("FMEA", "L5"): "Keep with PN-U1-A",
+            ("FMEA", "A6"): "CPU-001-U1-B",
+            ("FMEA", "D6"): "PN-U1-B",
+            ("FMEA", "H6"): "Hand-authored local effect B",
+            ("FMEA", "L6"): "Keep with PN-U1-B",
+        },
+    )
+    assert result.pp_rows_updated == 0
+    assert result.pp_rows_inserted == 0
+    with fixture.open(output_path) as workbook:
+        issues = _worksheet_records(
+            workbook["Template_Merge_Issues"], "ReasonCode"
+        )
+        ambiguous = [
+            row
+            for row in issues
+            if row["ReasonCode"] == "AMBIGUOUS_IDENTITY"
+            and row["Group ID"] == "CPU-001"
+        ]
+        assert len(ambiguous) == 4
+        assert [row["Source"] for row in ambiguous].count("Template") == 2
+        assert [row["Source"] for row in ambiguous].count("Generated") == 2
+        assert {row["Excel Row"] for row in ambiguous if row["Source"] == "Template"} == {
+            5,
+            6,
+        }
+        assert all(row["RefDes"] == "U1" for row in ambiguous)
+        assert all(row["Failure Mode"] == "OPEN" for row in ambiguous)
+        assert "Merge Changes" not in workbook.sheetnames
+
+
+def test_preserve_generated_duplicate_identity_is_not_paired_or_inserted(
+    preserve_target_factory,
+) -> None:
+    fixture = preserve_target_factory()
+    generated = pd.DataFrame(
+        [
+            {"FMEA-ID": "PWR-002-A", "_row_type": "circuit_block"},
+            {
+                "FMEA-ID": "PWR-002-R1-GEN-A",
+                "Failure Mode Causes": "R1",
+                "Component Part Number": "GENERATED-A",
+                "Failure Mode": "OPEN",
+                "_row_type": "piece_part",
+            },
+            {
+                "FMEA-ID": "PWR-002-R1-GEN-B",
+                "Failure Mode Causes": "R1",
+                "Component Part Number": "GENERATED-B",
+                "Failure Mode": "OPEN",
+                "_row_type": "piece_part",
+            },
+        ]
+    )
+
+    output_path, result = _write_wave4_preserve_target(
+        fixture,
+        generated,
+        output_name="ambiguous_generated.xlsx",
+    )
+
+    fixture.assert_cells(
+        output_path,
+        {
+            ("FMEA", "A9"): "PWR-002-R1-A",
+            ("FMEA", "D9"): "PN-R1",
+            ("FMEA", "L9"): "Calibration-critical note",
+        },
+    )
+    assert result.pp_rows_updated == 0
+    assert result.pp_rows_inserted == 0
+    with fixture.open(output_path) as workbook:
+        issues = _worksheet_records(
+            workbook["Template_Merge_Issues"], "ReasonCode"
+        )
+        ambiguous = [
+            row
+            for row in issues
+            if row["ReasonCode"] == "AMBIGUOUS_IDENTITY"
+            and row["Group ID"] == "PWR-002"
+        ]
+        assert len(ambiguous) == 3
+        assert [row["Source"] for row in ambiguous].count("Template") == 1
+        assert [row["Source"] for row in ambiguous].count("Generated") == 2
+        assert workbook["FMEA"].max_row == 12
+        assert "Merge Changes" not in workbook.sheetnames
+
+
+def test_preserve_template_duplicate_identity_is_flagged_without_generated_group(
+    preserve_target_factory,
+) -> None:
+    fixture = preserve_target_factory()
+    generated = _wave4_generated_group()
+
+    output_path, _ = _write_wave4_preserve_target(
+        fixture,
+        generated,
+        output_name="ambiguous_template_only.xlsx",
+    )
+
+    with fixture.open(output_path) as workbook:
+        issues = _worksheet_records(
+            workbook["Template_Merge_Issues"], "ReasonCode"
+        )
+        ambiguous = [
+            row
+            for row in issues
+            if row["ReasonCode"] == "AMBIGUOUS_IDENTITY"
+            and row["Group ID"] == "CPU-001"
+        ]
+        assert len(ambiguous) == 2
+        assert all(row["Source"] == "Template" for row in ambiguous)
+        assert {row["Excel Row"] for row in ambiguous} == {5, 6}
+
+
+def test_preserve_duplicate_identity_in_new_group_is_not_appended(
+    preserve_target_factory,
+) -> None:
+    fixture = preserve_target_factory()
+    generated = pd.DataFrame(
+        [
+            {"FMEA-ID": "NEW-003-A", "_row_type": "circuit_block"},
+            {
+                "FMEA-ID": "NEW-003-Z1-A",
+                "Failure Mode Causes": "Z1",
+                "Failure Mode": "OPEN",
+                "_row_type": "piece_part",
+            },
+            {
+                "FMEA-ID": "NEW-003-Z1-B",
+                "Failure Mode Causes": "Z1",
+                "Failure Mode": "OPEN",
+                "_row_type": "piece_part",
+            },
+        ]
+    )
+
+    output_path, result = _write_wave4_preserve_target(
+        fixture,
+        generated,
+        output_name="ambiguous_new_group.xlsx",
+    )
+
+    assert result.groups_new == 0
+    assert result.pp_rows_inserted == 0
+    with fixture.open(output_path) as workbook:
+        fmea_values = [
+            cell.value
+            for row in workbook["FMEA"].iter_rows()
+            for cell in row
+        ]
+        assert "NEW-003-A" not in fmea_values
+        assert "Z1" not in fmea_values
+        issues = _worksheet_records(
+            workbook["Template_Merge_Issues"], "ReasonCode"
+        )
+        ambiguous = [
+            row
+            for row in issues
+            if row["ReasonCode"] == "AMBIGUOUS_IDENTITY"
+            and row["Group ID"] == "NEW-003"
+        ]
+        assert len(ambiguous) == 2
+        assert all(row["Source"] == "Generated" for row in ambiguous)
+
+
+def test_preserve_failure_mode_identity_collapses_internal_whitespace(
+    preserve_target_factory,
+) -> None:
+    def configure(workbook, fixture) -> None:
+        workbook["FMEA"].cell(
+            row=fixture.rows["unique_piece_part"],
+            column=fixture.columns["Failure Mode"],
+            value="OPEN  CIRCUIT",
+        )
+
+    fixture = preserve_target_factory(configure=configure)
+    generated = _wave4_generated_group(
+        failure_mode="OPEN CIRCUIT",
+        piece_part_values={"Local Effect": "Generated local effect R1"},
+    )
+
+    output_path, result = _write_wave4_preserve_target(
+        fixture,
+        generated,
+        output_name="whitespace_identity.xlsx",
+    )
+
+    assert result.pp_rows_updated == 1
+    assert result.pp_rows_inserted == 0
+    fixture.assert_cells(
+        output_path,
+        {
+            ("FMEA", "F9"): "OPEN CIRCUIT",
+            ("FMEA", "H9"): "Generated local effect R1",
+        },
+    )
+    with fixture.open(output_path) as workbook:
+        assert workbook["FMEA"].max_row == 12
+
+
+def test_preserve_colliding_group_ids_block_before_workbook_mutation(
+    tmp_path: Path,
+    preserve_target_factory,
+) -> None:
+    def configure(workbook, fixture) -> None:
+        workbook["FMEA"].cell(
+            row=fixture.rows["unique_group"],
+            column=fixture.columns["FMEA-ID"],
+            value="CPU-001-B",
+        )
+
+    fixture = preserve_target_factory(configure=configure)
+    paths = _write_fixture(
+        tmp_path / "collision_inputs",
+        bom_rows=[
+            {
+                "Reference Designator": "U1",
+                "Part Number": "PN-U1",
+                "Description": "Processor",
+                "BAE HDA Commodity I": "Microcircuit",
+                "BAE HDA Commodity II": "Digital",
+                "Part Usage": "1",
+            }
+        ],
+        grouping_rows=[
+            {
+                "Component Group": "CPU-001",
+                "Reference Designator": "U1",
+                "Function Description": "Processor control",
+                "Schematic Page": "2",
+            }
+        ],
+        fm_rows=[
+            {
+                "FMD-2016 Commodity Type 1": "Microcircuit",
+                "FMD-2016 Commodity Type 2": "Digital",
+                "Failure Mode": "OPEN",
+                "Failure Mode Ratio": 1.0,
+            }
+        ],
+    )
+    body = {
+        "workflowId": "piece_part_generate",
+        "outputStrategyId": "existing_workbook_preserve_formatting",
+        "options": {"failureModesStandard": "FMD-2016"},
+        "inputs": [
+            _state("grouping", paths["grouping"]),
+            _state("bom", paths["bom"]),
+            _state("failureModes", paths["fm"]),
+            _state("targetWorkbook", fixture.path, sheet="FMEA"),
+        ],
+        "mappings": [],
+    }
+    original_bytes = fixture.path.read_bytes()
+
+    with pytest.raises(
+        ValidationError,
+        match=(
+            r"Function groups 'CPU-001-A' \(row 4\) and 'CPU-001-B' "
+            r"\(row 8\) collapse to the same ID 'CPU-001'\. Give them "
+            r"distinct IDs and re-run\."
+        ),
+    ):
+        execute_run_request(body)
+
+    assert fixture.path.read_bytes() == original_bytes
+    assert not list(tmp_path.glob("preserve_target_DarkStar_*.xlsx"))
+    assert not list(tmp_path.glob(".*.part.xlsx"))
 
 
 # ----- D2/D5/D10: Inheritance + BOM Additions sheet ---------------------------
