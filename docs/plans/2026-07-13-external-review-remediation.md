@@ -587,6 +587,8 @@ After each `ws.insert_rows(insert_at, amount)`:
   moves with its row; (d) validation-below-insertion produces the warning + issues row.
 - [x] **Step 2:** Implement, green, commit:
   `FMEA preserve: Rebase merges/row-dims after insertion; warn on what can't move`
+- [x] **No-Pillow follow-up:** inspect OOXML drawing/media parts before openpyxl
+  load so packaged runs still warn when openpyxl drops image records.
 
 ### Task 4.5: Column-mapping injectivity + fail-closed analysis
 

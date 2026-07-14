@@ -15,6 +15,8 @@ preserving the original formatting.
 from copy import copy
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
+from xml.etree.ElementTree import ParseError, fromstring
+from zipfile import BadZipFile, ZipFile
 
 import pandas as pd
 from openpyxl import load_workbook
@@ -88,6 +90,52 @@ def _build_output_header_synonym_map(standard: str) -> Dict[str, str]:
 # any legacy importer that expects the static map. New code should use
 # `_build_output_header_synonym_map(standard)` instead.
 _OUTPUT_HEADER_SYNONYM_MAP: Dict[str, str] = _build_output_header_synonym_map("FMD-2016")
+
+
+def _inspect_ooxml_drawing_parts(workbook_path: str) -> Tuple[bool, bool]:
+    """Detect drawing kinds before openpyxl can discard unsupported images.
+
+    The shipped environment deliberately omits Pillow. In that configuration,
+    openpyxl drops image records while loading, so ``Worksheet._images`` alone
+    cannot support the user-facing loss warning. Inspecting the OOXML package
+    first keeps the preflight independent of optional image decoders.
+    """
+    try:
+        with ZipFile(workbook_path) as archive:
+            names = set(archive.namelist())
+            has_images_or_shapes = any(
+                name.startswith("xl/media/") for name in names
+            )
+            has_charts = any(
+                name.startswith("xl/charts/") and name.endswith(".xml")
+                for name in names
+            )
+
+            if not has_images_or_shapes:
+                drawing_parts = (
+                    name
+                    for name in names
+                    if name.startswith("xl/drawings/")
+                    and name.endswith(".xml")
+                    and "/_rels/" not in name
+                )
+                for name in drawing_parts:
+                    try:
+                        drawing = fromstring(archive.read(name))
+                    except ParseError:
+                        continue
+                    if any(
+                        element.tag.rsplit("}", 1)[-1]
+                        in {"sp", "cxnSp", "grpSp"}
+                        for element in drawing.iter()
+                    ):
+                        has_images_or_shapes = True
+                        break
+
+            return has_images_or_shapes, has_charts
+    except (BadZipFile, KeyError, OSError):
+        # The normal load path below owns validation and its friendly error.
+        return False, False
 
 
 # =============================================================================
@@ -561,6 +609,9 @@ def analyze_template(
     if path_lower.endswith(".xlsm"):
         load_kwargs["keep_vba"] = True
 
+    package_has_images_or_shapes, package_has_charts = (
+        _inspect_ooxml_drawing_parts(workbook_path)
+    )
     try:
         wb = load_workbook(workbook_path, **load_kwargs)
     except (InterruptedError, CancellationError):
@@ -586,12 +637,19 @@ def analyze_template(
         for sheet in wb.worksheets
         if getattr(sheet, "_charts", ())
     ]
-    if image_sheets or chart_sheets:
+    if (
+        package_has_images_or_shapes
+        or package_has_charts
+        or image_sheets
+        or chart_sheets
+    ):
         detected = []
-        if image_sheets:
-            detected.append(f"images/shapes on {', '.join(image_sheets)}")
-        if chart_sheets:
-            detected.append(f"charts on {', '.join(chart_sheets)}")
+        if package_has_images_or_shapes or image_sheets:
+            location = f" on {', '.join(image_sheets)}" if image_sheets else ""
+            detected.append(f"images/shapes{location}")
+        if package_has_charts or chart_sheets:
+            location = f" on {', '.join(chart_sheets)}" if chart_sheets else ""
+            detected.append(f"charts{location}")
         _log(
             "Template analysis WARNING: workbook contains "
             f"{' and '.join(detected)}. Images/shapes are not carried into "
