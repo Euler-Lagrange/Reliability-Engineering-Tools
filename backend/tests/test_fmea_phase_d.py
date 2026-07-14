@@ -180,6 +180,7 @@ def _write_wave4_preserve_target(
     log_messages: list[str] | None = None,
     source_path: Path | str | None = None,
     sheet_name: str = "FMEA",
+    workbook_configure=None,
 ):
     from fmea.fmea_template_analyzer import analyze_template
     from fmea.fmea_template_writer import write_template_preserved
@@ -189,6 +190,8 @@ def _write_wave4_preserve_target(
     )
     output_path = fixture.path.with_name(output_name)
     try:
+        if workbook_configure is not None:
+            workbook_configure(workbook)
         result = write_template_preserved(
             workbook,
             template_map,
@@ -351,6 +354,62 @@ def test_preserve_trim_equal_values_are_not_rewritten_or_audited(
     )
     with fixture.open(output_path) as workbook:
         assert "Merge Changes" not in workbook.sheetnames
+
+
+def test_preserve_numeric_equivalent_values_are_not_rewritten_or_audited(
+    preserve_target_factory,
+) -> None:
+    fixture = preserve_target_factory()
+    generated = _wave4_generated_group(
+        piece_part_values={"Failure Mode Ratio": "1"}
+    )
+
+    def retain_float_representation(workbook) -> None:
+        # openpyxl round-trips 1.0 as int(1), so restore the in-memory float
+        # representation needed to exercise the reviewer-authorized pair.
+        workbook["FMEA"]["G9"] = 1.0
+
+    output_path, _ = _write_wave4_preserve_target(
+        fixture,
+        generated,
+        output_name="numeric_equal.xlsx",
+        workbook_configure=retain_float_representation,
+    )
+
+    with fixture.open(output_path) as workbook:
+        ratio_cell = workbook["FMEA"]["G9"]
+        assert ratio_cell.value == 1.0
+        assert ratio_cell.data_type == "n"
+        assert "Merge Changes" not in workbook.sheetnames
+
+
+def test_preserve_genuinely_different_numbers_overwrite_and_are_audited(
+    preserve_target_factory,
+) -> None:
+    fixture = preserve_target_factory()
+    generated = _wave4_generated_group(
+        piece_part_values={"Failure Mode Ratio": 0.75}
+    )
+
+    output_path, _ = _write_wave4_preserve_target(
+        fixture,
+        generated,
+        output_name="numeric_changed.xlsx",
+    )
+
+    fixture.assert_cells(output_path, {("FMEA", "G9"): 0.75})
+    with fixture.open(output_path) as workbook:
+        changes = _worksheet_records(workbook["Merge Changes"], "Excel Row")
+        assert changes == [
+            {
+                "Excel Row": 9,
+                "RefDes": "R1",
+                "FMEA-ID": "PWR-002-R1-A",
+                "Column": "Failure Mode Ratio",
+                "Previous Value": 1,
+                "New Value": 0.75,
+            }
+        ]
 
 
 def test_preserve_blank_skip_counts_are_per_column_on_summary(

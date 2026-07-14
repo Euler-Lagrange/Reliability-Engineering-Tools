@@ -489,6 +489,17 @@ not copy its fixture shape.
 - [x] **Step 2:** Implement, green, commit:
   `FMEA preserve: Blanks never overwrite; audit real changes on Merge Changes sheet`
 
+**Checkpoint-2 reviewer addendum (2026-07-14):** Before the established
+`str().strip()` comparison, if both values coerce cleanly to `float`, exact numeric
+equality means unchanged. This preserves the user's numeric cell type for pairs such as
+`1.0` and `"1"`; there is no tolerance-based comparison.
+
+- [x] **Step 1:** Failing tests: a float/string-integer equivalent pair is not rewritten
+  or audited; genuinely different numbers still overwrite and produce a Merge Changes
+  row.
+- [x] **Step 2:** Implement with a guarded comparison helper, green, commit:
+  `FMEA preserve: Keep numerically equivalent user cells unchanged`
+
 ### Task 4.2: Flag-never-guess identity
 
 **Files:**

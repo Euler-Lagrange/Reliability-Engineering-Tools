@@ -178,12 +178,29 @@ def _is_blank_value(value: Any) -> bool:
         return False
 
 
+def _merge_values_equal(previous_value: Any, generated_value: Any) -> bool:
+    """Compare merge values without rewriting numerically equivalent cells.
+
+    Excel may load a numeric user cell as ``1.0`` while generated tabular data
+    supplies ``"1"``.  Numeric equality is checked first so that equivalent
+    values retain the user's original cell type; non-numeric values keep the
+    established stripped-string comparison.
+    """
+    try:
+        if float(previous_value) == float(generated_value):
+            return True
+    except (TypeError, ValueError, OverflowError):
+        pass
+    return str(previous_value).strip() == str(generated_value).strip()
+
+
 def _update_cell_preserving_format(ws: Worksheet, row: int, col: int,
                                     value: Any) -> CellUpdateResult:
     """Merge *value* into a cell without altering its existing formatting.
 
     Blank generated values never replace non-blank workbook content, and
-    values equal after a stripped string comparison are left untouched.
+    numerically equivalent values, then values equal after a stripped string
+    comparison, are left untouched.
     The caller uses the returned status for summary counts and the audit.
     """
     cell = ws.cell(row=row, column=col)
@@ -195,7 +212,7 @@ def _update_cell_preserving_format(ws: Worksheet, row: int, col: int,
 
     if (
         not _is_blank_value(previous_value)
-        and str(previous_value).strip() == str(value).strip()
+        and _merge_values_equal(previous_value, value)
     ):
         return CellUpdateResult("unchanged", previous_value, previous_value)
 
