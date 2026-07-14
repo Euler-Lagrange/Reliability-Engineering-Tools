@@ -710,6 +710,16 @@ count locations); sidecar self-test green; CHANGELOG complete; STOP for final re
   (both engines, predates Wave R).
 - (Wave R) PyMuPDF `set_info(content="")` silently no-ops — a trap for
   fixture builders trying to simulate empty-`/Contents` annotations.
+- (Wave 4, accepted residual) Output-name allocation is collision-proof within
+  one app instance, but two independent instances can race between free-name
+  selection and `os.replace` promotion when writing the same stem in the same
+  wall-clock second — last writer wins (atomic, no corruption). Cheap full
+  close would be exclusive-create reservation at finalize; deferred as
+  practically negligible for a single-user desktop tool.
+- (Wave 4, informational) The numeric-equivalence merge rule also treats
+  textually distinct but numerically equal generated strings ("1e3" vs "1000",
+  "007" vs 7) as unchanged — the user's existing cell wins with no audit row.
+  Always the preserve-user direction; expected under the DECIDED semantics.
 - Generation-guarded teardown prevents an old stdout reader from killing a new
   sidecar, but the old reader can still process buffered frames before EOF. Such
   a frame can refresh the shared heartbeat/fatal-detail state or be forwarded

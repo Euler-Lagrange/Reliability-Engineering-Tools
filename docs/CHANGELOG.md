@@ -81,8 +81,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **FMEA output filenames now say `Merged` instead of the internal `DarkStar`
   codename.** Standard outputs use `MergedFMEA_*`; preserve-formatting copies use
   `*_Merged_<timestamp>.xlsx`. If a derived name already exists, all tools select
-  ` (2)` through ` (99)` rather than replacing the existing output. Update any
-  scripts or shortcuts that match the old filename tokens.
+  ` (2)` through ` (99)` rather than replacing the existing output (within one
+  app instance; two instances writing the same name in the same second can
+  still race). Update any scripts or shortcuts that match the old filename
+  tokens.
 
 - **BOM Compare Custom Compare report sheets renamed** to the same human
   naming scheme the Group vs BOM report already used: `Only In <file>`,
