@@ -8,7 +8,7 @@
 | Backend security audit | `backend/tests/test_security_audit.py` | 27 | pytest |
 | Backend cancel bridge | `backend/tests/test_cancel_bridge.py` | 12 | pytest |
 | Backend output-directory helpers | `backend/tests/test_output_directory_helpers.py` | 10 | pytest |
-| Backend FMEA Phase D | `backend/tests/test_fmea_phase_d.py` | 99 | pytest |
+| Backend FMEA Phase D | `backend/tests/test_fmea_phase_d.py` | 104 | pytest |
 | Backend Failure-Rate logic | `backend/tests/test_failure_rate_logic.py` | 27 | pytest |
 | Backend RefDes extraction-engine | `backend/tests/test_extraction_engine.py` | 22 | pytest |
 | Backend BOM-compare logic | `backend/tests/test_bom_compare_logic.py` | 42 | pytest |
@@ -27,7 +27,7 @@
 | Backend RefDes runtime | `backend/tests/test_refdes_runtime.py` | 36 | pytest |
 | Backend RefDes validation notes | `backend/tests/test_validation_notes.py` | 12 | pytest |
 | Backend RefDes prefix config | `backend/tests/test_refdes_prefix_config.py` | 7 | pytest |
-| **Backend subtotal** | | **444** | |
+| **Backend subtotal** | | **449** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 5 | Vitest + RTL |
 | Frontend escape layers | `frontend/src/shared/hooks/useEscapeLayer.test.ts` | 4 | Vitest |
@@ -77,7 +77,7 @@
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
 | **Frontend subtotal** | | **343** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 19 | cargo test |
-| **Total** | | **806** | |
+| **Total** | | **811** | |
 
 ## Backend Tests
 
@@ -217,7 +217,7 @@ new FMEA tests must do the same or validation will reject the request.
 | Single-active-run guard | `test_sidecar_rejects_second_execute_while_run_is_active` |
 | Error recovery | `test_sidecar_execute_emits_backend_error_on_missing_columns`, `test_sidecar_remains_responsive_after_failed_run` |
 | Missing-file validation | `test_sidecar_validate_rejects_missing_required_files` |
-| FMEA Phase D (in-process, 99 tests) | BOM inheritance, variant handling, failure modes standard filtering, fill-gaps validation, usage fraction calculations, legacy enrichment rejection, functional-to-piecepart preservation, CCA prefix handling, output directory configuration (including unwritable-directory fallback), cancellation across standard/preserve write-verify-promote boundaries and inside the analyzer's pandas re-read, Part Usage (PU) column logic incl. Tier-1 compute-or-blank+flag (instance-count 1/N derivation, blank+PU_GUESSED flag, explicit-value preservation), column override modes, union merge strategies, FMC mapping, bijective FMEA-ID suffix, Batch-1 deep-dive fixes (preserve-mode diagnostic-sheet parity incl. the New-RefDes banner, underscore-column hygiene, `invalid_do_not_map` required-mapping gate + bom_only FMEA-ID exemption), Batch-2 diagnostics language (REASON_CODE_LABELS lockstep scan, PU_PARSE_REPLACED_WITH_COUNT split, Part Usage Diagnostics banner in both writers, Template_Merge_Summary flag legend, named unsupported-combo toast, files-first FMC ordering + structured cards), Batch-4 robustness (FileAccessError on failed post-write verification, negative Part Usage as data-quality warning not AssertionError, NaN-safe append cells), Wave 4 preserve-merge integrity (blank/formula preservation, audited real replacements, numeric-equivalent type preservation, ambiguity rejection, normalized group-ID collision blocking, ownership-marked diagnostics that preserve user sheet-name collisions, and selected-main-sheet protection) |
+| FMEA Phase D (in-process, 104 tests) | BOM inheritance, variant handling, failure modes standard filtering, fill-gaps validation, usage fraction calculations, legacy enrichment rejection, functional-to-piecepart preservation, CCA prefix handling, output directory configuration (including unwritable-directory fallback), cancellation across standard/preserve write-verify-promote boundaries and inside the analyzer's pandas re-read, Part Usage (PU) column logic incl. Tier-1 compute-or-blank+flag (instance-count 1/N derivation, blank+PU_GUESSED flag, explicit-value preservation), column override modes, union merge strategies, FMC mapping, bijective FMEA-ID suffix, Batch-1 deep-dive fixes (preserve-mode diagnostic-sheet parity incl. the New-RefDes banner, underscore-column hygiene, `invalid_do_not_map` required-mapping gate + bom_only FMEA-ID exemption), Batch-2 diagnostics language (REASON_CODE_LABELS lockstep scan, PU_PARSE_REPLACED_WITH_COUNT split, Part Usage Diagnostics banner in both writers, Template_Merge_Summary flag legend, named unsupported-combo toast, files-first FMC ordering + structured cards), Batch-4 robustness (FileAccessError on failed post-write verification, negative Part Usage as data-quality warning not AssertionError, NaN-safe append cells), Wave 4 preserve-merge integrity (blank/formula preservation, audited real replacements, numeric-equivalent type preservation, ambiguity rejection, normalized group-ID collision blocking, ownership-marked diagnostics that preserve user sheet-name collisions, selected-main-sheet protection, merged-range and row-dimension rebasing, one-per-run unsupported-feature issues, and image/chart preflight warnings) |
 | Inspection caps (subprocess, 4 tests) | `inspect_input` row cap at 20 000 rows, column cap at 100 columns, sparse-sheet row cap by physical rows scanned, header-search cap failure within 1 000 rows |
 | Failure-Rate logic (in-process, 24 tests) | Failure Rate (FR) linker math driven through `FMEALinkerLogic.process`: per-mode `Mode_FR = Part_FR * Usage * Corrected_Ratio` arithmetic, unit-mode scaling to per-hour space, RefDes lookup normalization, and Tier-1 genuine-gap Part Usage handling (blank usage with real FR → NaN Mode_FR, "=1/N" formula-cell-as-NaN, unmatched-RefDes zero preserved, circuit-block roll-up skips blank children) — asserts exact computed numbers |
 | RefDes extraction-engine (in-process, 18 tests) | `_disambiguate_pin_mapping` pin-label collision resolution across the three-tier priority (body center inside group rect → body overlaps rect → nearest body by distance); bounded word extraction across both group-fallback probes; post-join zombie counting and survivor retention for safe document ownership; the Tier-2 #20 pinlist-failure run-log surfacing; and the geometry RefDes-check prefix-allowlist alignment (#6), the `pin_assignment_threshold` config key, and cap-hit run-log warnings |

@@ -20,9 +20,10 @@ from copy import copy
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import pandas as pd
+from openpyxl.worksheet.cell_range import CellRange
 from openpyxl.worksheet.worksheet import Worksheet
 
 from common.cancellation import CancellationError, CancellationToken
@@ -74,6 +75,13 @@ _KNOWN_DIAGNOSTIC_SHEET_NAMES = (
     *SUMMARY_SHEET_BANNERS.keys(),
     *_TEMPLATE_DIAGNOSTIC_SHEET_NAMES,
 )
+_NOT_REBASED_FEATURE_ORDER = (
+    "data validations",
+    "conditional formatting",
+    "tables",
+    "formulas",
+    "hyperlinks",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +119,7 @@ class GroupMergeResult:
     merge_changes: List[MergeChange] = field(default_factory=list)
     issue_rows: List[Dict[str, Any]] = field(default_factory=list)
     issues: List[str] = field(default_factory=list)
+    not_rebased_features: Set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -128,6 +137,7 @@ class TemplateWriteResult:
     extra_cols_appended: List[str] = field(default_factory=list)
     output_path: str = ""
     issues: List[str] = field(default_factory=list)
+    not_rebased_features: Set[str] = field(default_factory=set)
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +174,108 @@ def _apply_cell_style(cell, style: CellStyle) -> None:
     cell.alignment = copy(style.alignment)
     cell.border = copy(style.border)
     cell.number_format = style.number_format
+
+
+def _range_reaches_row(reference: Any, row: int) -> bool:
+    """Return whether a cell-range reference contains any row at/after *row*."""
+    def reaches(cell_range: Any) -> bool:
+        max_row = getattr(cell_range, "max_row", None)
+        return max_row is None or max_row >= row
+
+    ranges = getattr(reference, "ranges", None)
+    if ranges is not None:
+        return any(reaches(cell_range) for cell_range in ranges)
+    try:
+        return reaches(CellRange(str(reference)))
+    except (TypeError, ValueError):
+        return False
+
+
+def _detect_not_rebased_features(ws: Worksheet, insert_at: int) -> Set[str]:
+    """Identify worksheet features openpyxl will not move with inserted rows."""
+    features: Set[str] = set()
+
+    validations = getattr(ws.data_validations, "dataValidation", ())
+    if any(
+        _range_reaches_row(validation.sqref, insert_at)
+        for validation in validations
+    ):
+        features.add("data validations")
+
+    if any(
+        _range_reaches_row(rule.sqref, insert_at)
+        for rule in ws.conditional_formatting
+    ):
+        features.add("conditional formatting")
+
+    if any(
+        _range_reaches_row(table.ref, insert_at)
+        for table in ws.tables.values()
+    ):
+        features.add("tables")
+
+    materialized_cells = tuple(ws._cells.values())
+    if any(
+        cell.row >= insert_at and cell.data_type == "f"
+        for cell in materialized_cells
+    ):
+        features.add("formulas")
+    if any(
+        cell.row >= insert_at and cell.hyperlink is not None
+        for cell in materialized_cells
+    ):
+        features.add("hyperlinks")
+
+    return features
+
+
+def _prepare_merged_ranges_for_insert(
+    ws: Worksheet,
+    insert_at: int,
+    amount: int,
+) -> List[str]:
+    """Unmerge affected ranges and return their post-insertion coordinates."""
+    rebased_coordinates: List[str] = []
+    affected: List[Tuple[str, str]] = []
+
+    for merged_range in tuple(ws.merged_cells.ranges):
+        if merged_range.max_row < insert_at:
+            continue
+
+        rebased = CellRange(str(merged_range))
+        if rebased.min_row >= insert_at:
+            rebased.shift(row_shift=amount)
+        else:
+            rebased.max_row += amount
+        affected.append((str(merged_range), str(rebased)))
+
+    for original, rebased in affected:
+        ws.unmerge_cells(original)
+        rebased_coordinates.append(rebased)
+
+    return rebased_coordinates
+
+
+def _move_row_dimensions_for_insert(
+    ws: Worksheet,
+    insert_at: int,
+    amount: int,
+) -> None:
+    """Move explicit row metadata with rows shifted by an insertion."""
+    source_rows = sorted(
+        (
+            row_index
+            for row_index in tuple(ws.row_dimensions.keys())
+            if row_index >= insert_at
+        ),
+        reverse=True,
+    )
+    for source_row in source_rows:
+        dimension = ws.row_dimensions[source_row]
+        del ws.row_dimensions[source_row]
+        target_row = source_row + amount
+        dimension.index = target_row
+        ws.row_dimensions[target_row] = dimension
 
 
 def _is_blank_value(value: Any) -> bool:
@@ -541,8 +653,16 @@ def _merge_group_piece_parts(
         else:
             insert_at = group.cb_end_row + 1
 
+        result.not_rebased_features.update(
+            _detect_not_rebased_features(ws, insert_at)
+        )
+        rebased_merges = _prepare_merged_ranges_for_insert(
+            ws, insert_at, len(new_rows)
+        )
         ws.insert_rows(insert_at, amount=len(new_rows))
-        # openpyxl 3.1+ auto-adjusts merged-cell references on insert
+        _move_row_dimensions_for_insert(ws, insert_at, len(new_rows))
+        for merged_coordinate in rebased_merges:
+            ws.merge_cells(merged_coordinate)
 
         for offset, row_dict in enumerate(new_rows):
             target_row = insert_at + offset
@@ -733,6 +853,9 @@ def write_template_preserved(
             result.merge_changes.extend(merge_result.merge_changes)
             result.issue_rows.extend(merge_result.issue_rows)
             result.issues.extend(merge_result.issues)
+            result.not_rebased_features.update(
+                merge_result.not_rebased_features
+            )
         else:
             result.groups_unmatched += 1
             log(f"Unmatched group kept as-is: {group.group_id}")
@@ -812,6 +935,28 @@ def write_template_preserved(
 
             append_row += len(pp_rows) + 1  # +1 for spacing
             result.groups_new += 1
+
+    if result.not_rebased_features:
+        ordered_features = [
+            feature
+            for feature in _NOT_REBASED_FEATURE_ORDER
+            if feature in result.not_rebased_features
+        ]
+        feature_list = ", ".join(ordered_features)
+        details = (
+            "Rows were inserted without rebasing these workbook features: "
+            f"{feature_list}. Review them in the merged output."
+        )
+        result.issue_rows.append({
+            "ReasonCode": "NOT_REBASED_FEATURES",
+            "Source": "Template",
+            "Excel Row": None,
+            "Group ID": "",
+            "RefDes": "",
+            "Failure Mode": "",
+            "Details": details,
+        })
+        log(f"Template merge WARNING: NOT_REBASED_FEATURES: {details}")
 
     # ------------------------------------------------------------------
     # 7. Write summary sheets (matching existing write_excel_report pattern)

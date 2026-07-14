@@ -199,6 +199,10 @@ const SECTIONS: GuideSection[] = [
             right of your sheet — it never reorders your existing columns.
           </li>
           <li>
+            Cell-level rich-text runs are flattened to plain cell text when the
+            copied workbook is loaded and saved.
+          </li>
+          <li>
             Template analysis caps the target workbook at 50&nbsp;MB to protect
             memory.
           </li>

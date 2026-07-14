@@ -171,6 +171,22 @@ def _wave4_generated_group(
     )
 
 
+def _wave4_generated_group_with_new_rows(count: int = 1) -> pd.DataFrame:
+    """Return the PWR fixture group plus *count* rows that require insertion."""
+    generated = _wave4_generated_group()
+    new_rows = [
+        {
+            "FMEA-ID": f"PWR-002-C{index}-A",
+            "Failure Mode Causes": f"C{index}",
+            "Component Part Number": f"PN-C{index}",
+            "Failure Mode": f"SHORT {index}",
+            "_row_type": "piece_part",
+        }
+        for index in range(1, count + 1)
+    ]
+    return pd.concat([generated, pd.DataFrame(new_rows)], ignore_index=True)
+
+
 def _write_wave4_preserve_target(
     fixture,
     generated_df: pd.DataFrame,
@@ -186,7 +202,9 @@ def _write_wave4_preserve_target(
     from fmea.fmea_template_writer import write_template_preserved
 
     template_map, workbook = analyze_template(
-        str(source_path or fixture.path), sheet_name=sheet_name
+        str(source_path or fixture.path),
+        sheet_name=sheet_name,
+        log_func=(log_messages.append if log_messages is not None else None),
     )
     output_path = fixture.path.with_name(output_name)
     try:
@@ -1040,6 +1058,189 @@ def test_preserve_second_run_removes_stale_owned_conditional_sheets(
             ("Validation_Warnings", "A2"): "Waiver 17 remains open",
         },
     )
+
+
+def test_preserve_insert_rebases_merge_below_by_full_amount(
+    preserve_target_factory,
+) -> None:
+    fixture = preserve_target_factory()
+
+    output_path, _ = _write_wave4_preserve_target(
+        fixture,
+        _wave4_generated_group_with_new_rows(count=2),
+        output_name="merge_below_rebased.xlsx",
+    )
+
+    with fixture.open(output_path) as workbook:
+        fmea = workbook["FMEA"]
+        merged_coordinates = {
+            str(cell_range) for cell_range in fmea.merged_cells.ranges
+        }
+        assert "H12:J12" not in merged_coordinates
+        assert "H14:J14" in merged_coordinates
+        assert fmea["H14"].value == (
+            "User approval block below the insertion region"
+        )
+
+
+def test_preserve_insert_extends_merge_straddling_insertion(
+    preserve_target_factory,
+) -> None:
+    def configure(workbook, _fixture) -> None:
+        workbook["FMEA"].merge_cells("L9:L10")
+
+    fixture = preserve_target_factory(configure=configure)
+
+    output_path, _ = _write_wave4_preserve_target(
+        fixture,
+        _wave4_generated_group_with_new_rows(),
+        output_name="merge_straddling_rebased.xlsx",
+    )
+
+    with fixture.open(output_path) as workbook:
+        fmea = workbook["FMEA"]
+        merged_coordinates = {
+            str(cell_range) for cell_range in fmea.merged_cells.ranges
+        }
+        assert "L9:L10" not in merged_coordinates
+        assert "L9:L11" in merged_coordinates
+        assert fmea["L9"].value == "Calibration-critical note"
+
+
+def test_preserve_insert_moves_row_dimensions_without_collisions(
+    preserve_target_factory,
+) -> None:
+    def configure(workbook, _fixture) -> None:
+        fmea = workbook["FMEA"]
+        fmea.row_dimensions[12].hidden = True
+        fmea.row_dimensions[12].outlineLevel = 2
+        fmea.row_dimensions[13].height = 22.0
+        fmea.row_dimensions[13].hidden = False
+
+    fixture = preserve_target_factory(configure=configure)
+
+    output_path, _ = _write_wave4_preserve_target(
+        fixture,
+        _wave4_generated_group_with_new_rows(count=2),
+        output_name="row_dimensions_rebased.xlsx",
+    )
+
+    with fixture.open(output_path) as workbook:
+        dimensions = workbook["FMEA"].row_dimensions
+        assert 12 not in dimensions
+        assert 13 not in dimensions
+        assert dimensions[14].height == 31.5
+        assert dimensions[14].hidden is True
+        assert dimensions[14].outlineLevel == 2
+        assert dimensions[15].height == 22.0
+        assert dimensions[15].hidden is False
+
+
+def test_preserve_insert_warns_once_for_all_not_rebased_features(
+    preserve_target_factory,
+) -> None:
+    from openpyxl.formatting.rule import CellIsRule
+    from openpyxl.worksheet.datavalidation import DataValidation
+    from openpyxl.worksheet.table import Table
+
+    def configure(workbook, _fixture) -> None:
+        fmea = workbook["FMEA"]
+
+        validation = DataValidation(
+            type="whole", operator="greaterThan", formula1="0"
+        )
+        fmea.add_data_validation(validation)
+        validation.add("M12:M14")
+
+        fmea.conditional_formatting.add(
+            "N12:N14",
+            CellIsRule(operator="greaterThan", formula=["0"]),
+        )
+
+        fmea["O11"] = "User table key"
+        fmea["P11"] = "User table value"
+        fmea["O12"] = "approval"
+        fmea["P12"] = "open"
+        fmea.add_table(Table(displayName="UserApprovalTable", ref="O11:P12"))
+
+        fmea["Q12"] = "=1+1"
+        fmea["R12"].value = "User link"
+        fmea["R12"].hyperlink = "https://example.invalid/user-link"
+
+    fixture = preserve_target_factory(configure=configure)
+    logs: list[str] = []
+
+    output_path, result = _write_wave4_preserve_target(
+        fixture,
+        _wave4_generated_group_with_new_rows(),
+        output_name="not_rebased_features.xlsx",
+        log_messages=logs,
+    )
+
+    feature_names = (
+        "data validations",
+        "conditional formatting",
+        "tables",
+        "formulas",
+        "hyperlinks",
+    )
+    warnings = [
+        message
+        for message in logs
+        if "NOT_REBASED_FEATURES" in message
+    ]
+    assert len(warnings) == 1
+    assert all(name in warnings[0] for name in feature_names)
+    issue_rows = [
+        issue
+        for issue in result.issue_rows
+        if issue["ReasonCode"] == "NOT_REBASED_FEATURES"
+    ]
+    assert len(issue_rows) == 1
+    assert all(name in issue_rows[0]["Details"] for name in feature_names)
+    with fixture.open(output_path) as workbook:
+        exported = _worksheet_records(
+            workbook["Template_Merge_Issues"], "ReasonCode"
+        )
+        exported_issues = [
+            row
+            for row in exported
+            if row["ReasonCode"] == "NOT_REBASED_FEATURES"
+        ]
+        assert len(exported_issues) == 1
+
+
+def test_analyzer_warns_once_for_images_and_charts_across_workbook(
+    monkeypatch,
+    preserve_target_factory,
+) -> None:
+    from fmea import fmea_template_analyzer as analyzer
+
+    fixture = preserve_target_factory()
+    real_load_workbook = analyzer.load_workbook
+
+    def load_with_rich_objects(*args, **kwargs):
+        workbook = real_load_workbook(*args, **kwargs)
+        workbook["Calculations"]._images.append(object())
+        workbook["FMEA"]._charts.append(object())
+        return workbook
+
+    monkeypatch.setattr(analyzer, "load_workbook", load_with_rich_objects)
+    logs: list[str] = []
+
+    _template_map, workbook = analyzer.analyze_template(
+        str(fixture.path), sheet_name="FMEA", log_func=logs.append
+    )
+    try:
+        warnings = [
+            message
+            for message in logs
+            if "images/shapes" in message.lower()
+        ]
+        assert len(warnings) == 1
+        assert "charts" in warnings[0].lower()
+    finally:
+        workbook.close()
 
 
 # ----- D2/D5/D10: Inheritance + BOM Additions sheet ---------------------------

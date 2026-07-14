@@ -141,6 +141,8 @@ now emit the same set (preserve-formatting no longer drops them).
   updated / inserted / flagged rows, plus a two-row **legend** explaining the
   two diagnostic flags below.
 - `Template_Merge_Issues` — any problems hit during the merge (only if present).
+- Cell-level rich-text runs are flattened to plain cell text when the copied
+  workbook is loaded and saved.
 - In the merged sheet, the Diagnostic column may read:
   - **`NOT IN BOM - Review`** — this template row has no matching generated row;
     its RefDes is absent from the current BOM. Verify the part, then update the

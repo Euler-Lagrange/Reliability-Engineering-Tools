@@ -576,6 +576,28 @@ def analyze_template(
     if cancel_token:
         cancel_token.check()
 
+    image_sheets = [
+        sheet.title
+        for sheet in wb.worksheets
+        if getattr(sheet, "_images", ())
+    ]
+    chart_sheets = [
+        sheet.title
+        for sheet in wb.worksheets
+        if getattr(sheet, "_charts", ())
+    ]
+    if image_sheets or chart_sheets:
+        detected = []
+        if image_sheets:
+            detected.append(f"images/shapes on {', '.join(image_sheets)}")
+        if chart_sheets:
+            detected.append(f"charts on {', '.join(chart_sheets)}")
+        _log(
+            "Template analysis WARNING: workbook contains "
+            f"{' and '.join(detected)}. Images/shapes are not carried into "
+            "the merged output; review all drawing objects in the output."
+        )
+
     # Step 2: Detect FMEA sheet
     fmea_sheet_name = _detect_fmea_sheet(wb, preferred_name=sheet_name)
     ws = wb[fmea_sheet_name]

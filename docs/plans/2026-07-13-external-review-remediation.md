@@ -582,10 +582,10 @@ After each `ws.insert_rows(insert_at, amount)`:
    into the output (Pillow deliberately absent — user decision). Add one USER_GUIDE
    sentence for rich text being flattened (no runtime detection — documented limitation).
 
-- [ ] **Step 1:** Failing tests: (a) merged range below an insertion lands shifted by
+- [x] **Step 1:** Failing tests: (a) merged range below an insertion lands shifted by
   `amount` in the saved output; (b) straddling merge extends; (c) custom row height
   moves with its row; (d) validation-below-insertion produces the warning + issues row.
-- [ ] **Step 2:** Implement, green, commit:
+- [x] **Step 2:** Implement, green, commit:
   `FMEA preserve: Rebase merges/row-dims after insertion; warn on what can't move`
 
 ### Task 4.5: Column-mapping injectivity + fail-closed analysis

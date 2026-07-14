@@ -34,6 +34,7 @@ REASON_CODE_LABELS = {
     "SCOPE_UNCLASSIFIED_ONLY": "Scope Mismatch: Unclassified Row Type Only",
     "AMBIGUOUS_IDENTITY": "Ambiguous Identity: Duplicate RefDes and Failure Mode",
     "SHEET_NAME_CONFLICT": "Sheet Name Conflict: User Sheet Preserved",
+    "NOT_REBASED_FEATURES": "Workbook Features Not Rebased After Row Insertion",
 }
 
 
