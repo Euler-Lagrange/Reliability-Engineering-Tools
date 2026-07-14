@@ -60,12 +60,34 @@ _DIAGNOSTIC_COL = "Diagnostic"   # Generator diagnostic column name
 # ---------------------------------------------------------------------------
 
 @dataclass
+class MergeChange:
+    """One non-blank generated value that replaced user workbook content."""
+    excel_row: int
+    refdes: str
+    fmea_id: str
+    column: str
+    previous_value: Any
+    new_value: Any
+
+
+@dataclass(frozen=True)
+class CellUpdateResult:
+    """Outcome of applying one generated value to an existing cell."""
+    status: str
+    previous_value: Any
+    new_value: Any
+
+
+@dataclass
 class GroupMergeResult:
     """Result of merging piece-parts for one function group."""
     group_id: str
     pp_updated: int = 0
     pp_inserted: int = 0
     pp_flagged: int = 0
+    insert_at: int = 0
+    blanks_skipped: Dict[str, int] = field(default_factory=dict)
+    merge_changes: List[MergeChange] = field(default_factory=list)
     issues: List[str] = field(default_factory=list)
 
 
@@ -78,6 +100,8 @@ class TemplateWriteResult:
     pp_rows_updated: int = 0
     pp_rows_inserted: int = 0
     pp_rows_flagged: int = 0
+    blanks_skipped: Dict[str, int] = field(default_factory=dict)
+    merge_changes: List[MergeChange] = field(default_factory=list)
     extra_cols_appended: List[str] = field(default_factory=list)
     output_path: str = ""
     issues: List[str] = field(default_factory=list)
@@ -119,22 +143,45 @@ def _apply_cell_style(cell, style: CellStyle) -> None:
     cell.number_format = style.number_format
 
 
+def _is_blank_value(value: Any) -> bool:
+    """Return whether *value* is one of the decided merge blank values."""
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value == ""
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
+
+
 def _update_cell_preserving_format(ws: Worksheet, row: int, col: int,
-                                    value: Any) -> None:
-    """Write *value* to a cell WITHOUT altering its existing formatting."""
+                                    value: Any) -> CellUpdateResult:
+    """Merge *value* into a cell without altering its existing formatting.
+
+    Blank generated values never replace non-blank workbook content, and
+    values equal after a stripped string comparison are left untouched.
+    The caller uses the returned status for summary counts and the audit.
+    """
     cell = ws.cell(row=row, column=col)
-    # Guard NaN → None so Excel gets a proper empty cell, not numeric NaN
-    if value is not None and not isinstance(value, str):
-        try:
-            if value != value:  # NaN check (NaN != NaN is True)
-                cell.value = None
-                return
-        except (TypeError, ValueError):
-            pass
+    previous_value = cell.value
+
+    if _is_blank_value(value):
+        status = "blank_skipped" if not _is_blank_value(previous_value) else "unchanged"
+        return CellUpdateResult(status, previous_value, previous_value)
+
+    if (
+        not _is_blank_value(previous_value)
+        and str(previous_value).strip() == str(value).strip()
+    ):
+        return CellUpdateResult("unchanged", previous_value, previous_value)
+
     if isinstance(value, str):
         cell.value = sanitize_for_excel(value)
     else:
         cell.value = value
+    status = "filled" if _is_blank_value(previous_value) else "changed"
+    return CellUpdateResult(status, previous_value, cell.value)
 
 
 def _build_generated_index(
@@ -323,13 +370,38 @@ def _merge_group_piece_parts(
     # ------------------------------------------------------------------
     # 3. UPDATE MATCHED — no row position changes
     # ------------------------------------------------------------------
+    refdes_col = _resolve_col_index(
+        "Failure Mode Causes", column_map, extra_col_indices
+    )
+    fmea_id_col = _resolve_col_index("FMEA-ID", column_map, extra_col_indices)
     for excel_row, gen_dict in matched:
+        row_refdes = (
+            ws.cell(row=excel_row, column=refdes_col).value if refdes_col else ""
+        )
+        row_fmea_id = (
+            ws.cell(row=excel_row, column=fmea_id_col).value if fmea_id_col else ""
+        )
         for col_name, value in gen_dict.items():
             if col_name == ROW_TYPE_COL:
                 continue
             col_idx = _resolve_col_index(col_name, column_map, extra_col_indices)
             if col_idx:
-                _update_cell_preserving_format(ws, excel_row, col_idx, value)
+                update = _update_cell_preserving_format(
+                    ws, excel_row, col_idx, value
+                )
+                if update.status == "blank_skipped":
+                    result.blanks_skipped[col_name] = (
+                        result.blanks_skipped.get(col_name, 0) + 1
+                    )
+                elif update.status == "changed":
+                    result.merge_changes.append(MergeChange(
+                        excel_row=excel_row,
+                        refdes=str(row_refdes or ""),
+                        fmea_id=str(row_fmea_id or ""),
+                        column=col_name,
+                        previous_value=update.previous_value,
+                        new_value=update.new_value,
+                    ))
     result.pp_updated = len(matched)
 
     # ------------------------------------------------------------------
@@ -379,6 +451,7 @@ def _merge_group_piece_parts(
                 )
 
         result.pp_inserted = len(new_rows)
+        result.insert_at = insert_at
 
     if missing:
         result.issues.append(
@@ -517,6 +590,15 @@ def write_template_preserved(
             result.pp_rows_updated += merge_result.pp_updated
             result.pp_rows_inserted += merge_result.pp_inserted
             result.pp_rows_flagged += merge_result.pp_flagged
+            if merge_result.insert_at:
+                for change in result.merge_changes:
+                    if change.excel_row >= merge_result.insert_at:
+                        change.excel_row += merge_result.pp_inserted
+            for column, count in merge_result.blanks_skipped.items():
+                result.blanks_skipped[column] = (
+                    result.blanks_skipped.get(column, 0) + count
+                )
+            result.merge_changes.extend(merge_result.merge_changes)
             result.issues.extend(merge_result.issues)
         else:
             result.groups_unmatched += 1
@@ -661,6 +743,12 @@ def _write_summary_sheets(wb, processor, result: TemplateWriteResult,
         ("Piece-part rows inserted", result.pp_rows_inserted),
         ("Piece-part rows flagged 'NOT IN BOM - Review'", result.pp_rows_flagged),
         ("Extra columns appended", ", ".join(result.extra_cols_appended) or "None"),
+    ]
+    summary_data.extend(
+        (f"Blank generated values skipped: {column}", count)
+        for column, count in sorted(result.blanks_skipped.items())
+    )
+    summary_data.extend([
         (
             "Diagnostic flag 'NOT IN BOM - Review'",
             "This template row has no matching generated piece-part row — its "
@@ -672,7 +760,7 @@ def _write_summary_sheets(wb, processor, result: TemplateWriteResult,
             "This row was inserted by the generator for a RefDes present in "
             "the BOM/grouping data but missing from the template workbook.",
         ),
-    ]
+    ])
 
     sheet_name = "Template_Merge_Summary"
     # Ensure unique sheet name
@@ -686,6 +774,46 @@ def _write_summary_sheets(wb, processor, result: TemplateWriteResult,
     for row_idx, (metric, value) in enumerate(summary_data, start=2):
         ws_summary.cell(row=row_idx, column=1, value=metric)
         ws_summary.cell(row=row_idx, column=2, value=value)
+
+    if result.merge_changes:
+        changes_name = "Merge Changes"
+        if changes_name in wb.sheetnames:
+            del wb[changes_name]
+        ws_changes = wb.create_sheet(changes_name)
+        banner = (
+            "Generated by Reliability Tools - non-blank generated values "
+            "that replaced existing workbook values."
+        )
+        ws_changes.cell(row=1, column=1, value=banner).font = Font(bold=True)
+        ws_changes.merge_cells(start_row=1, start_column=1, end_row=1, end_column=6)
+        headers = [
+            "Excel Row",
+            "RefDes",
+            "FMEA-ID",
+            "Column",
+            "Previous Value",
+            "New Value",
+        ]
+        for col_idx, header in enumerate(headers, start=1):
+            ws_changes.cell(row=2, column=col_idx, value=header).font = Font(bold=True)
+        for row_idx, change in enumerate(
+            sorted(result.merge_changes, key=lambda item: (item.excel_row, item.column)),
+            start=3,
+        ):
+            values = [
+                change.excel_row,
+                change.refdes,
+                change.fmea_id,
+                change.column,
+                change.previous_value,
+                change.new_value,
+            ]
+            for col_idx, value in enumerate(values, start=1):
+                cell = ws_changes.cell(row=row_idx, column=col_idx)
+                _write_plain_cell(cell, value)
+                if isinstance(cell.value, str) and cell.value.startswith("="):
+                    cell.data_type = "s"
+        ws_changes.freeze_panes = "A3"
 
     # Issues sheet (if any)
     if result.issues:

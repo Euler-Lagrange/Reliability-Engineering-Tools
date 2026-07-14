@@ -98,6 +98,297 @@ def _write_fixture(
     return paths
 
 
+def test_wave4_preserve_target_fixture_contract(preserve_target_factory) -> None:
+    """The shared Wave-4 target carries every high-risk workbook feature."""
+    fixture = preserve_target_factory()
+
+    with fixture.open() as workbook:
+        fmea = workbook["FMEA"]
+        duplicate_rows = (fixture.rows["duplicate_a"], fixture.rows["duplicate_b"])
+        duplicate_keys = [
+            (
+                fmea.cell(row=row, column=fixture.columns["Failure Mode Causes"]).value,
+                fmea.cell(row=row, column=fixture.columns["Failure Mode"]).value,
+            )
+            for row in duplicate_rows
+        ]
+        part_numbers = [
+            fmea.cell(row=row, column=fixture.columns["Component Part Number"]).value
+            for row in duplicate_rows
+        ]
+
+        assert fixture.header_row == 3
+        assert duplicate_keys == [("U1", "OPEN"), ("U1", "OPEN")]
+        assert part_numbers == ["PN-U1-A", "PN-U1-B"]
+        assert fixture.merged_range in fmea.merged_cells
+        assert fmea.row_dimensions[fixture.rows["merged_note"]].height == 31.5
+        assert workbook["Validation_Warnings"]["A1"].value == (
+            "User-authored validation register"
+        )
+        assert workbook["Calculations"]["B2"].value == "=A2*2"
+
+    fixture.assert_cells(
+        fixture.path,
+        {
+            ("FMEA", "H9"): "Hand-authored local effect R1",
+            ("FMEA", "I9"): '=H9&" -> shutdown"',
+            ("FMEA", "J9"): "Hand-authored end effect R1",
+            ("FMEA", "L9"): "Calibration-critical note",
+        },
+    )
+
+    from fmea.fmea_template_analyzer import analyze_template
+
+    template_map, workbook = analyze_template(str(fixture.path), sheet_name="FMEA")
+    try:
+        assert template_map.group_by_id["PWR-002"].pp_end_row == 9
+        assert fixture.rows["merged_note"] > (
+            template_map.group_by_id["PWR-002"].pp_end_row + 1
+        )
+    finally:
+        workbook.close()
+
+
+def _wave4_generated_group(
+    *,
+    group_id: str = "PWR-002-A",
+    refdes: str = "R1",
+    failure_mode: str = "OPEN",
+    piece_part_values: dict | None = None,
+) -> pd.DataFrame:
+    piece_part = {
+        "FMEA-ID": "PWR-002-R1-A",
+        "Failure Mode Causes": refdes,
+        "Failure Mode": failure_mode,
+        "_row_type": "piece_part",
+    }
+    piece_part.update(piece_part_values or {})
+    return pd.DataFrame(
+        [
+            {"FMEA-ID": group_id, "_row_type": "circuit_block"},
+            piece_part,
+        ]
+    )
+
+
+def _write_wave4_preserve_target(
+    fixture,
+    generated_df: pd.DataFrame,
+    *,
+    output_name: str,
+    processor: FMEAProcessor | None = None,
+    log_messages: list[str] | None = None,
+):
+    from fmea.fmea_template_analyzer import analyze_template
+    from fmea.fmea_template_writer import write_template_preserved
+
+    template_map, workbook = analyze_template(str(fixture.path), sheet_name="FMEA")
+    output_path = fixture.path.with_name(output_name)
+    try:
+        result = write_template_preserved(
+            workbook,
+            template_map,
+            generated_df,
+            processor or FMEAProcessor(),
+            str(output_path),
+            log_func=(log_messages.append if log_messages is not None else None),
+        )
+    finally:
+        workbook.close()
+    return output_path, result
+
+
+def test_preserve_blank_generated_effect_never_overwrites_user_text(
+    preserve_target_factory,
+) -> None:
+    fixture = preserve_target_factory()
+    generated = _wave4_generated_group(piece_part_values={"End Effect": ""})
+
+    output_path, _ = _write_wave4_preserve_target(
+        fixture,
+        generated,
+        output_name="blank_effect.xlsx",
+    )
+
+    fixture.assert_cells(
+        output_path,
+        {("FMEA", "J9"): "Hand-authored end effect R1"},
+    )
+
+
+def test_preserve_blank_generated_effect_never_overwrites_user_formula(
+    preserve_target_factory,
+) -> None:
+    fixture = preserve_target_factory()
+    generated = _wave4_generated_group(
+        piece_part_values={"Next Higher Effect": None}
+    )
+
+    output_path, _ = _write_wave4_preserve_target(
+        fixture,
+        generated,
+        output_name="blank_formula.xlsx",
+    )
+
+    fixture.assert_cells(
+        output_path,
+        {("FMEA", "I9"): '=H9&" -> shutdown"'},
+    )
+
+
+def test_preserve_real_conflict_overwrites_and_records_merge_change(
+    preserve_target_factory,
+) -> None:
+    fixture = preserve_target_factory()
+    generated = _wave4_generated_group(
+        piece_part_values={"Local Effect": "Generated local effect R1"}
+    )
+
+    output_path, _ = _write_wave4_preserve_target(
+        fixture,
+        generated,
+        output_name="real_conflict.xlsx",
+    )
+
+    fixture.assert_cells(
+        output_path,
+        {("FMEA", "H9"): "Generated local effect R1"},
+    )
+    with fixture.open(output_path) as workbook:
+        changes = workbook["Merge Changes"]
+        assert str(changes["A1"].value).startswith("Generated by Reliability Tools")
+        assert [cell.value for cell in changes[2]] == [
+            "Excel Row",
+            "RefDes",
+            "FMEA-ID",
+            "Column",
+            "Previous Value",
+            "New Value",
+        ]
+        assert [cell.value for cell in changes[3]] == [
+            9,
+            "R1",
+            "PWR-002-R1-A",
+            "Local Effect",
+            "Hand-authored local effect R1",
+            "Generated local effect R1",
+        ]
+
+
+def test_preserve_formula_conflict_is_literal_in_merge_changes(
+    preserve_target_factory,
+) -> None:
+    fixture = preserve_target_factory()
+    generated = _wave4_generated_group(
+        piece_part_values={"Next Higher Effect": "Generated escalation effect"}
+    )
+
+    output_path, _ = _write_wave4_preserve_target(
+        fixture,
+        generated,
+        output_name="formula_conflict.xlsx",
+    )
+
+    with fixture.open(output_path) as workbook:
+        changes = workbook["Merge Changes"]
+        assert changes["E3"].value == '=H9&" -> shutdown"'
+        assert changes["E3"].data_type == "s"
+        assert changes["F3"].value == "Generated escalation effect"
+
+
+def test_preserve_trim_equal_values_are_not_rewritten_or_audited(
+    preserve_target_factory,
+) -> None:
+    fixture = preserve_target_factory()
+    generated = _wave4_generated_group(
+        piece_part_values={"End Effect": "  Hand-authored end effect R1  "}
+    )
+
+    output_path, _ = _write_wave4_preserve_target(
+        fixture,
+        generated,
+        output_name="trim_equal.xlsx",
+    )
+
+    fixture.assert_cells(
+        output_path,
+        {("FMEA", "J9"): "Hand-authored end effect R1"},
+    )
+    with fixture.open(output_path) as workbook:
+        assert "Merge Changes" not in workbook.sheetnames
+
+
+def test_preserve_blank_skip_counts_are_per_column_on_summary(
+    preserve_target_factory,
+) -> None:
+    fixture = preserve_target_factory()
+    generated = _wave4_generated_group(
+        piece_part_values={
+            "Local Effect": float("nan"),
+            "Next Higher Effect": None,
+            "End Effect": "",
+        }
+    )
+
+    output_path, _ = _write_wave4_preserve_target(
+        fixture,
+        generated,
+        output_name="blank_counts.xlsx",
+    )
+
+    with fixture.open(output_path) as workbook:
+        summary = workbook["Template_Merge_Summary"]
+        metrics = {
+            summary.cell(row=row, column=1).value: summary.cell(row=row, column=2).value
+            for row in range(1, summary.max_row + 1)
+        }
+        assert metrics["Blank generated values skipped: Local Effect"] == 1
+        assert metrics["Blank generated values skipped: Next Higher Effect"] == 1
+        assert metrics["Blank generated values skipped: End Effect"] == 1
+        assert "Merge Changes" not in workbook.sheetnames
+
+
+def test_preserve_merge_change_row_rebases_after_later_upper_insertion(
+    preserve_target_factory,
+) -> None:
+    fixture = preserve_target_factory()
+    generated = pd.concat(
+        [
+            _wave4_generated_group(
+                group_id="CPU-001-A",
+                refdes="U2",
+                failure_mode="SHORT",
+                piece_part_values={
+                    "FMEA-ID": "CPU-001-U2-A",
+                    "Component Part Number": "PN-U2",
+                },
+            ),
+            _wave4_generated_group(
+                piece_part_values={"Local Effect": "Generated local effect R1"}
+            ),
+        ],
+        ignore_index=True,
+    )
+
+    output_path, _ = _write_wave4_preserve_target(
+        fixture,
+        generated,
+        output_name="rebased_change_row.xlsx",
+    )
+
+    with fixture.open(output_path) as workbook:
+        fmea = workbook["FMEA"]
+        changes = workbook["Merge Changes"]
+        changed_row = next(
+            row
+            for row in range(1, fmea.max_row + 1)
+            if fmea.cell(row=row, column=fixture.columns["Local Effect"]).value
+            == "Generated local effect R1"
+        )
+        assert changed_row == 10
+        assert changes["A3"].value == changed_row
+
+
 # ----- D2/D5/D10: Inheritance + BOM Additions sheet ---------------------------
 
 

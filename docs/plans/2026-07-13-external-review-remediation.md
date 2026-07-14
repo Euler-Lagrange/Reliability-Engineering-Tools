@@ -481,12 +481,12 @@ not copy its fixture shape.
 - The `Merge Changes` sheet is tool-authored: banner row + ownership marker per Task 4.3,
   styled like the other diagnostic sheets, written only when it has rows.
 
-- [ ] **Step 1:** Failing tests: (a) hand-written End Effect survives a piece-part
+- [x] **Step 1:** Failing tests: (a) hand-written End Effect survives a piece-part
   generation merge (generated blank), byte-identical; (b) formula cell in a mapped
   column survives a blank; (c) real differing value overwrites AND appears on
   `Merge Changes` with old+new; (d) equal values produce no audit row; (e) blank-skip
   counts appear on the summary sheet.
-- [ ] **Step 2:** Implement, green, commit:
+- [x] **Step 2:** Implement, green, commit:
   `FMEA preserve: Blanks never overwrite; audit real changes on Merge Changes sheet`
 
 ### Task 4.2: Flag-never-guess identity
