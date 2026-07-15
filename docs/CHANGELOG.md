@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-07-14 — Data Integrity, Cancellation Truthfulness, Silent-Loss Fixes
+
+The external-review remediation release: three independent architecture
+review rounds (cancellation/process lifetime, run-event lifecycle, and the
+preserve-formatting FMEA merge), every finding independently verified, then
+fixed across four waves plus a RefDes silent-loss hotfix — 836 tests green.
+The version jump to 1.1 reflects user-visible behavior changes: preserve-merge
+semantics with the `Merge Changes` audit sheet, `Merged` output filenames,
+human sheet names in BOM Compare, and the consistent onboarding panels.
+
 ### Added
 
 - **Every tool now greets a fresh setup with the onboarding panel.** The

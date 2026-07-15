@@ -1,7 +1,8 @@
 # Overnight Hardening Experiment
 
-**Status:** DRAFT — write the plan now; do not execute it until the user supplies
-the final baseline commit after a clean release build.
+**Status:** REVIEWED DRAFT — anti-stall execution contract added. Do not execute it
+until the user supplies the final baseline commit after a clean release build and
+the supervised preflight reaches `READY FOR GOAL`.
 
 **Timebox:** Up to 8 hours. Eight hours is a ceiling, not a quota. Never invent
 churn merely to consume the timebox.
@@ -36,7 +37,8 @@ report is a better result than speculative cleanup.
 ## 2. Non-goals
 
 - No new tools, workflows, controls, output sheets, options, or visual redesign.
-- No dependency upgrades, lockfile refreshes, new linters, or downloaded audit tools.
+- No dependency addition, removal, upgrade, lockfile refresh, new linter, or downloaded
+  audit tool. Dependency cleanup is evidence/report-only in this experiment.
 - No protocol/schema/event-order changes.
 - No version bump or release publication.
 - No performance rewrite without a reproduced performance defect and baseline.
@@ -44,8 +46,9 @@ report is a better result than speculative cleanup.
 - No removal based only on a filename, age, TODO, warning suppression, or one static
   search result.
 - No push, PR, merge to `main`, force operation, destructive reset, or history rewrite.
-- No changes to user-owned workbooks, examples, local logs, build outputs, credentials,
-  or untracked files.
+- No changes to canonical or pre-existing user-owned workbooks, examples, logs, build
+  outputs, credentials, or untracked files. Tests/builds may create ignored artifacts
+  inside the disposable experimental worktree; never commit or move them to the archive.
 
 ---
 
@@ -56,20 +59,32 @@ report is a better result than speculative cleanup.
 Do not begin implementation until the user provides:
 
 - the exact baseline commit SHA;
-- confirmation that `scripts\release.bat --no-pause` succeeded at that SHA;
+- confirmation that this reviewed plan is tracked at that SHA;
+- confirmation that the full release succeeded at that SHA, preferably via
+  `scripts\release.bat __INNER__ --no-pause` for automation, plus its log path;
 - permission to create the experimental branch/worktree; and
-- any files or active plans that must be quarantined from the experiment.
+- any files or active plans that must be quarantined from the experiment; and
+- the build-lane authority: **audit-only** (default), or explicit permission for
+  test-backed release staging/promotion and frozen-payload membership changes;
+- a new, empty experimental-worktree path and `RUN_ID`; and
+- confirmation that the computer will remain awake, the Codex desktop app will remain
+  running, and no other agent/process will write to either checkout during the goal.
 
-Record the SHA and release-log path in the morning report before editing.
+Capture the SHA and release-log path in the external preflight note before editing;
+copy them into the tracked ledger and morning report only after the baseline is green.
 
 ### 3.2 Worktree model
 
 Use a fresh worktree, not the canonical repo and not an old development copy:
 
 - Canonical/review repo: `C:\Reliability_Eng_Tools` — read-only during the run.
-- Experimental worktree: `C:\Reliability_Eng_Tools_Overnight` (or another empty,
-  user-approved path).
-- Branch: `codex/overnight-hardening-<YYYYMMDD>`.
+- Experimental worktree: `C:\Reliability_Eng_Tools_Overnight_<RUN_ID>` (or another
+  empty, user-approved path).
+- Branch: `codex/overnight-hardening-<RUN_ID>`.
+
+`C:\Reliability_Eng_Tools_Overnight` already contains the superseded plan-only branch
+from the first attempt. Do not reuse, clean, reset, delete, or build from it. A later
+cleanup of that worktree is a separate user-authorized operation.
 
 At plan-writing time, `C:\Reliability_Eng_Tools_Dev` has unrelated history and
 user-owned untracked files. Never reuse, clean, reset, move, or delete that workspace.
@@ -78,44 +93,94 @@ Re-check this fact at execution time rather than assuming it remains true.
 Create the worktree from the user-supplied local SHA. Do not fetch, pull, or contact
 the network unless the user explicitly asks.
 
+A fresh worktree does not contain ignored `.venv` or `node_modules` directories. Before
+running gates, make isolated copies of the user-approved canonical environments inside
+the experimental worktree. Do not junction/symlink writable dependency directories back
+to the canonical repo. Verify Python's `sys.prefix` and Node module resolution point at
+the experimental copies. If a safe copy is unavailable or lacks disk space, stop and ask
+instead of installing dependencies or mutating the canonical environment.
+
 ### 3.3 Preflight
 
 Before any edit:
 
-1. Verify the canonical worktree is clean and its `HEAD` equals the supplied SHA.
-2. Verify the experimental destination does not already exist.
+1. Verify the canonical worktree is clean, its `HEAD` equals the supplied SHA, the
+   reviewed plan is tracked at that SHA, and no concurrent writer is active.
+2. Verify the experimental destination does not already exist and is not registered as
+   an old Git worktree; verify the unique `codex/overnight-hardening-<RUN_ID>` branch
+   does not already exist locally.
 3. Create the `codex/` branch and worktree from that SHA.
 4. Verify the experimental tree is clean and has the same SHA.
-5. Record `git status`, `git log -1`, suite counts, Node/Python/Rust versions, and the
-   release-log location in `docs/reviews/<RUN_ID>-overnight-ledger.md`.
-6. Run the baseline gates in the new worktree:
+5. Copy the approved dependency environments, verify they resolve inside the new
+   worktree, and resolve every required permission/approval while the user is present.
+   Do not start an unattended goal that is expected to pause for access.
+6. Capture `git status`, `git log -1`, suite counts, Node/Python/Rust versions, and the
+   release-log location in an external scratch note under `C:\tmp`; do not create a
+   tracked ledger yet.
+7. Run the baseline gates in the new worktree while the user is still present:
 
 ```powershell
 $env:PYTHONDONTWRITEBYTECODE = "1"
 npm ls --depth=0
-.venv\Scripts\python.exe -m pip check
+.\.venv\Scripts\python.exe -m pip check
 npm run tauri:readiness
 npm run version:check
 npm run typecheck
 npm run typecheck:tests
 npm run cargo:check
 npm run cargo:test
-.venv\Scripts\python.exe -m pytest backend\tests -q -p no:cacheprovider
+.\.venv\Scripts\python.exe -m pytest backend\tests -q -p no:cacheprovider
 npm test
-.venv\Scripts\python.exe backend\python\sidecar_main.py --self-test
+npm run build
+.\.venv\Scripts\python.exe backend\python\sidecar_main.py --self-test
 ```
 
 If the baseline is not clean and green, stop before editing and report the mismatch.
 Do not repair an unexplained baseline failure as part of this experiment.
+Keep preflight evidence outside the repository under `C:\tmp`; the supervised preflight
+must leave the experimental Git tree clean. Before source edits, use the installed
+PyInstaller archive viewer on the approved baseline sidecar and record its payload
+inventory externally. This distinguishes pre-existing packaging debt from an overnight
+regression.
+
+Record the baseline gate durations, especially the full packaged release. Select the
+first eligible candidate and write `READY FOR GOAL` plus a timestamp to the external
+preflight note. The eight-hour clock starts only after the user sees that marker and
+launches Goal mode; setup, dependency copying, approvals, and baseline repair are never
+allowed to consume the unattended implementation window.
+
+Obtain the packaged-release duration from explicit timestamps in the supplied successful
+release log. If that log cannot prove a trustworthy duration, rerun the release during
+supervised preflight. If neither is possible, do not issue `READY FOR GOAL`.
 
 ### 3.4 Active-change quarantine
 
 At start, re-read every active plan and list files named by unchecked tasks. Do not
-touch those files overnight; log observations instead. While Tasks 4.4–4.7 in
-`docs/plans/2026-07-13-external-review-remediation.md` remain open, quarantine their
-FMEA analyzer/writer/runtime, FMEA frontend, test, naming, and help/documentation
-surfaces. This avoids producing a branch that is technically good but painful to
-integrate with the active remediation work.
+touch those files overnight; log observations instead. Quarantine the specifically
+named files—not every documentation file in the repository. This avoids producing a
+branch that is technically good but painful to integrate while still allowing unrelated
+corrections. Completed Wave 4 work is not an active quarantine, but any new review or
+release-preparation work must be assessed from the final baseline rather than memory.
+
+Before every commit, compare `git diff --name-only <BASELINE_SHA>` with the recorded
+quarantine list. Any overlap stops that candidate; do not reason around the check.
+
+### 3.5 Supervised launch receipt
+
+Preflight is complete only when the executor reports all of the following in the
+external note: baseline SHA, tracked-plan identity, release-log path, fresh branch and
+worktree, both Git statuses, isolated Python/Node resolution, baseline counts and
+durations, frozen-payload inventory, quarantine list, build-lane authority, verified
+command permissions, absolute receipt path, `FINAL_RESERVE`, `IMPLEMENTATION_WINDOW`,
+the first eligible candidate, and proof that every required unattended final command
+(especially the release) has a bounded runner with verified process-tree cleanup.
+
+The user must see a green receipt and explicitly launch the Stage-B Goal from Section 11.
+That launch starts the eight-hour clock. As its first tracked action, the Goal creates
+`docs/reviews/<RUN_ID>-overnight-ledger.md` from the external receipt. If any receipt
+field changes before launch, return to supervised preflight instead of improvising. The
+receipt expires after 30 minutes or immediately on any canonical/worktree status change,
+whichever happens first.
 
 ---
 
@@ -139,9 +204,6 @@ The following repository invariants are load-bearing and remain unchanged:
 Additional overnight rules:
 
 - No new production dependency or tool installation.
-- Removing a proven-unused dependency is allowed only in its own lockfile-aware commit
-  after static references, dynamic registration, build output, and full suites agree.
-  Adding or upgrading a dependency remains out of scope.
 - No public API change solely to make code look cleaner.
 - No cross-language change unless a reproduced bug truly crosses that boundary and
   all affected contract tests can be run.
@@ -159,7 +221,12 @@ Additional overnight rules:
 |---|---|
 | A — local, behavior-preserving, directly testable | May implement with characterization tests and focused gates. |
 | B — reproduced correctness/reliability bug | May implement TDD, then run every affected layer and a batch review. |
-| C — protocol, process lifetime, concurrency semantics, installer behavior, user-data migration, active Wave-4 area | Audit and report only unless the user explicitly expands authority before sleeping. |
+| C — protocol, process lifetime, concurrency semantics, installer behavior, user-data migration, active remediation area | Audit and report only unless the user explicitly expands authority before sleeping. |
+
+Release documentation, assertions, and behavior-preserving pure build-helper refactors
+can be Tier A/B. Desktop/sidecar promotion semantics and frozen-payload membership are
+audit-only unless the handoff explicitly opts into the build lane. Installer target,
+signing, Windows process lifetime, and Rust path/security semantic changes remain Tier C.
 
 ---
 
@@ -178,22 +245,82 @@ are high enough to outweigh blast radius and integration conflict. Priority orde
 3. File-loading validation and actionable errors.
 4. Build/release correctness.
 5. Proven duplication or modularity debt that obstructs safe changes.
-6. Truthful invariant comments and maintainer documentation.
-7. Cosmetic cleanup.
+6. Proven accessibility or interaction inconsistency with a local regression test.
+7. Truthful invariant comments and maintainer documentation.
+8. Cosmetic cleanup.
 
 “Looks old” and “an LLM says unused” are not evidence.
+
+### 5.1 Anti-stall execution contract
+
+Run the implementation in Codex Goal mode only after Section 3 reaches
+`READY FOR GOAL`. The goal must name an outcome, constraints, and verification—not
+merely ask for an audit. Do not end the goal after rewriting or restating this plan.
+
+Before launch, calculate:
+
+```text
+FINAL_RESERVE = max(
+  90 minutes,
+  measured Section 3.3 gate-set duration + measured full-release duration + 30 minutes
+)
+IMPLEMENTATION_WINDOW = 8 hours - FINAL_RESERVE
+```
+
+The phase times below are planning targets, not permission to overrun the cutoff. Start
+final verification earlier whenever the measured release requires it. If
+`IMPLEMENTATION_WINDOW` is less than 60 minutes, do not launch Stage B; reschedule or
+obtain separate approval for a report-only run.
+
+During the goal:
+
+- Update the ledger at least every 30 minutes with the active candidate, last completed
+  action or commit, running command, next fallback, and elapsed time.
+- Give every unattended command a wall-clock timeout and expected quiet period derived
+  from its measured baseline. Use it unattended only when timeout cleanup of the whole
+  process tree is already proven; otherwise run it during supervised preflight or skip
+  it and report why.
+- Default focused-command deadline: `max(10 minutes, 3 × analogous baseline duration +
+  5 minutes)`. Default full-release deadline: `max(30 minutes, 2 × measured release
+  duration + 15 minutes)`. Poll long commands often enough that no wait hides progress
+  for more than 60 seconds. A required final gate timing out is a global finalization
+  event, never permission to weaken or omit the gate.
+- If no file, ledger, test, or command-output progress occurs for 30 minutes outside a
+  declared quiet period, treat the candidate as stalled: stop it safely, preserve the
+  evidence, and move to the next independent candidate.
+- A candidate-level ambiguity, unavailable production input, optional approval, or
+  change that would require unsafe cleanup is a **skip before it is run**, not a reason
+  to pause the goal for the sleeping user.
+- A global stop condition produces an external blocker note and a user-visible final
+  status within 10 minutes when the execution environment remains available, or on the
+  first resumed turn after an environment/app outage. Never wait silently for approval
+  or leave the goal active without saying what blocked it.
+- Never run another independently controlled agent, scheduled task, IDE action, or
+  process as a concurrent writer to the same worktree. The sole executor may launch and
+  await one owned child command pipeline (tests/build/release) at a time. A read-only
+  status watchdog may observe the goal, but it may not become a second writer.
+- Before each candidate, record a clean boundary and its owned files. If it is skipped
+  after edits, reverse only those owned uncommitted edits with an explicit inverse patch;
+  never use reset, checkout, clean, or broad deletion. If the candidate leaves live or
+  unowned processes, or its boundary cannot be restored cleanly, perform a global stop.
+- Even if no candidate qualifies for implementation, complete the evidence ledger and
+  morning report with the audited surfaces, rejected candidates, exact reasons, and
+  recommended follow-ups. Zero commits may be correct; zero evidence is not.
 
 ---
 
 ## 6. Eight-hour work sequence
 
-### Phase 0 — Baseline and conflict map (0:00–0:40)
+### Phase 0 — Launch confirmation and conflict map (0:00–0:40)
 
-- Complete Section 3.
+- Confirm the supervised preflight says `READY FOR GOAL`, its SHA still matches both
+  worktrees, and no concurrent writer appeared after sign-off. Any drift is an immediate
+  global stop, not an overnight repair task.
 - Map current entry points, registries, dynamic imports, Tauri command registration,
   sidecar routes, PyInstaller hidden imports/data, test globs, and package roots.
 - Build the active-change quarantine list.
-- Create the evidence ledger; make no source edits.
+- Open and update the evidence ledger created after the green baseline; make no source
+  edits until the conflict map is complete.
 
 ### Phase 1 — Mechanical audit and triage (0:40–1:40)
 
@@ -204,8 +331,12 @@ Use existing tools only (`rg`, `git`, compilers, and test runners). Inventory:
 - direct Excel/CSV/PDF/file reads and writes that bypass shared helpers;
 - repeated normalization, error-description, run-state, and output-path logic;
 - frontend `invoke`/`listen`/store ownership and stale async continuations;
+- keyboard/focus behavior, ARIA state, disabled-control explanations, and user-facing
+  error-copy consistency; visual redesign and new interaction features remain out of scope;
 - Rust lock scopes, detached tasks, error conversions, and platform gates;
 - build-script/documentation/version/PyInstaller coupling;
+- existing repository-configured check-only lint, format, and static-analysis commands;
+  do not install a tool or turn a previously failing optional check into a surprise gate;
 - tracked files with no static, dynamic, config, packaging, test, or documentation
   references.
 
@@ -245,7 +376,7 @@ For outputs, check:
 Fix at most three confirmed defects in this lane. Each needs a red regression first,
 the narrowest implementation, focused tests, and an independent diff review.
 
-### Phase 3 — Exception, cancellation, and modularity audit (3:20–4:50)
+### Phase 3 — Exception, cancellation, and modularity audit (3:20–4:35)
 
 - Classify every broad exception in touched run paths: intentional best-effort,
   translated project error, logged-and-rethrown, or bug.
@@ -261,7 +392,7 @@ the narrowest implementation, focused tests, and an independent diff review.
 Behavior-preserving refactors require before/after characterization tests. Run the
 whole affected language suite before committing.
 
-### Phase 4 — Comments and future-LLM guardrails (4:50–5:45)
+### Phase 4 — Comments and future-LLM guardrails (4:35–5:20)
 
 Improve comments only where they prevent a plausible wrong edit:
 
@@ -277,7 +408,7 @@ Avoid comments that narrate syntax, repeat names, cite unstable line numbers, pr
 absolute guarantees the code does not provide, or refer only to an old review phase.
 When a comment describes an invariant, prefer a test that fails if it drifts.
 
-### Phase 5 — Dead-code proof and reversible archive (5:45–6:35)
+### Phase 5 — Dead-code proof and reversible archive (5:20–6:00)
 
 Archive only **confirmed** dead tracked content. Suspected content stays in the report.
 
@@ -308,15 +439,16 @@ Use `git mv` so review shows the exact relocation. `manifest.json` records:
 - classification and evidence;
 - original byte size and SHA-256 hash;
 - runtime/test/package exclusion proof;
-- baseline SHA and move commit;
+- baseline/parent SHA and archive batch ID (the resulting move commit is recorded in
+  the morning report because a commit cannot contain its own hash);
 - restoration command; and
 - any residual uncertainty.
 
 The archive must remain outside `backend/python`, `backend/tests`, `frontend`,
 `src-tauri`, `scripts`, and `contracts`. Confirm all current scanners/package roots
 exclude `_archive`; add an explicit exclusion only if a real global scan requires it.
-Append `.archived` to executable source, test, script, and package/config suffixes so a
-future broad scanner cannot accidentally import or run the payload. Never place an
+Append `.archived` to executable source, test, script, and package/config suffixes to
+prevent normal import/execution and common extension-based discovery. Never place an
 `__init__.py`, `package.json`, `Cargo.toml`, or executable launcher in the archive.
 Verify the hash again on restore.
 
@@ -328,7 +460,7 @@ material and must not be committed.
 
 If nothing meets the proof standard, create no archive folder and say so.
 
-### Phase 6 — Build and release truthfulness (6:35–7:10)
+### Phase 6 — Build and release truthfulness (6:00–6:30)
 
 - Reconcile scripts, package manifests, and docs with the actual 16-step release flow.
 - Verify version lockstep, quoting/path-with-spaces behavior, errorlevel propagation,
@@ -342,8 +474,9 @@ If nothing meets the proof standard, create no archive folder and say so.
 - Compare PyInstaller package/hidden-import declarations with live backend routes and
   imports. Report uncertain dynamic-import cases; do not “simplify” them casually.
 - Inspect the frozen sidecar payload for `__pycache__`, `.pyc`, stale removed modules,
-  source trees added as data, or archive content. Package imports as code and include
-  only genuine runtime data.
+  source trees added as data, or archive content. In audit-only mode, compare with the
+  recorded baseline and report existing debt; in authorized mode, package imports as
+  code and include only genuine runtime data.
 - Audit local build/self-test timeouts; an overnight gate must fail with diagnostics
   rather than wait forever, but Windows process-tree termination changes require tests.
 - Compare documented Node/Python/Rust requirements with the locked toolchain's actual
@@ -354,8 +487,16 @@ If nothing meets the proof standard, create no archive folder and say so.
   PyInstaller inputs requires the final full packaged release gate.
 
 No installer target change, signing change, dependency upgrade, or release publication.
+In audit-only build mode, the bullets above produce evidence and recommendations; source
+changes are limited to truthful docs, assertions, and pure helpers that do not alter
+artifact selection, membership, staging, promotion, or installer behavior.
 
-### Phase 7 — Final verification and morning report (7:10–8:00)
+### Phase 7 — Final verification and morning report
+(`IMPLEMENTATION_CUTOFF_AT`–`HARD_STOP_AT`)
+
+This is a hard implementation cutoff. Begin no later than 6:30 and earlier when required
+by `FINAL_RESERVE`. Use this window only for gates, packaged-artifact inspection,
+adversarial review, fixes to confirmed review blockers, and the report.
 
 1. Run `git diff --check` and inspect every staged diff.
 2. Run the complete gate set from Section 3.3.
@@ -364,8 +505,11 @@ No installer target change, signing change, dependency upgrade, or release publi
    verified desktop/sidecar pair. Until the public wrapper is proven to exit, automation
    may call `scripts\release.bat __INNER__ --no-pause`; the current public
    `scripts\release.bat --no-pause` path opens `cmd /k` and may retain the shell.
-5. Inspect the staged sidecar with the installed PyInstaller archive viewer. Reject
-   unexpected source/bytecode/cache/archive entries and record executable SHA-256 hashes.
+5. Inspect the staged sidecar with the installed PyInstaller archive viewer and record
+   executable SHA-256 hashes. In audit-only mode, reject archive content or entries newly
+   introduced relative to the baseline, but report pre-existing source/bytecode/cache
+   debt without failing the gate. When packaging membership is explicitly authorized,
+   enforce the new payload assertion and require those entries to be eliminated.
 6. Re-run any performance probe only if its writer/critical loop changed.
 7. Synchronize test counts and relevant architecture/development docs.
 8. Obtain an independent adversarial review of the full branch diff.
@@ -410,9 +554,14 @@ Suggested commit shapes (only when evidence supports them):
 Stop the whole run if:
 
 - the supplied baseline SHA or release evidence does not match;
+- the `READY FOR GOAL` marker is missing/stale or another writer appears;
 - the canonical worktree would need mutation;
 - a credential, network fetch, dependency install, or destructive operation is needed;
 - full suites reveal an unexplained baseline regression;
+- a required final gate fails or times out without a verified resolution;
+- the machine, Codex app, repository, or experimental worktree becomes unavailable;
+- a candidate boundary cannot be restored cleanly or an owned process tree cannot be
+  stopped without risking unrelated processes; or
 - the branch cannot be left clean and independently reviewable.
 
 Skip a candidate and record it if:
@@ -422,11 +571,20 @@ Skip a candidate and record it if:
 - it overlaps an active-plan quarantine;
 - it changes protocol/process/concurrency/installer semantics without explicit authority;
 - it cannot be protected by a meaningful regression test;
+- it needs optional user approval during the unattended window;
+- its bounded command times out but the clean candidate boundary is safely restored;
 - it expands beyond the change budget; or
 - two independent searches do not support a dead-code claim.
 
 If one lane blocks, preserve its evidence and move to an independent lower-risk lane.
 Do not spend the night repeatedly forcing one uncertain change through.
+
+Apply the anti-stall contract in Section 5.1 before deciding that the whole goal is
+blocked. A candidate skip must not be mislabeled as a global stop.
+
+“Clean experimental tree” means Git-clean: no tracked modifications and no non-ignored
+untracked files. Ignored build/test artifacts may remain in the disposable worktree;
+list them in the report and do not delete them without separate authorization.
 
 ---
 
@@ -449,6 +607,8 @@ The final report must contain:
 10. **Integration choices:** accept all, cherry-pick named commits, or reject the branch,
     including dependencies between commits and expected conflict areas.
 11. **Residual risks:** anything not testable or not run.
+12. **Anti-stall record:** `READY FOR GOAL` time, implementation cutoff, ledger heartbeat
+    gaps, timed-out commands, skipped candidates, and any global-stop notification.
 
 Do not claim “all tech debt fixed.” State exactly what was examined.
 
@@ -473,17 +633,167 @@ These are starting points only; re-verify against the final baseline:
   cancellation ordering individually rather than replacing catches mechanically.
 - Generated targets/caches are ignored and not tracked. Do not move them into `_archive`.
 
+### Evidence-backed candidate queue
+
+Re-check line numbers and behavior at the final baseline; work in this order only when
+the candidate is outside the active-change quarantine:
+
+1. **Selected-sheet fail-closed behavior.** Sidecar inspection has been observed to
+   fall back to the first worksheet when an explicitly requested sheet disappeared,
+   while runtime reads reject it. Add a red regression and make both paths agree.
+2. **Picker/reader lockstep.** The native picker advertises legacy `.xls`, while the
+   packaged readers are openpyxl-based and no `xlrd` dependency is shipped. Test the
+   coupling and report the product choice; do not add `xlrd` overnight.
+3. **Bounded preview reads.** `shared/output_preview.py` claims non-blocking behavior
+   but can perform a full table read, and execute-time validation can repeat preview
+   work before ack. Characterize read counts and preview limits before changing it.
+4. **Rust timeout boundary.** File-command handlers have performed `canonicalize()`
+   before entering the bounded sidecar request. A stale UNC/share can therefore block
+   outside the timeout. Audit/report only overnight: moving canonicalization can change
+   path and security semantics even if a pure lexical helper is unit-testable.
+5. **Frontend browse failures.** Several native-dialog calls occur before the common
+   inspection `try` block, so plugin rejection may skip the usual toast/state reset.
+   Pin dialog rejection and stale-completion behavior before consolidation.
+6. **OneDrive cancellation.** Hydration uses real reads, `attrib`, and non-interruptible
+   backoff sleeps. Narrow cancellation improvements are candidates; automatic unpinning
+   or a new hydration policy is report-only.
+7. **Output transaction duplication.** Temp write → verify → cancel → promote → cleanup
+   is repeated across runtimes. Characterize each variant and migrate at most one tool
+   per commit; do not hide tool-specific cancellation or workbook ownership.
+8. **Build pair promotion.** `build_sidecar.py` writes a new sidecar into
+   `local_build` before the desktop/backend pair passes packaged self-tests. Design a
+   unique staging directory and pair-level promote-last contract with failure tests;
+   implement only when the handoff explicitly enables the build lane.
+9. **Frozen payload hygiene.** Entire Python package directories are added as data, so
+   ignored stale bytecode can enter the executable. Capture and report the baseline
+   inventory immediately. Add a gating frozen-payload assertion or change packaging
+   inputs only when the handoff explicitly enables the build lane and imports are proven
+   complete; otherwise fail only on new payload regressions or archive inclusion.
+10. **Build runner quoting.** `tauri-runner.mjs` and `cargo-runner.mjs` duplicate MSVC
+    discovery and build a `cmd.exe` command string. Extract pure resolution/argument
+    functions only if paths-with-spaces tests preserve current x64 behavior; ARM64
+    toolchain changes are report-only without an ARM host.
+11. **Log-level parsing.** The known out-of-scope ledger notes that a leading
+    `WARNING:` is classified as INFO because only embedded `" WARNING:"` matches.
+    Address separately with a protocol-level regression if it remains open.
+12. **Comment truthfulness.** Additional stale claims include output preview doing no
+    blocking I/O, old Flet ownership language, incorrect output-directory status, and
+    verification-order prose. Correct only statements disproven by current code.
+13. **Archive candidate.** `HANDOFF_2026-06-25.md` is a strong historical candidate.
+    `frontend/public/examples/README.md` has conflicting signals (placeholder contract
+    versus apparently unused copied asset), so keep it unless intent is resolved.
+
+Do not attempt broad RefDes private-helper untangling, PyMuPDF zombie-thread redesign,
+automatic OneDrive unpinning, immutable snapshots across every tool, or frontend tool
+catalog/run-lifecycle restructuring during an unsupervised run. Characterize and report
+those opportunities instead.
+
 ---
 
-## 11. Future execution authorization template
+## 11. Two-stage launch templates
 
-The user can start the experiment with:
+### Stage A — supervised preflight (user remains available)
 
-> Baseline is `<SHA>` and `scripts\release.bat --no-pause` is green. Execute
-> `docs/plans/2026-07-14-overnight-hardening-experiment.md` in a fresh
-> `codex/overnight-hardening-<date>` worktree for up to 8 hours. Respect the active-plan
-> quarantine, commit each accepted task separately, do not push, and stop with the full
-> morning report and clean experimental tree.
+Send this as a normal message, not as the overnight Goal:
 
-That authorization starts the plan; it does not waive any safety, scope, test, archive,
-or stop condition above.
+> Prepare the overnight hardening experiment from
+> `docs/plans/2026-07-14-overnight-hardening-experiment.md`. Baseline is `<SHA>`; the
+> full release is green at `<ABSOLUTE_RELEASE_LOG_PATH>`; build authority is
+> `<AUDIT_ONLY | EXPLICITLY_AUTHORIZED>`; final reviewer/Fable addendum is
+> `<PASTE_ADDENDUM_OR_NONE>`. Perform Sections 3.1–3.5 only in the brand-new
+> `<FRESH_EMPTY_WORKTREE_PATH>` worktree on branch
+> `codex/overnight-hardening-<RUN_ID>`, using run ID `<RUN_ID>`. If any angle-bracket
+> placeholder in this message remains unresolved, make no mutation and list every one.
+> Otherwise verify isolated
+> dependencies, every baseline gate, command permissions, measured durations, payload
+> inventory, quarantine, and sole-writer state. Do not edit tracked files or begin
+> implementation. Return the absolute external receipt path, complete green launch
+> receipt, `FINAL_RESERVE`, `IMPLEMENTATION_WINDOW`, and a fully populated Stage-B Goal
+> prompt. If any launch condition fails, report it immediately instead of repairing or
+> waiting silently.
+
+### Stage B — overnight Goal (only after a green launch receipt)
+
+Replace every placeholder, then paste this into Codex:
+
+```text
+/goal
+
+Execute the approved Overnight Hardening Experiment for Reliability Tools Desktop.
+Do not write another plan, stop after summarizing the plan, or treat completion of one
+response or one lane as completion of this Goal.
+
+Authoritative inputs:
+- Plan: <ABSOLUTE_EXPERIMENTAL_WORKTREE>\docs\plans\2026-07-14-overnight-hardening-experiment.md
+- Baseline: <BASELINE_SHA>
+- Green release log: <ABSOLUTE_RELEASE_LOG_PATH>
+- Canonical checkout, read-only: C:\Reliability_Eng_Tools
+- Experimental worktree: <ABSOLUTE_EXPERIMENTAL_WORKTREE>
+- Branch: <EXPERIMENTAL_BRANCH>
+- Run ID / green launch receipt: <RUN_ID>
+- External launch-receipt path: <ABSOLUTE_C_TMP_RECEIPT_PATH>
+- Build-lane authority: <AUDIT_ONLY | EXPLICITLY_AUTHORIZED>
+- Active quarantine/exclusions: <LIST_OR_NONE>
+- Final reviewer/Fable addendum: <PASTE_ADDENDUM_OR_NONE>
+- FINAL_RESERVE: <DURATION>
+- IMPLEMENTATION_WINDOW: <DURATION>
+
+If any angle-bracket placeholder anywhere in this Goal remains unresolved, make no
+mutation and report every unresolved token. Otherwise verify the exact external receipt,
+its age, every receipt field, and that no concurrent writer appeared. If it expired or
+anything drifted, make no tracked edit: stop within 10 minutes with the exact mismatch.
+
+When the receipt is valid, record GOAL_START now, calculate HARD_STOP_AT = GOAL_START +
+8 hours and IMPLEMENTATION_CUTOFF_AT = GOAL_START + IMPLEMENTATION_WINDOW, and append all
+three times to the external watchdog. Then create the tracked ledger from the receipt and
+begin the first eligible candidate immediately. The eight-hour clock starts at GOAL_START.
+
+Outcome: leave a clean, local, unpushed experimental branch containing only
+high-confidence, evidence-backed hardening allowed by the plan, with one single-purpose
+commit per accepted task, complete verification evidence, and a self-contained morning
+report that makes accepting all, some, or none of the commits straightforward. Zero
+implementation commits is acceptable only with a complete evidence ledger and report.
+
+Follow the plan's phase order, evidence rubric, change tiers, quarantine, TDD,
+characterization, review, commit, archive, safety, and reporting rules exactly. Be the
+sole writer. Subagents may perform read-only audits, run non-mutating checks, or review
+diffs; they may not edit, format, generate, stage, or commit in this worktree. Do not
+push, fetch, pull, publish, install/update dependencies, contact the network, modify the
+canonical checkout, use destructive Git operations, add features, change intentional
+behavior, weaken a gate, or exceed build-lane authority.
+
+Maintain a watchdog entry at least every 30 minutes and after every commit, timeout,
+lane change, or stop condition. Record the candidate, last completed action, last
+commit, active bounded command/deadline, elapsed time, and next fallback. Poll long
+commands so no wait hides progress for more than 60 seconds. Apply the finite deadlines
+and proven process-tree cleanup in Section 5.1.
+
+A candidate problem is not a blocked Goal. Record and skip a candidate when behavior is
+ambiguous, production data is unavailable, it overlaps quarantine, it lacks a safe test
+seam, it exceeds Tier/build authority, it needs optional approval, it times out safely,
+or evidence is insufficient. Move immediately to the next independent lane. Never wait
+for sleeping-user approval and never invent churn merely to create commits.
+
+Stop the whole Goal only for a Section-8 global condition: baseline/receipt drift,
+loss of isolation or sole-writer state, an unexplained required-gate failure, required
+credential/network/dependency/destructive authority, unavailable machine/app/workspace,
+or inability to leave a clean reviewable branch. On global stop, preserve safe evidence
+and take the minimum-report path immediately; do not end silently.
+
+At IMPLEMENTATION_CUTOFF_AT, begin no new candidate. Use FINAL_RESERVE only for the full
+required gates, packaged-artifact and payload inspection, independent adversarial review,
+confirmed blocker fixes, documentation/count synchronization, and the report. Stop at
+HARD_STOP_AT with the truthful state recorded. Leave:
+- docs/reviews/<RUN_ID>-overnight-ledger.md
+- docs/reviews/<RUN_ID>-overnight-hardening-report.md
+
+The Goal is complete only when the plan's required final gates are green, both documents
+are complete, the experimental tree is clean and independently reviewable, the canonical
+checkout is untouched, and nothing was pushed; or when a genuine global stop has produced
+a concrete stop report and the safest reviewable state possible. Report the verdict as
+ready, ready with exclusions, or reject. Never claim success with a skipped, timed-out,
+or red required gate.
+```
+
+Stage B starts the Goal; it does not waive any safety, scope, test, archive, quarantine,
+or stop condition. If the receipt changed, return to Stage A rather than improvising.

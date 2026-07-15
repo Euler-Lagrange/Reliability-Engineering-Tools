@@ -599,4 +599,4 @@ review of every batch diff, doc counts synced in the same commit. The
 reusable audit lens list (dropped diagnostics, internal-column leaks,
 cryptic tokens, misleading labels, phantom options, asserts on user
 data, NaN writes, demo-content leaks, generic messages) lives in
-`docs/reviews/STABILITY_SWEEP_2026-07-07.md`.
+`docs/reviews/KNOWN_RESIDUALS.md`.

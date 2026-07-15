@@ -247,7 +247,7 @@ rule (Text / Text exact / Numeric).
 **Custom Compare** report sheets: `Summary`, `Only In <File 1>`,
 `Only In <File 2>`, `Differences`, `Duplicates`, `Part Usage`,
 `Failure Mode Ratio Errors`, `Scope Warnings` — the same human naming scheme
-as the Group vs BOM report (before 0.4.10 these used underscore names like
+as the Group vs BOM report (before 1.1.0 these used underscore names like
 `Only_In_*`).
 
 The FMEA-aware checks (`Scope Warnings`, composite duplicate identity) switch
