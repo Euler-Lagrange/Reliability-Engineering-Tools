@@ -10,6 +10,15 @@ interface InputGridProps {
   /** When present, all file-inspection controls are disabled with this hint. */
   browseDisabledReason?: string;
   /**
+   * Optional per-file display names (user request 2026-07-16). When
+   * `onNicknameChange` is provided each row renders a small text field;
+   * the name flows into the tool's column-mapping labels and (via
+   * `options.file_labels`) into the Excel report headers so it is always
+   * clear which file a value came from. Empty = the role's default label.
+   */
+  nicknames?: Partial<Record<FileRole, string>>;
+  onNicknameChange?: (role: FileRole, nickname: string) => void;
+  /**
    * Optional per-input disabled reason for the sheet picker. Returning a
    * string surfaces a muted caption under the disabled select and wires
    * `aria-describedby` so screen readers announce why the control is inert.
@@ -86,11 +95,13 @@ export function InputGrid({
   onSheetChange,
   browseDisabledReason,
   getDisabledSheetReason,
+  nicknames,
+  onNicknameChange,
 }: InputGridProps) {
   const states = classifyInputStates(inputs);
 
   return (
-    <div className="input-grid">
+    <div className={`input-grid${onNicknameChange ? " input-grid--named" : ""}`}>
       {inputs.map((input, index) => {
         const showExampleStyling =
           !!input.isExample && input.source !== "desktop-bridge" && !!input.path;
@@ -148,6 +159,20 @@ export function InputGrid({
                 <span className="input-card__path input-card__path--empty">No file selected</span>
               )}
             </div>
+            {onNicknameChange ? (
+              <input
+                type="text"
+                className="input-card__nickname"
+                value={nicknames?.[input.role] ?? ""}
+                placeholder="Display name…"
+                aria-label={`${input.label} display name`}
+                title="Names this file in Column mapping and in the Excel report — e.g. 'New Digital BOM'."
+                maxLength={40}
+                spellCheck={false}
+                autoComplete="off"
+                onChange={(event) => onNicknameChange(input.role, event.target.value)}
+              />
+            ) : null}
             <div className="sheet-picker">
               <label>Sheet</label>
               <CustomSelect

@@ -83,6 +83,35 @@ const canonicalRolesByWorkflow: Partial<Record<WorkflowId, Record<string, FileRo
 };
 
 /**
+ * User request 2026-07-16: mapping-row display copy. Each canonical maps to
+ * a plain field name + the file role it reads, so the rendered label reads
+ * "Group column — Grouping file" (or the user's nickname for that file).
+ * `canonical` itself is the backend contract and never changes.
+ */
+const MAPPING_FIELD_META: Record<string, { field: string; role: FileRole; fallback: string }> = {
+  grouping_group_col: { field: "Group column", role: "grouping", fallback: "Grouping file" },
+  grouping_refdes_col: { field: "RefDes column", role: "grouping", fallback: "Grouping file" },
+  bom_refdes_col: { field: "RefDes column", role: "bom", fallback: "BOM file" },
+  bom_desc_col: { field: "Description column", role: "bom", fallback: "BOM file" },
+  refdes_col_a: { field: "RefDes column", role: "bomA", fallback: "File 1" },
+  refdes_col_b: { field: "RefDes column", role: "bomB", fallback: "File 2" },
+};
+
+/**
+ * The backend display-name option key per role. Custom and Extraction reuse
+ * the pre-existing `display_name_a`/`display_name_b` contract
+ * (runtime.py already read them); group mode's keys are new.
+ */
+const NICKNAME_OPTION_KEYS: Partial<Record<FileRole, string>> = {
+  grouping: "display_name_grouping",
+  bom: "display_name_bom",
+  bomA: "display_name_a",
+  bomB: "display_name_b",
+  extractionA: "display_name_a",
+  extractionB: "display_name_b",
+};
+
+/**
  * Family 1 fix: seed inputs from the demo scenario in browser-mock mode (so
  * the preview is populated) but from empty desktop slots in the real desktop
  * runtime (so no fake example path leaks into a run). Used for both the
@@ -217,6 +246,13 @@ export function BomCompareTool() {
   const [validations, setValidations] = useState<ValidationMessage[]>(() =>
     seedValidationsForRuntime(baseScenario.validations),
   );
+  // Per-file display names (user request 2026-07-16): the operator can name
+  // each input ("CPU Grouping File", "Old Digital BOM" vs "New Digital BOM").
+  // The name flows into the Column-mapping row labels below AND into the
+  // Excel report via the backend's display-name options, so it is always
+  // clear which file a value or comparison came from. Keyed by role — roles
+  // are workflow-unique, so no per-workflow stash is needed.
+  const [fileNicknames, setFileNicknames] = useState<Partial<Record<FileRole, string>>>({});
   const [options, setOptions] = useState({
     // "base match" maps to the backend's loose/prefix base-matching mode
     // (AnalyzeOptions.loose_base_match). It defaults to FALSE so a default run
@@ -475,8 +511,21 @@ export function BomCompareTool() {
     const fixtureRows =
       workflowId === "bom_compare_custom" ? bomCompareCustomMappings : bomCompareGroupMappings;
     const canonicalToRole = canonicalRolesByWorkflow[workflowId] ?? {};
-    return deriveMappingRows(fixtureRows, canonicalToRole, workbookColumnsByRole);
-  }, [workflowId, workbookColumnsByRole]);
+    const derived = deriveMappingRows(fixtureRows, canonicalToRole, workbookColumnsByRole);
+    // User request 2026-07-16: mapping rows must say WHICH FILE they map,
+    // in plain words — "Group column — Grouping file", and with the user's
+    // own nickname once one is typed ("Group column — CPU Grouping File").
+    // Only displayLabel changes; `canonical` is the backend payload
+    // contract and never moves.
+    return derived.map((row) => {
+      const meta = MAPPING_FIELD_META[row.canonical];
+      if (!meta) {
+        return row;
+      }
+      const nickname = fileNicknames[meta.role]?.trim();
+      return { ...row, displayLabel: `${meta.field} — ${nickname || meta.fallback}` };
+    });
+  }, [workflowId, workbookColumnsByRole, fileNicknames]);
 
   // Tier-1 #5: the effective RefDes key columns for each custom file (mapping
   // override wins over the derived fixture default). These are EXCLUDED from
@@ -630,16 +679,28 @@ export function BomCompareTool() {
     // (_run_custom_compare) also guards this, but pruning here keeps the
     // payload clean.
     // Extraction Compare sends NO comparison options — the backend's
-    // _run_extraction_compare reads none of them (fixed-schema group diff).
+    // _run_extraction_compare reads none of them (fixed-schema group diff) —
+    // but it DOES read the display-name pair, so nicknames still ride along.
+    // User request 2026-07-16: per-file display names travel as the
+    // backend's display_name_* options so the Excel report labels values by
+    // the user's own file names. Only non-empty trimmed names are sent.
+    const nicknameOptions = Object.fromEntries(
+      currentRoles.flatMap((role) => {
+        const key = NICKNAME_OPTION_KEYS[role];
+        const nickname = (fileNicknames[role] ?? "").trim();
+        return key && nickname ? [[key, nickname]] : [];
+      }),
+    );
     const runOptions =
       workflowId === "extraction_compare"
-        ? {}
+        ? nicknameOptions
         : workflowId === "bom_compare_custom"
           ? {
               ...options,
+              ...nicknameOptions,
               compare_columns: comparePairs.filter((pair) => pair.col_a && pair.col_b),
             }
-          : options;
+          : { ...options, ...nicknameOptions };
 
     return {
       workflowId,
@@ -1109,6 +1170,10 @@ export function BomCompareTool() {
                   onBrowse={handleBrowse}
                   onSheetChange={handleSheetChange}
                   browseDisabledReason={fileInspectionDisabledReason}
+                  nicknames={fileNicknames}
+                  onNicknameChange={(role, nickname) =>
+                    setFileNicknames((current) => ({ ...current, [role]: nickname }))
+                  }
                   getDisabledSheetReason={(input) => {
                     // Sheet picker disabledReason — surfaced as a muted
                     // caption below the disabled CustomSelect via

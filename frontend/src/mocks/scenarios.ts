@@ -578,7 +578,7 @@ export const bomCompareWorkflowOptions: WorkflowOption[] = [
 export const bomCompareGroupMappings: ColumnMappingRow[] = [
   {
     canonical: "grouping_group_col",
-    displayLabel: "Grouping: group column",
+    displayLabel: "Group column — Grouping file",
     mappedTo: "Component Group",
     status: "mapped",
     recommendation: "Exact match",
@@ -587,7 +587,7 @@ export const bomCompareGroupMappings: ColumnMappingRow[] = [
   },
   {
     canonical: "grouping_refdes_col",
-    displayLabel: "Grouping: RefDes column",
+    displayLabel: "RefDes column — Grouping file",
     mappedTo: "Reference Designator",
     status: "mapped",
     recommendation: "Exact match",
@@ -596,7 +596,7 @@ export const bomCompareGroupMappings: ColumnMappingRow[] = [
   },
   {
     canonical: "bom_refdes_col",
-    displayLabel: "BOM: RefDes column",
+    displayLabel: "RefDes column — BOM file",
     mappedTo: "Reference Designator",
     status: "mapped",
     recommendation: "Exact match",
@@ -605,7 +605,7 @@ export const bomCompareGroupMappings: ColumnMappingRow[] = [
   },
   {
     canonical: "bom_desc_col",
-    displayLabel: "BOM: description column",
+    displayLabel: "Description column — BOM file",
     mappedTo: "Description",
     status: "mapped",
     recommendation: "Optional",
@@ -630,7 +630,7 @@ export const bomCompareCustomColumns = [
 export const bomCompareCustomMappings: ColumnMappingRow[] = [
   {
     canonical: "refdes_col_a",
-    displayLabel: "File 1: RefDes column",
+    displayLabel: "RefDes column — File 1",
     mappedTo: "Reference Designator",
     status: "mapped",
     recommendation: "Exact match",
@@ -639,7 +639,7 @@ export const bomCompareCustomMappings: ColumnMappingRow[] = [
   },
   {
     canonical: "refdes_col_b",
-    displayLabel: "File 2: RefDes column",
+    displayLabel: "RefDes column — File 2",
     mappedTo: "Reference Designator",
     status: "mapped",
     recommendation: "Exact match",

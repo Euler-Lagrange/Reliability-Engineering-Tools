@@ -1457,6 +1457,43 @@ button:disabled {
   color: var(--text-faint);
 }
 
+/* Per-file display-name field (BOM Compare) — a real input in a sunken
+   well so "type a name here" reads as an affordance, not decoration.
+   The extra grid track only exists on named grids. */
+.input-grid--named .input-card {
+  grid-template-columns: 16px minmax(150px, 190px) minmax(0, 1fr) minmax(120px, 160px) auto auto;
+}
+
+.input-card__nickname {
+  height: 24px; /* off-grid: table-control tier */
+  width: 100%;
+  padding: 0 var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  transition:
+    border-color var(--duration-fast) var(--ease),
+    background var(--duration-fast) var(--ease);
+}
+
+.input-card__nickname::placeholder {
+  color: var(--text-faint);
+}
+
+.input-card__nickname:hover {
+  border-color: var(--line-strong);
+}
+
+.input-card__nickname:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: var(--shadow-focus-ring);
+}
+
 /* Notes are the only thing that grows a row: they span the content
    columns under the row's controls. */
 .input-card__note {

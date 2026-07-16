@@ -115,6 +115,93 @@ def _run_analyze(grouping_refs, bom_refs):
     )
 
 
+def test_analyze_file_labels_flow_into_summary_duplicates_and_part_usage() -> None:
+    """User-typed display names (2026-07-16 request) label every group-mode
+    file-identity site: the Summary file rows carry "<name> — <basename>",
+    the Duplicates Source column and its BOM description carry the names,
+    and the Part Usage Source column swaps its constant "BOM" for the
+    user's BOM name."""
+    group_df = pd.DataFrame(
+        {
+            # R1 appears in two groups -> a Grouping-side duplicate row.
+            "Group": ["G1", "G2"],
+            "RefDes": ["R1", "R1"],
+        }
+    )
+    bom_df = pd.DataFrame(
+        {
+            # R1 twice -> a BOM-side duplicate row; R2 usage mismatch (usage
+            # 2 with a single instance) -> a Part Usage warning row.
+            "RefDes": ["R1", "R1", "R2"],
+            "Description": ["", "", ""],
+            "Part Usage": ["1", "1", "2"],
+        }
+    )
+    mapping = ColumnMapping(
+        grouping_group_col="Group",
+        grouping_refdes_col="RefDes",
+        bom_refdes_col="RefDes",
+        bom_desc_col="Description",
+    )
+    options = AnalyzeOptions(
+        run_warning_checks=False,
+        run_duplicate_checks=True,
+        check_part_usage=True,
+        check_fmr=False,
+    )
+
+    results = analyze(
+        group_df,
+        bom_df,
+        mapping,
+        options,
+        file_paths=("grouping.xlsx", "bom.xlsx"),
+        file_labels=("CPU Grouping File", "New Digital BOM"),
+    )
+
+    summary = dict(zip(results.summary["Item"], results.summary["Value"]))
+    assert summary["Grouping File"] == "CPU Grouping File — grouping.xlsx"
+    assert summary["BOM File"] == "New Digital BOM — bom.xlsx"
+
+    sources = set(results.duplicates["Source"])
+    assert sources == {"CPU Grouping File", "New Digital BOM"}
+    bom_dup = results.duplicates[results.duplicates["Source"] == "New Digital BOM"].iloc[0]
+    assert bom_dup["Description"] == "Appears 2 times in New Digital BOM"
+
+    assert not results.part_usage_warnings.empty
+    assert set(results.part_usage_warnings["Source"]) == {"New Digital BOM"}
+
+
+def test_analyze_without_file_labels_keeps_generic_sources() -> None:
+    """No display names -> byte-identical legacy labels: basenames in the
+    Summary, "Grouping"/"BOM" sources, "Appears N times in BOM"."""
+    group_df = pd.DataFrame({"Group": ["G1", "G2"], "RefDes": ["R1", "R1"]})
+    bom_df = pd.DataFrame({"RefDes": ["R1", "R1"], "Description": ["", ""]})
+    mapping = ColumnMapping(
+        grouping_group_col="Group",
+        grouping_refdes_col="RefDes",
+        bom_refdes_col="RefDes",
+        bom_desc_col="Description",
+    )
+    options = AnalyzeOptions(
+        run_warning_checks=False,
+        run_duplicate_checks=True,
+        check_part_usage=False,
+        check_fmr=False,
+    )
+
+    results = analyze(
+        group_df, bom_df, mapping, options, file_paths=("grouping.xlsx", "bom.xlsx")
+    )
+
+    summary = dict(zip(results.summary["Item"], results.summary["Value"]))
+    assert summary["Grouping File"] == "grouping.xlsx"
+    assert summary["BOM File"] == "bom.xlsx"
+    assert set(results.duplicates["Source"]) == {"Grouping", "BOM"}
+    bom_desc = results.duplicates[results.duplicates["Source"] == "BOM"].iloc[0]["Description"]
+    assert bom_desc == "Appears 2 times in BOM"
+
+
 def test_analyze_exact_overlap_has_no_missing_or_extra() -> None:
     """Identical RefDes sets produce zero missing and zero extra rows."""
     results = _run_analyze(["R1", "R2", "C3"], ["R1", "R2", "C3"])

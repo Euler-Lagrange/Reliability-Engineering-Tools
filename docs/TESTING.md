@@ -12,8 +12,8 @@
 | Backend FMEA template analyzer | `backend/tests/test_fmea_template_analyzer.py` | 1 | pytest |
 | Backend Failure-Rate logic | `backend/tests/test_failure_rate_logic.py` | 27 | pytest |
 | Backend RefDes extraction-engine | `backend/tests/test_extraction_engine.py` | 22 | pytest |
-| Backend BOM-compare logic | `backend/tests/test_bom_compare_logic.py` | 42 | pytest |
-| Backend BOM-compare runtime | `backend/tests/test_bom_compare_runtime.py` | 14 | pytest |
+| Backend BOM-compare logic | `backend/tests/test_bom_compare_logic.py` | 44 | pytest |
+| Backend BOM-compare runtime | `backend/tests/test_bom_compare_runtime.py` | 16 | pytest |
 | Backend extraction compare | `backend/tests/test_extraction_compare.py` | 10 | pytest |
 | Backend Failure-Rate runtime | `backend/tests/test_failure_rate_runtime.py` | 4 | pytest |
 | Backend read-layer (NA + header dedup) | `backend/tests/test_read_layer.py` | 9 | pytest |
@@ -28,7 +28,7 @@
 | Backend RefDes runtime | `backend/tests/test_refdes_runtime.py` | 36 | pytest |
 | Backend RefDes validation notes | `backend/tests/test_validation_notes.py` | 12 | pytest |
 | Backend RefDes prefix config | `backend/tests/test_refdes_prefix_config.py` | 7 | pytest |
-| **Backend subtotal** | | **473** | |
+| **Backend subtotal** | | **477** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 5 | Vitest + RTL |
 | Frontend escape layers | `frontend/src/shared/hooks/useEscapeLayer.test.ts` | 4 | Vitest |
@@ -76,7 +76,7 @@
 | Frontend shell-hook install | `frontend/src/app/App.shellHooks.test.tsx` | 1 | Vitest + RTL |
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
-| **Frontend subtotal** | | **344** | |
+| **Frontend subtotal** | | **346** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 19 | cargo test |
 | **Total** | | **836** | |
 
@@ -224,7 +224,7 @@ new FMEA tests must do the same or validation will reject the request.
 | Failure-Rate logic (in-process, 24 tests) | Failure Rate (FR) linker math driven through `FMEALinkerLogic.process`: per-mode `Mode_FR = Part_FR * Usage * Corrected_Ratio` arithmetic, unit-mode scaling to per-hour space, RefDes lookup normalization, and Tier-1 genuine-gap Part Usage handling (blank usage with real FR → NaN Mode_FR, "=1/N" formula-cell-as-NaN, unmatched-RefDes zero preserved, circuit-block roll-up skips blank children) — asserts exact computed numbers |
 | RefDes extraction-engine (in-process, 18 tests) | `_disambiguate_pin_mapping` pin-label collision resolution across the three-tier priority (body center inside group rect → body overlaps rect → nearest body by distance); bounded word extraction across both group-fallback probes; post-join zombie counting and survivor retention for safe document ownership; the Tier-2 #20 pinlist-failure run-log surfacing; and the geometry RefDes-check prefix-allowlist alignment (#6), the `pin_assignment_threshold` config key, and cap-hit run-log warnings |
 | BOM-compare logic (in-process, 31 tests) | BOM Compare range/set math: opt-in RefDes range expansion (`R200-R205` → R200..R205) while the `analyze` orchestrator never expands by default (hyphens denote pins, e.g. `U200-1` reduces to base `U200`), zero-pad preservation, `analyze` set math (Missing in BOM / BOM Not in Groups, both directions), and the custom per-column value-diff contract (`compare_columns` flags a changed value, omitting it reports none, Numeric rule ignores text formatting) |
-| BOM-compare runtime (in-process, 14 tests) | Runtime validation/option wiring plus cancellation cleanup before promotion in group, custom, and extraction-compare output paths |
+| BOM-compare runtime (in-process, 16 tests) | Runtime validation/option wiring plus cancellation cleanup before promotion in group, custom, and extraction-compare output paths |
 | Failure-Rate runtime (in-process, 4 tests) | Runtime validation labels and cancellation cleanup before output promotion |
 | RefDes runtime (in-process, 33 tests) | Runtime option validation, output projection, BOM cross-check soft-failure qualification, cancellation checks during group detection / after extraction / before promotion, and zombie-aware PDF close behavior |
 | RefDes silent-loss hotfix (Wave R, in-process, 12 tests) | DIG-4xx incident closure: UNGROUPED (IN/NOT IN BOM) + PROVISIONAL capture for RefDes outside every group rect (NextGen + legacy-hybrid twin); annotation page-timeout collection with 30s default, config option, and toast-qualifying result notes; empty-`/Contents` FreeText label recovery from the annotation appearance; run-length-aware sequence gaps (short-run placeholders, long-run range-summary rows, no silent family skip) with extraction-compare exclusion; the combined 3-page incident regression; bom-collision pin disposition |

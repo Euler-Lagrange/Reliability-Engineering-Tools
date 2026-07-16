@@ -176,6 +176,47 @@ describe("BomCompareTool custom compare workflow", () => {
     ).not.toBeInTheDocument();
   });
 
+  // User request (2026-07-16): per-file display names. The nickname typed
+  // into an input row must (a) rewrite that file's Column-mapping row labels
+  // in plain words and (b) ride the run payload as the backend's
+  // display_name_* option so the Excel report is labeled with it.
+  it("per-file display names flow into mapping labels and the run payload", async () => {
+    backendMocks.openExcelFile.mockResolvedValue("C:\\real\\Grouping.xlsx");
+    backendMocks.listSheets.mockResolvedValue({
+      path: "C:\\real\\Grouping.xlsx",
+      sheets: ["Grouping"],
+      mode: "desktop-bridge",
+    });
+    backendMocks.inspectInput.mockResolvedValue({
+      mode: "desktop-bridge",
+      sheet: "Grouping",
+      columns: ["Component Group", "Reference Designator"],
+    });
+
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+
+    await user.click(screen.getByRole("button", { name: "Browse for grouping file" }));
+    await screen.findByText("Grouping workbook");
+
+    // Default labels already say WHICH file each row maps, in plain words.
+    expect(screen.getByText("Group column — Grouping file")).toBeInTheDocument();
+    expect(screen.getByText("RefDes column — BOM file")).toBeInTheDocument();
+
+    await user.type(
+      screen.getByRole("textbox", { name: "Grouping workbook display name" }),
+      "CPU Grouping File",
+    );
+    expect(screen.getByText("Group column — CPU Grouping File")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Compare" }));
+    await waitFor(() => expect(backendMocks.validateRun).toHaveBeenCalled());
+    const request = backendMocks.validateRun.mock.calls[0][0];
+    expect(request.options.display_name_grouping).toBe("CPU Grouping File");
+    // No BOM nickname typed -> the key is omitted, not sent empty.
+    expect(request.options.display_name_bom).toBeUndefined();
+  });
+
   // User decision (2026-07-13): EVERY workflow card greets fresh with the
   // onboarding EmptyState — the old `workflowId === default` gate made only
   // Group vs BOM show the panel while equally-empty Custom/Extraction cards

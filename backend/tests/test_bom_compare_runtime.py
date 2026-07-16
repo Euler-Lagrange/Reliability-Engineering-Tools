@@ -133,14 +133,15 @@ def test_group_compare_required_mapping_sentinel_blocks_validation(tmp_path: Pat
 
     assert result["ok"] is False
     assert result["reason_code"] == "invalid_do_not_map"
-    # Batch 6 #7: the message names the mapping as the UI labels it.
-    assert "BOM: RefDes column" in result["toast_text"]
+    # Batch 6 #7 (+ 2026-07-16 relabel): the message names the mapping as
+    # the UI labels it.
+    assert "RefDes column — BOM file" in result["toast_text"]
     assert "bom_refdes_col" not in result["toast_text"]
 
 
 def test_group_compare_missing_mapping_uses_display_label(tmp_path: Path) -> None:
     """A missing required group-compare mapping is reported with the human
-    display label ('Grouping: group column'), not the raw canonical."""
+    display label ('Group column — Grouping file'), not the raw canonical."""
     body = _build_group_body(tmp_path)
     body["mappings"] = [
         row for row in body["mappings"] if row["canonical"] != "grouping_group_col"
@@ -150,13 +151,13 @@ def test_group_compare_missing_mapping_uses_display_label(tmp_path: Path) -> Non
 
     assert result["ok"] is False
     assert result["reason_code"] == "missing_mappings"
-    assert "Grouping: group column" in result["toast_text"]
+    assert "Group column — Grouping file" in result["toast_text"]
     assert "grouping_group_col" not in result["toast_text"]
 
 
 def test_custom_compare_missing_mapping_uses_file_display_label(tmp_path: Path) -> None:
     """A missing required custom-compare mapping is reported with the UI's
-    'File 1 / File 2' display label, not the raw refdes_col_a canonical."""
+    'File 1' display label, not the raw refdes_col_a canonical."""
     body = _build_custom_body(tmp_path)
     body["mappings"] = [
         row for row in body["mappings"] if row["canonical"] != "refdes_col_a"
@@ -166,7 +167,7 @@ def test_custom_compare_missing_mapping_uses_file_display_label(tmp_path: Path) 
 
     assert result["ok"] is False
     assert result["reason_code"] == "missing_mappings"
-    assert "File 1: RefDes column" in result["toast_text"]
+    assert "RefDes column — File 1" in result["toast_text"]
     assert "refdes_col_a" not in result["toast_text"]
 
 
@@ -480,3 +481,60 @@ def test_custom_runtime_without_compare_columns_reports_zero_differences(tmp_pat
         "Without compare_columns no value diffs should be reported; "
         f"got secondary_metric {result['secondary_metric']!r}"
     )
+
+
+# ---------------------------------------------------------------------------
+# User request 2026-07-16: per-file display names. Group mode grows its own
+# display_name_grouping/display_name_bom pair (custom/extraction already read
+# display_name_a/b); the names must land in the written report and the notes.
+# ---------------------------------------------------------------------------
+
+def test_group_runtime_display_names_label_report_and_notes(tmp_path: Path) -> None:
+    """display_name_grouping/display_name_bom flow through analyze into the
+    Summary sheet's file rows ("<name> — <basename>") and the result notes."""
+    from openpyxl import load_workbook
+
+    body = _build_group_body(
+        tmp_path,
+        options={
+            "ignore_dnp": True,
+            "display_name_grouping": "CPU Grouping File",
+            "display_name_bom": "New Digital BOM",
+        },
+    )
+
+    result = bom_runtime.execute_run_request(body)
+
+    assert result["status"] == "success"
+    assert "CPU Grouping File" in result["notes"][0]
+    assert "New Digital BOM" in result["notes"][0]
+
+    wb = load_workbook(result["output_file"], read_only=True)
+    try:
+        summary_rows = {
+            row[0]: row[1]
+            for row in wb["Summary"].iter_rows(values_only=True)
+            if row and row[0] is not None
+        }
+    finally:
+        wb.close()
+    assert summary_rows["Grouping File"] == "CPU Grouping File — grouping.xlsx"
+    assert summary_rows["BOM File"] == "New Digital BOM — bom.xlsx"
+
+
+def test_group_runtime_non_string_display_names_fall_back(tmp_path: Path) -> None:
+    """Defense-in-depth: non-string display names are ignored, keeping the
+    byte-identical legacy note and basename-only Summary rows."""
+    body = _build_group_body(
+        tmp_path,
+        options={
+            "ignore_dnp": True,
+            "display_name_grouping": 123,
+            "display_name_bom": ["not", "a", "string"],
+        },
+    )
+
+    result = bom_runtime.execute_run_request(body)
+
+    assert result["status"] == "success"
+    assert result["notes"][0] == "Group vs BOM mode: compared grouping file against BOM."

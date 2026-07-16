@@ -370,7 +370,8 @@ def _check_warnings(
 def _check_duplicates(
     group_df: pd.DataFrame, bom_df: pd.DataFrame, mapping: ColumnMapping,
     ignore_tok_re: Optional[re.Pattern], options: AnalyzeOptions,
-    dnp_re: re.Pattern, stop_event: Optional['threading.Event']
+    dnp_re: re.Pattern, stop_event: Optional['threading.Event'],
+    source_labels: Tuple[str, str] = ("Grouping", "BOM"),
 ) -> pd.DataFrame:
     """Detect duplicate RefDes entries in both grouping and BOM files.
 
@@ -379,7 +380,10 @@ def _check_duplicates(
     - BOM file: RefDes appearing multiple times (intra-file duplicates)
 
     Returns DataFrame with columns: Source, Token, Count, Description
-    - Source: "Grouping" or "BOM" to indicate which file contains the duplicate
+    - Source: which file contains the duplicate. Defaults to
+      "Grouping" / "BOM"; when the user typed per-file display names
+      (2026-07-16 request) those names appear here instead so the report
+      always says which file a value came from.
     """
     dup_rows = []
     if not options.run_duplicate_checks:
@@ -416,7 +420,7 @@ def _check_duplicates(
             if len(groups) > 1:
                 desc = ", ".join(sorted(groups))
                 dup_rows.append({
-                    "Source": "Grouping",
+                    "Source": source_labels[0],
                     "Token": tok,
                     "Count": len(groups),
                     "Description": desc
@@ -456,10 +460,10 @@ def _check_duplicates(
             check_cancelled(stop_event, "Analysis cancelled by user.")
             if count > 1:
                 dup_rows.append({
-                    "Source": "BOM",
+                    "Source": source_labels[1],
                     "Token": tok,
                     "Count": count,
-                    "Description": f"Appears {count} times in BOM"
+                    "Description": f"Appears {count} times in {source_labels[1]}"
                 })
 
     return pd.DataFrame(dup_rows, columns=["Source", "Token", "Count", "Description"])
@@ -733,7 +737,12 @@ def _check_part_usage(
 # -----------------------------------------------------------------------------
 # Main Analysis Routine
 # -----------------------------------------------------------------------------
-def analyze(group_df: pd.DataFrame, bom_df: pd.DataFrame, mapping: ColumnMapping, options: AnalyzeOptions, file_paths: Tuple[str, str], stop_event: Optional['threading.Event'] = None) -> AnalyzeResults:
+def analyze(
+    group_df: pd.DataFrame, bom_df: pd.DataFrame, mapping: ColumnMapping,
+    options: AnalyzeOptions, file_paths: Tuple[str, str],
+    stop_event: Optional['threading.Event'] = None,
+    file_labels: Optional[Tuple[Optional[str], Optional[str]]] = None,
+) -> AnalyzeResults:
     """
     Main analysis orchestrator - compares grouping file against BOM.
 
@@ -743,6 +752,12 @@ def analyze(group_df: pd.DataFrame, bom_df: pd.DataFrame, mapping: ColumnMapping
     3. Parsing both files into token sets
     4. Delegating to specialized helper functions for each check type
     5. Generating summary results
+
+    ``file_labels`` (user request 2026-07-16) carries optional user-typed
+    display names for (grouping, BOM). When present they replace the
+    generic "Grouping"/"BOM" source labels in the report and annotate the
+    Summary file rows, so it is always clear which file a value came from.
+    Callers are responsible for Excel-safe sanitization (the runtime does).
     """
     log_buffer = []
     def log(msg):
@@ -794,8 +809,11 @@ def analyze(group_df: pd.DataFrame, bom_df: pd.DataFrame, mapping: ColumnMapping
         b_bases, b_desc_map, b_base_map, g_base_map, options, stop_event
     )
 
+    grouping_label, bom_label = file_labels if file_labels else (None, None)
+
     df_dup = _check_duplicates(
-        group_df, bom_df, mapping, ignore_tok_re, options, dnp_re, stop_event
+        group_df, bom_df, mapping, ignore_tok_re, options, dnp_re, stop_event,
+        source_labels=(grouping_label or "Grouping", bom_label or "BOM"),
     )
 
     df_fmr = _check_fmr(
@@ -808,12 +826,21 @@ def analyze(group_df: pd.DataFrame, bom_df: pd.DataFrame, mapping: ColumnMapping
         bom_desc_col=mapping.bom_desc_col,
         source_name=file_paths[1] if file_paths and len(file_paths) > 1 else None,
     )
+    # Per-file display names: the Part Usage table's Source column is a
+    # constant "BOM" — swap in the user's name for that file when given.
+    if bom_label and not df_usage.empty:
+        df_usage = df_usage.assign(Source=bom_label)
 
-    # Generate summary
+    # Generate summary. File rows carry "<display name> — <basename>" when
+    # the user named the file, plain basename otherwise.
+    def _file_value(label: Optional[str], path: str) -> str:
+        base = os.path.basename(path)
+        return f"{label} — {base}" if label else base
+
     summary_data = [
         ("Run Timestamp", datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
-        ("Grouping File", os.path.basename(file_paths[0])),
-        ("BOM File", os.path.basename(file_paths[1])),
+        ("Grouping File", _file_value(grouping_label, file_paths[0])),
+        ("BOM File", _file_value(bom_label, file_paths[1])),
         ("Missing in BOM", len(df_missing)),
         ("BOM Not in Groups", len(df_extra)),
         ("Warnings", len(df_warn)),

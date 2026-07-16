@@ -67,6 +67,32 @@ describe("InputGrid copy-path buttons", () => {
   });
 });
 
+describe("InputGrid display-name field", () => {
+  test("renders the nickname field only when wired and reports edits", () => {
+    const onNicknameChange = vi.fn();
+    const input = makeInput({ role: "grouping", label: "Grouping workbook" });
+
+    const { rerender } = render(<InputGrid inputs={[input]} />);
+    // Not wired (FMEA / Failure Rate / RefDes): no field renders.
+    expect(
+      screen.queryByRole("textbox", { name: "Grouping workbook display name" }),
+    ).not.toBeInTheDocument();
+
+    rerender(
+      <InputGrid
+        inputs={[input]}
+        nicknames={{ grouping: "CPU Grouping File" }}
+        onNicknameChange={onNicknameChange}
+      />,
+    );
+    const field = screen.getByRole("textbox", { name: "Grouping workbook display name" });
+    expect(field).toHaveValue("CPU Grouping File");
+
+    fireEvent.change(field, { target: { value: "CPU Grouping File v2" } });
+    expect(onNicknameChange).toHaveBeenCalledWith("grouping", "CPU Grouping File v2");
+  });
+});
+
 describe("InputGrid inspection controls", () => {
   test("disables Browse and sheet inspection with the supplied reason", () => {
     const onBrowse = vi.fn();

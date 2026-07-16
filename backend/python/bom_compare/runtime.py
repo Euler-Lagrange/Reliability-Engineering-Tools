@@ -17,6 +17,7 @@ from common import (
     build_output_filename,
     validate_explicit_output_directory,
 )
+from common.excel_styles import sanitize_for_excel
 from common.exceptions import FileAccessError, ValidationError
 from shared.pre_run_validation import (
     append_output_directory_warning,
@@ -54,22 +55,38 @@ ROLE_LABELS = {
 }
 
 # Human-readable labels for the canonical mapping tokens, so a blocked-run
-# message reads "Missing required mappings: BOM: RefDes column." instead of the
-# raw canonical ("bom_refdes_col"). These MUST mirror the frontend display
-# labels in frontend/src/mocks/scenarios.ts (bomCompareGroupMappings /
-# bomCompareCustomMappings). Unknown keys fall back to the raw canonical.
+# message reads "Missing required mappings: RefDes column — BOM file."
+# instead of the raw canonical ("bom_refdes_col"). These MUST mirror the
+# frontend defaults in MAPPING_FIELD_META
+# (frontend/src/features/bom-compare/BomCompareTool.tsx) — the phrasing the
+# user sees on the mapping rows themselves (2026-07-16 request). Unknown
+# keys fall back to the raw canonical.
 CANONICAL_DISPLAY_LABELS = {
-    "grouping_group_col": "Grouping: group column",
-    "grouping_refdes_col": "Grouping: RefDes column",
-    "bom_refdes_col": "BOM: RefDes column",
-    "bom_desc_col": "BOM: description column",
-    "refdes_col_a": "File 1: RefDes column",
-    "refdes_col_b": "File 2: RefDes column",
+    "grouping_group_col": "Group column — Grouping file",
+    "grouping_refdes_col": "RefDes column — Grouping file",
+    "bom_refdes_col": "RefDes column — BOM file",
+    "bom_desc_col": "Description column — BOM file",
+    "refdes_col_a": "RefDes column — File 1",
+    "refdes_col_b": "RefDes column — File 2",
 }
 
 
 def _role_label(role: str) -> str:
     return ROLE_LABELS.get(role, role)
+
+
+def _display_label(value: Any) -> str | None:
+    """Normalize a user-typed per-file display name (2026-07-16 request).
+
+    Names flow into Excel cells and sheet names, so they are sanitized for
+    Excel-safe characters and clamped — a pasted paragraph must not blow up
+    the report layout. Non-strings and empty results collapse to None
+    (callers fall back to the generic role label).
+    """
+    if not isinstance(value, str):
+        return None
+    cleaned = sanitize_for_excel(value).strip()
+    return cleaned[:60] or None
 
 
 def _mapping_label(canonical: str) -> str:
@@ -470,6 +487,11 @@ def _run_group_compare(
         check_part_usage=options.get("check_part_usage", True),
     )
 
+    # Per-file display names (user request 2026-07-16). Custom/extraction
+    # modes already read display_name_a/b; these are the group-mode pair.
+    grouping_label = _display_label(options.get("display_name_grouping"))
+    bom_label = _display_label(options.get("display_name_bom"))
+
     emit_status("running", "Running comparison", "Comparing grouping against BOM...")
     emit_progress("Running comparison", "Comparing...", 30)
 
@@ -477,6 +499,7 @@ def _run_group_compare(
         group_df, bom_df, mapping, analyze_options,
         (group_path or "", bom_path or ""),
         stop_event=bridge.stop_event,
+        file_labels=(grouping_label, bom_label),
     )
     # Close each stage with a completed-phrase message: the frontend
     # timeline keeps a stage's LAST message, so without this the step
@@ -524,7 +547,7 @@ def _run_group_compare(
         "primary_metric": f"{missing_count} missing in BOM",
         "secondary_metric": f"{warning_count} warnings",
         "notes": [
-            "Group vs BOM mode: compared grouping file against BOM.",
+            f"Group vs BOM mode: compared {grouping_label or 'grouping file'} against {bom_label or 'BOM'}.",
         ],
         "row_count": missing_count + extra_count,
         "warning_count": warning_count,
@@ -567,8 +590,8 @@ def _run_extraction_compare(
     )
     emit_progress("Reading input files", "Files loaded.", 15)
 
-    name_a = options.get("display_name_a") or (Path(path_a).stem if path_a else "Extraction A")
-    name_b = options.get("display_name_b") or (Path(path_b).stem if path_b else "Extraction B")
+    name_a = _display_label(options.get("display_name_a")) or (Path(path_a).stem if path_a else "Extraction A")
+    name_b = _display_label(options.get("display_name_b")) or (Path(path_b).stem if path_b else "Extraction B")
 
     emit_status("running", "Comparing extractions", "Diffing component groups between revisions...")
     emit_progress("Comparing extractions", "Comparing...", 30)
@@ -675,8 +698,8 @@ def _run_custom_compare(
         if isinstance(entry, dict) and entry.get("col_a") and entry.get("col_b")
     ]
 
-    name_a = options.get("display_name_a") or (Path(path_a).stem if path_a else "File 1")
-    name_b = options.get("display_name_b") or (Path(path_b).stem if path_b else "File 2")
+    name_a = _display_label(options.get("display_name_a")) or (Path(path_a).stem if path_a else "File 1")
+    name_b = _display_label(options.get("display_name_b")) or (Path(path_b).stem if path_b else "File 2")
 
     emit_status("running", "Comparing entries", "Comparing entries between files...")
     emit_progress("Comparing entries", "Comparing...", 30)
