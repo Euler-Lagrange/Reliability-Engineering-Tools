@@ -165,14 +165,12 @@ describe("RefDesExtractorTool piece-part mode", () => {
 
     // Browse the pinlist (Excel branch -> listSheets resolution).
     await user.click(within(pinlistCard).getByRole("button", { name: "Browse" }));
-    const loadedChip = await within(pinlistCard).findByText("Loaded");
-    expect(loadedChip).toBeInTheDocument();
 
     // BUG 3: the Excel listSheets success branch never set `status`, so the
     // pinlist kept its seeded `status: "optional"` and InputGrid never gave it
-    // the ✓ "ready" classification. The chip must now read as ready and the
-    // card's step indicator must show the ✓.
-    expect(loadedChip).toHaveClass("status-chip--ready");
+    // the "loaded" classification. v2 N6: the tag chip became the row
+    // indicator — loaded state is carried by data-state + the ✓ glyph.
+    await waitFor(() => expect(pinlistCard).toHaveAttribute("data-state", "loaded"));
     expect(within(pinlistCard).getByText("✓")).toBeInTheDocument();
 
     // Toggle back to Functional: the pinlist is filtered out of the visible
@@ -189,7 +187,7 @@ describe("RefDesExtractorTool piece-part mode", () => {
     const pinlistCardAgain = (await screen.findByText("Pinlist file (optional)")).closest(
       "article",
     ) as HTMLElement;
-    expect(within(pinlistCardAgain).getByText("Loaded")).toBeInTheDocument();
+    expect(pinlistCardAgain).toHaveAttribute("data-state", "loaded");
   });
 
   // Regression (#17): a finished run's terminal phase lingers in the store, so

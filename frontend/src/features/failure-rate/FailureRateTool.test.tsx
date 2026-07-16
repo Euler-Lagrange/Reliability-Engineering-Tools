@@ -226,7 +226,8 @@ describe("FailureRateTool inspected-column mapping derivation", () => {
     await user.click(screen.getByRole("button", { name: "Browse for parts list" }));
     await screen.findByText("C:\\real\\Predictions.xlsx");
     await waitFor(() => expect(backendMocks.inspectInput).toHaveBeenCalled());
-    await screen.findByText("Analyzed");
+    // v2 N6: the tag chip became the row indicator's tooltip.
+    await screen.findByTitle("Analyzed");
 
     // The prediction RefDes dropdown now offers the REAL headers, not the
     // stale fixture options.

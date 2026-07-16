@@ -242,10 +242,13 @@ describe("tool run dispatch", () => {
     await screen.findByText("Grouping workbook");
 
     // piece_part_generate: grouping, bom, failureModes are backend-required;
-    // hda is hidden (inline default). The chip marks required-AND-unloaded
-    // cards, so with grouping just loaded exactly two chips remain (bom +
-    // failureModes) — the loaded grouping card must NOT carry one.
-    expect(screen.getAllByText("Required")).toHaveLength(2);
+    // hda is hidden (inline default). v2 N6: the amber chip became a danger
+    // asterisk that marks EVERY required role (loaded state is carried by
+    // the row indicator instead), so all three required rows show it while
+    // the just-loaded grouping row reads data-state="loaded".
+    expect(
+      screen.getAllByTitle("Required — the run is blocked until this file is loaded."),
+    ).toHaveLength(3);
   });
 
   it("blocks starting a run while another tool's run is live (cross-tool guard)", async () => {

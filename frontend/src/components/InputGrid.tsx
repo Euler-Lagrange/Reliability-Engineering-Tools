@@ -113,72 +113,67 @@ export function InputGrid({
             data-state={state}
             data-step={index + 1}
           >
-            <div className="input-card__header">
-              <div className="input-card__header-text">
-                <p className="input-card__label">
-                  <span className="input-card__step-indicator" aria-hidden="true">
-                    {state === "loaded" ? "✓" : index + 1}
-                  </span>
-                  {input.label}
-                </p>
-                <div className="input-card__path-wrap">
+            {/* v2 N6: the leading indicator carries the stepper — hollow
+                ring = pending, accent ring + dot = active step, green ✓ =
+                loaded. Text never dims (the v1 opacity fade dropped rows
+                below AA). Tooltip carries the tag ("Loaded") that used to
+                render as a chip. */}
+            <span className="input-card__indicator" title={input.tag || undefined} aria-hidden="true">
+              {state === "loaded" ? "✓" : ""}
+            </span>
+            <p className="input-card__label" title={input.helper || undefined}>
+              <span className="input-card__label-text">{input.label}</span>
+              {input.required ? (
+                <span
+                  className="input-card__required"
+                  title="Required — the run is blocked until this file is loaded."
+                >
+                  {" "}
+                  *
+                </span>
+              ) : null}
+            </p>
+            <div className="input-card__path-wrap">
+              {canCopyPath ? (
+                <>
                   <span
                     className={`input-card__path${showExampleStyling ? " input-card__path--example" : ""}`}
                     title={input.path || undefined}
                   >
                     {displayPath}
                   </span>
-                  {canCopyPath ? (
-                    <CopyPathButton path={input.path} label={input.label} />
-                  ) : null}
-                </div>
-              </div>
-              <div className="input-card__chips">
-                {input.required && !input.path ? (
-                  <span
-                    className="status-chip status-chip--attention"
-                    title="The run is blocked until this file is loaded."
-                  >
-                    Required
-                  </span>
-                ) : null}
-                <span className={`status-chip status-chip--${input.status}`}>{input.tag}</span>
-              </div>
+                  <CopyPathButton path={input.path} label={input.label} />
+                </>
+              ) : (
+                <span className="input-card__path input-card__path--empty">No file selected</span>
+              )}
             </div>
-            <p className="input-card__helper">{input.helper}</p>
-            <div className="input-card__footer">
-              <div className="sheet-picker">
-                <label>Sheet</label>
-                <CustomSelect
-                  label={`${input.label} sheet`}
-                  value={input.selectedSheet}
-                  options={input.sheets.map((sheet) => ({ value: sheet.label, label: sheet.label }))}
-                  disabled={sheetDisabled}
-                  disabledReason={sheetDisabledReason}
-                  compact
-                  onChange={(sheet) => onSheetChange?.(input.role, sheet)}
-                />
-              </div>
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={() => onBrowse?.(input.role)}
-                disabled={inspectionPaused || !onBrowse || input.isResolvingSheets || input.isAnalyzing}
-                title={browseDisabledReason}
-              >
-                {input.isResolvingSheets ? "Loading..." : input.isAnalyzing ? "Analyzing..." : "Browse"}
-              </button>
+            <div className="sheet-picker">
+              <label>Sheet</label>
+              <CustomSelect
+                label={`${input.label} sheet`}
+                value={input.selectedSheet}
+                options={input.sheets.map((sheet) => ({ value: sheet.label, label: sheet.label }))}
+                disabled={sheetDisabled}
+                disabledReason={sheetDisabledReason}
+                compact
+                onChange={(sheet) => onSheetChange?.(input.role, sheet)}
+              />
             </div>
-            {input.resolutionError ? <p className="input-card__note">{input.resolutionError}</p> : null}
+            <button
+              type="button"
+              className="ghost-button ghost-button--sm"
+              onClick={() => onBrowse?.(input.role)}
+              disabled={inspectionPaused || !onBrowse || input.isResolvingSheets || input.isAnalyzing}
+              title={browseDisabledReason}
+            >
+              {input.isResolvingSheets ? "Loading..." : input.isAnalyzing ? "Analyzing..." : "Browse"}
+            </button>
+            {input.resolutionError ? (
+              <p className="input-card__note input-card__note--danger">{input.resolutionError}</p>
+            ) : null}
             {!input.resolutionError && input.isAnalyzing ? (
               <p className="input-card__note">Inspecting the selected sheet through the desktop backend bridge.</p>
-            ) : null}
-            {/* Gate on loaded sheets: empty desktop-seeded slots carry
-                source "desktop-bridge" before anything is browsed, and a
-                loaded PDF never has sheets — neither should claim sheets
-                were loaded. */}
-            {!input.resolutionError && input.source === "desktop-bridge" && input.sheets.length > 0 ? (
-              <p className="input-card__note">Sheets loaded from the desktop backend bridge.</p>
             ) : null}
           </article>
         );

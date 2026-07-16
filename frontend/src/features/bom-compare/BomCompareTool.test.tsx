@@ -400,7 +400,8 @@ describe("BomCompareTool custom compare workflow", () => {
     // loaded (tag transitions Inspecting → Desktop → Analyzed) before we
     // switch workflows.
     await waitFor(() => expect(backendMocks.inspectInput).toHaveBeenCalled());
-    expect(await screen.findByText("Analyzed")).toBeInTheDocument();
+    // v2 N6: the tag chip became the row indicator's tooltip.
+    expect(await screen.findByTitle("Analyzed")).toBeInTheDocument();
 
     // Round-trip: peek at Custom Compare, then back to Group vs BOM.
     await user.click(screen.getByRole("button", { name: /Custom Compare/i }));
@@ -627,9 +628,10 @@ describe("BomCompareTool custom compare workflow", () => {
     await user.click(screen.getByRole("button", { name: "Browse for grouping file" }));
     await screen.findByText("C:\\real\\Grouping.xlsx");
     await waitFor(() => expect(backendMocks.inspectInput).toHaveBeenCalled());
-    // Wait for the inspected slot to settle (tag transitions to "Analyzed")
-    // so the derived mapping rows reflect the real headers before we run.
-    await screen.findByText("Analyzed");
+    // Wait for the inspected slot to settle (tag transitions to "Analyzed",
+    // carried by the v2 row indicator's tooltip) so the derived mapping rows
+    // reflect the real headers before we run.
+    await screen.findByTitle("Analyzed");
 
     await user.click(screen.getByRole("tab", { name: /^Run$/i }));
     await user.click(screen.getByRole("button", { name: "Compare" }));
