@@ -1577,7 +1577,7 @@ export function FmeaTool() {
                 </p>
                 <div className="analysis-summary__chips">
                   {inspectedColumns.slice(0, 8).map((column) => (
-                    <span key={column} className="status-chip status-chip--info">
+                    <span key={column} className="column-tag">
                       {column}
                     </span>
                   ))}

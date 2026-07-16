@@ -190,7 +190,14 @@ export function RunStatePanel({
               <p className="timeline__title">{event.title}</p>
               <p className="timeline__detail">{event.detail}</p>
             </div>
-            <span className={`status-chip status-chip--${event.status}`}>{event.status}</span>
+            <span className="state-word" data-status={event.status}>
+              <i
+                className="dot"
+                data-tone={event.status === "completed" ? "ok" : event.status === "active" ? "acc" : undefined}
+                aria-hidden="true"
+              />
+              {event.status}
+            </span>
           </article>
         ))}
       </div>
@@ -255,7 +262,14 @@ export function RunStatePanel({
       {result ? (
         <article className="run-result" data-status={result.status}>
           <div className="run-result__header">
-            <span className={`status-chip status-chip--${result.status}`}>{result.status}</span>
+            <span className="state-word" data-status={result.status}>
+              <i
+                className="dot"
+                data-tone={result.status === "success" ? "ok" : "bad"}
+                aria-hidden="true"
+              />
+              {result.status}
+            </span>
             <p>{result.outputFile}</p>
           </div>
           <div className="run-result__body">
