@@ -189,37 +189,14 @@
 
 .topbar {
   /* Asymmetric padding: no bottom — .content provides the spacing
-     under us. The 1px accent gradient signature lives at the top edge
-     via .topbar::before (visual rhyme with .run-log-panel::before). */
+     under us. (The v1 accent gradient at this edge was deleted in
+     Design Pass v2 — gray builds structure, color is state-only.) */
   position: relative;
   display: flex;
   align-items: start;
   justify-content: space-between;
   gap: var(--space-4);
   padding: var(--space-5) var(--space-6) 0;
-}
-
-/* Signature accent gradient — visual rhyme with .run-log-panel::before.
-   Creates a 1px instrument-bar feel at the very top of the active tool
-   area, framing it as "system surface" rather than a webpage. The opacity
-   and stop positions MUST stay in sync with the run-log panel's gradient
-   so the rhyme is intentional, not coincidental. */
-.topbar::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    var(--accent) 28%,
-    var(--accent) 72%,
-    transparent 100%
-  );
-  opacity: 0.35;
-  pointer-events: none;
 }
 
 .titleGroup {

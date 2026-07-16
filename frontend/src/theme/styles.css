@@ -23,7 +23,22 @@
 
 :root {
   /* ============================================================
-     Font families — self-hosted Inter (UI) + JetBrains Mono (data).
+     TOKENS v2 (Design Pass v2) — Light Precision base.
+     Contract: every v1 token NAME survives; VALUES are refined and a
+     small set of new tokens is added. Personality themes override the
+     same names below.
+
+     v2 commitments (design_handoff_v2/Critique v2.html, R1/R3/R6):
+     1. ONE accent. Everything else is gray or a semantic color.
+     2. Depth = borders only. Shadows exist solely for floating layers
+        (menu, palette, toast). --shadow-rail-active is retired.
+     3. Four text tiers with measured, monotonic contrast:
+        text 16.6:1 › secondary 9.3:1 › muted 5.9:1 › faint 4.6:1.
+     4. 4px spacing grid. --space-2-5 (10px) is deprecated → 8px.
+     5. Radius capped at 8px. Pills survive only on the progress bar.
+     ============================================================ */
+
+  /* Font families — self-hosted Inter (UI) + JetBrains Mono (data).
      `--font-display` is a synonym for sans by default; Mission Control
      overrides both to mono. Don't add Google Fonts links — fully offline. */
   --font-sans: "Inter", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
@@ -39,14 +54,16 @@
      — both off the 4px grid — because dense developer UIs benefit from
      compact sizing that 12px (too small) and 14px (too loose) can't hit.
      The scale is non-modular by design. Don't "fix" it. */
-  --text-2xs: 10px;
-  --text-xs: 11px;
-  --text-sm: 12px;
-  --text-base: 13px;
-  --text-md: 16px;
-  --text-lg: 18px;
-  --text-xl: 20px;
-  --text-2xl: 24px;
+  --text-2xs: 10px;   /* micro labels, log level tokens */
+  --text-xs: 11px;    /* metadata, table headers, hints */
+  --text-sm: 12px;    /* controls, dense body */
+  --text-base: 13px;  /* body */
+  --text-md: 16px;    /* panel metrics */
+  --text-lg: 18px;    /* result values */
+  --text-xl: 20px;    /* the one hero metric per tool */
+  --text-2xl: 24px;   /* reserved: modal/full-screen headers only */
+  --text-xxl: 24px;   /* v2: DEMOTED from 28px — the topbar no longer uses it (48px topbar, 14px title) */
+  --text-3xl: 24px;   /* v2: DEMOTED from 32px — hero metrics cap at --text-xl */
 
   /* Line heights */
   --leading-tight: 1.2;
@@ -54,7 +71,9 @@
   --leading-normal: 1.5;
   --leading-relaxed: 1.65;
 
-  /* Font weights */
+  /* Weight discipline: 600 for headings + the primary CTA label.
+     Labels and controls sit at 500. 400 body. 700 is retired from UI
+     chrome (it read as shouting at 10–11px) — kept for log ERROR tokens. */
   --weight-normal: 400;
   --weight-medium: 500;
   --weight-semibold: 600;
@@ -62,83 +81,98 @@
 
   /* Letter spacing.
      `--tracking-uppercase` is the canonical value for ALL uppercase
-     metadata labels (eyebrow, .header-metric span, status chip, etc.).
-     If you find yourself writing `letter-spacing: 0.0Xem` on uppercase
-     text, use this token instead. */
+     metadata labels. v2 demotes uppercase to two roles (nav group
+     labels, log level tokens) and tightens 0.08em → 0.06em. */
   --tracking-tight: -0.01em;
   --tracking-wide: 0.02em;
-  --tracking-uppercase: 0.08em;
+  --tracking-uppercase: 0.06em;
 
   /* ============================================================
-     Spacing scale — 4px grid, 8 named steps.
+     Spacing scale — strict 4px grid.
      RULE: never use raw pixel values for padding / margin / gap /
-     min-height in component CSS. Always reach for one of these.
-     Off-grid values (e.g. negative-margin hit-area expansion) are
-     allowed only with an inline comment explaining the deviation. */
+     min-height in component CSS. Always reach for one of these. */
   --space-1: 4px;     /* micro: icon gaps, fine adjustments */
   --space-2: 8px;     /* tight: within components */
-  --space-2-5: 10px;  /* dense: table-cell rhythm, segment padding (promoted from repeated off-grid 10px) */
+  --space-2-5: 8px;   /* DEPRECATED alias — was 10px; migrate call sites to --space-2 or --space-3 */
   --space-3: 12px;    /* standard: between related elements */
   --space-4: 16px;    /* comfortable: section padding */
   --space-5: 20px;    /* relaxed: rail padding, chrome */
   --space-6: 24px;    /* generous: between sections */
   --space-7: 32px;    /* major: section separation */
-  --space-8: 48px;    /* hero: major page sections */
+  --space-8: 48px;    /* hero: major page regions */
 
-  /* Surface colors */
-  --bg: #f6f8fb;
-  --surface: #ffffff;
-  --surface-muted: #f8fafc;
-  --surface-soft: #f2f5f9;
-  --line: #dfe5ec;
-  --line-strong: #c8d1dc;
-  --text: #172433;
-  --text-secondary: #415268;
-  --text-muted: #617289;
-  /* Bumped from #8794a8 (~2.9:1 on --surface) to #5e6d81 (~5.0:1) to meet
-     WCAG 2.1 AA body-text contrast. Used for helper/hint copy; keeping it
-     closer to --text-muted than pure 4.5:1 preserves visual hierarchy. */
-  --text-faint: #5e6d81;
-  --text-on-accent: #ffffff;          /* For text rendered on top of --accent (primary buttons) */
-  --accent: #235ee7;
-  --accent-soft: #edf3ff;
-  --success: #1b8758;
-  --success-soft: #eaf7f0;
-  --warning: #946100;
-  --warning-soft: #fff6df;
-  --danger: #b14433;
-  --danger-soft: #fff0ed;
+  /* Control metrics (NEW in v2) — desktop-density heights.
+     Controls 28px, prominent CTA 32px, dense table rows 32px,
+     list/nav rows 30px, chip/badge 18px. */
+  --control-h: 28px;
+  --control-h-lg: 32px;
+  --row-h: 32px;
+  --nav-row-h: 30px;
+  --badge-h: 18px;
 
   /* ============================================================
-     Border-radius scale.
-     Use --radius-pill for fully rounded badges/chips. Use --radius-xl
-     only for the rail tool buttons and brand glyph (the only 12px
-     surfaces). Everything else uses --radius-sm (controls), --radius-md
-     (cards), or --radius-lg (prominent containers). */
-  --radius-xs: 4px;
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 10px;
-  --radius-xl: 12px;
-  --radius-pill: 999px;
+     Neutrals — Light Precision.
+     One hue (cool 255°), chroma ≤ 0.008. Two gray surfaces with
+     defined roles: muted = hover tint, soft = sunken well. That is
+     the complete surface vocabulary — --section-surface-decoration
+     aliases to the well. */
+  --bg: #f6f7f9;             /* canvas */
+  --surface: #ffffff;        /* card / panel */
+  --surface-muted: #f6f7f9;  /* hover rows, pressed ghosts (== bg by design) */
+  --surface-soft: #f0f2f5;   /* sunken wells: path fields, log body, code */
+  --line: #e4e7ec;           /* structural hairline */
+  --line-strong: #c9d0da;    /* interactive control borders */
+
+  /* Text ramp — monotonic, all AA at their sizes */
+  --text: #14181f;           /* 16.6:1 — data, headings */
+  --text-secondary: #3e4756; /*  9.3:1 — supporting copy, control labels */
+  --text-muted: #5d6675;     /*  5.9:1 — hints, descriptions, TH */
+  --text-faint: #737c8a;     /*  4.6:1 — metadata, placeholders, kbd */
+  --text-on-accent: #ffffff;
+
+  /* The ONE accent — desaturated cobalt. Interaction states are
+     tokens, not filter:brightness() hacks. */
+  --accent: #2f5bd8;
+  --accent-hover: #2a51c2;
+  --accent-active: #2547ab;
+  --accent-soft: #edf1fc;    /* selection tint — quiet */
+  --accent-border: color-mix(in srgb, var(--accent) 32%, transparent); /* selected outlines */
+
+  /* Semantic — status only, never decoration */
+  --success: #1a7f53;
+  --success-soft: #e9f5ef;
+  --warning: #8f5f04;
+  --warning-soft: #faf3e1;
+  --danger: #b2412f;
+  --danger-soft: #fbefec;
 
   /* ============================================================
-     Shadow scale — depth strategy is borders-only by default.
-     These shadows are reserved for floating / focused / instrument
-     elements. If you find yourself adding a new box-shadow rule,
-     ask whether it should be one of these instead. */
-  --shadow-popover: 0 10px 28px rgba(15, 23, 42, 0.12);
-  --shadow-focus-ring: 0 0 0 3px rgba(35, 94, 231, 0.08);
-  --shadow-rail-active: 0 0 0 1px rgba(35, 94, 231, 0.04), 0 6px 18px rgba(35, 94, 231, 0.08);
-  --shadow-toast: 0 8px 24px rgba(15, 23, 42, 0.08);
+     Border-radius — capped at 8px. Chips/badges are 4px rectangles;
+     999px pills survive only on the progress bar. */
+  --radius-xs: 4px;   /* badges, kbd, micro targets */
+  --radius-sm: 6px;   /* controls, buttons, inputs */
+  --radius-md: 8px;   /* cards, grouped lists, popovers */
+  --radius-lg: 8px;   /* alias of md — no third card radius */
+  --radius-xl: 8px;   /* DEMOTED from 12px — rail buttons join the system */
+  --radius-pill: 999px; /* progress bar track ONLY */
 
-  /* Motion. One easing curve, three durations — micro-interactions use
-     fast, standard control transitions use base, larger reveals use slow.
-     Never write a raw ms literal in a transition/animation shorthand. */
+  /* ============================================================
+     Depth — borders only. Two shadows exist, both for layers that
+     literally float. Everything docked is flat. */
+  --shadow-popover: 0 4px 16px rgba(15, 20, 30, 0.10), 0 1px 3px rgba(15, 20, 30, 0.08);
+  --shadow-toast: 0 6px 20px rgba(15, 20, 30, 0.12);
+  --shadow-rail-active: none; /* RETIRED — active nav is tint + text, not glow */
+  /* Focus ring — the old 8%-alpha ring was invisible; keyboard users
+     stake runs on this. 2px ring at 35% + accent border on the control. */
+  --shadow-focus-ring: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+
+  /* Motion — one curve, three durations inside the 150–250ms band.
+     No spring, no bounce. Never write a raw ms literal in a
+     transition/animation shorthand. */
   --ease: cubic-bezier(0.25, 1, 0.5, 1);
-  --duration-fast: 120ms;
-  --duration-base: 160ms;
-  --duration-slow: 220ms;
+  --duration-fast: 150ms;
+  --duration-base: 200ms;
+  --duration-slow: 250ms;
 
   /* Z-index ladder — one scale for every stacked surface. Never write a
      raw z-index literal; add a rung here if a new layer is needed. */
@@ -147,60 +181,55 @@
   --z-drawer: 40;
   --z-toast: 50;
   --z-modal: 1000;
-  --border-subtle: var(--line);
 
-  /* ============================================================
-     Section surface hierarchy — SectionCard variant backgrounds.
-     Deliberately prefixed `--section-*` to avoid colliding with
-     the theme-aware `--surface` / `--surface-muted` / `--surface-soft`
-     palette above. Primary = visible card surface, muted = divider-
-     only supporting section, decoration = preview / diagnostic panel. */
+  /* Compatibility aliases (v1 names, v2 values) */
+  --border-subtle: var(--line);
   --section-surface-primary: var(--surface);
   --section-surface-muted: transparent;
   --section-surface-decoration: var(--surface-soft);
-
-  /* Named gap roles — semantic aliases over --space-*. Reach for these
-     where the gap has a meaning (inline / grouped / section / page),
-     not just a size. Raw --space-N is still fine for one-off rules. */
-  --gap-inline: var(--space-2);    /*  8px — within a control */
-  --gap-group: var(--space-4);     /* 16px — within a related group */
-  --gap-section: var(--space-7);   /* 32px — between major sections */
-  --gap-page: var(--space-8);      /* 48px — major page regions */
-
-  /* Extended type scale. --text-xxl is the handoff-prescribed H1
-     size (28px); added as a new token rather than bumping --text-2xl
-     so existing 24px consumers are unaffected. --text-3xl is reserved
-     for at-most-one hero metric per tool (designator count, diff count).
-     Off-grid by design — matches the dense-UI rationale above. */
-  --text-xxl: 28px;
-  --text-3xl: 32px;
+  --gap-inline: var(--space-2);
+  --gap-group: var(--space-4);
+  --gap-section: var(--space-6); /* was 32 — section rhythm tightens with the denser chrome */
+  --gap-page: var(--space-7);
 }
 
+/* ============================================================
+   Dark Precision v2 — same geometry, inverted ramp.
+   Surfaces step UP in lightness toward the user (well < bg <
+   surface < hover); borders carry the structure, never glow.
+   ============================================================ */
 :root[data-theme="dark_precision"] {
-  --bg: #11161d;
-  --surface: #171d26;
-  --surface-muted: #131922;
-  --surface-soft: #1b2430;
-  --line: #293343;
-  --line-strong: #334155;
-  --text: #ebf1f7;
-  --text-secondary: #d0dae6;
-  --text-muted: #a9b7c9;
-  --text-faint: #7f91a7;
-  --accent: #6a9cff;
-  --accent-soft: rgba(106, 156, 255, 0.14);
-  --success: #67c193;
-  --success-soft: rgba(103, 193, 147, 0.14);
-  --warning: #f0ba57;
-  --warning-soft: rgba(240, 186, 87, 0.16);
-  --danger: #ef8f82;
-  --danger-soft: rgba(239, 143, 130, 0.14);
+  --bg: #101318;
+  --surface: #171b22;
+  --surface-muted: #1c212a;  /* hover rows */
+  --surface-soft: #12161d;   /* sunken wells */
+  --line: #272e39;
+  --line-strong: #39424f;
+
+  --text: #e8ecf2;           /* 14.9:1 on surface */
+  --text-secondary: #b9c2ce; /*  9.1:1 */
+  --text-muted: #8c96a5;     /*  5.5:1 */
+  --text-faint: #6f7987;     /*  4.5:1 */
+  --text-on-accent: #0e1116;
+
+  --accent: #7e9ff5;
+  --accent-hover: #92aff8;
+  --accent-active: #6c90ee;
+  --accent-soft: rgba(126, 159, 245, 0.13);
+  --accent-border: rgba(126, 159, 245, 0.40);
+
+  --success: #57be8c;
+  --success-soft: rgba(87, 190, 140, 0.13);
+  --warning: #dfaf5e;
+  --warning-soft: rgba(223, 175, 94, 0.14);
+  --danger: #e58274;
+  --danger-soft: rgba(229, 130, 116, 0.13);
 
   /* Dark themes need stronger shadows — light-theme rgba is invisible. */
-  --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.5);
-  --shadow-focus-ring: 0 0 0 3px rgba(106, 156, 255, 0.18);
-  --shadow-rail-active: 0 0 0 1px rgba(106, 156, 255, 0.18), 0 6px 18px rgba(106, 156, 255, 0.16);
-  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-popover: 0 4px 16px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-toast: 0 6px 20px rgba(0, 0, 0, 0.5);
+  --shadow-rail-active: none;
+  --shadow-focus-ring: 0 0 0 2px rgba(126, 159, 245, 0.45);
 }
 
 :root[data-theme="signal_slate"] {
@@ -213,8 +242,10 @@
   --text: #142131;
   --text-secondary: #3b4f63;
   --text-muted: #5f7388;
-  /* Bumped from #8091a3 to #566a7f for WCAG AA contrast on --surface. */
-  --text-faint: #566a7f;
+  /* v2 ramp fix: the AA bump to #566a7f (5.5:1) landed DARKER than
+     --text-muted (4.8:1) — inverted tiers. #64768b is 4.57:1 — still AA,
+     back below muted. */
+  --text-faint: #64768b;
   --accent: #0f766e;
   --accent-soft: rgba(15, 118, 110, 0.12);
   --success: #14815f;
@@ -237,8 +268,10 @@
   --text: #e8f0fa;
   --text-secondary: #b8cce0;
   --text-muted: #8aa3bf;
-  /* Bumped from #6680a0 (~3.9:1) to #8ca2c0 for AA contrast on --surface. */
-  --text-faint: #8ca2c0;
+  /* v2 ramp fix: the AA bump to #8ca2c0 (6.36:1) sat within 0.03 of
+     --text-muted (6.39:1) — two indistinguishable tiers. #7c94b0 is
+     5.32:1 — still AA, visibly below muted. */
+  --text-faint: #7c94b0;
   --accent: #48cae4;
   --accent-soft: rgba(72, 202, 228, 0.16);
   --success: #5fd4a3;
@@ -1705,27 +1738,6 @@ tbody tr:hover {
   grid-template-rows: auto auto;
   border-top: 1px solid var(--line-strong);
   background: var(--surface-muted);
-}
-
-/* Subtle 1px gradient that fades from transparent to accent and back.
-   The single design flourish — gives the panel a faint "control bar" feel
-   without ornament. Pointer-events disabled so it never blocks the toggle. */
-.run-log-panel::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    var(--accent) 28%,
-    var(--accent) 72%,
-    transparent 100%
-  );
-  opacity: 0.35;
-  pointer-events: none;
 }
 
 .run-log-panel__header {
