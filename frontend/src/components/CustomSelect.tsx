@@ -15,6 +15,13 @@ interface CustomSelectProps {
   disabled?: boolean;
   compact?: boolean;
   /**
+   * v2 N7 "quiet" variant — a 24px transparent trigger that only shows
+   * its border on hover, with the value in mono (workbook identifiers
+   * are data). For table-embedded selects; the default variant keeps
+   * the bordered 28px control look for forms.
+   */
+  variant?: "default" | "quiet";
+  /**
    * Short caption rendered below the trigger when the select is disabled.
    * Exposed via `aria-describedby` so assistive tech announces *why* the
    * control is inert instead of just skipping it.
@@ -36,6 +43,7 @@ export function CustomSelect({
   onChange,
   disabled = false,
   compact = false,
+  variant = "default",
   disabledReason,
   placeholder,
 }: CustomSelectProps) {
@@ -50,7 +58,9 @@ export function CustomSelect({
     <div className="custom-select">
       <Select.Root value={value} onValueChange={onChange} disabled={disabled}>
         <Select.Trigger
-          className={`custom-select__trigger${compact ? " custom-select__trigger--compact" : ""}`}
+          className={`custom-select__trigger${compact ? " custom-select__trigger--compact" : ""}${
+            variant === "quiet" ? " custom-select__trigger--quiet" : ""
+          }`}
           aria-label={label}
           aria-describedby={showReason ? reasonId : undefined}
         >

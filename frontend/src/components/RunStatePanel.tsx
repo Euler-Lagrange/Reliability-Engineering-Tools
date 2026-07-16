@@ -44,6 +44,11 @@ interface RunStatePanelProps {
   onRevealOutput?: (path: string) => void;
 }
 
+/** Sentence-case a status enum word ("completed" → "Completed"). */
+function statusWord(status: string): string {
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
 function formatEta(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) {
     return "";
@@ -196,7 +201,7 @@ export function RunStatePanel({
                 data-tone={event.status === "completed" ? "ok" : event.status === "active" ? "acc" : undefined}
                 aria-hidden="true"
               />
-              {event.status}
+              {statusWord(event.status)}
             </span>
           </article>
         ))}
@@ -268,7 +273,7 @@ export function RunStatePanel({
                 data-tone={result.status === "success" ? "ok" : "bad"}
                 aria-hidden="true"
               />
-              {result.status}
+              {statusWord(result.status)}
             </span>
             <p>{result.outputFile}</p>
           </div>

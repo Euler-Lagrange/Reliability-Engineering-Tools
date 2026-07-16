@@ -260,8 +260,9 @@ describe("MappingTable — Phase 2 infrastructure", () => {
     );
     expect(wrapper).not.toBeNull();
 
-    // The resolved status chip should use the not_mapped variant.
-    const chip = container.querySelector(".status-chip--not_mapped");
+    // The resolved status renders as a dot + word carrying the
+    // not_mapped state (v2 N7 replaced the chip with .state-word).
+    const chip = container.querySelector('.state-word[data-status="not_mapped"]');
     expect(chip).not.toBeNull();
     expect(chip?.textContent).toMatch(/not mapped/i);
   });
@@ -281,7 +282,7 @@ describe("MappingTable — Phase 2 infrastructure", () => {
       <MappingTable rows={rows} overrides={{}} onOverride={vi.fn()} />,
     );
 
-    const chip = container.querySelector(".status-chip--derived");
+    const chip = container.querySelector('.state-word[data-status="derived"]');
     expect(chip).not.toBeNull();
     expect(chip?.textContent).toBe("Derived");
   });

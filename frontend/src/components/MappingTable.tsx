@@ -83,12 +83,15 @@ function resolveDisplayStatus(row: ColumnMappingRow, mappedValue: string): Mappi
   return row.status;
 }
 
-const STATUS_CHIP_LABELS: Record<MappingStatus, string> = {
-  mapped: "Mapped",
-  manual: "Manual",
-  attention: "Attention",
-  derived: "Derived",
-  not_mapped: "Not mapped",
+/* v2 N7: status renders as a 6px dot + word (one colored pixel-cluster
+   per row instead of a filled pill — 12 rows stop looking like an alarm
+   panel while the color-column scan pattern survives). */
+const STATUS_META: Record<MappingStatus, { label: string; tone?: string }> = {
+  mapped: { label: "Mapped", tone: "ok" },
+  manual: { label: "Manual", tone: "acc" },
+  attention: { label: "Attention", tone: "warn" },
+  derived: { label: "Derived", tone: "hollow" },
+  not_mapped: { label: "Not mapped" },
 };
 
 /**
@@ -139,14 +142,42 @@ export function MappingTable({
   const showToolbar =
     !!onApplyAllSuggestions || !!onClearAllMappings || unmappedCount > 0;
 
+  // v2 N7: the toolbar counts are the table's telemetry — the amber
+  // "N unmapped" pill becomes just another count. `unmapped` keeps the
+  // required-only semantics (UX findings 2026-07-07 #3: an optional row
+  // with no mapping is a normal state, not a to-do).
+  const statusTotals = rows.reduce(
+    (acc, row) => {
+      const mapped = overrides[row.canonical] ?? row.mappedTo;
+      const status = resolveDisplayStatus(row, mapped);
+      acc[status] = (acc[status] ?? 0) + 1;
+      return acc;
+    },
+    {} as Partial<Record<MappingStatus, number>>,
+  );
+  const countSegments: string[] = [];
+  if (statusTotals.mapped) countSegments.push(`${statusTotals.mapped} mapped`);
+  if (statusTotals.manual) countSegments.push(`${statusTotals.manual} manual`);
+  if (statusTotals.derived) countSegments.push(`${statusTotals.derived} derived`);
+  if (unmappedCount > 0) countSegments.push(`${unmappedCount} unmapped`);
+
   return (
     <div className="table-shell">
       {showToolbar ? (
         <div className="mapping-table__toolbar">
+          <span className="mapping-table__counts" aria-label="Mapping status counts">
+            {countSegments.map((segment, index) => (
+              <span key={segment}>
+                {index > 0 ? <span aria-hidden="true"> · </span> : null}
+                <span>{segment}</span>
+              </span>
+            ))}
+          </span>
+          <span className="mapping-table__toolbar-spacer" />
           {onApplyAllSuggestions ? (
             <button
               type="button"
-              className="ghost-button"
+              className="ghost-button ghost-button--sm"
               disabled={!hasAnySuggestion}
               onClick={onApplyAllSuggestions}
             >
@@ -156,28 +187,22 @@ export function MappingTable({
           {onClearAllMappings ? (
             <button
               type="button"
-              className="ghost-button"
+              className="ghost-button ghost-button--sm"
               disabled={!hasAnyOverride}
               onClick={onClearAllMappings}
             >
               Clear all mappings
             </button>
           ) : null}
-          <span className="mapping-table__toolbar-spacer" />
-          {unmappedCount > 0 ? (
-            <span className="mapping-table__unmapped-count">
-              {unmappedCount} unmapped
-            </span>
-          ) : null}
         </div>
       ) : null}
       <table className="mapping-table">
         <thead>
           <tr>
-            <th>Canonical field</th>
-            <th>Mapped to</th>
+            <th>Field</th>
+            <th>Source column</th>
             <th>Status</th>
-            <th>Recommendation</th>
+            <th>Note</th>
           </tr>
         </thead>
         <tbody>
@@ -265,24 +290,32 @@ export function MappingTable({
                       options={dropdownOptions}
                       onChange={(value) => onOverride(row.canonical, value)}
                       placeholder="Select column…"
+                      variant="quiet"
                     />
                   </div>
                 </td>
                 <td>
-                  <span className={`status-chip status-chip--${displayStatus}`}>
-                    {STATUS_CHIP_LABELS[displayStatus] ?? displayStatus}
+                  <span className="state-word" data-status={displayStatus}>
+                    <i
+                      className="dot"
+                      data-tone={STATUS_META[displayStatus]?.tone}
+                      aria-hidden="true"
+                    />
+                    {STATUS_META[displayStatus]?.label ?? displayStatus}
                   </span>
                 </td>
                 <td>
                   <div className="mapping-table__recommendation-cell">
-                    <span>{row.recommendation}</span>
+                    <span className="mapping-table__note" title={row.recommendation || undefined}>
+                      {row.recommendation}
+                    </span>
                     {showUseRecommendation && suggested ? (
                       <button
                         type="button"
                         className="mapping-table__use-recommendation"
                         onClick={() => onApplyRecommendation?.(row.canonical, suggested)}
                       >
-                        Use recommendation
+                        Apply match
                       </button>
                     ) : null}
                   </div>

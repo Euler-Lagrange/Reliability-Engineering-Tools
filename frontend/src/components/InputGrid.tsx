@@ -156,7 +156,7 @@ export function InputGrid({
                 options={input.sheets.map((sheet) => ({ value: sheet.label, label: sheet.label }))}
                 disabled={sheetDisabled}
                 disabledReason={sheetDisabledReason}
-                compact
+                variant="quiet"
                 onChange={(sheet) => onSheetChange?.(input.role, sheet)}
               />
             </div>
