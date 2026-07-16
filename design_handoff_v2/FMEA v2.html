@@ -1,0 +1,190 @@
+<!-- @dsCard group="Design Pass v2" viewport="1440x900" name="FMEA Generator — full redesign" subtitle="Shell + run screen. Interactive: state jumper (Pristine→Success), live run, light/dark toggle" -->
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>FMEA Generator — v2 Redesign</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/fill/style.css">
+<link rel="stylesheet" href="tokens-v2.css">
+<link rel="stylesheet" href="fmea-v2.css">
+<style>
+.mt-st em{font-style:normal}
+.f-pathwrap{display:flex;align-items:center;gap:2px;min-width:0}
+.copybtn{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;padding:0;border:0;border-radius:var(--radius-xs);background:transparent;color:var(--text-faint);opacity:0;flex:none;transition:opacity var(--duration-fast) var(--ease)}
+.file-row:hover .copybtn,.copybtn:focus-visible{opacity:1}
+.copybtn:hover{background:var(--surface-muted);color:var(--text)}
+.copybtn[data-done="true"]{color:var(--success);opacity:1}
+.dot--pulse{animation:v2pulse 1.6s var(--ease) infinite}
+@keyframes v2pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.tb-divider{width:1px;height:16px;background:var(--line)}
+</style>
+</head>
+<body data-state="loaded">
+<div class="shell">
+<aside class="rail">
+<div class="brand"><span class="brand-mark">✦</span><span class="brand-name">Dark Star</span></div>
+<nav class="nav">
+<p class="nav-label">Tools</p>
+<button class="nav-item" data-on="true" type="button"><i class="i ph ph-tree-structure"></i>FMEA Generator<span class="nav-k">1</span></button>
+<button class="nav-item" type="button"><i class="i ph ph-git-diff"></i>BOM Compare<span class="nav-k">2</span></button>
+<button class="nav-item" type="button"><i class="i ph ph-pulse"></i>Failure Rate<span class="nav-k">3</span></button>
+<button class="nav-item" type="button"><i class="i ph ph-scan"></i>RefDes Extractor<span class="nav-k">4</span></button>
+<p class="nav-label">System</p>
+<button class="nav-item" type="button"><i class="i ph ph-gear"></i>Settings<span class="nav-k">5</span></button>
+</nav>
+<div class="rail-foot"><span class="ver">v0.5.0</span><button class="theme-btn" id="themeBtn" type="button" title="Toggle theme"><i class="i ph ph-moon"></i></button></div>
+</aside>
+<div class="main">
+<header class="topbar">
+<h1 class="tb-title">FMEA Generator</h1>
+<span class="tb-divider"></span>
+<span class="tb-mode">Mode<b id="tbMode">Piece-part generate</b></span>
+<div class="tb-right">
+<button class="btn" type="button">Review<span class="kbd">⌘R</span></button>
+<button class="btn" type="button"><i class="i ph ph-magnifying-glass"></i><span class="kbd">⌘K</span></button>
+</div>
+</header>
+<main class="content">
+<div class="workspace">
+<div class="wmain">
+
+<section>
+<div class="step-head"><span class="step-num">01</span><h2 class="step-title">Workflow</h2></div>
+<div class="modes" id="modes">
+<button class="mode" data-on="true" type="button"><i class="i ph-fill ph-check-circle"></i><h3>Piece-part generate</h3><p>Build a piece-part FMEA from grouping + BOM.</p></button>
+<button class="mode" type="button"><i class="i ph-fill ph-check-circle"></i><h3>Functional → piece-part</h3><p>Expand a functional FMEA against the BOM.</p></button>
+<button class="mode" type="button"><i class="i ph-fill ph-check-circle"></i><h3>Fill gaps</h3><p>Complete missing rows in an existing FMEA.</p></button>
+<button class="mode" type="button"><i class="i ph-fill ph-check-circle"></i><h3>BOM only</h3><p>Generate straight from the BOM, no grouping.</p></button>
+</div>
+<div class="opts">
+<div class="field"><label>Failure modes standard</label><div class="seg" id="segFmd"><button type="button">FMD-91</button><button type="button" data-on="true">FMD-2016</button></div></div>
+<div class="field"><label>HDA source</label><div class="seg" id="segHda"><button type="button" data-on="true">Inline in BOM</button><button type="button">Separate file</button></div></div>
+<div class="field" id="ccaField" hidden><label>CCA identifier</label><input class="input" style="width:120px;text-transform:uppercase" maxlength="8" placeholder="e.g. PSU" value=""><span class="hint">Prefix for generated FMEA-IDs</span></div>
+</div>
+</section>
+
+<section>
+<div class="step-head"><span class="step-num">02</span><h2 class="step-title">Inputs</h2><div class="step-meta"><span class="num" id="inputsMeta">3 of 3 loaded</span></div></div>
+<div class="panel filelist" id="filelist">
+<div class="file-row" data-role="grouping" data-st="loaded">
+<span class="f-ind"><i class="i ph-fill ph-check-circle"></i></span>
+<span class="f-name">Grouping file<span class="f-req" title="Required — the run is blocked until this file is loaded.">*</span></span>
+<span class="f-pathwrap"><span class="f-path" title="C:\Projects\PSU-7\input\PSU-7_Grouping_RevC.xlsx">C:\Projects\PSU-7\input\PSU-7_Grouping_RevC.xlsx</span><button class="copybtn" type="button" title="Copy path"><i class="i ph ph-copy" style="font-size:12px"></i></button></span>
+<span class="f-sheet"><label>Sheet</label><select class="sel sel-quiet"><option>Sheet1</option><option>Notes</option></select></span>
+<button class="btn btn-sm" type="button">Browse</button>
+</div>
+<div class="file-row" data-role="bom" data-st="loaded">
+<span class="f-ind"><i class="i ph-fill ph-check-circle"></i></span>
+<span class="f-name">BOM<span class="f-req" title="Required — the run is blocked until this file is loaded.">*</span></span>
+<span class="f-pathwrap"><span class="f-path" title="C:\Projects\PSU-7\input\PSU-7_BOM_Flat.xlsx">C:\Projects\PSU-7\input\PSU-7_BOM_Flat.xlsx</span><button class="copybtn" type="button" title="Copy path"><i class="i ph ph-copy" style="font-size:12px"></i></button></span>
+<span class="f-sheet"><label>Sheet</label><select class="sel sel-quiet"><option>BOM_Flat</option><option>Raw</option><option>Pivot</option></select></span>
+<button class="btn btn-sm" type="button">Browse</button>
+</div>
+<div class="file-row" data-role="fm" data-st="loaded">
+<span class="f-ind"><i class="i ph-fill ph-check-circle"></i></span>
+<span class="f-name">Failure modes<span class="f-req" title="Required — the run is blocked until this file is loaded.">*</span></span>
+<span class="f-pathwrap"><span class="f-path" title="C:\Shared\Standards\FMD-2016_FailureModes.xlsx">C:\Shared\Standards\FMD-2016_FailureModes.xlsx</span><button class="copybtn" type="button" title="Copy path"><i class="i ph ph-copy" style="font-size:12px"></i></button></span>
+<span class="f-sheet"><label>Sheet</label><select class="sel sel-quiet"><option>FMD2016</option><option>FMD91</option></select></span>
+<button class="btn btn-sm" type="button">Browse</button>
+</div>
+</div>
+</section>
+
+<section>
+<div class="step-head"><span class="step-num">03</span><h2 class="step-title">Output</h2></div>
+<div class="panel outgrid">
+<div class="field"><label>Strategy</label><div class="seg" id="segStrat"><button type="button" data-on="true">New workbook</button><button type="button">Copy target formatting</button></div></div>
+<div class="field" id="targetRow" hidden><label>Target workbook</label><div class="folder-row"><span class="folder-path">No template selected</span><button class="btn btn-out btn-sm" type="button">Browse</button></div></div>
+<div class="field"><label>Folder</label><div class="folder-row"><span class="folder-path" id="outFolder">Default — alongside first input</span><button class="btn btn-out btn-sm" type="button">Change…</button></div></div>
+</div>
+</section>
+
+<section>
+<div class="step-head"><span class="step-num">04</span><h2 class="step-title">Column mapping</h2><div class="step-meta"><span class="meter"><i id="covBar" style="width:91%"></i></span><span class="num" id="covNum">10 / 11</span></div></div>
+<div class="panel">
+<div class="map-toolbar"><span class="map-counts" id="mapCounts"><span class="num">8</span> auto · <span class="num">2</span> manual · <span class="num">1</span> derived · <span class="num">1</span> unmapped</span><span class="sp"></span><button class="btn btn-sm" type="button" id="applyAll">Apply suggestions</button><button class="btn btn-sm" type="button">Clear all</button></div>
+<table class="maptable" id="maptable">
+<thead><tr><th style="width:220px">Field</th><th style="width:250px">Source column</th><th style="width:110px">Status</th><th>Note</th></tr></thead>
+<tbody></tbody>
+</table>
+</div>
+</section>
+
+</div>
+<aside class="wside">
+
+<div class="card" id="runCard">
+<div class="card-h"><h2>Run</h2><span class="st" id="runSt">idle</span></div>
+<div class="chk" id="chk">
+<div class="chk-row" data-k="inputs"><i class="i ph-fill ph-check-circle"></i>Inputs loaded<span class="val num">3 / 3</span></div>
+<div class="chk-row" data-k="mapping"><i class="i ph-fill ph-warning-circle"></i>Required mapping<span class="val num">10 / 11</span></div>
+<div class="chk-row" data-k="output"><i class="i ph-fill ph-check-circle"></i>Output folder<span class="val num">Default</span></div>
+</div>
+<div id="progWrap" hidden>
+<div class="prog"><i id="progBar" style="width:0%"></i></div>
+<div class="prog-meta"><span id="progPhase">Validating run state</span><span class="num" id="progPct">0%</span></div>
+<div class="phases" id="phases">
+<div class="phase" data-ph="0"><i class="i ph ph-circle"></i>Validate run state<span class="t num"></span></div>
+<div class="phase" data-ph="1"><i class="i ph ph-circle"></i>Generate FMEA rows<span class="t num"></span></div>
+<div class="phase" data-ph="2"><i class="i ph ph-circle"></i>Write workbook<span class="t num"></span></div>
+</div>
+</div>
+<div id="resultWrap" hidden>
+<div class="result-h"><i class="i ph-fill ph-check-circle"></i><b>Workbook written</b><span class="t num">00:14</span></div>
+<code class="out-path">C:\Projects\PSU-7\output\FMEA_PSU-7_R2.xlsx</code>
+<div class="result-acts"><button class="btn btn-out btn-sm" type="button"><i class="i ph ph-folder-open" style="font-size:12px"></i>Open folder</button><button class="btn btn-sm" type="button"><i class="i ph ph-copy" style="font-size:12px"></i>Copy path</button></div>
+<div class="metrics">
+<div class="metric"><span>Rows generated</span><b>1,284</b></div>
+<div class="metric"><span>Failure modes</span><b>96</b></div>
+<div class="metric"><span>Duration</span><b>14.2<em> s</em></b></div>
+<div class="metric"><span>Warnings</span><b>1</b></div>
+</div>
+</div>
+<button class="btn btn-pri btn-lg run-cta" id="cta" type="button" style="margin-top:2px"><span id="ctaLabel">Generate FMEA</span><span class="kbd">⌘↵</span></button>
+<button class="btn btn-danger-ghost btn-sm" id="cancelBtn" type="button" style="width:100%;margin-top:6px" hidden>Hold to cancel</button>
+<p class="run-block" id="runBlock" hidden></p>
+</div>
+
+<div class="card">
+<div class="card-h"><h2>Validation</h2><span style="margin-left:auto;display:flex;gap:4px" id="vBadges"></span></div>
+<div id="vList"><p class="v-empty">Runs automatically before generation.</p></div>
+</div>
+
+<div class="card">
+<div class="card-h"><h2>Output preview</h2><span class="st" id="pMeta"></span></div>
+<div id="pWrap"><p class="p-empty">Validate to sample output rows.</p></div>
+</div>
+
+</aside>
+</div>
+</main>
+<footer class="logbar" id="logbar" data-open="false">
+<div class="log-head">
+<button class="log-toggle" id="logToggle" type="button"><i class="i ph ph-caret-right"></i>Run Log<span class="log-count num" id="logCount">4</span></button>
+<span class="log-sev" id="logSev"></span>
+<div class="log-actions">
+<button class="btn btn-sm" type="button" id="logCopy">Copy</button>
+<button class="btn btn-sm" type="button">Clear</button>
+<span class="backend"><span class="dot dot--ok" id="beDot"></span><span id="beLabel">Ready</span><span class="num">· Desktop bridge</span></span>
+</div>
+</div>
+<div class="log-body" id="logBody"></div>
+</footer>
+</div>
+</div>
+<div class="demo" role="group" aria-label="Mockup states"><span>State</span>
+<button type="button" data-s="pristine">Pristine</button>
+<button type="button" data-s="loaded" data-on="true">Loaded</button>
+<button type="button" data-s="blocked">Blocked</button>
+<button type="button" data-s="ready">Ready</button>
+<button type="button" data-s="running">Running</button>
+<button type="button" data-s="success">Success</button>
+</div>
+<script src="fmea-v2.js"></script>
+</body>
+</html>

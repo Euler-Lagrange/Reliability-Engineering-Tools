@@ -1,0 +1,205 @@
+/* ============================================================
+   TOKENS v2 — Light Precision + Dark Precision (canonical pair)
+   Drop-in replacement for the `:root` and `[data-theme="dark_precision"]`
+   token blocks in frontend/src/theme/styles.css.
+
+   Contract: every existing token NAME survives (nothing breaks);
+   VALUES are refined and a small set of new tokens is added.
+   Personality themes (signal_slate, kraft_paper, …) keep working —
+   they override the same names.
+
+   v2 commitments (see Critique v2, R1/R3/R6):
+   1. ONE accent. Everything else is gray or a semantic color.
+   2. Depth = borders only. Shadows exist solely for floating layers
+      (menu, palette, toast). --shadow-rail-active is retired.
+   3. Four text tiers with measured, monotonic contrast:
+      text 16.6:1 › secondary 9.3:1 › muted 5.9:1 › faint 4.6:1.
+      (v1 note: faint #5e6d81 had become DARKER than muted #617289 —
+      the ramp was inverted. v2 restores the order, still AA.)
+   4. 4px spacing grid. --space-2-5 (10px) is deprecated → 8px.
+   5. Radius capped at 8px. Pills survive only on the progress bar.
+   ============================================================ */
+
+:root {
+  /* ---- Fonts (unchanged — self-hosted, fully offline) ---- */
+  --font-sans: "Inter", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --font-display: var(--font-sans);
+  --font-mono: "JetBrains Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
+
+  /* ---- Type scale (unchanged values — the 11/13 dense scale is
+     deliberate; v2 changes USAGE, not the scale; see Handoff N2) ---- */
+  --text-2xs: 10px;   /* micro labels, log level tokens */
+  --text-xs: 11px;    /* metadata, table headers, hints */
+  --text-sm: 12px;    /* controls, dense body */
+  --text-base: 13px;  /* body */
+  --text-md: 16px;    /* panel metrics */
+  --text-lg: 18px;    /* result values */
+  --text-xl: 20px;    /* the one hero metric per tool */
+  --text-2xl: 24px;   /* reserved: modal/full-screen headers only */
+  --text-xxl: 24px;   /* DEMOTED from 28px — the topbar no longer uses it (48px topbar, 14px title) */
+  --text-3xl: 24px;   /* DEMOTED from 32px — hero metrics cap at --text-xl in v2 */
+
+  --leading-tight: 1.2;
+  --leading-snug: 1.35;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+
+  /* ---- Weight discipline: 600 for headings + the primary CTA label.
+     Labels and controls sit at 500. 400 body. 700 is retired from UI
+     chrome (it read as shouting at 10–11px). ---- */
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700; /* kept for log ERROR tokens only */
+
+  --tracking-tight: -0.01em;
+  --tracking-wide: 0.02em;
+  --tracking-uppercase: 0.06em; /* was 0.08em — tighter reads engineered, not airy */
+
+  /* ---- Spacing — strict 4px grid ---- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-2-5: 8px;   /* DEPRECATED alias — was 10px; migrate call sites to --space-2 or --space-3 */
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
+  /* ---- Control metrics (NEW) — desktop-density heights.
+     Controls 28px, prominent CTA 32px, dense table rows 32px,
+     list/nav rows 30px, chip/badge 18px. ---- */
+  --control-h: 28px;
+  --control-h-lg: 32px;
+  --row-h: 32px;
+  --nav-row-h: 30px;
+  --badge-h: 18px;
+
+  /* ---- Neutrals — Light Precision.
+     One hue (cool 255°), chroma ≤ 0.008. Two gray surfaces with
+     defined roles: muted = hover tint, soft = sunken well. That is
+     the complete surface vocabulary — --section-surface-decoration
+     aliases to the well. ---- */
+  --bg: #f6f7f9;             /* canvas */
+  --surface: #ffffff;        /* card / panel */
+  --surface-muted: #f6f7f9;  /* hover rows, pressed ghosts (== bg by design) */
+  --surface-soft: #f0f2f5;   /* sunken wells: path fields, log body, code */
+  --line: #e4e7ec;           /* structural hairline */
+  --line-strong: #c9d0da;    /* interactive control borders */
+
+  /* ---- Text ramp — monotonic, all AA at their sizes ---- */
+  --text: #14181f;           /* 16.6:1 — data, headings */
+  --text-secondary: #3e4756; /*  9.3:1 — supporting copy, control labels */
+  --text-muted: #5d6675;     /*  5.9:1 — hints, descriptions, TH */
+  --text-faint: #737c8a;     /*  4.6:1 — metadata, placeholders, kbd */
+  --text-on-accent: #ffffff;
+
+  /* ---- The ONE accent — desaturated cobalt. Interaction states are
+     tokens, not filter:brightness() hacks. ---- */
+  --accent: #2f5bd8;
+  --accent-hover: #2a51c2;   /* NEW */
+  --accent-active: #2547ab;  /* NEW */
+  --accent-soft: #edf1fc;    /* selection tint — 7%, quiet */
+  --accent-border: color-mix(in srgb, var(--accent) 32%, transparent); /* NEW — selected outlines */
+
+  /* ---- Semantic — status only, never decoration ---- */
+  --success: #1a7f53;
+  --success-soft: #e9f5ef;
+  --warning: #8f5f04;
+  --warning-soft: #faf3e1;
+  --danger: #b2412f;
+  --danger-soft: #fbefec;
+
+  /* ---- Radius — capped. Chips/badges are 4px rectangles now;
+     999px pills survive only on the progress bar. ---- */
+  --radius-xs: 4px;   /* badges, kbd, micro targets */
+  --radius-sm: 6px;   /* controls, buttons, inputs */
+  --radius-md: 8px;   /* cards, grouped lists, popovers */
+  --radius-lg: 8px;   /* alias of md — no third card radius */
+  --radius-xl: 8px;   /* DEMOTED from 12px — rail buttons join the system */
+  --radius-pill: 999px; /* progress bar track ONLY */
+
+  /* ---- Depth — borders only. Two shadows exist, both for layers
+     that literally float. Everything docked is flat. ---- */
+  --shadow-popover: 0 4px 16px rgba(15, 20, 30, 0.10), 0 1px 3px rgba(15, 20, 30, 0.08);
+  --shadow-toast: 0 6px 20px rgba(15, 20, 30, 0.12);
+  --shadow-rail-active: none; /* RETIRED — active nav is tint + text, not glow */
+  /* Focus ring — the old 8%-alpha ring was invisible; keyboard users
+     stake runs on this. 2px ring at 35% + accent border on the control. */
+  --shadow-focus-ring: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+
+  /* ---- Motion — one curve, three durations inside the 150–250ms band.
+     No spring, no bounce. ---- */
+  --ease: cubic-bezier(0.25, 1, 0.5, 1); /* @kind other */
+  --duration-fast: 150ms; /* @kind other */
+  --duration-base: 200ms; /* @kind other */
+  --duration-slow: 250ms; /* @kind other */
+
+  /* ---- Z ladder (unchanged) ---- */
+  --z-sticky: 1; /* @kind other */
+  --z-menu: 20; /* @kind other */
+  --z-drawer: 40; /* @kind other */
+  --z-toast: 50; /* @kind other */
+  --z-modal: 1000; /* @kind other */
+
+  /* ---- Compatibility aliases (v1 names, v2 values) ---- */
+  --border-subtle: var(--line);
+  --section-surface-primary: var(--surface);
+  --section-surface-muted: transparent;
+  --section-surface-decoration: var(--surface-soft);
+  --gap-inline: var(--space-2);
+  --gap-group: var(--space-4);
+  --gap-section: var(--space-6); /* was 32 — section rhythm tightens with the denser chrome */
+  --gap-page: var(--space-7);
+}
+
+/* ============================================================
+   Dark Precision v2 — same geometry, inverted ramp.
+   Surfaces step UP in lightness toward the user (bg < well <
+   surface < hover); borders carry the structure, never glow.
+   ============================================================ */
+:root[data-theme="dark_precision"] {
+  --bg: #101318;
+  --surface: #171b22;
+  --surface-muted: #1c212a;  /* hover rows */
+  --surface-soft: #12161d;   /* sunken wells */
+  --line: #272e39;
+  --line-strong: #39424f;
+
+  --text: #e8ecf2;           /* 14.9:1 on surface */
+  --text-secondary: #b9c2ce; /*  9.1:1 */
+  --text-muted: #8c96a5;     /*  5.5:1 */
+  --text-faint: #6f7987;     /*  4.5:1 */
+  --text-on-accent: #0e1116;
+
+  --accent: #7e9ff5;
+  --accent-hover: #92aff8;
+  --accent-active: #6c90ee;
+  --accent-soft: rgba(126, 159, 245, 0.13);
+  --accent-border: rgba(126, 159, 245, 0.40);
+
+  --success: #57be8c;
+  --success-soft: rgba(87, 190, 140, 0.13);
+  --warning: #dfaf5e;
+  --warning-soft: rgba(223, 175, 94, 0.14);
+  --danger: #e58274;
+  --danger-soft: rgba(229, 130, 116, 0.13);
+
+  --shadow-popover: 0 4px 16px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-toast: 0 6px 20px rgba(0, 0, 0, 0.5);
+  --shadow-rail-active: none;
+  --shadow-focus-ring: 0 0 0 2px rgba(126, 159, 245, 0.45);
+}
+
+/* ============================================================
+   Numeric & identifier treatment — the calibrated-instrument rule.
+   EVERY number, ID, RefDes, path, sheet name, Excel header, count,
+   percentage, timestamp and duration renders mono + tabular-nums.
+   Apply .num (or inherit from a mono context). See Handoff N4.
+   ============================================================ */
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}

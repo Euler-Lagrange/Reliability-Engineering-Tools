@@ -1,0 +1,140 @@
+<!-- @dsCard group="Design Pass v2" viewport="1060x1600" name="Tokens v2 — Light + Dark Precision" subtitle="Refined token system, v1→v2 diff, drop-in tokens-v2.css" -->
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<title>Tokens v2 — Light + Dark Precision</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="tokens-v2.css">
+<link rel="stylesheet" href="doc-v2.css">
+<style>
+.sw2{display:inline-flex;gap:2px;vertical-align:middle}
+.ramp{display:flex;flex-direction:column;gap:6px;padding:16px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface)}
+.ramp div{display:flex;align-items:baseline;gap:12px}
+.ramp .lbl{width:180px;font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--text-faint);flex:none}
+.depthrow{display:flex;gap:16px;align-items:flex-start}
+.depthrow .card-lite{flex:1}
+.pop{flex:1;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface);padding:14px 16px;box-shadow:var(--shadow-popover)}
+.ctrl-spec{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.ctrl-spec .c{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--surface);font-size:var(--text-sm);color:var(--text-secondary);padding:0 12px}
+.spacebars div{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.spacebars i{display:block;height:10px;background:var(--accent-soft);border:1px solid var(--accent-border);border-radius:2px}
+.spacebars span{font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--text-faint)}
+</style>
+</head>
+<body>
+<button class="theme-flip" id="flip" type="button">Dark preview</button>
+<div class="page">
+<p class="kicker">Design Pass v2 · 02</p>
+<h1>Tokens v2 — Light Precision + Dark Precision</h1>
+<p class="lede">A refined foundation, not a new one. Every v1 token name survives; values are corrected and a small set of new tokens is added. Drop-in file: <a href="tokens-v2.css"><code>tokens-v2.css</code></a> replaces the <code>:root</code> and <code>dark_precision</code> blocks in <span class="fileref">frontend/src/theme/styles.css</span>.</p>
+<div class="crumbs"><a href="Critique v2.html">← Critique</a><a href="Data Surface v2.html">Data surface</a><a href="FMEA v2.html">FMEA mockup</a><a href="Handoff Notes v2.html">Handoff notes</a></div>
+
+<h2><span class="n">01</span>Five commitments</h2>
+<ol>
+<li><strong>One accent.</strong> Desaturated cobalt. Interaction states (<code>--accent-hover</code>, <code>--accent-active</code>) are tokens — <code>filter: brightness()</code> hacks retire.</li>
+<li><strong>Borders-only depth.</strong> Shadows exist for two floating layers (popover, toast) plus the focus ring. <code>--shadow-rail-active</code> is now <code>none</code>; both decorative accent gradients are deleted.</li>
+<li><strong>A monotonic text ramp.</strong> v1’s WCAG fix left <code>--text-faint</code> (#5e6d81) <em>darker</em> than <code>--text-muted</code> (#617289) — the hierarchy was inverted. v2 restores four measured tiers, all AA.</li>
+<li><strong>Strict 4px spacing.</strong> <code>--space-2-5</code> (10px) is deprecated to 8px — table density improves as a side effect.</li>
+<li><strong>Radius capped at 8px, pills retired.</strong> Chips become 4px rectangles; 999px survives only on the progress bar. 12px rail buttons join the system at 6px.</li>
+</ol>
+
+<h2><span class="n">02</span>Surfaces &amp; lines</h2>
+<p>Four surfaces with named roles — the v1 trio of near-identical grays (<code>surface-muted</code> / <code>surface-soft</code> / <code>section-surface-decoration</code>) had no rule for which to use where.</p>
+<table class="doc">
+<thead><tr><th>Token</th><th>Light / Dark</th><th>Role</th></tr></thead>
+<tbody>
+<tr><td><code>--bg</code></td><td><span class="sw2"><span class="swatch" style="background:#f6f7f9"></span><span class="swatch" style="background:#101318"></span></span> <span class="mono muted">#F6F7F9 / #101318</span></td><td>Canvas. The workspace behind panels.</td></tr>
+<tr><td><code>--surface</code></td><td><span class="sw2"><span class="swatch" style="background:#ffffff"></span><span class="swatch" style="background:#171b22"></span></span> <span class="mono muted">#FFFFFF / #171B22</span></td><td>Panels, cards, chrome (topbar, log strip).</td></tr>
+<tr><td><code>--surface-muted</code></td><td><span class="sw2"><span class="swatch" style="background:#f6f7f9"></span><span class="swatch" style="background:#1c212a"></span></span> <span class="mono muted">#F6F7F9 / #1C212A</span></td><td><strong>Hover tint only.</strong> Rows, ghost buttons.</td></tr>
+<tr><td><code>--surface-soft</code></td><td><span class="sw2"><span class="swatch" style="background:#f0f2f5"></span><span class="swatch" style="background:#12161d"></span></span> <span class="mono muted">#F0F2F5 / #12161D</span></td><td><strong>Sunken wells:</strong> path fields, log body, code, segmented tracks.</td></tr>
+<tr><td><code>--line</code></td><td><span class="sw2"><span class="swatch" style="background:#e4e7ec"></span><span class="swatch" style="background:#272e39"></span></span> <span class="mono muted">#E4E7EC / #272E39</span></td><td>Structural hairlines: panel edges, row separators.</td></tr>
+<tr><td><code>--line-strong</code></td><td><span class="sw2"><span class="swatch" style="background:#c9d0da"></span><span class="swatch" style="background:#39424f"></span></span> <span class="mono muted">#C9D0DA / #39424F</span></td><td>Interactive borders: inputs, selects, outline buttons.</td></tr>
+</tbody>
+</table>
+<p>Dark surfaces step <em>up</em> in lightness toward the user: <span class="mono muted">well #12161D → bg #101318 → surface #171B22 → hover #1C212A</span>. Borders carry structure; nothing glows.</p>
+
+<h2><span class="n">03</span>Text ramp — measured, monotonic</h2>
+<table class="doc">
+<thead><tr><th>Token</th><th>Light / Dark</th><th>Contrast*</th><th>Use</th></tr></thead>
+<tbody>
+<tr><td><code>--text</code></td><td class="mono muted">#14181F / #E8ECF2</td><td class="mono muted">≈16.6 / 14.9</td><td>Data, headings, values</td></tr>
+<tr><td><code>--text-secondary</code></td><td class="mono muted">#3E4756 / #B9C2CE</td><td class="mono muted">≈9.3 / 9.0</td><td>Supporting copy, control labels</td></tr>
+<tr><td><code>--text-muted</code></td><td class="mono muted">#5D6675 / #8C96A5</td><td class="mono muted">≈5.9 / 5.5</td><td>Hints, descriptions, table headers</td></tr>
+<tr><td><code>--text-faint</code></td><td class="mono muted">#737C8A / #6F7987</td><td class="mono muted">≈4.6 / 4.5</td><td>Metadata, placeholders, kbd, notes</td></tr>
+</tbody>
+</table>
+<div class="ramp">
+<div><span class="lbl">--text</span><span style="color:var(--text);font-weight:500">Failure Mode Ratio mapped to “FM Ratio”</span></div>
+<div><span class="lbl">--text-secondary</span><span style="color:var(--text-secondary)">Choose the starting point that matches your source data.</span></div>
+<div><span class="lbl">--text-muted</span><span style="color:var(--text-muted)">Mapping options are informed by 3 workbooks.</span></div>
+<div><span class="lbl">--text-faint</span><span style="color:var(--text-faint)">Exact header — BOM · BOM_Flat</span></div>
+</div>
+<p style="margin-top:10px"><span class="faint">* ratio against the surface the tier most often sits on; all tiers pass WCAG AA at their sizes. Weight discipline: 600 headings + primary CTA, 500 labels/controls, 400 body. 700 survives only in log ERROR tokens.</span></p>
+
+<h2><span class="n">04</span>The one accent + semantics</h2>
+<table class="doc">
+<thead><tr><th>Token</th><th>Light / Dark</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><code>--accent</code></td><td><span class="sw2"><span class="swatch" style="background:#2f5bd8"></span><span class="swatch" style="background:#7e9ff5"></span></span> <span class="mono muted">#2F5BD8 / #7E9FF5</span></td><td>Actions, selection, links, active nav. ≈5.5:1 under white CTA text.</td></tr>
+<tr><td><code>--accent-hover / -active</code></td><td class="mono muted">#2A51C2 · #2547AB / #92AFF8 · #6C90EE</td><td>New — tokenized interaction states.</td></tr>
+<tr><td><code>--accent-soft</code></td><td><span class="sw2"><span class="swatch" style="background:#edf1fc"></span><span class="swatch" style="background:#28303f"></span></span> <span class="mono muted">#EDF1FC / 13% α</span></td><td>Selection tint (nav row, selected chip). Never a card wash.</td></tr>
+<tr><td><code>--accent-border</code></td><td class="mono muted">32% α / 40% α</td><td>New — selected-item outlines (mode cards).</td></tr>
+<tr><td><code>--success</code></td><td><span class="sw2"><span class="swatch" style="background:#1a7f53"></span><span class="swatch" style="background:#57be8c"></span></span> <span class="mono muted">#1A7F53 / #57BE8C</span></td><td>Loaded, mapped, run complete.</td></tr>
+<tr><td><code>--warning</code></td><td><span class="sw2"><span class="swatch" style="background:#8f5f04"></span><span class="swatch" style="background:#dfaf5e"></span></span> <span class="mono muted">#8F5F04 / #DFAF5E</span></td><td>Capped scans, unmapped required fields.</td></tr>
+<tr><td><code>--danger</code></td><td><span class="sw2"><span class="swatch" style="background:#b2412f"></span><span class="swatch" style="background:#e58274"></span></span> <span class="mono muted">#B2412F / #E58274</span></td><td>Blocking errors, destructive holds.</td></tr>
+</tbody>
+</table>
+<p><strong>Placement rule:</strong> semantic color appears as a 6px dot, a text token, or an 18px count badge — never as a whole-surface wash, and never on category data (workflow badges, column-name chips, INFO log lines are gray).</p>
+
+<h2><span class="n">05</span>Depth — one strategy, demonstrated</h2>
+<div class="depthrow">
+<div class="card-lite"><p class="kicker" style="margin-bottom:4px">Docked</p><p style="margin:0;font-size:var(--text-sm)">Panels, cards, rails, the log strip: 1px <code>--line</code>, flat. Elevation is expressed by surface role, not blur.</p></div>
+<div class="pop"><p class="kicker" style="margin-bottom:4px">Floating</p><p style="margin:0;font-size:var(--text-sm)">Menus, command palette, toasts: <code>--shadow-popover</code> / <code>--shadow-toast</code> — the only shadows in the system.</p></div>
+</div>
+<p style="margin-top:12px">Focus ring: <code>0 0 0 2px</code> accent at 35–45% — the v1 ring (8% alpha) was invisible to the keyboard users this app is built for.</p>
+
+<h2><span class="n">06</span>Geometry &amp; motion</h2>
+<div class="ctrl-spec" style="margin-bottom:12px">
+<span class="c" style="height:28px">Control — 28px</span>
+<span class="c" style="height:32px;border-color:var(--accent);background:var(--accent);color:var(--text-on-accent);font-weight:600">Primary CTA — 32px</span>
+<span class="c" style="height:24px;font-size:11px">Table control — 24px</span>
+<span class="c" style="height:18px;font-size:10px;border-radius:4px">Badge — 18px</span>
+</div>
+<div class="spacebars">
+<div><i style="width:4px"></i><span>--space-1 · 4</span></div>
+<div><i style="width:8px"></i><span>--space-2 · 8 (also the deprecated --space-2-5)</span></div>
+<div><i style="width:12px"></i><span>--space-3 · 12</span></div>
+<div><i style="width:16px"></i><span>--space-4 · 16</span></div>
+<div><i style="width:24px"></i><span>--space-6 · 24</span></div>
+<div><i style="width:32px"></i><span>--space-7 · 32</span></div>
+</div>
+<p style="margin-top:12px">Type scale is untouched (11/13 dense core is right). New metric tokens: <code>--control-h 28</code>, <code>--control-h-lg 32</code>, <code>--row-h 32</code>, <code>--nav-row-h 30</code>, <code>--badge-h 18</code>. Motion: one curve, <code>150 / 200 / 250ms</code> — inside the micro-interaction band, no spring.</p>
+
+<h2><span class="n">07</span>v1 → v2 diff (what actually changed)</h2>
+<table class="doc">
+<thead><tr><th>Token</th><th>v1</th><th>v2</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td><code>--text-faint</code></td><td class="mono muted">#5E6D81</td><td class="mono muted">#737C8A</td><td>Was darker than <code>--text-muted</code>; ramp restored, still AA.</td></tr>
+<tr><td><code>--accent</code></td><td class="mono muted">#235EE7</td><td class="mono muted">#2F5BD8</td><td>−8% chroma, −3 lightness: instrument, not toy.</td></tr>
+<tr><td><code>--accent-hover/active/border</code></td><td class="mono muted">—</td><td class="mono muted">new</td><td>Replace <code>filter:brightness(.92)</code>.</td></tr>
+<tr><td><code>--shadow-rail-active</code></td><td class="mono muted">accent glow</td><td class="mono muted">none</td><td>Borders-only depth, no exceptions.</td></tr>
+<tr><td><code>--shadow-focus-ring</code></td><td class="mono muted">3px @ 8%</td><td class="mono muted">2px @ 35–45%</td><td>Visible to keyboard users.</td></tr>
+<tr><td><code>--space-2-5</code></td><td class="mono muted">10px</td><td class="mono muted">8px (deprecated)</td><td>4px grid; denser tables.</td></tr>
+<tr><td><code>--radius-xl</code></td><td class="mono muted">12px</td><td class="mono muted">8px</td><td>Radius cap; rail buttons join the system.</td></tr>
+<tr><td><code>--radius-pill</code></td><td class="mono muted">chips everywhere</td><td class="mono muted">progress bar only</td><td>Badges become 4px rectangles.</td></tr>
+<tr><td><code>--text-xxl / --text-3xl</code></td><td class="mono muted">28 / 32px</td><td class="mono muted">24 / 24px</td><td>Topbar drops to a 48px bar (14px title); hero metrics cap at 20px mono.</td></tr>
+<tr><td><code>--tracking-uppercase</code></td><td class="mono muted">0.08em</td><td class="mono muted">0.06em</td><td>Uppercase demoted to two roles (nav group labels, log levels).</td></tr>
+<tr><td><code>--duration-*</code></td><td class="mono muted">120/160/220</td><td class="mono muted">150/200/250</td><td>Inside the 150–250ms band.</td></tr>
+<tr><td><code>--surface-muted/-soft</code></td><td class="mono muted">ambiguous</td><td class="mono muted">hover / well</td><td>Named roles end the three-gray lottery.</td></tr>
+</tbody>
+</table>
+<p>Personality themes (Signal Slate, Kraft Paper, Mission Control…) inherit the geometry, depth, and ramp rules automatically because they override the same names — re-check each theme’s four text tiers against the v2 monotonic rule before shipping.</p>
+</div>
+<script>
+document.getElementById("flip").addEventListener("click",function(){var h=document.documentElement,d=h.dataset.theme!=="dark_precision";h.dataset.theme=d?"dark_precision":"light";this.textContent=d?"Light preview":"Dark preview";});
+</script>
+</body>
+</html>
