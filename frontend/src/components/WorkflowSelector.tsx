@@ -32,12 +32,12 @@ export function WorkflowSelector({
           onClick={() => onSelect(workflow.id)}
           type="button"
         >
-          <div className="choice-card__header">
-            <span className="choice-card__eyebrow">{workflow.eyebrow}</span>
-            <span className="choice-card__badge" title={workflow.badgeHint}>
-              {workflow.badge}
-            </span>
-          </div>
+          {/* v2 N9: compact card — title + one summary line. The LEAN/
+              BALANCED badge is deleted (its meaning folds into the
+              summary); selection reads as border + tint + corner check. */}
+          <span className="choice-card__check" aria-hidden="true">
+            ✓
+          </span>
           <h3>{workflow.title}</h3>
           <p>{workflow.summary}</p>
         </button>

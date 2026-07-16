@@ -512,8 +512,7 @@ button:disabled {
 }
 
 .eyebrow,
-.section-card__eyebrow,
-.choice-card__eyebrow {
+.section-card__eyebrow {
   margin: 0;
   color: var(--text-faint);
   font-size: var(--text-xs);
@@ -528,16 +527,20 @@ button:disabled {
    choice cards, strategy cards, workflow cards, theme tiles,
    radio chips. Migration complete: `data-selected` is the only
    selection attribute; do not reintroduce `data-active`.
+
+   v2 N9 (R10): the rule survives but its output softens — a 32%-alpha
+   accent border + 4% tint instead of the full accent-soft flood, so a
+   selected card reads as a choice, not an alert. Neutral segmented
+   controls override this later with their own raised-segment rule.
    ============================================================ */
 [data-selected="true"] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
   color: var(--text);
 }
 
 [data-selected="true"] .eyebrow,
-[data-selected="true"] .section-card__eyebrow,
-[data-selected="true"] .choice-card__eyebrow {
+[data-selected="true"] .section-card__eyebrow {
   color: var(--accent);
 }
 
@@ -858,10 +861,11 @@ button:disabled {
    rule earlier in this file but comes LATER, so it silently clobbered the
    selected card's accent border + fill — the only surviving cue was the
    eyebrow color. The compound selector (0,2,0) restores the intended
-   selected-state styling regardless of source order. */
+   selected-state styling regardless of source order. Values match the
+   v2 softened selection rule above. */
 .choice-card[data-selected="true"] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
 }
 
 .section-card {
@@ -996,15 +1000,49 @@ button:disabled {
   grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
 }
 
+/* v2 N9: compact choice card — title 12px/600 + one 11px muted line.
+   Selection = softened border/tint (unified rule) + corner check. */
 .choice-card {
+  position: relative;
   display: grid;
-  gap: var(--space-2);
-  padding: var(--space-3);
+  gap: var(--space-1);
+  padding: var(--space-2-5) var(--space-3);
   color: inherit;
   text-align: left;
   transition:
-    border-color var(--duration-base) var(--ease),
-    background var(--duration-base) var(--ease);
+    border-color var(--duration-fast) var(--ease),
+    background var(--duration-fast) var(--ease);
+}
+
+.choice-card:hover:not([data-disabled="true"]) {
+  border-color: var(--line-strong);
+}
+
+.choice-card h3 {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  padding-right: var(--space-4); /* keep clear of the corner check */
+}
+
+.choice-card p {
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+.choice-card__check {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2-5);
+  color: var(--accent);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease);
+}
+
+.choice-card[data-selected="true"] .choice-card__check {
+  opacity: 1;
 }
 
 .choice-card:focus-visible {
@@ -1023,7 +1061,6 @@ button:disabled {
   background: var(--surface);
 }
 
-.choice-card__header,
 .run-result__header {
   display: flex;
   justify-content: space-between;
@@ -1050,7 +1087,6 @@ button:disabled {
    .status-chip is kept as a legacy alias of .badge-state so the
    migration can proceed call-site by call-site without churn.
    ============================================================ */
-.choice-card__badge,
 .status-chip,
 .badge-state {
   display: inline-flex;
@@ -1069,7 +1105,6 @@ button:disabled {
   white-space: nowrap;
 }
 
-.choice-card__badge,
 .status-chip--pending,
 .status-chip--info,
 .badge-state--idle {
@@ -1242,7 +1277,6 @@ button:disabled {
   accent-color: var(--accent);
 }
 
-.toggle-chip,
 .primary-button,
 .ghost-button,
 .custom-select__trigger {
@@ -1278,12 +1312,6 @@ button:disabled {
   outline: none;
   box-shadow: var(--shadow-focus-ring);
   border-color: var(--accent);
-}
-
-.toggle-chip[data-selected="true"] {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: var(--accent-soft);
 }
 
 /* ============================================================
@@ -2487,24 +2515,51 @@ tbody tr:hover {
    is purely additive: layout wrappers and net-new selectors.
    ============================================================ */
 
+/* v2 N9: value pickers are neutral segmented controls — a sunken
+   --surface-soft track with a raised 24px segment. Selection reads as
+   position, not color; accent stays reserved for the workflow choice.
+   The compound selectors below outweigh the unified [data-selected]
+   rule (0,1,0) so segments never pick up the accent tint. */
 .toggle-chip-group {
-  display: flex;
-  gap: var(--space-2);
-  flex-wrap: wrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px; /* off-grid: intra-track segment gap */
+  padding: 2px; /* off-grid: segmented-control track inset */
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
 }
 
-.toggle-chip-group .toggle-chip:hover:not(:disabled) {
-  border-color: var(--line-strong);
+.toggle-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 24px; /* off-grid: table-control tier */
+  padding: 0 var(--space-2-5);
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  transition:
+    background var(--duration-fast) var(--ease),
+    color var(--duration-fast) var(--ease);
+}
+
+.toggle-chip:hover:not(:disabled) {
   color: var(--text);
 }
 
-.toggle-chip-group .toggle-chip.is-selected {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: var(--accent-soft);
+.toggle-chip[data-selected="true"],
+.toggle-chip.is-selected {
+  color: var(--text);
+  border-color: var(--line);
+  background: var(--surface);
 }
 
-.toggle-chip-group .toggle-chip:disabled {
+.toggle-chip:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

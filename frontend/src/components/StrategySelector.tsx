@@ -13,33 +13,29 @@ export function StrategySelector({
   onSelect,
   disabled = false,
 }: StrategySelectorProps) {
+  // v2 N9: output strategy is a value picker, not a decision that earns
+  // card real estate — it renders as a neutral segmented control. The
+  // summary copy rides each segment's tooltip; selection color stays
+  // reserved for the workflow choice.
   return (
-    <div className="card-grid" role="group" aria-label="Output strategy">
+    <div className="toggle-chip-group" role="group" aria-label="Output strategy">
       {strategies.map((strategy) => (
         <button
           key={strategy.id}
-          className="choice-card choice-card--strategy"
+          className="toggle-chip"
           data-selected={strategy.id === selectedStrategyId}
-          data-disabled={disabled || undefined}
           aria-pressed={strategy.id === selectedStrategyId}
           aria-disabled={disabled}
           disabled={disabled}
           title={
             disabled
               ? "Output strategy cannot be changed while this tool has an active run."
-              : undefined
+              : strategy.summary
           }
           onClick={() => onSelect(strategy.id)}
           type="button"
         >
-          {/* The badge IS the eyebrow — a literal "Output strategy" eyebrow
-              on every card tripled the phrase within one viewport (section
-              label + two cards). */}
-          <div className="choice-card__header">
-            <span className="choice-card__eyebrow">{strategy.badge}</span>
-          </div>
-          <h3>{strategy.title}</h3>
-          <p>{strategy.summary}</p>
+          {strategy.title}
         </button>
       ))}
     </div>
