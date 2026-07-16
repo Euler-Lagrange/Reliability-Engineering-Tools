@@ -53,34 +53,40 @@ describe("tauri_build shell", () => {
     expect(document.documentElement.dataset.theme).toBe("light_precision");
   });
 
-  test("default FMEA layout shows generation options first and outputs second", async () => {
+  test("default FMEA layout orders Workflow, Inputs, then Output sections", async () => {
     renderApp();
     await waitForFmeaTool();
 
-    const generationHeading = screen.getByRole("heading", {
-      name: /^generation options$/i,
-      level: 2,
-    });
-    const outputsHeading = screen.getByRole("heading", {
-      name: /outputs/i,
-      level: 2,
-    });
+    // v2 N5: numbered bare strips — 01 Workflow · 02 Inputs · 03 Output.
+    const workflowHeading = screen.getByRole("heading", { name: /^workflow$/i, level: 2 });
+    const inputsHeading = screen.getByRole("heading", { name: /^inputs$/i, level: 2 });
+    const outputsHeading = screen.getByRole("heading", { name: /^output$/i, level: 2 });
 
-    const generationSection = generationHeading.closest("section");
+    const workflowSection = workflowHeading.closest("section");
+    const inputsSection = inputsHeading.closest("section");
     const outputsSection = outputsHeading.closest("section");
 
-    expect(generationSection).not.toBeNull();
+    expect(workflowSection).not.toBeNull();
+    expect(inputsSection).not.toBeNull();
     expect(outputsSection).not.toBeNull();
 
-    if (!generationSection || !outputsSection) {
+    if (!workflowSection || !inputsSection || !outputsSection) {
       throw new Error("Expected FMEA setup sections to render.");
     }
 
-    expect(within(generationSection).getByRole("button", { name: /piece-part from grouping file/i })).toBeInTheDocument();
-    expect(within(generationSection).getByRole("radio", { name: /fmd-2016/i })).toBeInTheDocument();
-    expect(within(generationSection).getByText("Grouping workbook")).toBeInTheDocument();
-    expect(within(generationSection).getByText("BOM workbook")).toBeInTheDocument();
-    expect(within(generationSection).getByText("Failure modes workbook")).toBeInTheDocument();
+    // Section order: Workflow precedes Inputs precedes Output.
+    expect(
+      workflowSection.compareDocumentPosition(inputsSection) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      inputsSection.compareDocumentPosition(outputsSection) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    expect(within(workflowSection).getByRole("button", { name: /piece-part from grouping file/i })).toBeInTheDocument();
+    expect(within(workflowSection).getByRole("radio", { name: /fmd-2016/i })).toBeInTheDocument();
+    expect(within(inputsSection).getByText("Grouping workbook")).toBeInTheDocument();
+    expect(within(inputsSection).getByText("BOM workbook")).toBeInTheDocument();
+    expect(within(inputsSection).getByText("Failure modes workbook")).toBeInTheDocument();
 
     expect(within(outputsSection).getByText("Output Folder")).toBeInTheDocument();
     expect(within(outputsSection).queryByText("Target workbook")).not.toBeInTheDocument();
@@ -91,9 +97,9 @@ describe("tauri_build shell", () => {
     renderApp();
     await waitForFmeaTool();
 
-    const outputsSection = screen.getByRole("heading", { name: /outputs/i, level: 2 }).closest("section");
+    const outputsSection = screen.getByRole("heading", { name: /^output$/i, level: 2 }).closest("section");
     if (!outputsSection) {
-      throw new Error("Expected Outputs section to render.");
+      throw new Error("Expected Output section to render.");
     }
 
     expect(within(outputsSection).queryByText("Target workbook")).not.toBeInTheDocument();
@@ -199,9 +205,9 @@ describe("tauri_build shell", () => {
     renderApp();
     await waitForFmeaTool();
 
-    const outputsSection = screen.getByRole("heading", { name: /outputs/i, level: 2 }).closest("section");
+    const outputsSection = screen.getByRole("heading", { name: /^output$/i, level: 2 }).closest("section");
     if (!outputsSection) {
-      throw new Error("Expected Outputs section to render.");
+      throw new Error("Expected Output section to render.");
     }
 
     await user.click(screen.getByRole("button", { name: /merge piece-part fmea/i }));

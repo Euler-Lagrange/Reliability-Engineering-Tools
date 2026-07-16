@@ -4,12 +4,11 @@ import {
   InputGrid,
 } from "../../components/InputGrid";
 import { MappingTable } from "../../components/MappingTable";
-import { RunStatePanel } from "../../components/RunStatePanel";
+import { RunStatePanel, type RunReadinessItem } from "../../components/RunStatePanel";
 import { SectionCard } from "../../components/SectionCard";
 import { StrategySelector } from "../../components/StrategySelector";
 import { ValidationPreview } from "../../components/ValidationPreview";
 import { WorkflowSelector } from "../../components/WorkflowSelector";
-import { ContextTabs } from "../../components/primitives/ContextTabs";
 import { EmptyState } from "../../components/primitives/EmptyState";
 import { OptionsField } from "../../components/primitives/OptionsField";
 import { ToggleChip } from "../../components/primitives/ToggleChip";
@@ -470,8 +469,8 @@ export function FmeaTool() {
   const [runResult, setRunResult] = useState<typeof baseScenario.runSequence.result | null>(null);
   const [runLogLines, setRunLogLines] = useState<string[]>([]);
   const [cancelledNotice, setCancelledNotice] = useState<string | null>(null);
-  const [contextView, setContextView] = useState<"preview" | "run">("preview");
-  const contextHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  // v2 N5: the Preview/Run ContextTabs retired — the Run rail and the
+  // Validation card are permanently visible siblings in the side column.
   // Fix 2 (Family 2): re-entrancy guard for the desktop run pipeline. Held
   // for the whole validate→execute window so a double-click on Start can't
   // launch a second run whose rejection (single-active-run guard) would clear
@@ -606,7 +605,6 @@ export function FmeaTool() {
       setRunResult(null);
       setRunLogLines([]);
       setCancelledNotice(null);
-      setContextView("preview");
       armTerminalHandler();
       // Fix #16: guard the reset so switching workflow MID-RUN doesn't clobber a
       // live run (which would orphan the backend job). Idle/terminal still reset.
@@ -631,17 +629,12 @@ export function FmeaTool() {
       setRunResult(null);
       setRunLogLines([]);
       setCancelledNotice(null);
-      setContextView("preview");
       armTerminalHandler();
       // Fix #16: guard the reset so switching strategy MID-RUN doesn't clobber a
       // live run (which would orphan the backend job). Idle/terminal still reset.
       resetDesktopRunSessionUnlessLive();
     });
   }, [outputStrategyId]);
-
-  useEffect(() => {
-    contextHeadingRef.current?.focus();
-  }, [contextView]);
 
   useEffect(() => {
     if (backendClient.runtimeMode !== "browser-mock") {
@@ -762,16 +755,6 @@ export function FmeaTool() {
       pushNotification({ tone: "error", title: "Open output folder failed", detail });
     }
   }
-
-  const mappingCoverage =
-    inspectedColumns.length > 0 && effectiveMappings.length > 0
-      ? Math.round(
-          (effectiveMappings.filter((row) => row.status === "mapped").length / effectiveMappings.length) * 100,
-        )
-      : null;
-  // "—" (not "TBD") before any inspection: a literal TBD in the hero
-  // metric reads as unfinished UI (UX findings 2026-07-07 #2).
-  const mappingCoverageLabel = mappingCoverage === null ? "—" : `${mappingCoverage}%`;
 
   const activeWorkflow = workflowOptions.find((workflow) => workflow.id === workflowId) ?? workflowOptions[0];
 
@@ -1206,7 +1189,6 @@ export function FmeaTool() {
       setRunLogLines([]);
       setCancelledNotice(null);
       setRunResult(null);
-      setContextView("run");
       setRunMode("running");
       setRunIndex(0);
       return;
@@ -1249,7 +1231,6 @@ export function FmeaTool() {
     // "Validating..." message flicker away on every second run.
     resetDesktopRunSession();
 
-    setContextView("run");
     setRunLogLines([]);
     setRunResult(null);
     setCancelledNotice(null);
@@ -1270,7 +1251,6 @@ export function FmeaTool() {
         setRunMode("idle");
         setRunIndex(-1);
         setRunTemplates(fmeaRunEvents);
-        setContextView("preview");
         resetDesktopRunSession();
         setBackendState({
           backendStatus: "ready",
@@ -1302,7 +1282,6 @@ export function FmeaTool() {
       const detail = describeBackendError(error, "Unknown backend execution failure");
       // Fix 2 (Family 2): guarded reset — must not clobber a live sibling run.
       resetDesktopRunSessionUnlessLive();
-      setContextView("preview");
       setBackendState({
         backendStatus: "error",
         backendMessage: detail,
@@ -1331,32 +1310,74 @@ export function FmeaTool() {
     return undefined;
   };
 
+  // v2 N5: Run-rail readiness + section meta derive from state the tool
+  // already tracks (loaded inputs, mapping coverage, output folder).
+  const requiredWorkflowInputs = workflowInputs.filter((input) => input.required);
+  const loadedRequiredInputs = requiredWorkflowInputs.filter((input) => !!input.path).length;
+  const loadedWorkflowInputs = workflowInputs.filter((input) => !!input.path).length;
+  const mappingTotals = effectiveMappings.reduce(
+    (acc, row) => {
+      const mapped = mappingOverrides[row.canonical] ?? row.mappedTo;
+      const isMapped = row.origin === "derived" || (!!mapped && mapped !== DO_NOT_MAP_VALUE);
+      acc.total += 1;
+      if (isMapped) acc.mapped += 1;
+      if (row.required === true) {
+        acc.requiredTotal += 1;
+        if (isMapped) acc.requiredMapped += 1;
+      }
+      return acc;
+    },
+    { total: 0, mapped: 0, requiredTotal: 0, requiredMapped: 0 },
+  );
+  const readinessItems: RunReadinessItem[] = [
+    {
+      label: "Inputs loaded",
+      value: `${loadedRequiredInputs} / ${requiredWorkflowInputs.length}`,
+      tone:
+        requiredWorkflowInputs.length === 0 || loadedRequiredInputs === requiredWorkflowInputs.length
+          ? "ok"
+          : "warn",
+    },
+    {
+      label: "Required mapping",
+      value: `${mappingTotals.requiredMapped} / ${mappingTotals.requiredTotal}`,
+      tone: mappingTotals.requiredMapped === mappingTotals.requiredTotal ? "ok" : "warn",
+    },
+    {
+      label: "Output folder",
+      value: fmeaOutputDirectory ? "Custom" : "Default",
+      tone: "ok",
+    },
+  ];
+  const RUN_STATUS_WORDS: Record<string, string> = {
+    idle: "idle",
+    starting: "starting",
+    running: "running",
+    cancelling: "cancelling",
+    success: "complete",
+    failure: "failed",
+    cancelled: "cancelled",
+    disconnected: "offline",
+  };
+  const runStatusWord = RUN_STATUS_WORDS[panelRunMode] ?? panelRunMode;
+  const mappingCoveragePercent =
+    mappingTotals.total === 0 ? 0 : Math.round((mappingTotals.mapped / mappingTotals.total) * 100);
+
   return (
     <div className="tool-workspace">
       {/* No per-tool banner: the shell topbar is the single title block
           (title + description + backend-mode chip live there). */}
       <section className="workspace-grid workspace-grid--single">
         <div className="workspace-grid__main">
+          {/* v2 N5: numbered bare section strips — 01 Workflow · 02 Inputs ·
+              03 Output · 04 Column mapping. Section descriptions retired;
+              control-level hints carry the context. The topbar shows the
+              active mode; the 04 header carries the coverage meter. */}
           <SectionCard
             className="section-card--compact"
+            variant="bare"
             step={1}
-            title="Generation Options"
-            eyebrow="Configuration"
-            description="Choose the generation path, confirm the standards in play, and load the source workbooks this mode needs."
-            actions={
-              <div className="header-metrics">
-                <span className="header-metric">
-                  <span>Mode</span>
-                  <strong>{activeWorkflow.title}</strong>
-                </span>
-                <span className="header-metric">
-                  <span>Auto-mapped</span>
-                  {/* The one hero metric for this tool (design-system
-                      .hero-metric, shipped 0.4.5, first adopted here). */}
-                  <strong className="hero-metric">{mappingCoverageLabel}</strong>
-                </span>
-              </div>
-            }
+            title="Workflow"
           >
             <div className="setup-grid">
               <div className="setup-block setup-block--full">
@@ -1459,48 +1480,56 @@ export function FmeaTool() {
                 </div>
               ) : null}
 
-              <div className="setup-block setup-block--full">
-                {isPristine ? (
-                  <EmptyState
-                    icon={TreeStructure}
-                    headline="Build or merge an FMEA workbook"
-                    body="Browse for your source workbook, or load the example set to explore the workflow first."
-                    primaryAction={{
-                      label: pristineBrowseLabel,
-                      disabled: anyRunIsLive,
-                      disabledReason: fileInspectionDisabledReason,
-                      onClick: () => {
-                        void handleBrowse(pristineBrowseRole);
-                      },
-                    }}
-                    secondaryAction={{
-                      label: "Load example",
-                      onClick: handleLoadExample,
-                    }}
-                  />
-                ) : (
-                  <InputGrid
-                    inputs={workflowInputs}
-                    onBrowse={handleBrowse}
-                    onSheetChange={handleSheetChange}
-                    browseDisabledReason={fileInspectionDisabledReason}
-                    getDisabledSheetReason={getDisabledSheetReason}
-                  />
-                )}
-              </div>
             </div>
           </SectionCard>
 
           <SectionCard
             className="section-card--compact"
+            variant="bare"
             step={2}
-            title="Outputs"
-            eyebrow="Workbook & folder"
-            description={
-              workflowId === "fill_gaps"
-                ? "Choose how the generator writes the finished workbook. Fill-gaps often targets an existing workbook copy, but the output strategy stays explicit here."
-                : "Choose how the generator writes the finished workbook, then confirm the destination workbook and output folder."
+            title="Inputs"
+            actions={
+              isPristine ? undefined : (
+                <span className="section-card__meta num">
+                  {loadedWorkflowInputs} of {workflowInputs.length} loaded
+                </span>
+              )
             }
+          >
+            {isPristine ? (
+              <EmptyState
+                icon={TreeStructure}
+                headline="Build or merge an FMEA workbook"
+                body="Browse for your source workbook, or load the example set to explore the workflow first."
+                primaryAction={{
+                  label: pristineBrowseLabel,
+                  disabled: anyRunIsLive,
+                  disabledReason: fileInspectionDisabledReason,
+                  onClick: () => {
+                    void handleBrowse(pristineBrowseRole);
+                  },
+                }}
+                secondaryAction={{
+                  label: "Load example",
+                  onClick: handleLoadExample,
+                }}
+              />
+            ) : (
+              <InputGrid
+                inputs={workflowInputs}
+                onBrowse={handleBrowse}
+                onSheetChange={handleSheetChange}
+                browseDisabledReason={fileInspectionDisabledReason}
+                getDisabledSheetReason={getDisabledSheetReason}
+              />
+            )}
+          </SectionCard>
+
+          <SectionCard
+            className="section-card--compact"
+            variant="bare"
+            step={3}
+            title="Output"
           >
             <div className="setup-grid">
               <div className="setup-block setup-block--full">
@@ -1567,13 +1596,18 @@ export function FmeaTool() {
 
           <SectionCard
             className="section-card--compact"
-            step={3}
-            title="Column Mapping"
-            eyebrow="Review"
-            description={
-              inspectedColumns.length > 0
-                ? `Mapping options are currently informed by ${inspectedSourceLabel}.`
-                : "Default profile behavior. Select files above to enable column mapping."
+            variant="bare"
+            step={4}
+            title="Column mapping"
+            actions={
+              <span className="section-card__meta">
+                <span className="coverage-meter" aria-hidden="true">
+                  <i style={{ width: `${mappingCoveragePercent}%` }} />
+                </span>
+                <span className="num">
+                  {mappingTotals.mapped} / {mappingTotals.total}
+                </span>
+              </span>
             }
           >
             {inspectedColumns.length > 0 ? (
@@ -1630,83 +1664,75 @@ export function FmeaTool() {
           </SectionCard>
         </div>
 
+        {/* v2 N5: persistent 320px Run rail. The Preview/Run tabs retired —
+            readiness, CTA, progress, and result live in one always-visible
+            card, with validation + preview as sibling cards below. */}
         <aside className="workspace-grid__side workspace-grid__side--sticky">
-          <SectionCard
-            className="section-card--compact"
-            variant="divided"
-            title="Review Panel"
-            eyebrow="Context"
-            description={
-              contextView === "preview"
-                ? "Preview output and validation in one focused panel."
-                : "Run feedback stays isolated so it does not compete with setup."
-            }
-            actions={
-              <ContextTabs
-                ariaLabel="Context panel"
-                tabs={[
-                  { id: "preview", label: "Preview" },
-                  { id: "run", label: "Run" },
-                ]}
-                activeId={contextView}
-                onChange={setContextView}
-              />
-            }
-          >
-            <h3 className="sr-only-focusable" ref={contextHeadingRef} tabIndex={-1}>
-              {contextView === "preview" ? "Preview panel" : "Run panel"}
-            </h3>
+          <section className="rail-card" aria-label="Run">
+            <header className="rail-card__header">
+              <h2>Run</h2>
+              <span className="rail-card__status">{runStatusWord}</span>
+            </header>
             <ErrorBoundary
-              title="Panel failed to render"
-              detail="The active FMEA context panel hit an error. Reload this panel without tearing down the shell."
+              title="Run panel failed to render"
+              detail="The FMEA run panel hit an error. Reload this panel without tearing down the shell."
             >
-              {contextView === "preview" ? (
-                <ValidationPreview
-                  validations={previewValidations}
-                  previewRows={IS_BROWSER_MOCK ? baseScenario.previewRows : []}
-                  analysisCards={analysisCards}
-                />
-              ) : (
-                <RunStatePanel
-                  runMode={panelRunMode}
-                  progress={panelProgress}
-                  timeline={panelTimeline}
-                  result={panelRunResult}
-                  cancelledNotice={panelCancelledNotice}
-                  logLines={panelLogLines}
-                  truncatedLogCount={panelTruncatedLogCount}
-                  errorCode={panelErrorCode}
-                  errorTraceback={panelErrorTraceback}
-                  startLabel={backendClient.runtimeMode === "desktop-bridge" ? "Generate FMEA" : "Start demo run"}
-                  runId={panelRunId}
-                  statusMessage={panelStatusMessage}
-                  startDisabled={bomOnlyBlockedReason !== null}
-                  startDisabledReason={bomOnlyBlockedReason ?? undefined}
-                  onRevealOutput={
-                    backendClient.runtimeMode === "desktop-bridge" ? (path) => void handleRevealOutput(path) : undefined
+              <RunStatePanel
+                runMode={panelRunMode}
+                progress={panelProgress}
+                timeline={panelTimeline}
+                result={panelRunResult}
+                cancelledNotice={panelCancelledNotice}
+                logLines={panelLogLines}
+                truncatedLogCount={panelTruncatedLogCount}
+                errorCode={panelErrorCode}
+                errorTraceback={panelErrorTraceback}
+                startLabel={backendClient.runtimeMode === "desktop-bridge" ? "Generate FMEA" : "Start demo run"}
+                runId={panelRunId}
+                statusMessage={panelStatusMessage}
+                startDisabled={bomOnlyBlockedReason !== null}
+                startDisabledReason={bomOnlyBlockedReason ?? undefined}
+                readiness={readinessItems}
+                onRevealOutput={
+                  backendClient.runtimeMode === "desktop-bridge" ? (path) => void handleRevealOutput(path) : undefined
+                }
+                onStart={() => {
+                  void handleStartRun();
+                }}
+                onCancel={() => {
+                  // Desktop-bridge cancel is owned by the shared controller
+                  // (guarded on ``starting``/``running`` to avoid stale-id
+                  // and double-click second-cancels reaching the sidecar).
+                  if (cancelDesktopRun()) {
+                    return;
                   }
-                  onStart={() => {
-                    void handleStartRun();
-                  }}
-                  onCancel={() => {
-                    // Desktop-bridge cancel is owned by the shared controller
-                    // (guarded on ``starting``/``running`` to avoid stale-id
-                    // and double-click second-cancels reaching the sidecar).
-                    if (cancelDesktopRun()) {
-                      return;
-                    }
 
-                    // Browser-mock: the HoldButton already captured the
-                    // press-and-hold confirmation, so cancel immediately.
-                    setRunMode("idle");
-                    setRunIndex(-1);
-                    setRunResult(null);
-                    setCancelledNotice("Demo run cancelled. The workspace returned to a safe idle state without losing context.");
-                  }}
-                />
-              )}
+                  // Browser-mock: the HoldButton already captured the
+                  // press-and-hold confirmation, so cancel immediately.
+                  setRunMode("idle");
+                  setRunIndex(-1);
+                  setRunResult(null);
+                  setCancelledNotice("Demo run cancelled. The workspace returned to a safe idle state without losing context.");
+                }}
+              />
             </ErrorBoundary>
-          </SectionCard>
+          </section>
+
+          <section className="rail-card" aria-label="Validation and preview">
+            <header className="rail-card__header">
+              <h2>Validation &amp; preview</h2>
+            </header>
+            <ErrorBoundary
+              title="Validation panel failed to render"
+              detail="The FMEA validation panel hit an error. Reload this panel without tearing down the shell."
+            >
+              <ValidationPreview
+                validations={previewValidations}
+                previewRows={IS_BROWSER_MOCK ? baseScenario.previewRows : []}
+                analysisCards={analysisCards}
+              />
+            </ErrorBoundary>
+          </section>
         </aside>
       </section>
     </div>

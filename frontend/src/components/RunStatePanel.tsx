@@ -1,7 +1,25 @@
+import { useEffect, useRef } from "react";
 import type { RunEvent, RunMode, RunResult } from "../app/types";
 import { LIVE_PHASES } from "../shared/backend/runLifecycle";
 import { OPEN_FOLDER_LABEL } from "../shared/backend/fileManager";
+import { useCopyToClipboard } from "../shared/hooks/useCopyToClipboard";
+import {
+  isEditableKeyboardTarget,
+  matchesPrimaryShortcut,
+  primaryShortcutLabel,
+} from "../shared/hooks/shortcutUtils";
 import { HoldButton } from "./primitives/HoldButton";
+
+/**
+ * v2 N5: one readiness row in the Run rail's preflight checklist.
+ * Tools derive these from state they already track (loaded inputs,
+ * required-mapping coverage, output folder).
+ */
+export interface RunReadinessItem {
+  label: string;
+  value: string;
+  tone?: "ok" | "warn" | "bad";
+}
 
 interface RunStatePanelProps {
   runMode: RunMode;
@@ -42,6 +60,12 @@ interface RunStatePanelProps {
   /** Caption shown below the Start button when {@link startDisabled} is true. */
   startDisabledReason?: string;
   onRevealOutput?: (path: string) => void;
+  /**
+   * v2 N5: preflight checklist rendered above the CTA. When present the
+   * panel is acting as the persistent Run rail and also arms the
+   * Ctrl/Cmd+Enter start shortcut (hidden keep-alive panes stay inert).
+   */
+  readiness?: RunReadinessItem[];
 }
 
 /** Sentence-case a status enum word ("completed" → "Completed"). */
@@ -85,6 +109,7 @@ export function RunStatePanel({
   startDisabled = false,
   startDisabledReason,
   onRevealOutput,
+  readiness,
 }: RunStatePanelProps) {
   const isBusy = LIVE_PHASES.some((phase) => phase === runMode);
   const canCancel = isBusy && runMode !== "cancelling";
@@ -125,8 +150,52 @@ export function RunStatePanel({
     : "progress-shell";
   const barStyle = indeterminate ? undefined : { width: `${displayPercent}%` };
 
+  // v2 N5: Ctrl/Cmd+Enter fires the visible rail's Start. Guarded against
+  // editable targets, disabled states, and hidden keep-alive panes (every
+  // visited tool keeps its panel mounted — only the visible one may arm).
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const shortcutArmed = !!readiness;
+  useEffect(() => {
+    if (!shortcutArmed) {
+      return;
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (!matchesPrimaryShortcut(event, "enter")) {
+        return;
+      }
+      if (isEditableKeyboardTarget(event.target)) {
+        return;
+      }
+      const root = rootRef.current;
+      if (!root || root.closest("[hidden]")) {
+        return;
+      }
+      if (isBusy || startDisabled) {
+        return;
+      }
+      event.preventDefault();
+      onStart();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [shortcutArmed, isBusy, startDisabled, onStart]);
+
+  const { copy: copyOutputPath, copied: outputPathCopied } = useCopyToClipboard();
+
   return (
-    <div className="run-state">
+    <div className="run-state" ref={rootRef}>
+      {readiness && readiness.length > 0 ? (
+        <div className="run-readiness" role="list" aria-label="Run readiness">
+          {readiness.map((item) => (
+            <div key={item.label} className="run-readiness__row" role="listitem" data-tone={item.tone}>
+              <i className="dot" data-tone={item.tone} aria-hidden="true" />
+              <span className="run-readiness__label">{item.label}</span>
+              <span className="run-readiness__value num">{item.value}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
       <div className="run-state__controls">
         <button
           type="button"
@@ -135,7 +204,12 @@ export function RunStatePanel({
           disabled={startButtonDisabled}
           aria-describedby={showStartDisabledReason ? "run-state-start-disabled-reason" : undefined}
         >
-          {isBusy ? (runMode === "cancelling" ? "Cancelling..." : "Running...") : startLabel}
+          <span>{isBusy ? (runMode === "cancelling" ? "Cancelling..." : "Running...") : startLabel}</span>
+          {shortcutArmed ? (
+            <span className="kbd-shortcut" aria-hidden="true">
+              {primaryShortcutLabel("↵")}
+            </span>
+          ) : null}
         </button>
         <HoldButton
           label="Cancel"
@@ -275,19 +349,36 @@ export function RunStatePanel({
               />
               {statusWord(result.status)}
             </span>
-            <p>{result.outputFile}</p>
+            <h3>{result.title}</h3>
           </div>
           <div className="run-result__body">
-            <h3>{result.title}</h3>
             <p>{result.summary}</p>
-            {result.outputFile && onRevealOutput ? (
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={() => onRevealOutput(result.outputFile)}
-              >
-                {OPEN_FOLDER_LABEL}
-              </button>
+            {result.outputFile ? (
+              <code className="run-result__path" title={result.outputFile}>
+                {result.outputFile}
+              </code>
+            ) : null}
+            {result.outputFile ? (
+              <div className="run-result__actions">
+                {onRevealOutput ? (
+                  <button
+                    type="button"
+                    className="ghost-button ghost-button--sm"
+                    onClick={() => onRevealOutput(result.outputFile)}
+                  >
+                    {OPEN_FOLDER_LABEL}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="ghost-button ghost-button--sm"
+                  onClick={() => {
+                    void copyOutputPath(result.outputFile);
+                  }}
+                >
+                  {outputPathCopied ? "Copied!" : "Copy path"}
+                </button>
+              </div>
             ) : null}
           </div>
           <div className="run-result__metrics">

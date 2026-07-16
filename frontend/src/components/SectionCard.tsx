@@ -46,7 +46,7 @@ export function SectionCard({
       <header className="section-card__header">
         {typeof step === "number" ? (
           <span className="section-card__step" aria-hidden="true">
-            {step}
+            {String(step).padStart(2, "0")}
           </span>
         ) : null}
         <div className="section-card__heading">

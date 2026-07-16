@@ -94,12 +94,11 @@ const STALE_VALIDATION = {
   mode: "desktop-bridge" as const,
 };
 
-// Seed a validation card by driving the Run tab -> Start -> validate_run.
-// A blocking (ok: false) result populates `validations` and bounces the
-// context view back to "preview", where the card is visible.
+// Seed a validation card by driving Start -> validate_run in the
+// persistent Run rail (v2 N5 — no tabs). A blocking (ok: false) result
+// populates `validations`, visible in the sibling Validation card.
 async function seedValidationCard(user: ReturnType<typeof userEvent.setup>) {
   mockBackendClient.validateRun.mockResolvedValueOnce(STALE_VALIDATION);
-  await user.click(screen.getByRole("tab", { name: /^Run$/i }));
   await user.click(screen.getByRole("button", { name: "Generate FMEA" }));
   expect(await screen.findByText("Stale configuration card")).toBeInTheDocument();
 }

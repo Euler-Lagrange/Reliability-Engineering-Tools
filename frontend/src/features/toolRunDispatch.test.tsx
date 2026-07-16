@@ -58,7 +58,12 @@ function resetStores() {
 
 async function runTool(startLabel: string) {
   const user = userEvent.setup();
-  await user.click(screen.getByRole("tab", { name: /^Run$/i }));
+  // v2 N5: FMEA's Run rail is persistent (no tab); the other tools keep
+  // their Preview/Run tabs until the rail pattern is cloned to them.
+  const runTab = screen.queryByRole("tab", { name: /^Run$/i });
+  if (runTab) {
+    await user.click(runTab);
+  }
   await user.click(screen.getByRole("button", { name: startLabel }));
 }
 

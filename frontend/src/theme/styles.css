@@ -832,7 +832,7 @@ button:disabled {
 }
 
 .workspace-grid--single {
-  grid-template-columns: minmax(0, 1.45fr) 380px;
+  grid-template-columns: minmax(0, 1fr) 320px; /* v2 N5: 320px Run rail */
   align-items: start;
 }
 
@@ -849,7 +849,6 @@ button:disabled {
 
 .section-card,
 .choice-card,
-.timeline__item,
 .run-result {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
@@ -912,31 +911,52 @@ button:disabled {
   min-width: 0;
 }
 
-/* Section-level workflow-step marker — same visual language as
-   .input-card__step-indicator, scaled up for section headers. */
+/* v2 N5: the section step is a bare mono ordinal ("01"), not a circled
+   chip — the numbered-strip header reads as an instrument label. */
 .section-card__step {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   flex-shrink: 0;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--text-muted);
+  color: var(--text-faint);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5; /* optically aligns the ordinal with the 13px title baseline */
 }
 
 .section-card h2 {
-  font-size: var(--text-md);
-  line-height: 1.2;
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tight);
+  line-height: 1.5;
 }
 
 .section-card__actions {
   flex-shrink: 0;
+}
+
+/* Right-aligned header meta (input counts, coverage meter). */
+.section-card__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.coverage-meter {
+  display: inline-block;
+  width: 72px; /* off-grid: header meter width */
+  height: 3px; /* off-grid: meter bar */
+  border-radius: var(--radius-pill);
+  background: var(--line);
+  overflow: hidden;
+}
+
+.coverage-meter i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width var(--duration-slow) var(--ease);
 }
 
 .header-metrics {
@@ -1401,8 +1421,7 @@ button:disabled {
   cursor: help;
 }
 
-.input-card__path,
-.run-result__header p {
+.input-card__path {
   margin: 0;
   color: var(--text-muted);
   font-family: var(--font-mono);
@@ -1930,13 +1949,13 @@ tbody tr:hover {
   flex-wrap: wrap;
 }
 
-/* The Start button is the tool's single most important control — it gets
-   dominant width and height so it can never be mistaken for a chip.
-   Cancel stays compact beside it. */
+/* The Start button is the tool's single most important control — full
+   rail width at the 32px CTA tier (v2), label left / shortcut right. */
 .run-state__controls .primary-button {
   flex: 1;
-  min-height: 44px; /* off-grid: primary CTA height, deliberately above the 36px control row */
-  font-size: var(--text-base);
+  justify-content: space-between;
+  min-height: var(--control-h-lg);
+  font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
 }
 
@@ -1946,12 +1965,39 @@ tbody tr:hover {
   background: var(--accent);
 }
 
+.primary-button:hover:not(:disabled) {
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+  color: var(--text-on-accent);
+}
+
+.primary-button:active:not(:disabled) {
+  border-color: var(--accent-active);
+  background: var(--accent-active);
+}
+
+.primary-button:disabled {
+  border-color: var(--line);
+  background: var(--line);
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
+
+.primary-button .kbd-shortcut {
+  color: color-mix(in srgb, var(--text-on-accent) 75%, transparent);
+}
+
+.primary-button:disabled .kbd-shortcut {
+  color: inherit;
+}
+
+/* v2 N5: 3px instrument progress bar — the pill radius survives here
+   and nowhere else. */
 .progress-shell {
   overflow: hidden;
-  height: var(--space-2);
-  border: 1px solid var(--line);
+  height: 3px; /* off-grid: instrument progress bar */
   border-radius: var(--radius-pill);
-  background: var(--surface-soft);
+  background: var(--line);
 }
 
 .progress-shell__bar {
@@ -1961,12 +2007,13 @@ tbody tr:hover {
   transition: width var(--duration-slow) var(--ease);
 }
 
+/* v2 N5: run phases are quiet borderless rows in the rail. */
 .timeline__item {
   display: grid;
-  grid-template-columns: var(--space-2) minmax(0, 1fr) auto;
-  gap: var(--space-2-5); /* timeline column gap */
+  grid-template-columns: 6px minmax(0, 1fr) auto;
+  gap: var(--space-2);
   align-items: start;
-  padding: var(--space-2-5) var(--space-3); /* matches table cell density */
+  padding: var(--space-1) 0;
 }
 
 .timeline__item[data-status="active"] {
@@ -2436,19 +2483,23 @@ tbody tr:hover {
   gap: var(--space-1);
 }
 
+/* v2 N5: hairline metrics grid — 1px --line gutters between surface
+   cells instead of per-cell borders. */
 .run-result__metrics {
   display: grid;
-  gap: var(--space-2);
   grid-template-columns: 1fr 1fr;
+  gap: 1px; /* off-grid: hairline gutter */
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--line);
+  overflow: hidden;
 }
 
 .run-result__metric {
   display: grid;
   gap: 2px; /* off-grid: extreme-tight metric stack */
   padding: var(--space-2) var(--space-2-5);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface-muted);
+  background: var(--surface);
 }
 
 .run-result__metric strong:not(.hero-metric) {
@@ -2953,6 +3004,87 @@ tbody tr:hover {
 .input-card__path-copy--copied {
   color: var(--success);
   opacity: 1;
+}
+
+/* ---- v2 N5: Run rail cards --------------------------------------- */
+
+/* Bordered sibling cards in the 320px side rail (Run · Validation).
+   The header carries the card name + a mono status word. */
+.rail-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+
+.rail-card__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2-5);
+}
+
+.rail-card__header h2 {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tight);
+}
+
+.rail-card__status {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+/* Preflight readiness checklist — dot · label · mono value. */
+.run-readiness {
+  display: grid;
+  margin-bottom: var(--space-1);
+}
+
+.run-readiness__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 26px; /* off-grid: checklist row rhythm */
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.run-readiness__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-readiness__value {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+/* Result path well + action row + hairline metrics grid. */
+.run-result__path {
+  display: block;
+  padding: var(--space-2) var(--space-2-5);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.run-result__actions {
+  display: flex;
+  gap: var(--space-2);
 }
 
 /* ---- RunStatePanel progress telemetry --------------------------- */
