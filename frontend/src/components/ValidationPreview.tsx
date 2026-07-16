@@ -3,7 +3,14 @@ import { EmptyState } from "./primitives/EmptyState";
 import { useCopyToClipboard } from "../shared/hooks/useCopyToClipboard";
 import { useNotificationStore } from "../stores/notificationStore";
 import { useShellStore } from "../stores/shellStore";
-import type { AnalysisContextCard, PreviewRow, ValidationMessage } from "../app/types";
+import type { AnalysisContextCard, PreviewRow, ValidationMessage, ValidationSeverity } from "../app/types";
+
+/* v2 N8: severity renders as a 6px dot, not a filled chip. */
+const SEVERITY_TONE: Record<ValidationSeverity, string | undefined> = {
+  error: "bad",
+  warning: "warn",
+  info: undefined,
+};
 
 interface ValidationPreviewProps {
   validations: ValidationMessage[];
@@ -72,6 +79,8 @@ export function ValidationPreview({
 
   const issueCount = validations.length;
   const hasIssues = issueCount > 0;
+  const errorCount = validations.filter((message) => message.severity === "error").length;
+  const warningCount = validations.filter((message) => message.severity === "warning").length;
 
   const handleCopyIssues = async () => {
     if (!hasIssues) {
@@ -112,13 +121,14 @@ export function ValidationPreview({
               <strong>{card.title}</strong>
               <p>{card.detail}</p>
               <div className="analysis-card__metrics">
-                {card.metrics.map((metric) => (
-                  <span key={metric} className="status-chip status-chip--info">
-                    {metric}
-                  </span>
-                ))}
+                {/* v2 N8: metrics are category data → mono text, not blue
+                    chips. True warnings keep a dot + warning-colored note. */}
+                {card.metrics.length > 0 ? (
+                  <span className="analysis-card__metric-text">{card.metrics.join(" · ")}</span>
+                ) : null}
                 {card.warning ? (
-                  <span className="status-chip status-chip--warning">
+                  <span className="analysis-card__warning">
+                    <i className="dot" data-tone="warn" aria-hidden="true" />
                     {card.warning}
                   </span>
                 ) : null}
@@ -133,6 +143,16 @@ export function ValidationPreview({
           <span className="validation-preview__toolbar-count">
             <span className="num">{issueCount}</span> issue{issueCount === 1 ? "" : "s"}
           </span>
+          {errorCount > 0 ? (
+            <span className="badge-state badge-state--bad" title={`${errorCount} error${errorCount === 1 ? "" : "s"}`}>
+              {errorCount}
+            </span>
+          ) : null}
+          {warningCount > 0 ? (
+            <span className="badge-state badge-state--warn" title={`${warningCount} warning${warningCount === 1 ? "" : "s"}`}>
+              {warningCount}
+            </span>
+          ) : null}
           <button
             type="button"
             className="validation-preview__export-button"
@@ -155,14 +175,12 @@ export function ValidationPreview({
       <div className="validation-list">
         {validations.map((message) => (
           <article key={message.id} className="validation-card" data-severity={message.severity}>
-            <div className="validation-card__header">
-              <span className={`status-chip status-chip--${message.severity}`}>{message.severity}</span>
-              <span className="validation-card__area">{message.area}</span>
-            </div>
+            <i className="dot" data-tone={SEVERITY_TONE[message.severity]} aria-hidden="true" />
             <div className="validation-card__body">
               <strong>{message.title}</strong>
               <p>{message.detail}</p>
             </div>
+            <span className="validation-card__area">{message.area}</span>
           </article>
         ))}
       </div>
@@ -192,10 +210,10 @@ export function ValidationPreview({
           </div>
           <button
             type="button"
-            className="ghost-button validation-layout__full-preview"
+            className="validation-layout__full-preview"
             onClick={() => setContextOpen(true)}
           >
-            Full preview
+            Open full preview
           </button>
         </>
       ) : (

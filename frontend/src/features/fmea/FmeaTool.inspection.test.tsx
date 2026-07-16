@@ -274,7 +274,9 @@ describe("FmeaTool inspection flow", () => {
     const warning = await screen.findByText(
       "Sheet is protected — the merge will modify it without the password.",
     );
-    expect(warning).toHaveClass("status-chip--warning");
+    // v2 N8: analysis-card warnings render as a dot + warning-colored
+    // note instead of a filled chip.
+    expect(warning).toHaveClass("analysis-card__warning");
   }, FMEA_INSPECTION_TEST_TIMEOUT_MS);
 
   // Fix 2 (parity with BOM Compare / Failure Rate): a stale validate_run
