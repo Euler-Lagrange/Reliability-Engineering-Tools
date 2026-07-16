@@ -72,7 +72,11 @@ describe("ValidationPreview", () => {
   it("still renders the issue toolbar with the validation count", () => {
     render(<ValidationPreview validations={validations} previewRows={[]} />);
 
-    expect(screen.getByText("1 issue")).toBeInTheDocument();
+    // The count numeral is wrapped in a .num span (v2 numeric rule), so
+    // match on the toolbar element's combined text content.
+    expect(
+      screen.getByText((_, element) => element?.className === "validation-preview__toolbar-count" && element.textContent === "1 issue"),
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /copy issues/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /export csv/i })).toBeInTheDocument();
   });

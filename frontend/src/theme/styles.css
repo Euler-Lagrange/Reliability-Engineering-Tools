@@ -541,14 +541,25 @@ button:disabled {
   color: var(--accent);
 }
 
-/* Hero metric — oversized numeral for the single KPI per tool
-   (designator count, diff count, FR rollup total). Pair with
-   tabular-nums so successive digit widths align. */
-.hero-metric {
-  font-size: var(--text-3xl);
-  font-weight: var(--weight-semibold);
+/* Numeric & identifier treatment — the calibrated-instrument rule (v2 N4).
+   EVERY number, ID, RefDes, path, sheet name, Excel header, count,
+   percentage, timestamp and duration renders mono + tabular-nums.
+   Apply .num (or inherit from a mono context). */
+.num {
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
+}
+
+/* Hero metric — the single KPI per tool (designator count, diff count,
+   FR rollup total). v2: capped at --text-xl and set in mono — numbers
+   are data, not marketing type. */
+.hero-metric {
+  font-family: var(--font-mono);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
   color: var(--text);
   line-height: 1.1;
 }
@@ -711,6 +722,14 @@ button:disabled {
 /* Compact side-panel preview: two columns, single-line cells with
    ellipsis. Full text is one click away in the Review drawer (and on
    the cell tooltip). */
+/* Preview cells are sampled workbook values → mono (v2 N4). Headers
+   stay sans — they describe, the data performs. */
+.preview-table td {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-xs);
+}
+
 .preview-table--compact th,
 .preview-table--compact td {
   white-space: nowrap;
@@ -731,6 +750,12 @@ button:disabled {
   border-collapse: collapse;
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
+}
+
+/* Drawer preview cells are workbook data → mono (v2 N4); the th
+   override below keeps headers sans. */
+.context-drawer__preview-table td {
+  font-family: var(--font-mono);
 }
 
 .context-drawer__preview-table th,
@@ -910,8 +935,11 @@ button:disabled {
 }
 
 .header-metric strong:not(.hero-metric) {
+  font-family: var(--font-mono);
   font-size: var(--text-base);
-  font-weight: var(--weight-semibold);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
 }
 
 .setup-grid {
@@ -2152,8 +2180,11 @@ tbody tr:hover {
 }
 
 .run-result__metric strong:not(.hero-metric) {
+  font-family: var(--font-mono);
   font-size: var(--text-base);
-  font-weight: var(--weight-semibold);
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
 }
 
 .run-result__notes {

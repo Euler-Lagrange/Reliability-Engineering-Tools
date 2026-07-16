@@ -96,20 +96,22 @@ export function RunStatePanel({
   const indeterminate = !hasKnownPercent && isActiveRun;
   const displayPercent = hasKnownPercent ? Math.max(0, Math.min(100, percent as number)) : progress;
 
-  const metaParts: string[] = [];
+  // Percent and ETA are instrument readouts → .num (v2 N4); the stage
+  // label is prose and stays sans.
+  const metaParts: { text: string; numeric?: boolean }[] = [];
   if (hasKnownPercent) {
-    metaParts.push(`${Math.round(displayPercent)}%`);
+    metaParts.push({ text: `${Math.round(displayPercent)}%`, numeric: true });
   } else if (indeterminate) {
-    metaParts.push("Working…");
+    metaParts.push({ text: "Working…" });
   }
   if (typeof etaSeconds === "number") {
     const etaText = formatEta(etaSeconds);
     if (etaText) {
-      metaParts.push(etaText);
+      metaParts.push({ text: etaText, numeric: true });
     }
   }
   if (stageLabel) {
-    metaParts.push(stageLabel);
+    metaParts.push({ text: stageLabel });
   }
   const showMeta = metaParts.length > 0;
 
@@ -146,7 +148,11 @@ export function RunStatePanel({
 
       {runId || statusMessage ? (
         <div className="analysis-summary">
-          {runId ? <strong>Run ID: {runId}</strong> : null}
+          {runId ? (
+            <strong>
+              Run ID: <span className="num">{runId}</span>
+            </strong>
+          ) : null}
           {statusMessage ? <p>{statusMessage}</p> : null}
         </div>
       ) : null}
@@ -164,13 +170,13 @@ export function RunStatePanel({
       {showMeta ? (
         <p className="run-state__progress-meta" aria-live="polite">
           {metaParts.map((part, index) => (
-            <span key={`${index}-${part}`}>
+            <span key={`${index}-${part.text}`}>
               {index > 0 ? (
                 <span className="run-state__progress-meta-dot" aria-hidden="true">
                   {" • "}
                 </span>
               ) : null}
-              {part}
+              <span className={part.numeric ? "num" : undefined}>{part.text}</span>
             </span>
           ))}
         </p>
@@ -199,7 +205,9 @@ export function RunStatePanel({
         <section className="execution-log" aria-label="Execution log">
           <div className="execution-log__header">
             <strong>Execution log</strong>
-            <span>{logLines.length} entries</span>
+            <span>
+              <span className="num">{logLines.length}</span> entries
+            </span>
           </div>
           {truncatedLogCount > 0 ? (
             <p

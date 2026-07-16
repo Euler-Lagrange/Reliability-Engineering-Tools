@@ -131,7 +131,7 @@ export function ValidationPreview({
       {hasIssues ? (
         <div className="validation-preview__toolbar" role="group" aria-label="Validation export actions">
           <span className="validation-preview__toolbar-count">
-            {issueCount} issue{issueCount === 1 ? "" : "s"}
+            <span className="num">{issueCount}</span> issue{issueCount === 1 ? "" : "s"}
           </span>
           <button
             type="button"
