@@ -4,12 +4,11 @@ import {
   InputGrid,
 } from "../../components/InputGrid";
 import { MappingTable } from "../../components/MappingTable";
-import { RunStatePanel } from "../../components/RunStatePanel";
+import { RunStatePanel, runStatusWord, type RunReadinessItem } from "../../components/RunStatePanel";
 import { SectionCard } from "../../components/SectionCard";
 import { ValidationPreview } from "../../components/ValidationPreview";
 import { WorkflowSelector } from "../../components/WorkflowSelector";
 import { CheckboxField } from "../../components/primitives/CheckboxField";
-import { ContextTabs } from "../../components/primitives/ContextTabs";
 import { EmptyState } from "../../components/primitives/EmptyState";
 import { OptionsSection } from "../../components/primitives/OptionsSection";
 import { OutputFolderPicker } from "../../components/OutputFolderPicker";
@@ -231,14 +230,14 @@ export function BomCompareTool() {
     check_fmr: false,
     treat_prov_as_covered: true,
   });
-  const [contextView, setContextView] = useState<"preview" | "run">("preview");
+  // v2 N5-clone: the Preview/Run ContextTabs retired — the Run rail and
+  // the Validation card are permanently visible siblings.
   const [runMode, setRunMode] = useState<RunMode>("idle");
   const [runIndex, setRunIndex] = useState(-1);
   const [runTemplates, setRunTemplates] = useState<RunEventTemplate[]>(baseScenario.runSequence.events);
   const [runResult, setRunResult] = useState<typeof baseScenario.runSequence.result | null>(null);
   const [runLogLines, setRunLogLines] = useState<string[]>([]);
   const [cancelledNotice, setCancelledNotice] = useState<string | null>(null);
-  const contextHeadingRef = useRef<HTMLHeadingElement | null>(null);
   // Fix 2 (Family 2): re-entrancy guard for the desktop run pipeline. Held
   // for the whole validate→execute window so a double-click on Compare can't
   // launch a second run whose rejection (single-active-run guard) would clear
@@ -251,8 +250,16 @@ export function BomCompareTool() {
   const setBomCompareOutputDirectory = useShellStore(
     (state) => state.setBomCompareOutputDirectory,
   );
+  const setToolModeLabel = useShellStore((state) => state.setToolModeLabel);
   const pushNotification = useNotificationStore((state) => state.push);
   const setPreview = usePreviewStore((state) => state.setPreview);
+
+  // v2 N2: publish the selected workflow to the shell topbar's inline
+  // mode indicator (keyed by tool id — keep-alive siblings never clash).
+  const activeBomWorkflow = bomCompareWorkflowOptions.find((option) => option.id === workflowId);
+  useEffect(() => {
+    setToolModeLabel("bom_compare", activeBomWorkflow?.title ?? null);
+  }, [activeBomWorkflow?.title, setToolModeLabel]);
 
   // Per-role token used to discard stale async listSheets/inspect results.
   const fileRequestSeq = useRoleRequestSequence<FileRole>();
@@ -407,7 +414,6 @@ export function BomCompareTool() {
       setRunResult(null);
       setRunLogLines([]);
       setCancelledNotice(null);
-      setContextView("preview");
       armTerminalHandler();
       // Fix #16: guard the reset so switching workflow MID-RUN doesn't clobber a
       // live run (which would orphan the backend job). Idle/terminal still reset.
@@ -416,9 +422,6 @@ export function BomCompareTool() {
   }, [workflowId]);
 
   // Focus context heading when view switches
-  useEffect(() => {
-    contextHeadingRef.current?.focus();
-  }, [contextView]);
 
   // Browser-mock run simulation
   useEffect(() => {
@@ -891,7 +894,6 @@ export function BomCompareTool() {
       setRunLogLines([]);
       setCancelledNotice(null);
       setRunResult(null);
-      setContextView("run");
       setRunMode("running");
       setRunIndex(0);
       return;
@@ -919,8 +921,6 @@ export function BomCompareTool() {
     // the busy chip. Otherwise useBackendBusyReset would see (previous run's
     // terminal phase + busy) and instantly clear the "Validating..." message.
     resetDesktopRunSession();
-
-    setContextView("run");
     setRunLogLines([]);
     setRunResult(null);
     setCancelledNotice(null);
@@ -938,7 +938,6 @@ export function BomCompareTool() {
         setRunMode("idle");
         setRunIndex(-1);
         setRunTemplates(baseScenario.runSequence.events);
-        setContextView("preview");
         resetDesktopRunSession();
         setBackendState({
           backendStatus: "ready",
@@ -970,7 +969,6 @@ export function BomCompareTool() {
       const detail = describeBackendError(error, "Unknown backend execution failure");
       // Fix 2 (Family 2): guarded reset — must not clobber a live sibling run.
       resetDesktopRunSessionUnlessLive();
-      setContextView("preview");
       setBackendState({
         backendStatus: "error",
         backendMessage: detail,
@@ -1004,6 +1002,56 @@ export function BomCompareTool() {
     setCancelledNotice("Demo run cancelled. The workspace returned to a safe idle state.");
   }
 
+  // v2 N5-clone: Run-rail readiness + section meta derive from state the
+  // tool already tracks.
+  const requiredVisibleInputs = visibleInputs.filter((input) => input.required);
+  const loadedRequiredVisibleInputs = requiredVisibleInputs.filter((input) => !!input.path).length;
+  const loadedVisibleInputs = visibleInputs.filter((input) => !!input.path).length;
+  const bomMappingTotals = mappingRows.reduce(
+    (acc, row) => {
+      const mapped = mappingOverrides[row.canonical] ?? row.mappedTo;
+      const isMapped = row.origin === "derived" || (!!mapped && mapped !== DO_NOT_MAP_VALUE);
+      acc.total += 1;
+      if (isMapped) acc.mapped += 1;
+      if (row.required === true) {
+        acc.requiredTotal += 1;
+        if (isMapped) acc.requiredMapped += 1;
+      }
+      return acc;
+    },
+    { total: 0, mapped: 0, requiredTotal: 0, requiredMapped: 0 },
+  );
+  const bomMappingCoveragePercent =
+    bomMappingTotals.total === 0
+      ? 0
+      : Math.round((bomMappingTotals.mapped / bomMappingTotals.total) * 100);
+  const readinessItems: RunReadinessItem[] = [
+    {
+      label: "Inputs loaded",
+      value: `${loadedRequiredVisibleInputs} / ${requiredVisibleInputs.length}`,
+      tone:
+        requiredVisibleInputs.length === 0 ||
+        loadedRequiredVisibleInputs === requiredVisibleInputs.length
+          ? "ok"
+          : "warn",
+    },
+    // Extraction Compare reads a fixed sheet schema — no mapping row.
+    ...(workflowId !== "extraction_compare"
+      ? ([
+          {
+            label: "Required mapping",
+            value: `${bomMappingTotals.requiredMapped} / ${bomMappingTotals.requiredTotal}`,
+            tone: bomMappingTotals.requiredMapped === bomMappingTotals.requiredTotal ? "ok" : "warn",
+          },
+        ] as RunReadinessItem[])
+      : []),
+    {
+      label: "Output folder",
+      value: bomCompareOutputDirectory ? "Custom" : "Default",
+      tone: "ok",
+    },
+  ];
+
   return (
     <ErrorBoundary
       title="BOM Compare panel failed to render"
@@ -1012,12 +1060,9 @@ export function BomCompareTool() {
       <div className="tool-workspace">
         <section className="workspace-grid workspace-grid--single">
           <div className="workspace-grid__main">
-            <SectionCard
-              step={1}
-              title="Run Setup"
-              eyebrow="Workflow"
-              description="Pick the BOM comparison style. Group mode compares a grouping sheet to a BOM; custom mode compares two BOMs directly."
-            >
+            {/* v2 N5-clone: numbered bare strips; descriptions retired
+                (control hints carry the context, the topbar carries the mode). */}
+            <SectionCard variant="bare" step={1} title="Workflow">
               <WorkflowSelector
                 workflows={bomCompareWorkflowOptions}
                 selectedWorkflowId={workflowId}
@@ -1027,10 +1072,16 @@ export function BomCompareTool() {
             </SectionCard>
 
             <SectionCard
+              variant="bare"
               step={2}
-              title="Input Files"
-              eyebrow="Data Sources"
-              description="Load the workbooks you want to compare."
+              title="Inputs"
+              actions={
+                isPristine ? undefined : (
+                  <span className="section-card__meta num">
+                    {loadedVisibleInputs} of {visibleInputs.length} loaded
+                  </span>
+                )
+              }
             >
               {isPristine ? (
                 <EmptyState
@@ -1079,10 +1130,19 @@ export function BomCompareTool() {
                 custom-only Column Value Comparison card below). */}
             {workflowId !== "extraction_compare" ? (
             <SectionCard
+              variant="bare"
               step={3}
-              title="Column Mapping"
-              eyebrow="Field Assignment"
-              description="Map columns between the two BOMs to align rows."
+              title="Column mapping"
+              actions={
+                <span className="section-card__meta">
+                  <span className="coverage-meter" aria-hidden="true">
+                    <i style={{ width: `${bomMappingCoveragePercent}%` }} />
+                  </span>
+                  <span className="num">
+                    {bomMappingTotals.mapped} / {bomMappingTotals.total}
+                  </span>
+                </span>
+              }
             >
               <MappingTable
                 rows={mappingRows}
@@ -1126,11 +1186,7 @@ export function BomCompareTool() {
             </SectionCard>
             ) : null}
 
-            <OptionsSection
-              title="Options"
-              eyebrow="Comparison Settings"
-              description="Tune the comparison output."
-            >
+            <OptionsSection variant="bare" step={4} title="Options">
               {Object.entries(options).map(([key, value]) => {
                 // treat_prov_as_covered keys off the grouping file's
                 // group-name column ("PROV" groups), which a two-BOM custom
@@ -1184,8 +1240,8 @@ export function BomCompareTool() {
                 treat_prov_as_covered hide/disable pattern). */}
             {workflowId === "bom_compare_custom" ? (
               <SectionCard
+                variant="bare"
                 title="Column Value Comparison"
-                eyebrow="Custom Compare"
                 description="Diff specific column values for RefDes present in both files. Matching headers are paired automatically once both files are inspected."
               >
                 <ColumnPairPicker
@@ -1198,50 +1254,41 @@ export function BomCompareTool() {
             ) : null}
           </div>
 
+          {/* v2 N5-clone: persistent Run rail + Validation sibling card. */}
           <aside className="workspace-grid__side workspace-grid__side--sticky">
-            <SectionCard
-              variant="divided"
-              title={contextView === "preview" ? "Review" : "Execution"}
-              eyebrow="Context Panel"
-              actions={
-                <ContextTabs<"preview" | "run">
-                  ariaLabel="Context panel"
-                  activeId={contextView}
-                  onChange={(id) => setContextView(id)}
-                  tabs={[
-                    { id: "preview", label: "Preview" },
-                    { id: "run", label: "Run" },
-                  ]}
-                />
-              }
-            >
-              <h3 className="sr-only-focusable" ref={contextHeadingRef} tabIndex={-1}>
-                {contextView === "preview" ? "Preview panel" : "Run panel"}
-              </h3>
-              {contextView === "preview" ? (
-                <ValidationPreview validations={validations} previewRows={[]} />
-              ) : (
-                <RunStatePanel
-                  runMode={panelRunMode}
-                  progress={panelProgress}
-                  timeline={panelTimeline}
-                  result={panelRunResult}
-                  onStart={() => {
-                    void handleStartRun();
-                  }}
-                  onCancel={handleCancel}
-                  cancelledNotice={panelCancelledNotice}
-                  logLines={panelLogLines}
-                  truncatedLogCount={panelTruncatedLogCount}
-                  errorCode={panelErrorCode}
-                  errorTraceback={panelErrorTraceback}
-                  onRevealOutput={
-                    backendClient.runtimeMode === "desktop-bridge" ? (path) => void handleRevealOutput(path) : undefined
-                  }
-                  startLabel="Compare"
-                />
-              )}
-            </SectionCard>
+            <section className="rail-card" aria-label="Run">
+              <header className="rail-card__header">
+                <h2>Run</h2>
+                <span className="rail-card__status">{runStatusWord(panelRunMode)}</span>
+              </header>
+              <RunStatePanel
+                runMode={panelRunMode}
+                progress={panelProgress}
+                timeline={panelTimeline}
+                result={panelRunResult}
+                onStart={() => {
+                  void handleStartRun();
+                }}
+                onCancel={handleCancel}
+                cancelledNotice={panelCancelledNotice}
+                logLines={panelLogLines}
+                truncatedLogCount={panelTruncatedLogCount}
+                errorCode={panelErrorCode}
+                errorTraceback={panelErrorTraceback}
+                readiness={readinessItems}
+                onRevealOutput={
+                  backendClient.runtimeMode === "desktop-bridge" ? (path) => void handleRevealOutput(path) : undefined
+                }
+                startLabel="Compare"
+              />
+            </section>
+
+            <section className="rail-card" aria-label="Validation and preview">
+              <header className="rail-card__header">
+                <h2>Validation &amp; preview</h2>
+              </header>
+              <ValidationPreview validations={validations} previewRows={[]} />
+            </section>
           </aside>
         </section>
       </div>

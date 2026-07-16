@@ -38,8 +38,9 @@ describe("tauri_build shell", () => {
     await user.click(screen.getByRole("button", { name: /bom comparison tool/i }));
 
     expect(screen.getByRole("button", { name: /bom comparison tool/i })).toHaveAttribute("aria-current", "page");
-    // Label-independent sentinel: the tool's own "Run Setup" section heading.
-    expect(await screen.findByRole("heading", { name: /run setup/i })).toBeInTheDocument();
+    // Label-independent sentinel: BOM Compare's own "Options" section
+    // heading (unique among mounted tools after the v2 N5 renames).
+    expect(await screen.findByRole("heading", { name: /^options$/i })).toBeInTheDocument();
   });
 
   test("switches theme modes from the shell rail", async () => {
@@ -117,7 +118,7 @@ describe("tauri_build shell", () => {
 
     await user.click(screen.getByRole("button", { name: /bom comparison tool/i }));
 
-    await screen.findByRole("heading", { name: /run setup/i });
+    await screen.findByRole("heading", { name: /^options$/i });
 
     await waitFor(() => {
       const main = document.querySelector("main[aria-label='BOM Comparison Tool workspace']");

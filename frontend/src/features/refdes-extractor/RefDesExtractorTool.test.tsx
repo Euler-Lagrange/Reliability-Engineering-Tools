@@ -243,8 +243,6 @@ describe("RefDesExtractorTool dispatch with no browsed files", () => {
   it("sends no inputs when nothing was browsed", async () => {
     const user = userEvent.setup();
     render(<RefDesExtractorTool />);
-
-    await user.click(screen.getByRole("tab", { name: /^Run$/i }));
     await user.click(screen.getByRole("button", { name: "Extract" }));
 
     await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
@@ -279,8 +277,6 @@ describe("RefDesExtractorTool numeric tuning fields", () => {
     const batch = screen.getByRole("spinbutton", { name: "Geometry batch size" });
     fireEvent.change(batch, { target: { value: "25" } });
     expect(batch).toHaveValue(25);
-
-    await user.click(screen.getByRole("tab", { name: /^Run$/i }));
     await user.click(screen.getByRole("button", { name: "Extract" }));
 
     await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
@@ -295,8 +291,6 @@ describe("RefDesExtractorTool numeric tuning fields", () => {
     const prov = screen.getByRole("spinbutton", { name: "Provenance distance" });
     fireEvent.change(prov, { target: { value: "12.5" } });
     expect(prov).toHaveValue(12.5);
-
-    await user.click(screen.getByRole("tab", { name: /^Run$/i }));
     await user.click(screen.getByRole("button", { name: "Extract" }));
 
     await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
@@ -328,8 +322,6 @@ describe("RefDesExtractorTool numeric tuning fields", () => {
     });
     fireEvent.change(timeout, { target: { value: "60" } });
     expect(timeout).toHaveValue(60);
-
-    await user.click(screen.getByRole("tab", { name: /^Run$/i }));
     await user.click(screen.getByRole("button", { name: "Extract" }));
 
     await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
@@ -408,7 +400,6 @@ describe("RefDesExtractorTool advanced engine controls", () => {
 
     // Never open the advanced section: because the whole options object is
     // spread into the payload, the defaults must still ride along.
-    await user.click(screen.getByRole("tab", { name: /^Run$/i }));
     await user.click(screen.getByRole("button", { name: "Extract" }));
 
     await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
@@ -449,8 +440,6 @@ describe("RefDesExtractorTool advanced engine controls", () => {
     });
     await user.click(subprocess);
     expect(subprocess).toBeChecked();
-
-    await user.click(screen.getByRole("tab", { name: /^Run$/i }));
     await user.click(screen.getByRole("button", { name: "Extract" }));
 
     await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));

@@ -2767,54 +2767,9 @@ tbody tr:hover {
   color: var(--text-muted);
 }
 
-/* Preview/Run segmented control — the ONE tab pattern for context panels
-   (FMEA included; the parallel .panel-toggle system was folded in here).
-   The track carries a real border and the inactive tab keeps readable
-   contrast: an invisible "Run" tab hid the whole run panel from users. */
-.context-tabs {
-  display: flex;
-  flex-direction: row;
-  gap: var(--space-1);
-  padding: var(--space-1);
-  background: var(--surface-muted);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-}
-
-.context-tabs__tab {
-  appearance: none;
-  border: none;
-  padding: var(--space-1) var(--space-3);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
-  font-family: inherit;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  cursor: pointer;
-  transition:
-    background var(--duration-base) var(--ease),
-    color var(--duration-base) var(--ease),
-    box-shadow var(--duration-base) var(--ease);
-}
-
-.context-tabs__tab:hover:not(.is-active) {
-  color: var(--text);
-}
-
-.context-tabs__tab.is-active {
-  background: var(--surface);
-  color: var(--accent);
-  font-weight: var(--weight-semibold);
-  /* Accent hairline instead of a black drop shadow — visible on dark
-     themes too, and matches the unified selection language. */
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
-}
-
-.context-tabs__tab:focus-visible {
-  outline: none;
-  box-shadow: var(--shadow-focus-ring);
-}
+/* The Preview/Run .context-tabs pattern retired in Design Pass v2 (N5):
+   every tool now hosts a persistent Run rail with a sibling Validation
+   card, so context panels no longer tab. */
 
 .options-section__grid {
   display: flex;

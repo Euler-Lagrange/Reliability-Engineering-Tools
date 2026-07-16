@@ -40,7 +40,7 @@ describe("keep-alive shell", () => {
     // removed with the banner cards.
     await screen.findByRole("button", { name: /piece-part from grouping file/i });
     await user.click(screen.getByRole("button", { name: /bom comparison tool/i }));
-    await screen.findByRole("heading", { name: /run setup/i });
+    await screen.findByRole("heading", { name: /^options$/i });
 
     // Engage with BOM Compare by selecting the non-default "Custom Compare"
     // workflow card. This flips the tool's local workflowId away from its
@@ -60,13 +60,13 @@ describe("keep-alive shell", () => {
     await user.click(screen.getByRole("button", { name: /fmea generator/i }));
     await waitFor(() => {
       expect(
-        screen.queryByRole("heading", { name: /run setup/i }),
+        screen.queryByRole("heading", { name: /^options$/i }),
       ).not.toBeInTheDocument();
     });
 
     // Return to BOM Compare.
     await user.click(screen.getByRole("button", { name: /bom comparison tool/i }));
-    await screen.findByRole("heading", { name: /run setup/i });
+    await screen.findByRole("heading", { name: /^options$/i });
 
     // Custom Compare must still be the selected workflow. With the old
     // single-tool shell this fails: BomCompareTool remounted and reset
@@ -84,17 +84,19 @@ describe("keep-alive shell", () => {
 
     await screen.findByRole("button", { name: /piece-part from grouping file/i });
 
-    // Never visited: the BOM Compare "Run Setup" heading must not exist yet —
-    // unvisited tools stay lazy and are not mounted.
+    // Never visited: the BOM Compare "Options" heading must not exist yet —
+    // unvisited tools stay lazy and are not mounted. ("Options" is unique
+    // to BOM Compare among the tools this test mounts; v2 N5 renamed the
+    // old "Run Setup" section to "Workflow", which FMEA also uses.)
     expect(
-      screen.queryByRole("heading", { name: /run setup/i }),
+      screen.queryByRole("heading", { name: /^options$/i }),
     ).not.toBeInTheDocument();
 
     // Visit BOM Compare, then return to FMEA. Both are now mounted, but only
     // the active one is exposed to the accessibility tree (the inactive tool
     // lives under [hidden], which the a11y tree skips).
     await user.click(screen.getByRole("button", { name: /bom comparison tool/i }));
-    await screen.findByRole("heading", { name: /run setup/i });
+    await screen.findByRole("heading", { name: /^options$/i });
 
     await user.click(screen.getByRole("button", { name: /fmea generator/i }));
     await screen.findByRole("button", { name: /piece-part from grouping file/i });
@@ -103,7 +105,7 @@ describe("keep-alive shell", () => {
     // role query no longer finds its heading even though it is still mounted.
     await waitFor(() => {
       expect(
-        screen.queryByRole("heading", { name: /run setup/i }),
+        screen.queryByRole("heading", { name: /^options$/i }),
       ).not.toBeInTheDocument();
     });
 
@@ -112,7 +114,7 @@ describe("keep-alive shell", () => {
     const hiddenWrapper = document.querySelector("[data-tool-id='bom_compare'][hidden]");
     expect(hiddenWrapper).not.toBeNull();
     expect(
-      within(hiddenWrapper as HTMLElement).getByText("Run Setup"),
+      within(hiddenWrapper as HTMLElement).getByText("Options"),
     ).toBeInTheDocument();
   });
 });

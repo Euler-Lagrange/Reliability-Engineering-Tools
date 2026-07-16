@@ -176,9 +176,8 @@ describe("FailureRateTool stale validation handling", () => {
     expect(screen.queryByText("Example data staged")).not.toBeInTheDocument();
 
     // A blocked start leaves real validation cards behind.
-    await user.click(screen.getByRole("tab", { name: /^Run$/i }));
     await user.click(screen.getByRole("button", { name: "Link Rates" }));
-    await user.click(screen.getByRole("tab", { name: /preview/i }));
+    // v2 N5-clone: validations render in the always-visible sibling card.
     expect(
       await screen.findByText("Select required files: Parts list."),
     ).toBeInTheDocument();
@@ -243,8 +242,6 @@ describe("FailureRateTool inspected-column mapping derivation", () => {
     ).not.toBeInTheDocument();
     // Close the menu before dispatching the run.
     await user.keyboard("{Escape}");
-
-    await user.click(screen.getByRole("tab", { name: /^Run$/i }));
     await user.click(screen.getByRole("button", { name: "Link Rates" }));
 
     await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));

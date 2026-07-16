@@ -73,6 +73,23 @@ function statusWord(status: string): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
+/**
+ * v2 N5: the mono status word shown in a Run rail-card header. Shared by
+ * every tool that hosts the persistent rail.
+ */
+export function runStatusWord(mode: RunMode): string {
+  switch (mode) {
+    case "success":
+      return "complete";
+    case "failure":
+      return "failed";
+    case "disconnected":
+      return "offline";
+    default:
+      return mode;
+  }
+}
+
 function formatEta(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) {
     return "";

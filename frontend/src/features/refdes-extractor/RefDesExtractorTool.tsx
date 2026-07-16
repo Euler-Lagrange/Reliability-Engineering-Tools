@@ -4,11 +4,10 @@ import {
   FILE_INSPECTION_PAUSED_REASON,
   InputGrid,
 } from "../../components/InputGrid";
-import { RunStatePanel } from "../../components/RunStatePanel";
+import { RunStatePanel, runStatusWord, type RunReadinessItem } from "../../components/RunStatePanel";
 import { SectionCard } from "../../components/SectionCard";
 import { ValidationPreview } from "../../components/ValidationPreview";
 import { CheckboxField } from "../../components/primitives/CheckboxField";
-import { ContextTabs } from "../../components/primitives/ContextTabs";
 import { EmptyState } from "../../components/primitives/EmptyState";
 import { NumberField } from "../../components/primitives/NumberField";
 import { OptionsField } from "../../components/primitives/OptionsField";
@@ -181,14 +180,14 @@ export function RefDesExtractorTool() {
   const [validations, setValidations] = useState<ValidationMessage[]>(() =>
     backendClient.runtimeMode === "browser-mock" ? baseScenario.validations : [],
   );
-  const [contextView, setContextView] = useState<"preview" | "run">("preview");
+  // v2 N5-clone: the Preview/Run ContextTabs retired — the Run rail and
+  // the Validation card are permanently visible siblings.
   const [runMode, setRunMode] = useState<RunMode>("idle");
   const [runIndex, setRunIndex] = useState(-1);
   const [runTemplates, setRunTemplates] = useState<RunEventTemplate[]>(baseScenario.runSequence.events);
   const [runResult, setRunResult] = useState<typeof baseScenario.runSequence.result | null>(null);
   const [runLogLines, setRunLogLines] = useState<string[]>([]);
   const [cancelledNotice, setCancelledNotice] = useState<string | null>(null);
-  const contextHeadingRef = useRef<HTMLHeadingElement | null>(null);
   // Fix 2 (Family 2): re-entrancy guard for the desktop run pipeline. Held
   // for the whole validate→execute window so a double-click on Extract can't
   // launch a second run whose rejection (single-active-run guard) would clear
@@ -201,8 +200,18 @@ export function RefDesExtractorTool() {
   const setRefdesExtractorOutputDirectory = useShellStore(
     (state) => state.setRefdesExtractorOutputDirectory,
   );
+  const setToolModeLabel = useShellStore((state) => state.setToolModeLabel);
   const pushNotification = useNotificationStore((state) => state.push);
   const setPreview = usePreviewStore((state) => state.setPreview);
+
+  // v2 N2: publish the extraction mode to the shell topbar's inline
+  // mode indicator (keyed by tool id — keep-alive siblings never clash).
+  useEffect(() => {
+    setToolModeLabel(
+      "refdes_extractor",
+      options.extraction_mode === "piece_part" ? "Piece-Part" : "Functional",
+    );
+  }, [options.extraction_mode, setToolModeLabel]);
 
   // Per-role token used to discard stale async listSheets results.
   const fileRequestSeq = useRoleRequestSequence<FileRole>();
@@ -221,9 +230,6 @@ export function RefDesExtractorTool() {
   );
 
   // Focus context heading when view switches
-  useEffect(() => {
-    contextHeadingRef.current?.focus();
-  }, [contextView]);
 
   // Browser-mock run simulation
   useEffect(() => {
@@ -512,7 +518,6 @@ export function RefDesExtractorTool() {
       setRunLogLines([]);
       setCancelledNotice(null);
       setRunResult(null);
-      setContextView("run");
       setRunMode("running");
       setRunIndex(0);
       return;
@@ -540,8 +545,6 @@ export function RefDesExtractorTool() {
     // the busy chip. Otherwise useBackendBusyReset would see (previous run's
     // terminal phase + busy) and instantly clear the "Validating..." message.
     resetDesktopRunSession();
-
-    setContextView("run");
     setRunLogLines([]);
     setRunResult(null);
     setCancelledNotice(null);
@@ -559,7 +562,6 @@ export function RefDesExtractorTool() {
         setRunMode("idle");
         setRunIndex(-1);
         setRunTemplates(baseScenario.runSequence.events);
-        setContextView("preview");
         resetDesktopRunSession();
         setBackendState({
           backendStatus: "ready",
@@ -591,7 +593,6 @@ export function RefDesExtractorTool() {
       const detail = describeBackendError(error, "Unknown backend execution failure");
       // Fix 2 (Family 2): guarded reset — must not clobber a live sibling run.
       resetDesktopRunSessionUnlessLive();
-      setContextView("preview");
       setBackendState({
         backendStatus: "error",
         backendMessage: detail,
@@ -625,6 +626,29 @@ export function RefDesExtractorTool() {
     setCancelledNotice("Demo run cancelled. The workspace returned to a safe idle state.");
   }
 
+  // v2 N5-clone: Run-rail readiness + section meta derive from state the
+  // tool already tracks. RefDes has no column mapping — readiness is
+  // inputs + output folder.
+  const requiredVisibleInputs = visibleInputs.filter((input) => input.required);
+  const loadedRequiredVisibleInputs = requiredVisibleInputs.filter((input) => !!input.path).length;
+  const loadedVisibleInputs = visibleInputs.filter((input) => !!input.path).length;
+  const readinessItems: RunReadinessItem[] = [
+    {
+      label: "Inputs loaded",
+      value: `${loadedRequiredVisibleInputs} / ${requiredVisibleInputs.length}`,
+      tone:
+        requiredVisibleInputs.length === 0 ||
+        loadedRequiredVisibleInputs === requiredVisibleInputs.length
+          ? "ok"
+          : "warn",
+    },
+    {
+      label: "Output folder",
+      value: refdesExtractorOutputDirectory ? "Custom" : "Default",
+      tone: "ok",
+    },
+  ];
+
   return (
     <ErrorBoundary
       title="RefDes Extractor error"
@@ -633,11 +657,18 @@ export function RefDesExtractorTool() {
       <div className="tool-workspace">
         <section className="workspace-grid workspace-grid--single">
           <div className="workspace-grid__main">
+            {/* v2 N5-clone: numbered bare strips; descriptions retired. */}
             <SectionCard
+              variant="bare"
               step={1}
-              title="Input Files"
-              eyebrow="Data Sources"
-              description="Load the schematic PDF and the BOM. A pinlist is optional for piece-part extraction — the pin data usually already lives in the BOM."
+              title="Inputs"
+              actions={
+                isPristine ? undefined : (
+                  <span className="section-card__meta num">
+                    {loadedVisibleInputs} of {visibleInputs.length} loaded
+                  </span>
+                )
+              }
             >
               {isPristine ? (
                 <EmptyState
@@ -669,12 +700,7 @@ export function RefDesExtractorTool() {
               )}
             </SectionCard>
 
-            <OptionsSection
-              step={2}
-              title="Options"
-              eyebrow="Extraction Settings"
-              description="Pick the extraction strategy and backend."
-            >
+            <OptionsSection variant="bare" step={2} title="Options">
               <OptionRow info={OPTION_TOOLTIPS.extraction_mode}>
                 <OptionsField label="Extraction mode">
                   <ToggleChip<ExtractionMode>
@@ -1001,50 +1027,41 @@ export function RefDesExtractorTool() {
             </OptionsSection>
           </div>
 
+          {/* v2 N5-clone: persistent Run rail + Validation sibling card. */}
           <aside className="workspace-grid__side workspace-grid__side--sticky">
-            <SectionCard
-              variant="divided"
-              title={contextView === "preview" ? "Review" : "Execution"}
-              eyebrow="Context Panel"
-              actions={
-                <ContextTabs<"preview" | "run">
-                  ariaLabel="Context panel"
-                  activeId={contextView}
-                  onChange={(id) => setContextView(id)}
-                  tabs={[
-                    { id: "preview", label: "Preview" },
-                    { id: "run", label: "Run" },
-                  ]}
-                />
-              }
-            >
-              <h3 className="sr-only-focusable" ref={contextHeadingRef} tabIndex={-1}>
-                {contextView === "preview" ? "Preview panel" : "Run panel"}
-              </h3>
-              {contextView === "preview" ? (
-                <ValidationPreview validations={validations} previewRows={[]} />
-              ) : (
-                <RunStatePanel
-                  runMode={panelRunMode}
-                  progress={panelProgress}
-                  timeline={panelTimeline}
-                  result={panelRunResult}
-                  onStart={() => {
-                    void handleStartRun();
-                  }}
-                  onCancel={handleCancel}
-                  cancelledNotice={panelCancelledNotice}
-                  logLines={panelLogLines}
-                  truncatedLogCount={panelTruncatedLogCount}
-                  errorCode={panelErrorCode}
-                  errorTraceback={panelErrorTraceback}
-                  onRevealOutput={
-                    backendClient.runtimeMode === "desktop-bridge" ? (path) => void handleRevealOutput(path) : undefined
-                  }
-                  startLabel="Extract"
-                />
-              )}
-            </SectionCard>
+            <section className="rail-card" aria-label="Run">
+              <header className="rail-card__header">
+                <h2>Run</h2>
+                <span className="rail-card__status">{runStatusWord(panelRunMode)}</span>
+              </header>
+              <RunStatePanel
+                runMode={panelRunMode}
+                progress={panelProgress}
+                timeline={panelTimeline}
+                result={panelRunResult}
+                onStart={() => {
+                  void handleStartRun();
+                }}
+                onCancel={handleCancel}
+                cancelledNotice={panelCancelledNotice}
+                logLines={panelLogLines}
+                truncatedLogCount={panelTruncatedLogCount}
+                errorCode={panelErrorCode}
+                errorTraceback={panelErrorTraceback}
+                readiness={readinessItems}
+                onRevealOutput={
+                  backendClient.runtimeMode === "desktop-bridge" ? (path) => void handleRevealOutput(path) : undefined
+                }
+                startLabel="Extract"
+              />
+            </section>
+
+            <section className="rail-card" aria-label="Validation and preview">
+              <header className="rail-card__header">
+                <h2>Validation &amp; preview</h2>
+              </header>
+              <ValidationPreview validations={validations} previewRows={[]} />
+            </section>
           </aside>
         </section>
       </div>

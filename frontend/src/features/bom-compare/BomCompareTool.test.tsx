@@ -264,8 +264,6 @@ describe("BomCompareTool custom compare workflow", () => {
   it("sends empty input paths when no file was browsed (group run)", async () => {
     const user = userEvent.setup();
     render(<BomCompareTool />);
-
-    await user.click(screen.getByRole("tab", { name: /^Run$/i }));
     await user.click(screen.getByRole("button", { name: "Compare" }));
 
     await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
@@ -357,7 +355,6 @@ describe("BomCompareTool custom compare workflow", () => {
     render(<BomCompareTool />);
 
     await user.click(screen.getByRole("button", { name: /Custom Compare/i }));
-    await user.click(screen.getByRole("tab", { name: /^Run$/i }));
     await user.click(screen.getByRole("button", { name: "Compare" }));
 
     await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
@@ -440,8 +437,6 @@ describe("BomCompareTool custom compare workflow", () => {
 
     const user = userEvent.setup();
     render(<BomCompareTool />);
-
-    await user.click(screen.getByRole("tab", { name: /^Run$/i }));
     const compareButton = screen.getByRole("button", { name: "Compare" });
 
     // Two clicks while validateRun is still pending. The guard must swallow
@@ -510,9 +505,8 @@ describe("BomCompareTool custom compare workflow", () => {
     expect(screen.queryByText("Example data staged")).not.toBeInTheDocument();
 
     // A blocked start leaves real validation cards behind.
-    await user.click(screen.getByRole("tab", { name: /^Run$/i }));
     await user.click(screen.getByRole("button", { name: "Compare" }));
-    await user.click(screen.getByRole("tab", { name: /preview/i }));
+    // v2 N5-clone: validations render in the always-visible sibling card.
     expect(
       await screen.findByText("Select required files: Second BOM."),
     ).toBeInTheDocument();
@@ -632,8 +626,6 @@ describe("BomCompareTool custom compare workflow", () => {
     // carried by the v2 row indicator's tooltip) so the derived mapping rows
     // reflect the real headers before we run.
     await screen.findByTitle("Analyzed");
-
-    await user.click(screen.getByRole("tab", { name: /^Run$/i }));
     await user.click(screen.getByRole("button", { name: "Compare" }));
 
     await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));

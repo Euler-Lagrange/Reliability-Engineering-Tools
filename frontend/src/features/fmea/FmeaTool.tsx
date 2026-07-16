@@ -4,7 +4,7 @@ import {
   InputGrid,
 } from "../../components/InputGrid";
 import { MappingTable } from "../../components/MappingTable";
-import { RunStatePanel, type RunReadinessItem } from "../../components/RunStatePanel";
+import { RunStatePanel, runStatusWord, type RunReadinessItem } from "../../components/RunStatePanel";
 import { SectionCard } from "../../components/SectionCard";
 import { StrategySelector } from "../../components/StrategySelector";
 import { ValidationPreview } from "../../components/ValidationPreview";
@@ -1349,17 +1349,6 @@ export function FmeaTool() {
       tone: "ok",
     },
   ];
-  const RUN_STATUS_WORDS: Record<string, string> = {
-    idle: "idle",
-    starting: "starting",
-    running: "running",
-    cancelling: "cancelling",
-    success: "complete",
-    failure: "failed",
-    cancelled: "cancelled",
-    disconnected: "offline",
-  };
-  const runStatusWord = RUN_STATUS_WORDS[panelRunMode] ?? panelRunMode;
   const mappingCoveragePercent =
     mappingTotals.total === 0 ? 0 : Math.round((mappingTotals.mapped / mappingTotals.total) * 100);
 
@@ -1671,7 +1660,7 @@ export function FmeaTool() {
           <section className="rail-card" aria-label="Run">
             <header className="rail-card__header">
               <h2>Run</h2>
-              <span className="rail-card__status">{runStatusWord}</span>
+              <span className="rail-card__status">{runStatusWord(panelRunMode)}</span>
             </header>
             <ErrorBoundary
               title="Run panel failed to render"
