@@ -40,6 +40,31 @@ const TOOL_LABELS: Record<ToolId, string> = toolDefinitions.reduce(
   {} as Record<ToolId, string>,
 );
 
+/* v2 N3: backend health lives in the log strip — one quiet line of
+   telemetry (dot + "Ready · Desktop bridge") instead of two permanent
+   topbar chips. Full detail stays in Settings › Health. */
+const BACKEND_DOT: Record<string, LogStatusDot> = {
+  connecting: "idle",
+  ready: "good",
+  busy: "active",
+  disconnected: "warn",
+  error: "bad",
+};
+
+const BACKEND_WORD: Record<string, string> = {
+  connecting: "Connecting",
+  ready: "Ready",
+  busy: "Busy",
+  disconnected: "Disconnected",
+  error: "Error",
+};
+
+const BACKEND_MODE_WORD: Record<string, string> = {
+  unknown: "Backend pending",
+  "browser-mock": "Browser preview",
+  "desktop-bridge": "Desktop bridge",
+};
+
 function shortToolLabel(toolId: ToolId): string {
   return TOOL_LABELS[toolId] ?? toolId;
 }
@@ -166,6 +191,9 @@ export function GlobalLogPanel() {
   const setFilterMode = useGlobalLogStore((state) => state.setFilterMode);
   const clear = useGlobalLogStore((state) => state.clear);
   const activeToolId = useShellStore((state) => state.activeToolId);
+  const backendStatus = useShellStore((state) => state.backendStatus);
+  const backendMode = useShellStore((state) => state.backendMode);
+  const backendMessage = useShellStore((state) => state.backendMessage);
   const activeRun = useRunStore((state) => state.activeRun);
   const statusDot = deriveLogStatusDot(
     activeRun?.phase,
@@ -389,6 +417,16 @@ export function GlobalLogPanel() {
           />
           <span className="run-log-panel__title">Run Log</span>
           <span className="run-log-panel__count">{totalLabel}</span>
+          {allCounts.errors > 0 ? (
+            <span className="badge-state badge-state--bad" title={`${allCounts.errors} error${allCounts.errors === 1 ? "" : "s"}`}>
+              {allCounts.errors}
+            </span>
+          ) : null}
+          {allCounts.warnings > 0 ? (
+            <span className="badge-state badge-state--warn" title={`${allCounts.warnings} warning${allCounts.warnings === 1 ? "" : "s"}`}>
+              {allCounts.warnings}
+            </span>
+          ) : null}
           {truncatedCount > 0 ? (
             <span className="run-log-panel__truncated" title="Older entries dropped from the in-memory ring buffer">
               {truncatedCount} dropped
@@ -423,6 +461,19 @@ export function GlobalLogPanel() {
             <DownloadSimple size={14} weight="bold" />
             Export
           </button>
+          <span
+            className="run-log-panel__backend"
+            title={backendMessage ?? undefined}
+            aria-label="Backend status"
+          >
+            <span
+              className="run-log-panel__status-dot"
+              data-status={BACKEND_DOT[backendStatus] ?? "idle"}
+              aria-hidden="true"
+            />
+            {BACKEND_WORD[backendStatus] ?? backendStatus}
+            <span className="run-log-panel__backend-mode">· {BACKEND_MODE_WORD[backendMode] ?? backendMode}</span>
+          </span>
         </div>
       </header>
 

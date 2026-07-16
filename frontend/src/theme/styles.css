@@ -1819,62 +1819,60 @@ tbody tr:hover {
 }
 
 /* === Run Log Panel ============================================ */
-/* Cross-tool log console docked at the bottom of the app shell.   */
-/* Aesthetic: control-room precision. Restraint over ornament.    */
-/* Color-coded levels scan instantly; tabular numerals lock the    */
-/* timestamp column; a single 1px accent gradient at the top edge  */
-/* signals "system surface" without shouting.                      */
+/* v2 N3: 30px instrument strip docked at the bottom of the shell. */
+/* Sentence-case title, mono count, 18px severity badges, and the  */
+/* backend health telemetry (dot + word) on the right. Color only  */
+/* for WARN / ERROR — a healthy log reads as gray.                 */
 
 .run-log-panel {
   position: relative;
   display: grid;
   grid-template-rows: auto auto;
-  border-top: 1px solid var(--line-strong);
-  background: var(--surface-muted);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
 }
 
 .run-log-panel__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-4);
-  padding: 6px var(--space-6); /* 6px vertical off-grid: tight panel chrome */
-  min-height: 40px; /* off-grid: 40px panel chrome height */
+  gap: var(--space-3);
+  padding: 0 var(--space-3) 0 var(--space-2);
+  min-height: 30px; /* off-grid: v2 collapsed strip height (--nav-row-h) */
   user-select: none;
 }
 
 .run-log-panel__toggle {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2-5); /* tight icon-text gap inside the toggle */
-  padding: 6px var(--space-3); /* 6px vertical off-grid */
-  margin: -6px calc(var(--space-3) * -1); /* off-grid negative margin: hit-area expansion without affecting layout */
+  gap: var(--space-2);
+  height: 22px; /* off-grid: strip-embedded control */
+  padding: 0 6px; /* off-grid: quiet toggle hug */
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-xs);
   background: transparent;
   color: var(--text-secondary);
   font-size: var(--text-xs);
   cursor: pointer;
   transition:
-    background var(--duration-base) var(--ease),
-    color var(--duration-base) var(--ease);
+    background var(--duration-fast) var(--ease),
+    color var(--duration-fast) var(--ease);
 }
 
 .run-log-panel__toggle:hover {
-  background: var(--surface);
+  background: var(--surface-muted);
   color: var(--text);
 }
 
 .run-log-panel__toggle:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: var(--shadow-focus-ring);
 }
 
 .run-log-panel__title {
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-uppercase);
-  font-weight: var(--weight-semibold);
-  color: var(--text);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
 }
 
 /* Status dot next to the Run Log title — design handoff principle I.
@@ -1914,27 +1912,26 @@ tbody tr:hover {
 }
 
 .run-log-panel__count {
-  /* Bumped per design handoff principle I: raise legibility on the
-     collapsed strip from --text-2xs/--text-faint to --text-sm/--text-
-     secondary so the run-count reads as real data, not decorative. */
-  color: var(--text-secondary);
+  color: var(--text-faint);
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: var(--text-sm);
+  font-size: var(--text-2xs);
   font-weight: var(--weight-medium);
-  letter-spacing: 0.04em; /* off-grid: tighter than uppercase tracking for compact metric display */
 }
 
 .run-log-panel__truncated {
+  display: inline-flex;
+  align-items: center;
   margin-left: var(--space-1);
-  padding: 1px var(--space-2); /* 1px vertical off-grid: chip-height tight */
-  border-radius: var(--radius-pill);
+  min-height: var(--badge-h);
+  padding: 0 6px; /* off-grid: badge hug */
+  border-radius: var(--radius-xs);
   background: var(--warning-soft);
   color: var(--warning);
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   font-size: var(--text-2xs);
-  letter-spacing: 0.03em;
+  letter-spacing: var(--tracking-wide);
 }
 
 .run-log-panel__controls {
@@ -1943,33 +1940,35 @@ tbody tr:hover {
   gap: var(--space-2);
 }
 
+/* v2 N3/N9: neutral segmented control — soft track, raised segment.
+   Selection reads as position, not as an alert color. */
 .run-log-panel__filter {
   display: inline-flex;
-  align-items: stretch;
-  border: 1px solid var(--line-strong);
+  align-items: center;
+  gap: 2px; /* off-grid: intra-track segment gap */
+  padding: 2px; /* off-grid: segmented-control track inset */
+  border: 0;
   border-radius: var(--radius-sm);
-  overflow: hidden;
-  background: var(--surface);
+  background: var(--surface-soft);
 }
 
 .run-log-panel__filter-option {
-  padding: var(--space-1) var(--space-2-5); /* segment-control feel */
-  border: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 24px; /* off-grid: table-control height */
+  padding: 0 var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
   background: transparent;
   color: var(--text-muted);
   font-family: inherit;
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-semibold);
-  letter-spacing: var(--tracking-uppercase);
-  text-transform: uppercase;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
   cursor: pointer;
   transition:
-    background var(--duration-base) var(--ease),
-    color var(--duration-base) var(--ease);
-}
-
-.run-log-panel__filter-option + .run-log-panel__filter-option {
-  border-left: 1px solid var(--line-strong);
+    background var(--duration-fast) var(--ease),
+    color var(--duration-fast) var(--ease);
 }
 
 .run-log-panel__filter-option:focus-visible {
@@ -1978,40 +1977,57 @@ tbody tr:hover {
 }
 
 .run-log-panel__filter-option[data-selected="true"] {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--text);
 }
 
 .run-log-panel__filter-option:not([data-selected="true"]):hover {
-  background: var(--surface-muted);
   color: var(--text);
 }
 
 .run-log-panel__action {
   display: inline-flex;
   align-items: center;
-  gap: 6px; /* off-grid: tight icon-text gap */
-  padding: var(--space-1) var(--space-2-5); /* matches filter-option */
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--text-muted);
+  gap: var(--space-1);
+  height: 24px; /* off-grid: table-control height */
+  padding: 0 var(--space-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-secondary);
   font-family: inherit;
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-semibold);
-  letter-spacing: var(--tracking-uppercase);
-  text-transform: uppercase;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
   cursor: pointer;
   transition:
-    border-color var(--duration-base) var(--ease),
-    color var(--duration-base) var(--ease),
-    background var(--duration-base) var(--ease);
+    color var(--duration-fast) var(--ease),
+    background var(--duration-fast) var(--ease);
 }
 
 .run-log-panel__action:hover:not(:disabled) {
-  border-color: var(--line-strong);
   background: var(--surface-muted);
   color: var(--text);
+}
+
+/* v2 N3: backend telemetry — the topbar chips became one quiet line.
+   Dot tone tracks the bridge status; the mode rides as mono metadata. */
+.run-log-panel__backend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px; /* off-grid: dot-to-word optical gap */
+  margin-left: var(--space-1);
+  padding-left: var(--space-2-5);
+  border-left: 1px solid var(--line);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.run-log-panel__backend-mode {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-faint);
 }
 
 .run-log-panel__action:focus-visible {
@@ -2027,8 +2043,9 @@ tbody tr:hover {
 
 .run-log-panel__body {
   border-top: 1px solid var(--line);
-  background: var(--surface);
-  padding: var(--space-2) var(--space-6) 14px; /* 14px bottom off-grid: leaves room for last line baseline */
+  /* v2 N3: the log body is a sunken well, not a card. */
+  background: var(--surface-soft);
+  padding: var(--space-2) var(--space-3) var(--space-2-5);
   /* Phase B2: user-resizable panel. The CSS variable is set inline on
      .run-log-panel by GlobalLogPanel.tsx and persisted to localStorage.
      The fallback matches the previous hardcoded 280px so first-run
@@ -2084,7 +2101,9 @@ tbody tr:hover {
 
 .run-log-panel__line {
   display: grid;
-  grid-template-columns: 64px 56px 160px 1fr; /* off-grid track widths: tuned for HH:MM:SS, level token, tool tag */
+  /* off-grid track widths: HH:MM:SS, level token, tool tag. The v1 tool
+     column reserved 160px for tags that are ≤6 characters (v2 R12). */
+  grid-template-columns: 56px 42px 64px minmax(0, 1fr);
   align-items: baseline;
   gap: var(--space-3);
   padding: 2px 0; /* off-grid: extreme-tight log-line vertical padding */
@@ -2104,17 +2123,20 @@ tbody tr:hover {
 
 .run-log-panel__level {
   font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
+  font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-uppercase);
   text-transform: uppercase;
+  color: var(--text-faint);
 }
 
 .run-log-panel__level--debug {
   color: var(--text-faint);
 }
 
+/* v2 N3: INFO is neutral — a healthy log reads as gray. Color is
+   reserved for WARN / ERROR. 700 weight survives only on ERROR. */
 .run-log-panel__level--info {
-  color: var(--accent);
+  color: var(--text-faint);
 }
 
 .run-log-panel__level--warning {
@@ -2123,6 +2145,7 @@ tbody tr:hover {
 
 .run-log-panel__level--error {
   color: var(--danger);
+  font-weight: var(--weight-bold);
 }
 
 .run-log-panel__line--warning .run-log-panel__text {
@@ -3174,53 +3197,29 @@ tbody tr:hover {
    Keep additive; don't modify Phase 1/2/3 selectors above.
    ============================================================ */
 
-/* ---- Topbar chip groupings (Task 1) ----------------------------- */
-
-.topbar__chip-groups {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex: 1;
-  flex-wrap: wrap;
-}
-
-.topbar__chip-group {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.topbar__chip-divider {
-  width: 1px;
-  height: 16px; /* off-grid: divider height matches chip baseline */
-  background: var(--line);
-  flex-shrink: 0;
-}
-
-/* Review drawer toggle — topbar-embedded button that opens the right-
-   anchored ContextDrawer (design handoff principle D). Matches the
-   chip heights for visual rhythm but is clearly clickable.  */
+/* Topbar quiet buttons (Review toggle, palette). v2 N2: ghost until
+   hover, 28px control height, no permanent border weight. */
 .topbar__review-toggle {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  min-height: 28px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: var(--surface);
+  min-height: var(--control-h);
+  padding: 0 var(--space-2-5);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--text-secondary);
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
   cursor: pointer;
   transition:
-    border-color var(--duration-base) var(--ease),
-    background var(--duration-base) var(--ease),
-    color var(--duration-base) var(--ease);
+    border-color var(--duration-fast) var(--ease),
+    background var(--duration-fast) var(--ease),
+    color var(--duration-fast) var(--ease);
 }
 
 .topbar__review-toggle:hover {
-  border-color: var(--line-strong);
+  background: var(--surface-muted);
   color: var(--text);
 }
 

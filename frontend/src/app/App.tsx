@@ -25,28 +25,6 @@ import { useNotificationStore } from "../stores/notificationStore";
 import { useShellStore, type ToolId } from "../stores/shellStore";
 import { useThemeStore } from "../stores/themeStore";
 
-const backendStatusTone = {
-  connecting: "pending",
-  ready: "success",
-  busy: "warning",
-  disconnected: "warning",
-  error: "failure",
-} as const;
-
-const backendStatusLabel = {
-  connecting: "Connecting backend...",
-  ready: "Backend ready",
-  busy: "Backend busy",
-  disconnected: "Backend disconnected",
-  error: "Backend error",
-} as const;
-
-const backendModeLabel = {
-  unknown: "Backend pending",
-  "browser-mock": "Browser preview",
-  "desktop-bridge": "Desktop bridge",
-} as const;
-
 export function App() {
   useAppShortcuts();
   useBackendBootstrap();
@@ -62,9 +40,6 @@ export function App() {
   const setActiveToolId = useShellStore((state) => state.setActiveToolId);
   const contextOpen = useShellStore((state) => state.contextOpen);
   const toggleContext = useShellStore((state) => state.toggleContext);
-  const backendStatus = useShellStore((state) => state.backendStatus);
-  const backendMode = useShellStore((state) => state.backendMode);
-  const backendMessage = useShellStore((state) => state.backendMessage);
   const themeMode = useThemeStore((state) => state.mode);
   const setThemeMode = useThemeStore((state) => state.setMode);
   const toolModeLabels = useShellStore((state) => state.toolModeLabels);
@@ -369,22 +344,10 @@ export function App() {
                 </>
               ) : null}
 
-              {/* Deliberately lean: backend health chips (moving to the log
-                  strip in N3) plus the Review toggle and palette button.
-                  Keyboard hints live in the command palette and tooltips. */}
+              {/* Deliberately lean: quiet buttons only. Backend health lives
+                  in the log strip (v2 N3); keyboard hints live in the command
+                  palette and tooltips. */}
               <div className={styles.statusRow}>
-                <div className="topbar__chip-group" aria-label="Connection health">
-                  <span className={`status-chip status-chip--${backendStatusTone[backendStatus]}`}>
-                    {backendStatusLabel[backendStatus]}
-                  </span>
-                  <span
-                    className="status-chip status-chip--info"
-                    title={backendMessage ?? undefined}
-                  >
-                    {backendModeLabel[backendMode]}
-                  </span>
-                </div>
-                <span className="topbar__chip-divider" aria-hidden="true" />
                 <button
                   type="button"
                   className="topbar__review-toggle"
