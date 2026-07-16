@@ -1,88 +1,98 @@
 .shell {
   display: grid;
-  grid-template-columns: 244px minmax(0, 1fr); /* off-grid 244px: widened per design handoff so tool labels read on a single line at comfortable widths; narrow-layout fallbacks are defined below */
+  grid-template-columns: 224px minmax(0, 1fr); /* off-grid 224px: v2 rail width — dense nav rows read on one line */
   /* Phase B1: separate scroll regions. The shell itself never scrolls;
      the rail and the main column each own their own overflow so the tool
-     buttons + theme pickers stay pinned while the main content scrolls. */
+     buttons stay pinned while the main content scrolls. */
   height: 100vh;
   overflow: hidden;
   background: var(--bg);
 }
 
+/* v2 N2: the rail sits on the canvas (--bg), separated by a hairline —
+   not a tinted panel. Structure comes from the border, not a fill. */
 .rail {
   display: grid;
   grid-template-rows: auto 1fr auto;
-  gap: var(--space-4);
-  /* Symmetric padding at 244px: there's room for --space-5 on both
-     axes now that the rail is no longer a narrow 144px strip. */
-  padding: var(--space-5);
   border-right: 1px solid var(--line);
-  background: var(--surface-muted);
-  /* Phase B1: independent vertical scrolling. The middle row (tool list)
-     is the 1fr track — with grid-template-rows: auto 1fr auto, the brand
-     stays pinned at the top and the theme footer stays pinned at the
-     bottom while only the tool list scrolls when it overflows. */
+  background: var(--bg);
   height: 100vh;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
+/* Brand row matches the 48px topbar so the hairlines align across the
+   shell. 20px mark + 13px wordmark — the 44px glyph tile retired. */
 .brand {
-  display: grid;
-  grid-template-columns: auto 1fr;
+  display: flex;
   align-items: center;
-  gap: var(--space-3);
-  /* Left-aligned at 244px: glyph + wordmark read horizontally,
-     matching the tool buttons below. Narrow layouts recenter below. */
+  gap: var(--space-2);
+  height: 48px;
+  padding: 0 var(--space-3);
 }
 
 .brandGlyph {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px; /* off-grid: brand glyph size */
-  height: 44px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-xl);
-  background: var(--surface);
-  color: var(--accent);
+  width: 20px; /* off-grid: brand mark size */
+  height: 20px;
+  border-radius: var(--radius-xs);
+  background: var(--text);
+  color: var(--bg);
+  flex-shrink: 0;
 }
 
 .brandLabel {
   margin: 0;
-  color: var(--text-faint);
-  font-size: var(--text-xs);
+  color: var(--text);
+  font-size: var(--text-base);
   font-weight: var(--weight-semibold);
-  letter-spacing: var(--tracking-uppercase);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
+  white-space: nowrap;
 }
 
 .toolList {
   display: grid;
-  gap: var(--space-1); /* 4px — inline tool rows stack close together */
+  gap: 2px; /* off-grid: hairline nav row separation */
   align-content: start;
+  padding: var(--space-2);
+  overflow-y: auto;
+}
+
+/* Nav group labels — one of exactly two uppercase roles left in the
+   app (the other is log level tokens). */
+.navLabel {
+  margin: var(--space-2) var(--space-2) var(--space-1);
+  color: var(--text-faint);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-uppercase);
+  text-transform: uppercase;
+}
+
+.toolList .navLabel:first-child {
+  margin-top: var(--space-1);
 }
 
 .toolButton {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--space-3);
-  justify-items: start;
-  padding: var(--space-3); /* 12px symmetric — rail is 244px, labels read inline next to the icon */
-  border: 1px solid transparent;
-  border-radius: var(--radius-xl);
+  gap: var(--space-2);
+  height: var(--nav-row-h);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   transition:
-    color var(--duration-base) var(--ease),
-    border-color var(--duration-base) var(--ease),
-    background var(--duration-base) var(--ease),
-    box-shadow var(--duration-base) var(--ease);
+    color var(--duration-fast) var(--ease),
+    background var(--duration-fast) var(--ease);
 }
 
 .toolButton:hover {
   color: var(--text);
-  background: var(--surface);
+  background: var(--surface-muted);
 }
 
 .toolButton:focus-visible {
@@ -90,88 +100,75 @@
   box-shadow: var(--shadow-focus-ring);
 }
 
+/* v2 N2: active nav = tint + accent text. No border, no glow —
+   --shadow-rail-active is retired. */
 .toolButton[data-selected="true"] {
   color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 22%, transparent);
   background: var(--accent-soft);
-  box-shadow: var(--shadow-rail-active);
 }
 
 .toolLabel {
   font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
+  font-weight: var(--weight-medium);
   line-height: 1.2;
   text-align: left;
-  /* At 244px the full "Failure Rate Integration" label fits on one
-     line; at the 1280px breakpoint below we fall back to a narrower
-     rail and restore two-line wrapping. */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.footer {
-  display: grid;
-  gap: var(--space-2-5); /* tight footer stack */
-}
-
-.themeGroup {
-  display: grid;
-  gap: var(--space-2);
-  /* Phase 4 Task 3: visual separator between tool list and theme picker.
-     The top border divides the rail into "navigation" (tools) and
-     "identity" (theme) regions. */
-  border-top: 1px solid var(--line);
-  margin-top: var(--space-3);
-  padding-top: var(--space-3);
-}
-
-.themeLabel {
-  margin: 0;
-  color: var(--text-faint);
-  font-size: var(--text-2xs);
+.toolButton[data-selected="true"] .toolLabel {
   font-weight: var(--weight-semibold);
-  letter-spacing: var(--tracking-uppercase);
-  text-transform: uppercase;
-  text-align: center;
 }
 
-.themeButtons {
+/* Right-aligned mono shortcut digit (1–5). */
+.toolShortcut {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-faint);
+}
+
+/* v2 N2: the theme picker left the rail (Settings + the command palette
+   cover it). The footer is version telemetry + a light/dark toggle. */
+.footer {
   display: flex;
-  gap: 6px; /* off-grid */
-  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2-5) var(--space-3);
+  border-top: 1px solid var(--line);
 }
 
-.themeButton {
+.version {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.themeToggle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px; /* off-grid: compact square icon button */
-  height: 32px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  color: var(--text-secondary);
+  width: 24px; /* off-grid: compact square icon button */
+  height: 24px;
+  margin-left: auto;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-faint);
   transition:
-    border-color var(--duration-base) var(--ease),
-    background var(--duration-base) var(--ease),
-    color var(--duration-base) var(--ease);
+    background var(--duration-fast) var(--ease),
+    color var(--duration-fast) var(--ease);
 }
 
-.themeButton:hover {
-  border-color: var(--line-strong);
+.themeToggle:hover {
   background: var(--surface-muted);
+  color: var(--text);
 }
 
-.themeButton:focus-visible {
+.themeToggle:focus-visible {
   outline: none;
   box-shadow: var(--shadow-focus-ring);
-}
-
-.themeButton[data-selected="true"] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
 }
 
 .main {
@@ -185,61 +182,66 @@
      .main stays a rigid 100vh container. */
   height: 100vh;
   overflow: hidden;
+  /* v2 N2: chrome (topbar, log strip) sits on --surface; the workspace
+     canvas below is --bg. */
+  background: var(--surface);
 }
 
+/* v2 N2: 48px instrument bar — 14px/600 title, inline mode indicator,
+   quiet buttons. The eyebrow + subtitle stack retired (~100px of
+   chrome constants returned to the workspace). */
 .topbar {
-  /* Asymmetric padding: no bottom — .content provides the spacing
-     under us. (The v1 accent gradient at this edge was deleted in
-     Design Pass v2 — gray builds structure, color is state-only.) */
-  position: relative;
   display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: var(--space-5) var(--space-6) 0;
-}
-
-.titleGroup {
-  display: grid;
-  gap: 6px; /* off-grid: tight title block stack */
+  align-items: center;
+  gap: var(--space-3);
+  height: 48px;
+  padding: 0 var(--space-5);
+  border-bottom: 1px solid var(--line);
 }
 
 .title {
   margin: 0;
-  /* Bumped from --text-2xl (24px) to --text-xxl (28px) per design
-     handoff principle G to widen the type-scale contrast with body
-     copy. --text-xxl is a new token added alongside the existing
-     scale, so other 24px consumers are unaffected. */
-  font-size: var(--text-xxl);
-  line-height: 1.05;
-  letter-spacing: -0.03em;
-  /* Phase 4 Task 2: topbar title truncation. The title may grow to long
-     tool labels on compact windows; clamp() keeps it within a sane range
-     and ellipsises the overflow. The full label is exposed via the
-     native `title` attribute on the <h1>. */
+  font-size: 14px; /* off-grid: v2 topbar title — between --text-base and --text-md by design */
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tight);
+  line-height: 1.2;
   max-width: clamp(200px, 40vw, 640px);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.subtitle {
-  margin: 0;
+.topbarDivider {
+  width: 1px;
+  height: 16px; /* off-grid: divider height matches inline text baseline */
+  background: var(--line);
+  flex-shrink: 0;
+}
+
+.topbarMode {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-faint);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbarMode b {
+  font-weight: var(--weight-medium);
   color: var(--text-muted);
-  font-size: var(--text-base);
-  line-height: 1.45;
-  max-width: 720px;
 }
 
 .statusRow {
   display: flex;
+  align-items: center;
   gap: var(--space-2);
-  flex-wrap: wrap;
+  margin-left: auto;
 }
 
 .content {
-  /* Asymmetric padding: top is less than bottom because the topbar
-     directly above already established vertical rhythm. */
   min-width: 0;
   /* Phase B1: .content is the scroll region inside the main column.
      min-height: 0 is required to let a grid 1fr track actually shrink
@@ -248,7 +250,8 @@
      middle of the main column the only thing that scrolls. */
   min-height: 0;
   overflow-y: auto;
-  padding: var(--space-4) var(--space-6) var(--space-6);
+  padding: var(--space-5) var(--space-6) var(--space-7);
+  background: var(--bg);
 }
 
 /* <main> receives programmatic focus on every tool switch (a11y
@@ -279,33 +282,36 @@
   background: var(--surface);
 }
 
-@media (max-width: 1280px) {
-  /* Narrow layout fallback — the 244px rail wastes main-column space on
-     small laptops, so we drop to a 144px stacked rail with two-line
-     labels, matching the pre-widening treatment. */
+@media (max-width: 1100px) {
+  /* Narrow layout fallback — drop to a compact 144px rail with stacked
+     two-line labels. Shortcut digits and group labels yield the space. */
   .shell {
     grid-template-columns: 144px minmax(0, 1fr);
   }
 
-  .rail {
-    padding: var(--space-5) var(--space-4);
-  }
-
   .brand {
-    grid-template-columns: 1fr;
-    justify-items: center;
-    gap: var(--space-2-5);
+    justify-content: center;
+    padding: 0 var(--space-2);
   }
 
-  .toolList {
-    gap: var(--space-2-5);
+  .brandLabel {
+    font-size: var(--text-xs);
   }
 
   .toolButton {
     grid-template-columns: 1fr;
     justify-items: center;
-    padding: var(--space-2-5) var(--space-2);
-    gap: 6px;
+    height: auto;
+    padding: var(--space-2);
+    gap: var(--space-1);
+  }
+
+  .toolShortcut {
+    display: none;
+  }
+
+  .navLabel {
+    text-align: center;
   }
 
   .toolLabel {
@@ -320,8 +326,10 @@
   }
 
   .topbar {
-    flex-direction: column;
-    align-items: stretch;
+    height: auto;
+    min-height: 48px;
+    flex-wrap: wrap;
+    padding: var(--space-2) var(--space-5);
   }
 }
 
@@ -341,6 +349,8 @@
     grid-template-columns: auto 1fr auto;
     grid-template-rows: none;
     align-items: center;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
     /* Phase B1: the horizontal rail must not carry vertical scroll. */
     height: auto;
     overflow-y: visible;
@@ -364,6 +374,14 @@
     display: flex;
     gap: var(--space-2);
     overflow-x: auto;
+  }
+
+  .navLabel {
+    display: none;
+  }
+
+  .footer {
+    border-top: 0;
   }
 
   .toolButton {

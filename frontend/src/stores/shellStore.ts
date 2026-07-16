@@ -34,7 +34,15 @@ interface ShellState {
    * drawer state survives navigation but defaults closed on first load.
    */
   contextOpen: boolean;
+  /**
+   * v2 N2: per-tool workflow/mode labels for the topbar's inline mode
+   * indicator ("Mode · Piece-part generate"). Keyed by tool so hidden
+   * keep-alive tools never fight over a single value; the topbar reads
+   * the active tool's entry. Transient — never persisted.
+   */
+  toolModeLabels: Partial<Record<ToolId, string>>;
   setActiveToolId: (toolId: ToolId) => void;
+  setToolModeLabel: (toolId: ToolId, label: string | null) => void;
   setBackendState: (state: Partial<Pick<ShellState, "backendStatus" | "backendMode" | "backendMessage" | "lastBackendCheckAt">>) => void;
   setFmeaOutputDirectory: (path: string | null) => void;
   setBomCompareOutputDirectory: (path: string | null) => void;
@@ -85,7 +93,18 @@ export const useShellStore = create<ShellState>()(
       failureRateOutputDirectory: null,
       refdesExtractorOutputDirectory: null,
       contextOpen: false,
+      toolModeLabels: {},
       setActiveToolId: (activeToolId) => set({ activeToolId }),
+      setToolModeLabel: (toolId, label) =>
+        set((state) => {
+          const next = { ...state.toolModeLabels };
+          if (label) {
+            next[toolId] = label;
+          } else {
+            delete next[toolId];
+          }
+          return { toolModeLabels: next };
+        }),
       setBackendState: (state) => set((current) => ({ ...current, ...state })),
       setFmeaOutputDirectory: (path) => set({ fmeaOutputDirectory: path }),
       setBomCompareOutputDirectory: (path) => set({ bomCompareOutputDirectory: path }),

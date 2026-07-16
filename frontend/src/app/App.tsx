@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Copy, Eye, Faders, Sparkle, Terminal } from "@phosphor-icons/react";
+import { Copy, Eye, Faders, MagnifyingGlass, Moon, Sparkle, Sun, Terminal } from "@phosphor-icons/react";
 import styles from "./AppShell.module.css";
 import { toolDefinitions } from "./toolRegistry";
 import { CommandPalette, type CommandPaletteAction } from "../components/primitives/CommandPalette";
@@ -19,7 +19,7 @@ import {
 } from "../shared/hooks/shortcutUtils";
 import { NotificationCenter } from "../shared/notifications/NotificationCenter";
 import { ThemeController } from "../shared/theme/ThemeController";
-import { RAIL_THEMES, THEME_REGISTRY } from "../shared/theme/themeRegistry";
+import { THEME_REGISTRY } from "../shared/theme/themeRegistry";
 import { useGlobalLogStore } from "../stores/globalLogStore";
 import { useNotificationStore } from "../stores/notificationStore";
 import { useShellStore, type ToolId } from "../stores/shellStore";
@@ -67,6 +67,7 @@ export function App() {
   const backendMessage = useShellStore((state) => state.backendMessage);
   const themeMode = useThemeStore((state) => state.mode);
   const setThemeMode = useThemeStore((state) => state.setMode);
+  const toolModeLabels = useShellStore((state) => state.toolModeLabels);
   const toggleLogVisible = useGlobalLogStore((state) => state.toggleVisible);
   const pushNotification = useNotificationStore((state) => state.push);
 
@@ -291,108 +292,122 @@ export function App() {
           <aside className={styles.rail} aria-label="Suite navigation">
             <div className={styles.brand}>
               <div className={styles.brandGlyph}>
-                <Sparkle size={20} weight="fill" />
+                <Sparkle size={12} weight="fill" />
               </div>
               <p className={styles.brandLabel}>Dark Star</p>
             </div>
 
+            {/* v2 N2: grouped nav — "Tools" and "System" are the app's only
+                uppercase micro-labels. Shortcut digits stay aligned with the
+                palette's Ctrl+N actions (index across ALL tools). */}
             <nav className={styles.toolList} aria-label="Desktop tools">
-              {toolDefinitions.map((tool, index) => {
-                const Icon = tool.icon;
-                const isActive = tool.id === activeToolId;
+              {(["Tools", "System"] as const).map((group) => (
+                <div key={group} style={{ display: "contents" }}>
+                  <p className={styles.navLabel}>{group}</p>
+                  {toolDefinitions
+                    .filter((tool) => (group === "System") === (tool.id === "settings"))
+                    .map((tool) => {
+                      const index = toolDefinitions.indexOf(tool);
+                      const Icon = tool.icon;
+                      const isActive = tool.id === activeToolId;
 
-                return (
-                  <button
-                    key={tool.id}
-                    type="button"
-                    className={styles.toolButton}
-                    data-selected={isActive}
-                    onClick={() => setActiveToolId(tool.id)}
-                    aria-current={isActive ? "page" : undefined}
-                    aria-label={`${tool.label} (${index + 1})`}
-                    title={`${tool.label} (${primaryShortcutLabel(String(index + 1))})`}
-                  >
-                    <Icon size={20} weight={isActive ? "fill" : "regular"} />
-                    <span className={styles.toolLabel}>{tool.label}</span>
-                  </button>
-                );
-              })}
+                      return (
+                        <button
+                          key={tool.id}
+                          type="button"
+                          className={styles.toolButton}
+                          data-selected={isActive}
+                          onClick={() => setActiveToolId(tool.id)}
+                          aria-current={isActive ? "page" : undefined}
+                          aria-label={`${tool.label} (${index + 1})`}
+                          title={`${tool.label} (${primaryShortcutLabel(String(index + 1))})`}
+                        >
+                          <Icon size={16} weight={isActive ? "fill" : "regular"} />
+                          <span className={styles.toolLabel}>{tool.label}</span>
+                          <span className={styles.toolShortcut} aria-hidden="true">
+                            {index + 1}
+                          </span>
+                        </button>
+                      );
+                    })}
+                </div>
+              ))}
             </nav>
 
+            {/* v2 N2: the theme picker left the rail — Settings and the
+                command palette carry the full list. The footer is version
+                telemetry + a light/dark Precision toggle. */}
             <div className={styles.footer}>
-              {/* Compact icon row: one small button per rail theme. The
-                  accessible names ("Switch to X theme") are unchanged; the
-                  visible short labels moved into tooltips. Full theme list
-                  lives in Settings and the command palette. */}
-              <div className={styles.themeGroup} aria-label="Theme">
-                <p className={styles.themeLabel}>Theme</p>
-                <div className={styles.themeButtons}>
-                  {RAIL_THEMES.map((theme) => {
-                    const Icon = theme.icon;
-                    const isSelected = themeMode === theme.id;
-                    return (
-                      <button
-                        key={theme.id}
-                        type="button"
-                        className={styles.themeButton}
-                        data-selected={isSelected}
-                        onClick={() => setThemeMode(theme.id)}
-                        aria-label={`Switch to ${theme.shortLabel.toLowerCase()} theme`}
-                        title={theme.label}
-                      >
-                        <Icon size={16} weight={isSelected ? "fill" : "bold"} />
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              <span className={styles.version}>v{import.meta.env.VITE_APP_VERSION ?? "dev"}</span>
+              <button
+                type="button"
+                className={styles.themeToggle}
+                onClick={() =>
+                  setThemeMode(themeMode === "dark_precision" ? "light_precision" : "dark_precision")
+                }
+                aria-label={
+                  themeMode === "dark_precision" ? "Switch to light theme" : "Switch to dark theme"
+                }
+                title={themeMode === "dark_precision" ? "Light Precision" : "Dark Precision"}
+              >
+                {themeMode === "dark_precision" ? <Sun size={14} /> : <Moon size={14} />}
+              </button>
             </div>
           </aside>
 
           <div className={styles.main}>
             <header className={styles.topbar}>
-              <div className={styles.titleGroup}>
-                <p className="eyebrow">{activeTool.eyebrow}</p>
-                <h1 className={styles.title} title={activeTool.label}>
-                  {activeTool.label}
-                </h1>
-                <p className={styles.subtitle}>{activeTool.description}</p>
-              </div>
+              <h1 className={styles.title} title={activeTool.label}>
+                {activeTool.label}
+              </h1>
+              {toolModeLabels[activeTool.id] ? (
+                <>
+                  <span className={styles.topbarDivider} aria-hidden="true" />
+                  <span className={styles.topbarMode}>
+                    Mode <b>{toolModeLabels[activeTool.id]}</b>
+                  </span>
+                </>
+              ) : null}
 
-              {/* Deliberately lean: real state only (backend health + mode)
-                  plus the Review toggle. The theme name is visible on the
-                  screen itself, and keyboard hints live in the command
-                  palette and control tooltips — neither earns a chip. */}
+              {/* Deliberately lean: backend health chips (moving to the log
+                  strip in N3) plus the Review toggle and palette button.
+                  Keyboard hints live in the command palette and tooltips. */}
               <div className={styles.statusRow}>
-                <div className="topbar__chip-groups">
-                  <div className="topbar__chip-group" aria-label="Connection health">
-                    <span className={`status-chip status-chip--${backendStatusTone[backendStatus]}`}>
-                      {backendStatusLabel[backendStatus]}
-                    </span>
-                    <span
-                      className="status-chip status-chip--info"
-                      title={backendMessage ?? undefined}
-                    >
-                      {backendModeLabel[backendMode]}
-                    </span>
-                  </div>
-                  <span className="topbar__chip-divider" aria-hidden="true" />
-                  <div className="topbar__chip-group" aria-label="Review drawer">
-                    <button
-                      type="button"
-                      className="topbar__review-toggle"
-                      data-selected={contextOpen}
-                      onClick={toggleContext}
-                      aria-pressed={contextOpen}
-                      aria-label={contextOpen ? "Close Review drawer" : "Open Review drawer"}
-                      title={`Review drawer (${primaryShortcutLabel("R")}) — switch tools with ${navigationShortcutLabel}`}
-                    >
-                      <Eye size={14} weight={contextOpen ? "fill" : "regular"} />
-                      <span>Review</span>
-                      <span className="kbd-shortcut">{primaryShortcutLabel("R")}</span>
-                    </button>
-                  </div>
+                <div className="topbar__chip-group" aria-label="Connection health">
+                  <span className={`status-chip status-chip--${backendStatusTone[backendStatus]}`}>
+                    {backendStatusLabel[backendStatus]}
+                  </span>
+                  <span
+                    className="status-chip status-chip--info"
+                    title={backendMessage ?? undefined}
+                  >
+                    {backendModeLabel[backendMode]}
+                  </span>
                 </div>
+                <span className="topbar__chip-divider" aria-hidden="true" />
+                <button
+                  type="button"
+                  className="topbar__review-toggle"
+                  data-selected={contextOpen}
+                  onClick={toggleContext}
+                  aria-pressed={contextOpen}
+                  aria-label={contextOpen ? "Close Review drawer" : "Open Review drawer"}
+                  title={`Review drawer (${primaryShortcutLabel("R")}) — switch tools with ${navigationShortcutLabel}`}
+                >
+                  <Eye size={14} weight={contextOpen ? "fill" : "regular"} />
+                  <span>Review</span>
+                  <span className="kbd-shortcut">{primaryShortcutLabel("R")}</span>
+                </button>
+                <button
+                  type="button"
+                  className="topbar__review-toggle"
+                  onClick={() => setCommandPaletteOpen(true)}
+                  aria-label="Open command palette"
+                  title={`Command palette (${primaryShortcutLabel("K")})`}
+                >
+                  <MagnifyingGlass size={14} />
+                  <span className="kbd-shortcut">{primaryShortcutLabel("K")}</span>
+                </button>
               </div>
             </header>
 

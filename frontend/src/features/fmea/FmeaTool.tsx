@@ -480,6 +480,7 @@ export function FmeaTool() {
   const setBackendState = useShellStore((state) => state.setBackendState);
   const fmeaOutputDirectory = useShellStore((state) => state.fmeaOutputDirectory);
   const setFmeaOutputDirectory = useShellStore((state) => state.setFmeaOutputDirectory);
+  const setToolModeLabel = useShellStore((state) => state.setToolModeLabel);
   const pushNotification = useNotificationStore((state) => state.push);
   const setPreview = usePreviewStore((state) => state.setPreview);
 
@@ -773,6 +774,13 @@ export function FmeaTool() {
   const mappingCoverageLabel = mappingCoverage === null ? "—" : `${mappingCoverage}%`;
 
   const activeWorkflow = workflowOptions.find((workflow) => workflow.id === workflowId) ?? workflowOptions[0];
+
+  // v2 N2: publish the selected workflow to the shell so the 48px topbar
+  // can render the inline mode indicator. Keyed by tool id — hidden
+  // keep-alive siblings never clobber the active tool's label.
+  useEffect(() => {
+    setToolModeLabel("dark_star_fmea", activeWorkflow.title);
+  }, [activeWorkflow.title, setToolModeLabel]);
 
   // Phase 3 (A6): BOM-Only mode gates on a non-empty CCA identifier
   // that matches the pattern backend Phase 4 will also enforce.
