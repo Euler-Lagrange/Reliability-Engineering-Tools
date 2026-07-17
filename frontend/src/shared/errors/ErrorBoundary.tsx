@@ -118,7 +118,10 @@ function ErrorBoundaryFallback({
         stack: error?.stack ?? null,
       },
       componentStack: componentStack ?? null,
-      appVersion: import.meta.env.VITE_APP_VERSION ?? "unknown",
+      // __APP_VERSION__ is the build-time define from vite.config.ts
+      // (single source: package.json). The old import.meta.env.VITE_APP_VERSION
+      // read was never defined anywhere and always reported "unknown".
+      appVersion: __APP_VERSION__,
       activeTool: activeToolId,
       theme: themeMode,
     };

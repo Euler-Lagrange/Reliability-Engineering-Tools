@@ -1,6 +1,6 @@
 [package]
 name = "reliability-tools-desktop"
-version = "1.1.0"
+version = "1.2.0"
 description = "Suite-ready Tauri desktop shell for migrating the reliability tools off Flet."
 authors = ["OpenAI Codex"]
 edition = "2021"

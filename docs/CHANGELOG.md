@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-17 — Design Pass v2, Run Rail, BOM Display Names
+
+The full visual refinement from the claude.ai/design "Design Pass v2"
+handoff (bundle committed at `design_handoff_v2/`), implemented as ten
+work packages plus a cross-tool rollout, then adversarially QA'd against
+the handoff spec.
+
+### Added
+
+- Persistent Run rail in every tool: readiness checklist (inputs ·
+  required mapping · output folder), always-visible CTA with a working
+  Ctrl/Cmd+Enter shortcut, blocked-reason caption, 3px progress, quiet
+  phase rows, and a result card with a path well, Open folder / Copy
+  path actions, and a hairline metrics grid. The Preview/Run tabs (and
+  the ContextTabs primitive) are retired.
+- BOM Compare per-file display names: an optional "Display name" field
+  on each input row ("CPU Grouping File", "Old Digital BOM" vs "New
+  Digital BOM") rewrites that file's column-mapping row labels and flows
+  into the Excel report (Summary file rows, Duplicates/Part Usage
+  Source columns, custom/extraction sheet names) via the backend's
+  display-name options. Group mode gained backend support
+  (`display_name_grouping`/`display_name_bom` through
+  `analyze(file_labels=…)`); names are Excel-sanitized and clamped.
+- Topbar inline mode indicator fed per-tool via
+  `shellStore.toolModeLabels` (FMEA workflow, BOM Compare workflow,
+  RefDes extraction mode).
+
+### Changed
+
+- Tokens v2: one desaturated-cobalt accent with tokenized hover/active
+  states, borders-only depth (rail glow retired), a monotonic AA text
+  ramp (plus ramp fixes for Signal Slate and Midnight Blue), strict 4px
+  spacing with control-metric tokens, radius capped at 8px, motion on
+  150/200/250ms. Both decorative accent gradients deleted.
+- Shell: 48px topbar (14px title, quiet Review/palette buttons), 224px
+  rail on the canvas with grouped nav + mono shortcut digits, footer
+  version + light/dark toggle (theme picker lives in Settings and the
+  command palette). Backend health moved into the 30px log strip as
+  dot + "Ready · Desktop bridge" telemetry.
+- Data surfaces: every number/ID/path/sheet name renders mono +
+  tabular-nums (`.num` rule); file inputs are 44px indicator rows;
+  the mapping table is a 32px-row instrument (quiet mono selects,
+  dot+word statuses, hover "Apply match", telemetry counts + coverage
+  meter); validation issues are dot rows; badges are 18px mono
+  rectangles and status pills are fully retired; workflow cards are
+  compact with softened selection; value pickers are neutral segmented
+  controls. Mapping row labels now say which file they map in plain
+  words ("Group column — Grouping file").
+- Sections render as numbered bare strips (01 Workflow · 02 Inputs ·
+  03 Output · 04 Column mapping) with header meta instead of
+  description paragraphs.
+
+### Fixed
+
+- `__APP_VERSION__` is now used by the ErrorBoundary and the rail
+  footer — the old `VITE_APP_VERSION` read was never defined and always
+  reported "unknown".
+- QA sweep: the one drifted token (`--font-display`) re-aliased per the
+  contract; orphaned `.status-chip` alias family, `.header-metric`, and
+  `.sr-only-focusable` CSS deleted after their last call sites migrated.
+
 ## [1.1.0] - 2026-07-14 — Data Integrity, Cancellation Truthfulness, Silent-Loss Fixes
 
 The external-review remediation release: three independent architecture

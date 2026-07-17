@@ -313,7 +313,7 @@ export function App() {
                 command palette carry the full list. The footer is version
                 telemetry + a light/dark Precision toggle. */}
             <div className={styles.footer}>
-              <span className={styles.version}>v{import.meta.env.VITE_APP_VERSION ?? "dev"}</span>
+              <span className={styles.version}>v{__APP_VERSION__}</span>
               <button
                 type="button"
                 className={styles.themeToggle}
