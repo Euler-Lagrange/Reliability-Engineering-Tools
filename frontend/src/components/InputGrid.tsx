@@ -12,8 +12,8 @@ interface InputGridProps {
   /**
    * Optional per-file display names (user request 2026-07-16). When
    * `onNicknameChange` is provided each row renders a small text field;
-   * the name flows into the tool's column-mapping labels and (via
-   * `options.file_labels`) into the Excel report headers so it is always
+   * the name flows into the tool's column-mapping labels and (via the
+   * backend's `display_name_*` options) into the Excel report so it is always
    * clear which file a value came from. Empty = the role's default label.
    */
   nicknames?: Partial<Record<FileRole, string>>;

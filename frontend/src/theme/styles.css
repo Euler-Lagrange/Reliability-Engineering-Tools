@@ -42,7 +42,7 @@
      `--font-display` is a synonym for sans by default; Mission Control
      overrides both to mono. Don't add Google Fonts links — fully offline. */
   --font-sans: "Inter", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
-  --font-display: "Inter", "Segoe UI Variable Display", system-ui, sans-serif;
+  --font-display: var(--font-sans);
   --font-mono: "JetBrains Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
 
   font-family: var(--font-sans);
@@ -154,7 +154,7 @@
   --radius-md: 8px;   /* cards, grouped lists, popovers */
   --radius-lg: 8px;   /* alias of md — no third card radius */
   --radius-xl: 8px;   /* DEMOTED from 12px — rail buttons join the system */
-  --radius-pill: 999px; /* progress bar track ONLY */
+  --radius-pill: 999px; /* progress/coverage meter tracks ONLY */
 
   /* ============================================================
      Depth — borders only. Two shadows exist, both for layers that
@@ -195,7 +195,7 @@
 
 /* ============================================================
    Dark Precision v2 — same geometry, inverted ramp.
-   Surfaces step UP in lightness toward the user (well < bg <
+   Surfaces step UP in lightness toward the user (bg < well <
    surface < hover); borders carry the structure, never glow.
    ============================================================ */
 :root[data-theme="dark_precision"] {
@@ -959,17 +959,6 @@ button:disabled {
   transition: width var(--duration-slow) var(--ease);
 }
 
-.header-metrics {
-  display: flex;
-  gap: var(--space-3);
-}
-
-.header-metric {
-  display: grid;
-  gap: 2px; /* off-grid: extreme-tight gap inside metric stacks */
-}
-
-.header-metric span,
 .setup-block__label,
 .run-result__metric span,
 .preview-table th,
@@ -989,14 +978,6 @@ button:disabled {
   color: var(--text-muted);
   font-size: var(--text-xs);
   font-weight: var(--weight-medium);
-}
-
-.header-metric strong:not(.hero-metric) {
-  font-family: var(--font-mono);
-  font-size: var(--text-base);
-  font-weight: var(--weight-medium);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
 }
 
 .setup-grid {
@@ -1093,7 +1074,7 @@ button:disabled {
    Pills are retired — 999px radius survives only on the progress
    bar. Pick the treatment by semantics, don't mix them:
 
-   - .badge-state / .status-chip — 18px / 4px-radius mono rectangle.
+   - .badge-state   — 18px / 4px-radius mono rectangle.
                       ONLY for counts and true alerts (severity counts,
                       "Required" on an unloaded required file, "capped").
    - .dot + .state-word — 6px dot + sentence-case word. Row and
@@ -1104,10 +1085,9 @@ button:disabled {
                       (column names, sheet names) are data, not status.
    - .kbd-shortcut  — text-only monospace (⌘K, CTRL+L), unboxed.
 
-   .status-chip is kept as a legacy alias of .badge-state so the
-   migration can proceed call-site by call-site without churn.
+   (.status-chip, the v1 legacy alias, was deleted once the last
+   call site migrated — QA sweep 2026-07-17.)
    ============================================================ */
-.status-chip,
 .badge-state {
   display: inline-flex;
   align-items: center;
@@ -1125,8 +1105,6 @@ button:disabled {
   white-space: nowrap;
 }
 
-.status-chip--pending,
-.status-chip--info,
 .badge-state--idle {
   color: var(--accent);
   background: var(--accent-soft);
@@ -1135,29 +1113,18 @@ button:disabled {
   border-color: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-.status-chip--ready,
-.status-chip--mapped,
-.status-chip--success,
-.status-chip--completed,
 .badge-state--good {
   color: var(--success);
   background: var(--success-soft);
   border-color: color-mix(in srgb, var(--success) 12%, transparent);
 }
 
-.status-chip--attention,
-.status-chip--warning,
-.status-chip--active,
-.status-chip--manual,
-.status-chip--optional,
 .badge-state--warn {
   color: var(--warning);
   background: var(--warning-soft);
   border-color: color-mix(in srgb, var(--warning) 12%, transparent);
 }
 
-.status-chip--error,
-.status-chip--failure,
 .badge-state--bad {
   color: var(--danger);
   background: var(--danger-soft);
@@ -2497,17 +2464,6 @@ tbody tr:hover {
   gap: var(--space-1);
 }
 
-.sr-only-focusable {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
 
 .run-result {
   display: grid;
@@ -3876,25 +3832,6 @@ tbody tr:hover {
   font-style: italic;
 }
 
-/* Status chip variants for the new mapping states. Derived rows render
-   on a neutral surface (matching the read-only nature of the row).
-   Not-mapped rows use a muted italic label so the "absence" reads as
-   intentional. */
-.status-chip--derived {
-  color: var(--text-muted);
-  background: var(--surface-muted);
-  border-color: var(--line);
-}
-
-.status-chip--not_mapped {
-  color: var(--text-muted);
-  background: var(--surface-muted);
-  border-color: var(--line);
-  font-style: italic;
-  text-transform: none;
-  letter-spacing: normal;
-}
-
 /* ============================================================
    Phase 3 primitives — FMEA Workflow / Inputs restructure.
    CCA identifier input, output folder chip, run-state disabled
@@ -4015,18 +3952,10 @@ tbody tr:hover {
    ============================================================ */
 
 :root[data-theme="mission_control"] .eyebrow,
-:root[data-theme="mission_control"] .section-card__eyebrow,
-:root[data-theme="mission_control"] .status-chip {
+:root[data-theme="mission_control"] .section-card__eyebrow {
   text-transform: uppercase;
   letter-spacing: var(--tracking-uppercase);
   font-weight: var(--weight-medium);
-}
-
-/* Subtle cyan glow on "ready" status chips. Uses theme-specific
-   raw rgba because the glow is part of the Mission Control identity
-   and shouldn't be tokenized into the global shadow scale. */
-:root[data-theme="mission_control"] .status-chip--success {
-  box-shadow: 0 0 0 1px rgba(0, 217, 255, 0.3), 0 0 12px rgba(0, 217, 255, 0.08);
 }
 
 /* Numeric data — force tabular and slashed zero */
