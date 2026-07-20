@@ -366,6 +366,120 @@ def validate_fmr_usage_product(
 
 
 # =============================================================================
+# CROSS-FILE PART USAGE VALIDATION
+# =============================================================================
+
+def validate_cross_file_usage_counts(
+    refdes_list: List[str],
+    usage_values: List[float],
+    get_base_func,
+    other_base_counts: Dict[str, int],
+    other_label: str = "the other file",
+    tolerance: float = USAGE_TOLERANCE,
+) -> List[Dict[str, Any]]:
+    """
+    Validate Part Usage against the OTHER file's instance count.
+
+    Part Usage 1/N asserts the base component has N unique instance/pin
+    tokens — in EVERY file that lists it, not just the file carrying the
+    usage column (project convention: dash suffixes are pins of one base
+    component, so usage 1/4 means four tokens like U60-1..U60-100 appear
+    in both the BOM and the grouping file).
+
+    The within-file checks (``validate_part_usage`` /
+    ``validate_fmr_usage_product``) already cover usage-vs-THIS-file's
+    count, so this emits at most ONE warning per base and only when the
+    two files' counts actually differ:
+
+    - ``PU_COUNT_MATCHES_THIS_FILE_ONLY``: usage agrees with this file's
+      count; the other file lists a different number of instances.
+    - ``PU_COUNT_MATCHES_OTHER_FILE_ONLY``: usage agrees with the other
+      file's count but not this file's.
+    - ``PU_CROSS_COUNT_CONFLICT``: usage agrees with neither count.
+
+    Bases absent from ``other_base_counts`` are skipped — a base missing
+    from the other file entirely is a membership finding (Missing /
+    Not-Grouped sheets) and must not be double-reported here.
+
+    Args:
+        refdes_list: RefDes tokens from the file carrying the usage column
+        usage_values: Corresponding numeric usage values (same length)
+        get_base_func: Base extractor (``get_usage_base_refdes``)
+        other_base_counts: base -> unique-instance count in the other file
+        other_label: Human name for the other file, used in Reason text
+        tolerance: Acceptable deviation from 1/count
+
+    Returns:
+        List of warning dicts matching the part-usage output schema:
+        RefDes, Base, Usage, Expected, Count, ReasonCode, Reason.
+    """
+    if len(refdes_list) != len(usage_values):
+        raise ValueError("refdes_list and usage_values must have the same length")
+
+    tokens_per_base: Dict[str, set] = defaultdict(set)
+    first_usage: Dict[str, float] = {}
+    first_token: Dict[str, str] = {}
+    for token, usage in zip(refdes_list, usage_values):
+        base = get_base_func(token)
+        tokens_per_base[base].add(token)
+        # Rows of one base share the usage value; divergence is already
+        # flagged by PU_INCONSISTENT_DUPLICATE, so first-seen represents.
+        if base not in first_usage:
+            first_usage[base] = usage
+            first_token[base] = token
+
+    warnings: List[Dict[str, Any]] = []
+    for base, tokens in tokens_per_base.items():
+        other_count = other_base_counts.get(base, 0)
+        if other_count <= 0:
+            continue  # membership finding, not a usage finding
+        local_count = len(tokens)
+        if local_count == other_count:
+            continue  # within-file checks fully cover the agreeing case
+        usage = first_usage[base]
+        if usage is None or usage <= 0:
+            continue  # non-positive usage is flagged by the format check
+        matches_local = abs(usage - 1.0 / local_count) <= tolerance
+        matches_other = abs(usage - 1.0 / other_count) <= tolerance
+        if matches_local and matches_other:
+            # Counts differ but 1/N and 1/M are within tolerance of each
+            # other (large N) — nothing actionable to report.
+            continue
+
+        if matches_local:
+            code = "PU_COUNT_MATCHES_THIS_FILE_ONLY"
+            reason = (
+                f"Part Usage {usage:.4g} matches this file's {local_count} "
+                f"instance(s) of {base}, but {other_label} lists {other_count}"
+            )
+        elif matches_other:
+            code = "PU_COUNT_MATCHES_OTHER_FILE_ONLY"
+            reason = (
+                f"Part Usage {usage:.4g} matches the {other_count} "
+                f"instance(s) of {base} in {other_label}, but this file "
+                f"lists {local_count}"
+            )
+        else:
+            code = "PU_CROSS_COUNT_CONFLICT"
+            reason = (
+                f"Part Usage {usage:.4g} matches neither this file's "
+                f"{local_count} instance(s) of {base} nor the "
+                f"{other_count} in {other_label}"
+            )
+        warnings.append({
+            'RefDes': first_token[base],
+            'Base': base,
+            'Usage': usage,
+            'Expected': 1.0 / local_count,
+            'Count': local_count,
+            'ReasonCode': code,
+            'Reason': reason,
+        })
+
+    return warnings
+
+
+# =============================================================================
 # PART USAGE PARSING
 # =============================================================================
 

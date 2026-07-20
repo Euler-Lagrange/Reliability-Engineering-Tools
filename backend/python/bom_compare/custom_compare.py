@@ -38,6 +38,7 @@ from common.validation_utils import (
     validate_part_usage,
     validate_usage_format,
     validate_fmr_usage_product,
+    validate_cross_file_usage_counts,
 )
 from common.fmea_utils import (
     is_fmea_file,
@@ -858,13 +859,17 @@ def compare_two_boms(
     usage_warnings = []
     if check_part_usage:
         def check_usage_for_df(df, refdes_col, source_label, scope_meta):
-            """Check part usage (and FMR×PU product when FMR is available)."""
+            """Check part usage (and FMR×PU product when FMR is available).
+
+            Returns (warning_rows, refdes_tokens, usage_values) — the token
+            and usage lists feed the cross-file count check below.
+            """
             # substring_match=True to match group_analysis: catches compound
             # headers like "Part Usage / Quantity". Was inconsistent with group
             # mode, which detected usage columns the custom path silently missed.
             usage_col = detect_column(df.columns, get_synonyms('part_usage'), substring_match=True)
             if not usage_col:
-                return []
+                return [], [], []
 
             # Try to detect FMR column for combined validation
             # Use fmr_strict to avoid false matches on generic "Percentage" columns
@@ -916,7 +921,7 @@ def compare_two_boms(
                 )
 
             if not refdes_list:
-                return []
+                return [], [], []
 
             # Use combined FMR×PU check when FMR data is available,
             # otherwise fall back to corrected basic PU check
@@ -940,7 +945,7 @@ def compare_two_boms(
                 })
 
             all_warnings = raw_warnings + format_warnings
-            return [
+            rows = [
                 {
                     'Source': source_label,
                     'RefDes': w['RefDes'],
@@ -953,9 +958,46 @@ def compare_two_boms(
                 }
                 for w in all_warnings
             ]
+            return rows, refdes_list, usage_list
 
-        usage_warnings.extend(check_usage_for_df(bom_a_df, refdes_col_a, 'File 1', scope_a))
-        usage_warnings.extend(check_usage_for_df(bom_b_df, refdes_col_b, 'File 2', scope_b))
+        rows_a, tokens_a, usages_a = check_usage_for_df(bom_a_df, refdes_col_a, 'File 1', scope_a)
+        rows_b, tokens_b, usages_b = check_usage_for_df(bom_b_df, refdes_col_b, 'File 2', scope_b)
+        usage_warnings.extend(rows_a)
+        usage_warnings.extend(rows_b)
+
+        # Cross-file check (2026-07-20): usage 1/N must agree with the OTHER
+        # file's instance count too — each file is validated against the
+        # other's unique-token-per-base counts. Requires both files to have
+        # yielded usage tokens (a file without a usage column is skipped).
+        def _usage_base_counts(tokens):
+            per_base: Dict[str, set] = {}
+            for t in tokens:
+                per_base.setdefault(get_usage_base_refdes(t), set()).add(t)
+            return {base: len(toks) for base, toks in per_base.items()}
+
+        def _cross_rows(tokens, usages, other_tokens, source_label):
+            if not tokens or not other_tokens:
+                return []
+            return [
+                {
+                    'Source': source_label,
+                    'RefDes': w['RefDes'],
+                    'Base': w.get('Base', ''),
+                    'Usage': w.get('Usage', ''),
+                    'Expected': w.get('Expected', ''),
+                    'Count': w.get('Count', ''),
+                    'ReasonCode': w.get('ReasonCode', ''),
+                    'Reason': w['Reason'],
+                }
+                for w in validate_cross_file_usage_counts(
+                    tokens, usages, get_usage_base_refdes,
+                    _usage_base_counts(other_tokens),
+                    other_label="the other compared file",
+                )
+            ]
+
+        usage_warnings.extend(_cross_rows(tokens_a, usages_a, tokens_b, 'File 1'))
+        usage_warnings.extend(_cross_rows(tokens_b, usages_b, tokens_a, 'File 2'))
 
         if usage_warnings:
             log(f"[WARNING] Found {len(usage_warnings)} part usage mismatches")
@@ -970,9 +1012,13 @@ def compare_two_boms(
     fmr_warnings: List[Dict[str, Any]] = []
     if check_fmr:
         def check_fmr_for_df(df: pd.DataFrame, ref_col: str, source_label: str) -> List[Dict[str, Any]]:
-            ratio_col = detect_column(df.columns, get_synonyms('ratio'))
+            # Strict FMR synonyms only (2026-07-20): FMR columns come from
+            # FMEA-generated files; broad synonyms like "Percentage" would
+            # false-match unrelated columns on plain BOM data.
+            ratio_col = detect_column(df.columns, get_synonyms('fmr_strict'))
             if not ratio_col:
-                log(f"  {source_label}: Ratio column not found — skipping FMR check.")
+                log(f"  {source_label}: no Failure Mode Ratio column found — "
+                    f"skipping FMR check (FMR columns come from FMEA-generated files).")
                 return []
             log(f"Checking FMR Summing in {source_label} (column: {ratio_col})...")
             ref_sums: Dict[str, float] = {}

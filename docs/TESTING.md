@@ -12,7 +12,7 @@
 | Backend FMEA template analyzer | `backend/tests/test_fmea_template_analyzer.py` | 1 | pytest |
 | Backend Failure-Rate logic | `backend/tests/test_failure_rate_logic.py` | 27 | pytest |
 | Backend RefDes extraction-engine | `backend/tests/test_extraction_engine.py` | 22 | pytest |
-| Backend BOM-compare logic | `backend/tests/test_bom_compare_logic.py` | 44 | pytest |
+| Backend BOM-compare logic | `backend/tests/test_bom_compare_logic.py` | 56 | pytest |
 | Backend BOM-compare runtime | `backend/tests/test_bom_compare_runtime.py` | 16 | pytest |
 | Backend extraction compare | `backend/tests/test_extraction_compare.py` | 10 | pytest |
 | Backend Failure-Rate runtime | `backend/tests/test_failure_rate_runtime.py` | 4 | pytest |
@@ -28,7 +28,7 @@
 | Backend RefDes runtime | `backend/tests/test_refdes_runtime.py` | 36 | pytest |
 | Backend RefDes validation notes | `backend/tests/test_validation_notes.py` | 12 | pytest |
 | Backend RefDes prefix config | `backend/tests/test_refdes_prefix_config.py` | 7 | pytest |
-| **Backend subtotal** | | **477** | |
+| **Backend subtotal** | | **489** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 5 | Vitest + RTL |
 | Frontend escape layers | `frontend/src/shared/hooks/useEscapeLayer.test.ts` | 4 | Vitest |
@@ -78,7 +78,7 @@
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
 | **Frontend subtotal** | | **346** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 19 | cargo test |
-| **Total** | | **836** | |
+| **Total** | | **854** | |
 
 ## Backend Tests
 

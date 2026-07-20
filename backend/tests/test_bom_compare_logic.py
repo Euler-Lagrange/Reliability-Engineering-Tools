@@ -1017,3 +1017,251 @@ def test_custom_report_sheet_names_use_group_path_scheme(tmp_path) -> None:
     ], names
     # Lockstep guard: the custom path must never reintroduce underscore names.
     assert not any("_" in n for n in names), names
+
+
+# ---------------------------------------------------------------------------
+# 2026-07-20 cross-file checks. Domain facts these encode:
+#   1. FMR columns only exist in FMEA-generated files (header "Failure Mode
+#      Ratio"), never in grouping files — the group-path FMR check must follow
+#      the column to whichever file has it instead of only ever reading the
+#      grouping file.
+#   2. Dash suffixes are PINS of one base component, and Part Usage 1/N means
+#      the base has exactly N pin/instance tokens in BOTH files (suffixes need
+#      not be sequential: usage 1/4 <=> U60-1, U60-2, U60-3, U60-100).
+# ---------------------------------------------------------------------------
+
+def _cross_mapping() -> ColumnMapping:
+    return ColumnMapping(
+        grouping_group_col="Group", grouping_refdes_col="RefDes",
+        bom_refdes_col="RefDes", bom_desc_col="Description",
+    )
+
+
+def _cross_options(**overrides) -> AnalyzeOptions:
+    base = dict(
+        run_warning_checks=False, run_duplicate_checks=False,
+        check_part_usage=False, check_fmr=False,
+    )
+    base.update(overrides)
+    return AnalyzeOptions(**base)
+
+
+def _bom_usage_df(refs, usages):
+    return pd.DataFrame({
+        "RefDes": refs,
+        "Description": ["" for _ in refs],
+        "Part Usage": usages,
+    })
+
+
+def test_analyze_check_fmr_detects_ratio_column_in_bom_file() -> None:
+    """FMRs live in FMEA-generated files, which load in the BOM slot — the
+    check must follow the Failure Mode Ratio column there instead of
+    reporting 'column not found' against the (always ratio-less) grouping."""
+    group_df = pd.DataFrame({"Group": ["G"], "RefDes": ["U1"]})
+    bom_df = pd.DataFrame({
+        "RefDes": ["U1", "U1"],
+        "Description": ["", ""],
+        "Failure Mode Ratio": [0.6, 0.3],  # sums to 0.9 -> must be flagged
+    })
+    results = analyze(
+        group_df, bom_df, _cross_mapping(), _cross_options(check_fmr=True),
+        file_paths=("grouping.xlsx", "bom.xlsx"),
+    )
+    rows = results.fmr_warnings.to_dict("records")
+    assert any(r["RefDes"] == "U1" and r["Status"] == "FMR != 1.0" for r in rows), rows
+    assert all("not found" not in str(r["Status"]).lower() for r in rows), rows
+    flagged = [r for r in rows if r["RefDes"] == "U1"]
+    assert flagged[0]["Source"] == "BOM", flagged
+
+
+def test_analyze_check_fmr_neither_file_reports_plain_language_skip() -> None:
+    """With no FMR column in either file the report says so in plain language
+    (naming the FMEA-generator origin), not the bare 'Ratio column not found'."""
+    group_df = pd.DataFrame({"Group": ["G"], "RefDes": ["U1"]})
+    bom_df = pd.DataFrame({"RefDes": ["U1"], "Description": [""]})
+    results = analyze(
+        group_df, bom_df, _cross_mapping(), _cross_options(check_fmr=True),
+        file_paths=("grouping.xlsx", "bom.xlsx"),
+    )
+    rows = results.fmr_warnings.to_dict("records")
+    assert len(rows) == 1, rows
+    assert "FMEA-generated" in str(rows[0]["Status"]), rows
+
+
+def test_analyze_check_fmr_ignores_generic_percentage_column() -> None:
+    """Now that BOTH files are scanned, detection uses the strict FMR synonym
+    list — a generic 'Percentage' column (common on plain BOMs, unrelated to
+    failure modes) must not trigger the check."""
+    group_df = pd.DataFrame({
+        "Group": ["G"], "RefDes": ["U1"], "Percentage": [0.2],
+    })
+    bom_df = pd.DataFrame({"RefDes": ["U1"], "Description": [""]})
+    results = analyze(
+        group_df, bom_df, _cross_mapping(), _cross_options(check_fmr=True),
+        file_paths=("grouping.xlsx", "bom.xlsx"),
+    )
+    rows = results.fmr_warnings.to_dict("records")
+    assert not any(r["Status"] == "FMR != 1.0" for r in rows), rows
+    assert len(rows) == 1 and "FMEA-generated" in str(rows[0]["Status"]), rows
+
+
+def test_analyze_fmr_source_uses_display_labels() -> None:
+    """The FMR sheet's new Source column carries the user's display name for
+    the file the bad sum came from (mirrors the Part Usage sheet)."""
+    group_df = pd.DataFrame({"Group": ["G"], "RefDes": ["U1"]})
+    bom_df = pd.DataFrame({
+        "RefDes": ["U1"], "Description": [""], "Failure Mode Ratio": [0.4],
+    })
+    results = analyze(
+        group_df, bom_df, _cross_mapping(), _cross_options(check_fmr=True),
+        file_paths=("grouping.xlsx", "bom.xlsx"),
+        file_labels=("Groups", "Main FMEA"),
+    )
+    rows = results.fmr_warnings.to_dict("records")
+    assert rows and rows[0]["Source"] == "Main FMEA", rows
+
+
+def test_analyze_cross_usage_counts_agree_no_warnings() -> None:
+    """Usage 1/4 with four pin tokens in the BOM AND four in the grouping
+    (non-sequential suffixes) is fully consistent — no warnings."""
+    group_df = pd.DataFrame({
+        "Group": ["G"], "RefDes": ["U60-1, U60-2, U60-3, U60-100"],
+    })
+    bom_df = _bom_usage_df(
+        ["U60-1", "U60-2", "U60-3", "U60-100"], [0.25, 0.25, 0.25, 0.25],
+    )
+    results = analyze(
+        group_df, bom_df, _cross_mapping(), _cross_options(check_part_usage=True),
+        file_paths=("grouping.xlsx", "bom.xlsx"),
+    )
+    assert results.part_usage_warnings.empty, results.part_usage_warnings
+
+
+def test_analyze_cross_usage_flags_grouping_count_mismatch() -> None:
+    """Usage 1/4 matches the BOM's four pin tokens but the grouping only lists
+    three -> exactly one cross-file warning naming the grouping side."""
+    group_df = pd.DataFrame({
+        "Group": ["G"], "RefDes": ["U60-1, U60-2, U60-3"],
+    })
+    bom_df = _bom_usage_df(
+        ["U60-1", "U60-2", "U60-3", "U60-100"], [0.25, 0.25, 0.25, 0.25],
+    )
+    results = analyze(
+        group_df, bom_df, _cross_mapping(), _cross_options(check_part_usage=True),
+        file_paths=("grouping.xlsx", "bom.xlsx"),
+    )
+    rows = results.part_usage_warnings.to_dict("records")
+    assert [r["ReasonCode"] for r in rows] == ["PU_COUNT_MATCHES_THIS_FILE_ONLY"], rows
+    assert rows[0]["Base"] == "U60", rows
+    assert "Grouping" in rows[0]["Reason"], rows
+    assert "3" in rows[0]["Reason"] and "4" in rows[0]["Reason"], rows
+
+
+def test_analyze_cross_usage_flags_bom_count_mismatch() -> None:
+    """One U60 in the BOM with usage 1/4 while the grouping lists four pins:
+    the within-file mismatch still fires, and the cross-file check adds WHICH
+    side the usage value actually agrees with."""
+    group_df = pd.DataFrame({
+        "Group": ["G"], "RefDes": ["U60-1, U60-2, U60-3, U60-100"],
+    })
+    bom_df = _bom_usage_df(["U60"], [0.25])
+    results = analyze(
+        group_df, bom_df, _cross_mapping(), _cross_options(check_part_usage=True),
+        file_paths=("grouping.xlsx", "bom.xlsx"),
+    )
+    codes = set(results.part_usage_warnings["ReasonCode"])
+    assert "PU_EXPECTED_MISMATCH_BASIC" in codes, codes
+    assert "PU_COUNT_MATCHES_OTHER_FILE_ONLY" in codes, codes
+
+
+def test_analyze_cross_usage_conflict_matches_neither() -> None:
+    """Usage 1/4, two pins in the BOM, three in the grouping — the value
+    agrees with neither file's count."""
+    group_df = pd.DataFrame({
+        "Group": ["G"], "RefDes": ["U60-1, U60-2, U60-3"],
+    })
+    bom_df = _bom_usage_df(["U60-1", "U60-2"], [0.25, 0.25])
+    results = analyze(
+        group_df, bom_df, _cross_mapping(), _cross_options(check_part_usage=True),
+        file_paths=("grouping.xlsx", "bom.xlsx"),
+    )
+    codes = set(results.part_usage_warnings["ReasonCode"])
+    assert "PU_CROSS_COUNT_CONFLICT" in codes, codes
+
+
+def test_analyze_cross_usage_skips_bases_absent_from_grouping() -> None:
+    """A base entirely absent from the grouping file is a membership finding
+    (BOM Not Grouped sheet) — the usage cross-check must not double-report."""
+    group_df = pd.DataFrame({"Group": ["G"], "RefDes": ["R1"]})
+    bom_df = _bom_usage_df(["R1", "U60"], [1.0, 1.0])
+    results = analyze(
+        group_df, bom_df, _cross_mapping(), _cross_options(check_part_usage=True),
+        file_paths=("grouping.xlsx", "bom.xlsx"),
+    )
+    assert results.part_usage_warnings.empty, results.part_usage_warnings
+    assert not results.bom_not_in_groups.empty  # membership finding remains
+
+
+def test_analyze_cross_usage_respects_prov_removal() -> None:
+    """The grouping-side instance count uses the SAME filtered token set as the
+    membership checks: treat_prov_as_covered=False removes PROV-group tokens
+    before counting."""
+    group_df = pd.DataFrame({
+        "Group": ["G1", "PROV"],
+        "RefDes": ["U60-1, U60-2, U60-3", "U60-100"],
+    })
+    bom_df = _bom_usage_df(
+        ["U60-1", "U60-2", "U60-3", "U60-100"], [0.25, 0.25, 0.25, 0.25],
+    )
+    covered = analyze(
+        group_df, bom_df, _cross_mapping(),
+        _cross_options(check_part_usage=True, treat_prov_as_covered=True),
+        file_paths=("grouping.xlsx", "bom.xlsx"),
+    )
+    assert covered.part_usage_warnings.empty, covered.part_usage_warnings
+
+    excluded = analyze(
+        group_df, bom_df, _cross_mapping(),
+        _cross_options(check_part_usage=True, treat_prov_as_covered=False),
+        file_paths=("grouping.xlsx", "bom.xlsx"),
+    )
+    codes = list(excluded.part_usage_warnings["ReasonCode"])
+    assert codes == ["PU_COUNT_MATCHES_THIS_FILE_ONLY"], codes
+
+
+def test_compare_two_boms_cross_usage_between_files() -> None:
+    """Custom path: each file's usage is cross-checked against the OTHER
+    file's instance count. Here each file is internally consistent but they
+    disagree with each other (4 pins vs 3 pins), so BOTH get flagged."""
+    third = 1.0 / 3.0
+    bom_a = _custom_df([
+        {"RefDes": r, "Part Usage": 0.25}
+        for r in ("U60-1", "U60-2", "U60-3", "U60-100")
+    ])
+    bom_b = _custom_df([
+        {"RefDes": r, "Part Usage": third}
+        for r in ("U60-1", "U60-2", "U60-3")
+    ])
+    result = compare_two_boms(
+        bom_a, bom_b, refdes_col_a="RefDes", refdes_col_b="RefDes",
+        check_part_usage=True,
+    )
+    cross = [
+        w for w in result.part_usage_warnings
+        if w["ReasonCode"] == "PU_COUNT_MATCHES_THIS_FILE_ONLY"
+    ]
+    assert {w["Source"] for w in cross} == {"File 1", "File 2"}, result.part_usage_warnings
+
+
+def test_cross_usage_reason_codes_have_user_facing_labels() -> None:
+    """Lockstep: every emitted cross-file ReasonCode has a plain-language
+    label so the report never ships a raw underscore code."""
+    from common.user_facing_labels import REASON_CODE_LABELS
+
+    for code in (
+        "PU_COUNT_MATCHES_THIS_FILE_ONLY",
+        "PU_COUNT_MATCHES_OTHER_FILE_ONLY",
+        "PU_CROSS_COUNT_CONFLICT",
+    ):
+        assert code in REASON_CODE_LABELS, code

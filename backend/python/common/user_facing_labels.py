@@ -29,6 +29,12 @@ REASON_CODE_LABELS = {
     "PU_PARSE_REPLACED_WITH_COUNT": "Part Usage Parse Failed and Was Replaced With the Instance Count (1/N)",
     "PU_GUESSED_NO_COUNT_SOURCE": "Part Usage Could Not Be Determined (No Instance Count Source)",
     "PU_INHERITED_MISMATCH": "Part Usage Expected Value Mismatch (Inherited Variant)",
+    # Cross-file Part Usage checks (2026-07-20): usage 1/N must agree with the
+    # instance count in BOTH compared files, not just the file that carries
+    # the usage column.
+    "PU_COUNT_MATCHES_THIS_FILE_ONLY": "Part Usage Matches This File's Instance Count but Not the Other File's",
+    "PU_COUNT_MATCHES_OTHER_FILE_ONLY": "Part Usage Matches the Other File's Instance Count but Not This File's",
+    "PU_CROSS_COUNT_CONFLICT": "Part Usage Matches Neither File's Instance Count",
     "SCOPE_CB_ONLY": "Scope Mismatch: Circuit Block Only",
     "SCOPE_PP_ONLY": "Scope Mismatch: Piece-Part Only",
     "SCOPE_UNCLASSIFIED_ONLY": "Scope Mismatch: Unclassified Row Type Only",

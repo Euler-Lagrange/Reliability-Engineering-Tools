@@ -44,6 +44,7 @@ from common.validation_utils import (
     validate_part_usage,
     validate_usage_format,
     validate_fmr_usage_product,
+    validate_cross_file_usage_counts,
 )
 from common.fmea_utils import (
     is_fmea_file,
@@ -469,30 +470,17 @@ def _check_duplicates(
     return pd.DataFrame(dup_rows, columns=["Source", "Token", "Count", "Description"])
 
 
-def _check_fmr(
-    group_df: pd.DataFrame, mapping: ColumnMapping,
-    options: AnalyzeOptions, log_func, stop_event: Optional['threading.Event']
-) -> pd.DataFrame:
-    """Validate Failure Mode Ratios sum to 1.0."""
-    fmr_rows = []
-    if not options.check_fmr:
-        return pd.DataFrame(fmr_rows, columns=["RefDes", "Sum", "Status"])
-
-    log_func("Checking FMR Summing...")
-    ratio_col = detect_column(group_df.columns, get_synonyms('ratio'))
-
-    if not ratio_col:
-        log_func("  [WARNING] Could not detect 'Ratio' column for FMR check.")
-        fmr_rows.append({"RefDes": "GLOBAL", "Sum": 0, "Status": "Ratio column not found"})
-        return pd.DataFrame(fmr_rows, columns=["RefDes", "Sum", "Status"])
-
-    log_func(f"  Detected FMR column: {ratio_col}")
+def _fmr_sum_rows(
+    df: pd.DataFrame, ref_col: str, ratio_col: str, source: str,
+    stop_event: Optional['threading.Event'],
+) -> List[Dict[str, Any]]:
+    """Per-RefDes Σ(FMR) == 1.0 rows for one file (group-path semantics)."""
     ref_sums: Dict[str, float] = {}
 
     # Create column index mapping for safe access with itertuples
-    col_idx = {col: i for i, col in enumerate(group_df.columns)}
-    ref_idx = col_idx[mapping.grouping_refdes_col]
-    ratio_idx = col_idx.get(ratio_col) if ratio_col else None
+    col_idx = {col: i for i, col in enumerate(df.columns)}
+    ref_idx = col_idx[ref_col]
+    ratio_idx = col_idx[ratio_col]
 
     # Track RefDes whose ratio cell was non-numeric / NaN. Such a cell must NOT
     # silently contribute: float(NaN) does not raise, so a NaN ratio would poison
@@ -500,7 +488,7 @@ def _check_fmr(
     # component silently passes), and a text cell would silently count as 0.0.
     # We exclude invalid cells from the sum and FLAG the RefDes instead.
     ref_invalid: set = set()
-    for row in group_df.itertuples(index=False):
+    for row in df.itertuples(index=False):
         check_cancelled(stop_event, "Analysis cancelled by user.")
         ref_val = row[ref_idx]
         # Guard against NaN values to prevent "NAN" key pollution
@@ -512,7 +500,7 @@ def _check_fmr(
         ref_raw = canonicalize_refdes(str(ref_val))
         if not ref_raw:
             continue
-        raw_ratio = row[ratio_idx] if ratio_idx is not None else None
+        raw_ratio = row[ratio_idx]
         # A blank / NaN ratio cell (e.g. a part-header or continuation row that
         # repeats the RefDes with no ratio) is SKIPPED — not summed and not
         # flagged. float(NaN) would poison the sum so abs(total-1.0)>tol always
@@ -531,17 +519,65 @@ def _check_fmr(
             continue
         ref_sums[ref_raw] = ref_sums.get(ref_raw, 0.0) + parsed
 
+    fmr_rows: List[Dict[str, Any]] = []
     for ref, total in ref_sums.items():
         check_cancelled(stop_event, "Analysis cancelled by user.")
         if ref in ref_invalid:
-            fmr_rows.append({"RefDes": ref, "Sum": total, "Status": "Non-numeric ratio cell (sum incomplete)"})
+            fmr_rows.append({"Source": source, "RefDes": ref, "Sum": total,
+                             "Status": "Non-numeric ratio cell (sum incomplete)"})
         elif abs(total - 1.0) > FMR_TOLERANCE:
-            fmr_rows.append({"RefDes": ref, "Sum": total, "Status": "FMR != 1.0"})
+            fmr_rows.append({"Source": source, "RefDes": ref, "Sum": total,
+                             "Status": "FMR != 1.0"})
     # RefDes whose ratio cells were ALL non-numeric never reached ref_sums.
     for ref in sorted(ref_invalid - set(ref_sums)):
-        fmr_rows.append({"RefDes": ref, "Sum": float("nan"), "Status": "Non-numeric ratio cell"})
+        fmr_rows.append({"Source": source, "RefDes": ref, "Sum": float("nan"),
+                         "Status": "Non-numeric ratio cell"})
+    return fmr_rows
 
-    return pd.DataFrame(fmr_rows, columns=["RefDes", "Sum", "Status"])
+
+def _check_fmr(
+    group_df: pd.DataFrame, bom_df: pd.DataFrame, mapping: ColumnMapping,
+    options: AnalyzeOptions, log_func, stop_event: Optional['threading.Event']
+) -> pd.DataFrame:
+    """Validate Failure Mode Ratios sum to 1.0 in whichever file carries them.
+
+    FMR columns only exist in FMEA-generated files (2026-07-20 domain
+    decision), and an FMEA can be loaded in EITHER slot — so the check
+    follows the column: both inputs are scanned with the strict FMR
+    synonym list (broad synonyms like "Percentage" false-match on plain
+    BOM data), and every file that has the column is summed.
+    """
+    columns = ["Source", "RefDes", "Sum", "Status"]
+    fmr_rows: List[Dict[str, Any]] = []
+    if not options.check_fmr:
+        return pd.DataFrame(fmr_rows, columns=columns)
+
+    log_func("Checking FMR Summing...")
+    targets = (
+        ("Grouping", group_df, mapping.grouping_refdes_col),
+        ("BOM", bom_df, mapping.bom_refdes_col),
+    )
+    checked_any = False
+    for source, df, ref_col in targets:
+        ratio_col = detect_column(df.columns, get_synonyms('fmr_strict'))
+        if not ratio_col:
+            continue
+        checked_any = True
+        log_func(f"  {source}: detected FMR column: {ratio_col}")
+        fmr_rows.extend(_fmr_sum_rows(df, ref_col, ratio_col, source, stop_event))
+
+    if not checked_any:
+        log_func(
+            "  [WARNING] No Failure Mode Ratio column found in either file — "
+            "FMR summing applies to FMEA-generated files."
+        )
+        fmr_rows.append({
+            "Source": "", "RefDes": "GLOBAL", "Sum": 0,
+            "Status": ("No Failure Mode Ratio column found in either file "
+                       "(FMR columns come from FMEA-generated files)"),
+        })
+
+    return pd.DataFrame(fmr_rows, columns=columns)
 
 
 def _check_part_usage(
@@ -553,6 +589,8 @@ def _check_part_usage(
     dnp_re: Optional[re.Pattern] = None,
     bom_desc_col: Optional[str] = None,
     source_name: Optional[str] = None,
+    grouping_base_counts: Optional[Dict[str, int]] = None,
+    grouping_label: str = "the Grouping file",
 ) -> pd.DataFrame:
     """
     Validate part usage values in BOM file.
@@ -569,6 +607,9 @@ def _check_part_usage(
         dnp_re: Optional DNP regex pattern to filter out DNP rows
         bom_desc_col: Optional description column name for DNP filtering
         source_name: Optional source filename/path used for FMEA gating
+        grouping_base_counts: Optional base -> unique-instance count from the
+            grouping file; when given, usage is also cross-checked against it
+        grouping_label: Human name for the grouping file in cross-check text
 
     Returns:
         DataFrame with columns:
@@ -712,6 +753,16 @@ def _check_part_usage(
 
     raw_warnings = raw_warnings + format_warnings
 
+    # Cross-file check: usage 1/N must also agree with the grouping file's
+    # instance count (dash suffixes are pins of one base component — usage
+    # 1/4 means four tokens in BOTH files). Counts come from the same
+    # filtered token set the membership checks use.
+    if grouping_base_counts:
+        raw_warnings = raw_warnings + validate_cross_file_usage_counts(
+            refdes_list, usage_list, get_usage_base_refdes,
+            grouping_base_counts, other_label=grouping_label,
+        )
+
     # Add Source column for consistency with other validation tables
     warnings = []
     for w in raw_warnings:
@@ -817,14 +868,42 @@ def analyze(
     )
 
     df_fmr = _check_fmr(
-        group_df, mapping, options, log, stop_event
+        group_df, bom_df, mapping, options, log, stop_event
     )
+    # Per-file display names: swap the kind labels ("Grouping"/"BOM") for the
+    # user's names, per row — the FMR sheet can now carry rows from both files.
+    if not df_fmr.empty and (grouping_label or bom_label):
+        fmr_src_map = {
+            "Grouping": grouping_label or "Grouping",
+            "BOM": bom_label or "BOM",
+        }
+        df_fmr = df_fmr.assign(
+            Source=df_fmr["Source"].map(lambda s: fmr_src_map.get(s, s))
+        )
+
+    # Grouping-side unique-instance counts per usage base, from the SAME
+    # filtered token set the membership checks use (ignore-regex applied,
+    # PROV tokens already removed when not treat_prov_as_covered). Tokens
+    # are canonicalized to match the BOM-side usage tokens.
+    grouping_usage_tokens: Dict[str, Set[str]] = {}
+    for tok in g_full:
+        canon = canonicalize_refdes(tok)
+        if not canon:
+            continue
+        grouping_usage_tokens.setdefault(
+            get_usage_base_refdes(canon), set()
+        ).add(canon)
+    grouping_base_counts = {
+        base: len(tokens) for base, tokens in grouping_usage_tokens.items()
+    }
 
     df_usage = _check_part_usage(
         bom_df, mapping.bom_refdes_col, log, options, stop_event,
         dnp_re=dnp_re,
         bom_desc_col=mapping.bom_desc_col,
         source_name=file_paths[1] if file_paths and len(file_paths) > 1 else None,
+        grouping_base_counts=grouping_base_counts,
+        grouping_label="the Grouping file",
     )
     # Per-file display names: the Part Usage table's Source column is a
     # constant "BOM" — swap in the user's name for that file when given.
