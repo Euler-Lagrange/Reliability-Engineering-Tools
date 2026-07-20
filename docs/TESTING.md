@@ -4,7 +4,7 @@
 
 | Suite | Path | Count | Framework |
 |-------|------|-------|-----------|
-| Backend integration | `backend/tests/test_sidecar_main.py` | 52 | pytest |
+| Backend integration | `backend/tests/test_sidecar_main.py` | 55 | pytest |
 | Backend security audit | `backend/tests/test_security_audit.py` | 27 | pytest |
 | Backend cancel bridge | `backend/tests/test_cancel_bridge.py` | 12 | pytest |
 | Backend output-directory helpers | `backend/tests/test_output_directory_helpers.py` | 19 | pytest |
@@ -29,7 +29,7 @@
 | Backend RefDes runtime | `backend/tests/test_refdes_runtime.py` | 43 | pytest |
 | Backend RefDes validation notes | `backend/tests/test_validation_notes.py` | 12 | pytest |
 | Backend RefDes prefix config | `backend/tests/test_refdes_prefix_config.py` | 7 | pytest |
-| **Backend subtotal** | | **525** | |
+| **Backend subtotal** | | **528** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 5 | Vitest + RTL |
 | Frontend escape layers | `frontend/src/shared/hooks/useEscapeLayer.test.ts` | 4 | Vitest |
@@ -80,7 +80,7 @@
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
 | **Frontend subtotal** | | **357** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 19 | cargo test |
-| **Total** | | **901** | |
+| **Total** | | **904** | |
 
 ## Backend Tests
 
@@ -210,11 +210,11 @@ new FMEA tests must do the same or validation will reject the request.
 | Category | Representative tests |
 |----------|----------------------|
 | Health and heartbeat | `test_sidecar_health_check_round_trip`, `test_sidecar_emits_heartbeat_within_interval` |
-| Inspect, list_sheets, analyze_template | `test_sidecar_lists_excel_sheets`, `test_sidecar_inspects_input_headers_and_preview`, `test_sidecar_analyzes_template_metadata` |
+| Inspect, list_sheets, analyze_template | `test_sidecar_lists_excel_sheets`, `test_sidecar_inspects_input_headers_and_preview`, `test_sidecar_analyzes_template_metadata`, explicit missing-sheet rejection, and legacy BIFF `.xls` list/inspect coverage |
 | FMEA validate | `test_sidecar_validates_phase4_standard_run`, `test_sidecar_validates_fill_gaps_run`, `test_sidecar_validates_template_preserve_run`, `test_sidecar_rejects_unmigrated_output_strategy` |
 | FMEA execute | `test_sidecar_executes_phase4_standard_run`, `test_sidecar_executes_fill_gaps_run`, `test_sidecar_executes_template_preserve_run` |
 | BOM Compare | `test_sidecar_validates_bom_compare_group`, `test_sidecar_executes_bom_compare_group`, `test_sidecar_validates_bom_compare_custom`, `test_sidecar_executes_bom_compare_custom` |
-| Failure Rate | `test_sidecar_validates_failure_rate_link`, `test_sidecar_executes_failure_rate_link` |
+| Failure Rate | `test_sidecar_validates_failure_rate_link`, `test_sidecar_executes_failure_rate_link`, and legacy BIFF `.xls` execution |
 | RefDes Extractor | `test_sidecar_validates_refdes_extract`, `test_sidecar_executes_refdes_extract`, `test_sidecar_rejects_refdes_missing_pdf` |
 | Cancel flow | `test_sidecar_cancels_active_run`, `test_sidecar_cancel_of_nonexistent_run_returns_error`, `test_sidecar_latched_cancel_supersedes_background_error`, `test_sidecar_late_cancel_after_finalize_keeps_success_and_logs_explanation` |
 | Single-active-run guard | `test_sidecar_rejects_second_execute_while_run_is_active` |

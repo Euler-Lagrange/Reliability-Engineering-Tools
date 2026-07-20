@@ -12,6 +12,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pandas as pd
+import pytest
+import xlwt
 from openpyxl import Workbook
 from openpyxl import load_workbook
 
@@ -573,6 +575,41 @@ def test_sidecar_analyzes_template_metadata(tmp_path: Path) -> None:
         assert result["payload"]["protected_sheet"] is True
         assert result["payload"]["merged_range_count"] == 1
         assert "FMEA ID" in result["payload"]["columns"][0]
+    finally:
+        process.kill()
+
+
+@pytest.mark.parametrize("command", ["inspect_input", "analyze_template"])
+def test_sidecar_rejects_missing_requested_sheet_and_lists_available_sheets(
+    tmp_path: Path,
+    command: str,
+) -> None:
+    """A stale explicit sheet selection must never inspect the first sheet."""
+    workbook_path = tmp_path / "missing_requested_sheet.xlsx"
+    workbook = Workbook()
+    primary = workbook.active
+    primary.title = "Primary"
+    primary.append(["Primary Header"])
+    secondary = workbook.create_sheet("Secondary")
+    secondary.append(["Secondary Header"])
+    workbook.save(workbook_path)
+
+    process, reader = _start_sidecar()
+    try:
+        request_id = f"req_missing_sheet_{command}"
+        _write_command(
+            process,
+            request_id,
+            command,
+            {"path": str(workbook_path), "sheet": "Deleted"},
+        )
+        result = reader.read_until(request_id=request_id)
+
+        assert result["kind"] == "error"
+        message = result["payload"]["message"]
+        assert "Deleted" in message
+        assert "Primary" in message
+        assert "Secondary" in message
     finally:
         process.kill()
 
@@ -1663,15 +1700,32 @@ def test_sidecar_write_refdes_prefixes_grandfathers_legacy_tokens(tmp_path: Path
 # =========================================================================
 
 
-def _build_failure_rate_run_body(tmp_path: Path) -> dict:
+def _write_legacy_xls(path: Path, rows: list[list[object]]) -> None:
+    workbook = xlwt.Workbook()
+    sheet = workbook.add_sheet("Sheet1")
+    for row_index, row in enumerate(rows):
+        for column_index, value in enumerate(row):
+            sheet.write(row_index, column_index, value)
+    workbook.save(str(path))
+
+
+def _build_failure_rate_run_body(tmp_path: Path, *, legacy_prediction: bool = False) -> dict:
     tmp_path.mkdir(parents=True, exist_ok=True)
-    pred_path = tmp_path / "prediction.xlsx"
+    pred_path = tmp_path / ("prediction.xls" if legacy_prediction else "prediction.xlsx")
     fmea_path = tmp_path / "fmea.xlsx"
 
-    pd.DataFrame([
-        {"Reference Designator": "R1", "Failure Rate": 0.00001},
-        {"Reference Designator": "C2", "Failure Rate": 0.000005},
-    ]).to_excel(pred_path, index=False)
+    prediction_rows = [
+        ["Reference Designator", "Failure Rate"],
+        ["R1", 0.00001],
+        ["C2", 0.000005],
+    ]
+    if legacy_prediction:
+        _write_legacy_xls(pred_path, prediction_rows)
+    else:
+        pd.DataFrame(prediction_rows[1:], columns=prediction_rows[0]).to_excel(
+            pred_path,
+            index=False,
+        )
 
     pd.DataFrame([
         {"Failure Mode Causes": "R1", "Failure Mode Ratio": 0.6, "Part Usage": 1.0},
@@ -1738,6 +1792,59 @@ def test_sidecar_executes_failure_rate_link(tmp_path: Path) -> None:
 
         output_path = Path(result["payload"]["output_file"])
         assert output_path.exists()
+    finally:
+        process.kill()
+
+
+def test_sidecar_legacy_xls_lists_inspects_and_executes(tmp_path: Path) -> None:
+    """A BIFF workbook must survive the complete preflight-to-execute path."""
+    body = _build_failure_rate_run_body(tmp_path, legacy_prediction=True)
+    prediction_path = next(
+        Path(item["path"]) for item in body["inputs"] if item["role"] == "prediction"
+    )
+    process = subprocess.Popen(
+        [sys.executable, str(SIDECAR)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        env=SIDECAR_ENV,
+    )
+    try:
+        _read_ready_line(process)
+        sheets = _send_command(
+            process,
+            "req_xls_sheets",
+            "list_sheets",
+            {"path": str(prediction_path)},
+        )
+        assert sheets["kind"] == "result"
+        assert sheets["payload"]["sheets"] == ["Sheet1"]
+
+        inspection = _send_command(
+            process,
+            "req_xls_inspect",
+            "inspect_input",
+            {"path": str(prediction_path), "sheet": "Sheet1"},
+        )
+        assert inspection["kind"] == "result"
+        assert inspection["payload"]["columns"] == [
+            "Reference Designator",
+            "Failure Rate",
+        ]
+        assert inspection["payload"]["preview_rows"][0]["Reference Designator"] == "R1"
+
+        ack = _send_command(process, "req_xls_execute", "execute_run", body)
+        assert ack["kind"] == "ack"
+        result = _read_until(
+            process,
+            run_id=ack["payload"]["run_id"],
+            kind="result",
+            timeout=30.0,
+        )
+        assert result["payload"]["status"] == "success"
+        assert result["payload"]["row_count"] == 3
+        assert Path(result["payload"]["output_file"]).exists()
     finally:
         process.kill()
 

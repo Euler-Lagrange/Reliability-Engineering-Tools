@@ -5,8 +5,10 @@
 #
 # pytest      — backend test suite (backend/tests)
 # pyinstaller — packages the sidecar for the portable release build
+# xlwt        — creates legacy BIFF .xls fixtures for compatibility tests
 
 -r requirements.txt
 
 pytest==9.0.2
 pyinstaller==6.19.0
+xlwt==1.3.0

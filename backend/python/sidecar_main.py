@@ -18,6 +18,11 @@ try:
 except ImportError:  # pragma: no cover - covered in runtime environments with deps
     load_workbook = None
 
+try:
+    import xlrd
+except ImportError:  # pragma: no cover - covered in runtime environments with deps
+    xlrd = None
+
 from common.cancellation import CancellationError
 from common.exceptions import ValidationError
 from common.utils import ensure_file_available, ensure_file_size_within
@@ -122,10 +127,66 @@ def _normalize_cell(value: Any) -> str:
     return str(value).strip()
 
 
+class _XlrdWorksheetAdapter:
+    """Expose the small openpyxl worksheet surface used by inspection."""
+
+    def __init__(self, worksheet: Any) -> None:
+        self._worksheet = worksheet
+        self.title = worksheet.name
+        self.max_column = worksheet.ncols
+
+    def iter_rows(
+        self,
+        *,
+        values_only: bool = True,
+        min_row: int = 1,
+        max_col: int | None = None,
+    ) -> Any:
+        del values_only
+        column_count = self._worksheet.ncols
+        if max_col is not None:
+            column_count = min(column_count, max_col)
+        for row_index in range(max(0, min_row - 1), self._worksheet.nrows):
+            yield tuple(
+                self._worksheet.cell_value(row_index, column_index)
+                for column_index in range(column_count)
+            )
+
+
+class _XlrdWorkbookAdapter:
+    """Normalize legacy BIFF workbooks to the inspection workbook contract."""
+
+    def __init__(self, workbook: Any) -> None:
+        self._workbook = workbook
+        self.sheetnames = list(workbook.sheet_names())
+
+    def __getitem__(self, sheet_name: str) -> _XlrdWorksheetAdapter:
+        return _XlrdWorksheetAdapter(self._workbook.sheet_by_name(sheet_name))
+
+    def close(self) -> None:
+        self._workbook.release_resources()
+
+
+def _open_inspection_workbook(path: Path) -> Any:
+    if path.suffix.lower() == ".xls":
+        if xlrd is None:
+            raise RuntimeError("xlrd is not available for legacy .xls workbooks")
+        return _XlrdWorkbookAdapter(xlrd.open_workbook(str(path), on_demand=True))
+    if load_workbook is None:
+        raise RuntimeError("openpyxl is not available")
+    return load_workbook(path, read_only=True, data_only=True)
+
+
 def _select_sheet(workbook: Any, requested_sheet: str | None) -> Any:
-    if requested_sheet and requested_sheet in workbook.sheetnames:
+    if requested_sheet is None or str(requested_sheet).strip() == "":
+        return workbook[workbook.sheetnames[0]]
+    if requested_sheet in workbook.sheetnames:
         return workbook[requested_sheet]
-    return workbook[workbook.sheetnames[0]]
+
+    available = ", ".join(f"'{name}'" for name in workbook.sheetnames)
+    raise ValidationError(
+        f"Worksheet '{requested_sheet}' was not found. Available worksheets: {available}."
+    )
 
 
 def _worksheet_column_bound(worksheet: Any) -> tuple[int, bool]:
@@ -268,13 +329,10 @@ def _extract_header_and_rows(
 
 
 def inspect_input(path: Path, requested_sheet: str | None) -> dict[str, Any]:
-    if load_workbook is None:
-        raise RuntimeError("openpyxl is not available")
-
     # Parity with list_sheets: hydrate OneDrive "cloud-only" placeholders before
     # opening, so inspection doesn't fail where the real run would hydrate-and-read.
     path = ensure_file_available(path)
-    workbook = load_workbook(path, read_only=True, data_only=True)
+    workbook = _open_inspection_workbook(path)
     try:
         worksheet = _select_sheet(workbook, requested_sheet)
         header_row_index, headers, preview_rows, data_row_count, scan_meta = _extract_header_and_rows(
@@ -703,17 +761,13 @@ def handle_command(message: dict[str, Any]) -> None:
         return
 
     if command == "list_sheets":
-        if load_workbook is None:
-            emit("error", {"message": "openpyxl is not available"}, request_id=request_id)
-            return
-
         try:
             path = Path(body["path"])
             # Parity with inspect_input / analyze_template: hydrate
             # OneDrive "cloud-only" placeholders before opening so list_sheets
             # doesn't fail where the real runtime would succeed.
             resolved = ensure_file_available(path)
-            workbook = load_workbook(resolved, read_only=True, data_only=True)
+            workbook = _open_inspection_workbook(resolved)
             try:
                 emit(
                     "result",

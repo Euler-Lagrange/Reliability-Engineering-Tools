@@ -1,6 +1,6 @@
 # Runtime dependencies for the Python sidecar.
 #
-# These three packages are bundled into the release executable by PyInstaller
+# These four packages are bundled into the release executable by PyInstaller
 # (see scripts/release.bat). Pinned to the tested-green set so both dev machines
 # and the build host resolve to identical versions — the sidecar is offline, so
 # reproducibility matters more than tracking the newest release.
@@ -8,8 +8,9 @@
 # Install (runtime only):  .venv\Scripts\pip install -r requirements.txt
 # For tests + build tooling, use requirements-dev.txt instead.
 #
-# Requires Python 3.10+ (tested on 3.12-3.14).
+# Requires Python 3.11+ (tested on 3.12-3.14).
 
 pandas==3.0.2
 openpyxl==3.1.5
+xlrd==2.0.2
 PyMuPDF==1.27.2.2
