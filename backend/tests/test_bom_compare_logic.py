@@ -1254,6 +1254,22 @@ def test_compare_two_boms_cross_usage_between_files() -> None:
     assert {w["Source"] for w in cross} == {"File 1", "File 2"}, result.part_usage_warnings
 
 
+def test_cross_usage_validator_ignores_nan_usage() -> None:
+    """Defense-in-depth: NaN usage fed directly to the shared validator must
+    not produce a garbage 'Part Usage nan matches neither...' warning. The
+    real pipelines default blank cells to 1.0 via parse_usage before this
+    runs, but the validator is a common/ helper any future caller may reach
+    with raw floats — NaN slips past a plain `usage <= 0` guard."""
+    from common.refdes_utils import get_usage_base_refdes
+    from common.validation_utils import validate_cross_file_usage_counts
+
+    rows = validate_cross_file_usage_counts(
+        ["U60-1", "U60-2"], [float("nan"), float("nan")],
+        get_usage_base_refdes, {"U60": 3},
+    )
+    assert rows == [], rows
+
+
 def test_cross_usage_reason_codes_have_user_facing_labels() -> None:
     """Lockstep: every emitted cross-file ReasonCode has a plain-language
     label so the report never ships a raw underscore code."""

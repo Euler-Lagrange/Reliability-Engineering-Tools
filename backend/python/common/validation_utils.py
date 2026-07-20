@@ -16,6 +16,7 @@ Usage:
     # Find duplicates in a list
     dupes = find_duplicates(['R1', 'R2', 'R1', 'R3'])
 """
+import math
 import re
 from collections import Counter, defaultdict
 from typing import Dict, List, Optional, Tuple, Any
@@ -437,8 +438,11 @@ def validate_cross_file_usage_counts(
         if local_count == other_count:
             continue  # within-file checks fully cover the agreeing case
         usage = first_usage[base]
-        if usage is None or usage <= 0:
-            continue  # non-positive usage is flagged by the format check
+        # NaN slips past `<= 0` (all NaN comparisons are False) and would
+        # produce a garbage "Part Usage nan matches neither..." row —
+        # isfinite rejects NaN/inf before the tolerance math runs.
+        if usage is None or not math.isfinite(usage) or usage <= 0:
+            continue  # non-positive/non-finite usage: format check territory
         matches_local = abs(usage - 1.0 / local_count) <= tolerance
         matches_other = abs(usage - 1.0 / other_count) <= tolerance
         if matches_local and matches_other:
