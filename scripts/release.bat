@@ -1,8 +1,13 @@
 @echo off
 if "%~1"=="__INNER__" goto :main
+if /I "%~1"=="--no-pause" goto :outer_no_pause
 
-cmd /k "%~f0" __INNER__ %*
-exit /b
+cmd /k ""%~f0" __INNER__ %*"
+exit /b %ERRORLEVEL%
+
+:outer_no_pause
+cmd /c ""%~f0" __INNER__ %*"
+exit /b %ERRORLEVEL%
 
 :main
 setlocal EnableExtensions EnableDelayedExpansion
@@ -19,15 +24,18 @@ set "OUTPUT_EXE=%OUTPUT_DIR%\ReliabilityToolsDesktop.exe"
 set "PACKAGED_EXE_NAME=reliability-tools-desktop.exe"
 set "PACKAGED_EXE="
 set "SIDECAR_EXE_NAME=reliability-tools-sidecar.exe"
-set "SIDECAR_SRC=%OUTPUT_DIR%\reliability-tools-sidecar.exe"
 set "BACKEND_PYTHON=%REPO_ROOT%\.venv\Scripts\python.exe"
 
-if not exist "%OUTPUT_DIR%" mkdir "%OUTPUT_DIR%"
 if not exist "%LOGS_DIR%" mkdir "%LOGS_DIR%"
 
 for /f "delims=" %%i in ('powershell -NoProfile -Command "Get-Date -Format \"yyyyMMdd_HHmmss\""') do set "TIMESTAMP=%%i"
 if not defined TIMESTAMP set "TIMESTAMP=unknown_%RANDOM%"
 set "LOGFILE=%LOGS_DIR%\release_%TIMESTAMP%.log"
+set "RELEASE_STAGE_ROOT=%ROOT_DIR%\build\release_staging"
+set "PAIR_STAGE=%RELEASE_STAGE_ROOT%\pair_%TIMESTAMP%_%RANDOM%"
+set "STAGED_DESKTOP=%PAIR_STAGE%\ReliabilityToolsDesktop.exe"
+set "STAGED_SIDECAR=%PAIR_STAGE%\%SIDECAR_EXE_NAME%"
+set "OUTPUT_BACKUP=%RELEASE_STAGE_ROOT%\last_good_%TIMESTAMP%_%RANDOM%"
 
 echo ============================================================ > "%LOGFILE%"
 echo  RELIABILITY TOOLS DESKTOP - RELEASE BUILD >> "%LOGFILE%"
@@ -48,9 +56,18 @@ if errorlevel 1 goto :fail
 echo [1/16] Checking toolchain...
 where node >nul 2>&1 || goto :missing_node
 where npm >nul 2>&1 || goto :missing_npm
-echo [INFO] node and npm detected >> "%LOGFILE%"
+
+for /f "delims=" %%i in ('node --version 2^>nul') do set "NODE_VERSION=%%i"
+echo [INFO] Detected Node !NODE_VERSION! >> "%LOGFILE%"
+node -e "const [major, minor] = process.versions.node.split('.').map(Number); process.exit((major === 20 && minor >= 19) || (major === 22 && minor >= 12) || major >= 23 ? 0 : 1)" >> "%LOGFILE%" 2>&1
+if errorlevel 1 goto :unsupported_node_version
 
 if not exist "%BACKEND_PYTHON%" goto :missing_backend_python
+for /f "tokens=2" %%i in ('"%BACKEND_PYTHON%" --version 2^>^&1') do set "PYTHON_VERSION=%%i"
+echo [INFO] Detected Python !PYTHON_VERSION! >> "%LOGFILE%"
+"%BACKEND_PYTHON%" -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)" >> "%LOGFILE%" 2>&1
+if errorlevel 1 goto :unsupported_python_version
+echo [INFO] Toolchain versions satisfy Node 20.19+ within major 20, or Node 22.12+; Python 3.11+. >> "%LOGFILE%"
 
 echo [2/16] Checking version consistency...
 call npm run version:check >> "%LOGFILE%" 2>&1
@@ -88,7 +105,7 @@ call npm test >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :tests_failed
 
 echo [10/16] Building Python sidecar exe...
-"%BACKEND_PYTHON%" scripts\build_sidecar.py >> "%LOGFILE%" 2>&1
+"%BACKEND_PYTHON%" scripts\build_sidecar.py --output-dir "%PAIR_STAGE%" >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :sidecar_build_failed
 
 echo [11/16] Building portable desktop exe...
@@ -109,32 +126,54 @@ if not defined PACKAGED_EXE (
 )
 if not defined PACKAGED_EXE goto :missing_packaged_exe
 
-REM Stage the freshly built sidecar beside the packaged exe. Release builds
-REM resolve the sidecar exe-adjacent ONLY (never the dev tree), but the sidecar
-REM is built into local_build — so without this copy the backend self-test
-REM below cannot find it and fails "Could not locate ... sidecar_main.py".
-echo [13/16] Staging bundled sidecar beside packaged exe...
-if not exist "%SIDECAR_SRC%" goto :missing_sidecar_exe
-for %%I in ("%PACKAGED_EXE%") do set "PACKAGED_DIR=%%~dpI"
-copy /y "%SIDECAR_SRC%" "%PACKAGED_DIR%%SIDECAR_EXE_NAME%" >nul
-if errorlevel 1 goto :stage_sidecar_failed
-echo [INFO] Staged sidecar beside packaged exe in %PACKAGED_DIR% >> "%LOGFILE%"
+REM Assemble the exact two-file release pair in run-specific staging. Release
+REM builds resolve the sidecar exe-adjacent ONLY (never the dev tree), so both
+REM packaged self-tests below exercise the files that will be promoted.
+echo [13/16] Assembling staged desktop/sidecar pair...
+if not exist "%STAGED_SIDECAR%" goto :missing_sidecar_exe
+copy /y "%PACKAGED_EXE%" "%STAGED_DESKTOP%" >nul
+if errorlevel 1 goto :stage_desktop_failed
+echo [INFO] Staged release pair in %PAIR_STAGE% >> "%LOGFILE%"
 
-REM Self-test the BUILD OUTPUT before promoting it. The last-good exe in
-REM local_build must never be overwritten by an exe that hasn't passed its
-REM self-tests (Tier-3 #24) — so the copy is the final step, not step 10.
+REM Self-test the exact staged pair before promotion. local_build remains
+REM untouched until both executables have passed every gate.
 echo [14/16] Running packaged self-test...
-"%PACKAGED_EXE%" --self-test >> "%LOGFILE%" 2>&1
+"%STAGED_DESKTOP%" --self-test >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :selftest_failed
 
 echo [15/16] Running packaged backend self-test...
-"%PACKAGED_EXE%" --self-test-backend >> "%LOGFILE%" 2>&1
+"%STAGED_DESKTOP%" --self-test-backend >> "%LOGFILE%" 2>&1
 if errorlevel 1 goto :backend_selftest_failed
 
-echo [16/16] Promoting verified exe to local_build...
-copy /y "%PACKAGED_EXE%" "%OUTPUT_EXE%" >nul
-if errorlevel 1 goto :copy_failed
-echo [INFO] Promoted verified exe to %OUTPUT_EXE% >> "%LOGFILE%"
+REM The pair is the release unit. Rename the old directory to a run-specific
+REM backup, move the verified staging directory into place, and roll the old
+REM directory back if the second rename fails. Because all paths share the
+REM repository volume, each directory move is a filesystem rename.
+echo [16/16] Promoting verified pair to local_build...
+set "PAIR_ENTRY_COUNT="
+for /f %%i in ('dir /b /a "%PAIR_STAGE%" 2^>nul ^| find /c /v ""') do set "PAIR_ENTRY_COUNT=%%i"
+if not "!PAIR_ENTRY_COUNT!"=="2" goto :invalid_pair_stage
+
+set "HAD_LAST_GOOD=0"
+if exist "%OUTPUT_BACKUP%" goto :backup_path_collision
+if exist "%OUTPUT_DIR%" (
+    move /y "%OUTPUT_DIR%" "%OUTPUT_BACKUP%" >nul
+    if errorlevel 1 goto :backup_last_good_failed
+    if exist "%OUTPUT_DIR%" goto :backup_last_good_failed
+    if not exist "%OUTPUT_BACKUP%" goto :backup_last_good_failed
+    set "HAD_LAST_GOOD=1"
+)
+
+move /y "%PAIR_STAGE%" "%OUTPUT_DIR%" >nul
+if errorlevel 1 goto :promote_pair_failed
+if not exist "%OUTPUT_EXE%" goto :promote_pair_failed
+if not exist "%OUTPUT_DIR%\%SIDECAR_EXE_NAME%" goto :promote_pair_failed
+
+if "!HAD_LAST_GOOD!"=="1" (
+    rmdir /s /q "%OUTPUT_BACKUP%" >nul 2>&1
+    if exist "%OUTPUT_BACKUP%" echo [WARN] Verified pair promoted, but old backup remains at %OUTPUT_BACKUP% >> "%LOGFILE%"
+)
+echo [INFO] Promoted verified desktop/sidecar pair to %OUTPUT_DIR% >> "%LOGFILE%"
 
 echo.
 echo ============================================================
@@ -143,6 +182,9 @@ echo ============================================================
 echo.
 echo   Portable EXE:
 echo   %OUTPUT_EXE%
+echo.
+echo   Python sidecar:
+echo   %OUTPUT_DIR%\%SIDECAR_EXE_NAME%
 echo.
 echo   Log:
 echo   %LOGFILE%
@@ -163,10 +205,24 @@ echo.
 echo [FAILED] npm is not available on PATH.
 goto :fail
 
+:unsupported_node_version
+echo [ERROR] Unsupported Node version !NODE_VERSION!. Required: Node 20.19+ within major 20, or Node 22.12+. >> "%LOGFILE%"
+echo.
+echo [FAILED] Node !NODE_VERSION! is unsupported.
+echo          Install Node 20.19+ within major 20, or Node 22.12+.
+goto :fail
+
 :missing_backend_python
 echo [ERROR] Could not find backend Python at %BACKEND_PYTHON%. >> "%LOGFILE%"
 echo.
 echo [FAILED] Backend Python interpreter was not found.
+goto :fail
+
+:unsupported_python_version
+echo [ERROR] Unsupported Python version !PYTHON_VERSION!. Required: Python 3.11 or newer. >> "%LOGFILE%"
+echo.
+echo [FAILED] Python !PYTHON_VERSION! is unsupported.
+echo          Recreate .venv with Python 3.11 or newer.
 goto :fail
 
 :version_check_failed
@@ -236,21 +292,59 @@ echo [FAILED] Build finished but the packaged exe was not found.
 goto :fail
 
 :missing_sidecar_exe
-echo [ERROR] Could not find the built sidecar at %SIDECAR_SRC%. >> "%LOGFILE%"
+echo [ERROR] Could not find the staged sidecar at %STAGED_SIDECAR%. >> "%LOGFILE%"
 echo.
 echo [FAILED] Bundled sidecar exe was not found for staging.
 goto :fail
 
-:stage_sidecar_failed
-echo [ERROR] Could not stage the sidecar beside the packaged exe. >> "%LOGFILE%"
+:stage_desktop_failed
+echo [ERROR] Could not copy the packaged desktop to %STAGED_DESKTOP%. >> "%LOGFILE%"
 echo.
-echo [FAILED] Staging the bundled sidecar next to the packaged exe failed.
+echo [FAILED] Assembling the staged desktop/sidecar pair failed.
 goto :fail
 
-:copy_failed
-echo [ERROR] Could not copy packaged exe to local_build. >> "%LOGFILE%"
+:invalid_pair_stage
+echo [ERROR] Staged release directory must contain exactly the two expected executables. >> "%LOGFILE%"
+echo [ERROR] Found !PAIR_ENTRY_COUNT! entries under %PAIR_STAGE%. >> "%LOGFILE%"
 echo.
-echo [FAILED] Copy to local_build failed.
+echo [FAILED] Staged release pair validation failed. See log for details.
+goto :fail
+
+:backup_path_collision
+echo [ERROR] Refusing to overwrite unexpected backup path %OUTPUT_BACKUP%. >> "%LOGFILE%"
+echo.
+echo [FAILED] Release backup path already exists. Re-run the release.
+goto :fail
+
+:backup_last_good_failed
+echo [ERROR] Could not move the current local_build directory to %OUTPUT_BACKUP%. >> "%LOGFILE%"
+if not exist "%OUTPUT_DIR%" if exist "%OUTPUT_BACKUP%" move /y "%OUTPUT_BACKUP%" "%OUTPUT_DIR%" >nul
+echo.
+echo [FAILED] Could not secure the last-good pair before promotion.
+goto :fail
+
+:promote_pair_failed
+echo [ERROR] Could not move the verified staged pair into %OUTPUT_DIR%. >> "%LOGFILE%"
+if exist "%OUTPUT_DIR%" (
+    if exist "%PAIR_STAGE%" goto :pair_rollback_failed
+    move /y "%OUTPUT_DIR%" "%PAIR_STAGE%" >nul
+    if errorlevel 1 goto :pair_rollback_failed
+)
+if "!HAD_LAST_GOOD!"=="1" (
+    move /y "%OUTPUT_BACKUP%" "%OUTPUT_DIR%" >nul
+    if errorlevel 1 goto :pair_rollback_failed
+)
+echo [INFO] Restored the previous last-good pair after promotion failure. >> "%LOGFILE%"
+echo.
+echo [FAILED] Pair promotion failed; the previous local_build was restored.
+goto :fail
+
+:pair_rollback_failed
+echo [ERROR] Automatic rollback failed. The intact last-good pair remains at %OUTPUT_BACKUP%. >> "%LOGFILE%"
+echo.
+echo [FAILED] Pair promotion and automatic rollback failed.
+echo          The prior pair remains intact at:
+echo          %OUTPUT_BACKUP%
 goto :fail
 
 :selftest_failed
@@ -266,6 +360,7 @@ echo [FAILED] Packaged backend self-test failed. See log for details.
 goto :fail
 
 :fail
+call :cleanup_staging
 echo.
 echo ============================================================
 echo   STATUS: FAILED
@@ -281,4 +376,10 @@ exit /b 1
 :pause_if_needed
 if "%NO_PAUSE%"=="1" exit /b 0
 pause
+exit /b 0
+
+:cleanup_staging
+if not defined PAIR_STAGE exit /b 0
+if /I "%PAIR_STAGE%"=="%RELEASE_STAGE_ROOT%" exit /b 1
+if exist "%PAIR_STAGE%" rmdir /s /q "%PAIR_STAGE%" >nul 2>&1
 exit /b 0
