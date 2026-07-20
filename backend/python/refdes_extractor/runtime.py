@@ -136,6 +136,32 @@ def _summarize_group_verification(results: list) -> tuple:
     return total, verified, total - verified
 
 
+def _count_refdes_warnings(
+    results: list,
+    *,
+    bom_load_error: str | None,
+    annotation_timeout_pages: list,
+    ambiguous_count: int,
+    orphan_count: int,
+    collision_count: int,
+) -> int:
+    """Count review conditions surfaced by the runtime and its diagnostics.
+
+    Gap placeholders, coverage inventory, and ordinary informational notes are
+    intentionally not inputs. ``orphan_count`` covers pins dropped from output;
+    ``collision_count`` covers pins retained but flagged for a BOM-label clash.
+    """
+    _, _, unverified = _summarize_group_verification(results)
+    return (
+        unverified
+        + (1 if bom_load_error else 0)
+        + len(annotation_timeout_pages)
+        + ambiguous_count
+        + orphan_count
+        + collision_count
+    )
+
+
 def _role_label(role: str) -> str:
     return ROLE_LABELS.get(role, role)
 
@@ -1066,6 +1092,15 @@ def execute_run_request(
             f"assigned ambiguously — see the 'Component Detail' sheet."
         )
 
+    warning_count = _count_refdes_warnings(
+        results,
+        bom_load_error=bom_load_error,
+        annotation_timeout_pages=annot_timeout_pages,
+        ambiguous_count=len(ambiguous_tokens),
+        orphan_count=_orphan_count,
+        collision_count=_collision_count,
+    )
+
     return {
         "status": "success",
         "title": (
@@ -1079,11 +1114,7 @@ def execute_run_request(
         "notes": notes,
         "log_lines": logs[-LOG_LIMIT:],
         "row_count": total_groups,
-        # BOM cross-check soft-failure and timed-out annotation pages both
-        # count as warnings so the frontend success toast qualifies.
-        "warning_count": unverified
-        + (1 if bom_load_error else 0)
-        + len(annot_timeout_pages),
+        "warning_count": warning_count,
         "no_match_count": unverified,
         "mode": "desktop-bridge",
     }

@@ -5197,6 +5197,55 @@ def test_explicit_bom_usage_is_preserved_not_overridden_by_count(tmp_path: Path)
 # ----- column hygiene, and required-mapping enforcement ----------------------
 
 
+@pytest.mark.parametrize(
+    ("collection_name", "entry"),
+    [
+        ("fmr_warnings", {"RefDes": "R1"}),
+        ("usage_warnings", {"RefDes": "R1"}),
+        ("no_matches", ("R1", "PN-1")),
+        ("unmatched_hda", ("R1", "PN-1")),
+        ("group_missing_in_bom", ("CPU-001", "R1")),
+        ("bom_missing_ref_rows", (2, "missing")),
+        ("bom_duplicate_refdes", ("R1", 2)),
+        (
+            "part_usage_discrepancies",
+            {"refdes": "R1", "mapped_count": 2, "computed_count": 1, "diff": -1},
+        ),
+    ],
+    ids=[
+        "fmr-warning",
+        "usage-warning",
+        "no-match",
+        "missing-hda",
+        "group-missing-bom",
+        "bom-missing-refdes",
+        "bom-duplicate-refdes",
+        "part-usage-diagnostic",
+    ],
+)
+def test_runtime_warning_count_includes_each_fmea_diagnostic_source(
+    collection_name: str,
+    entry: object,
+) -> None:
+    """Every anomaly row emitted to a summary sheet qualifies completion."""
+    from fmea.runtime import _count_processor_warnings
+
+    processor = FMEAProcessor()
+    getattr(processor, collection_name).append(entry)
+
+    assert _count_processor_warnings(processor) == 1
+
+
+def test_runtime_warning_count_excludes_informational_bom_additions() -> None:
+    """Inherited/new RefDes inventory is guidance, not a processor warning."""
+    from fmea.runtime import _count_processor_warnings
+
+    processor = FMEAProcessor()
+    processor.bom_additions.append({"ref_des": "U1-A"})
+
+    assert _count_processor_warnings(processor) == 0
+
+
 def test_build_summary_frames_covers_all_diagnostic_sheets() -> None:
     """H1: build_summary_frames() is the single source of truth for the
     diagnostic summary sheets. Populated processor collections must each

@@ -183,6 +183,77 @@ def test_bom_collision_orphans_do_not_count_as_dropped_pins(
 
     assert any(n.startswith("1 pin dropped before output") for n in result["notes"])
     assert any("match a BOM RefDes (kept, flagged)" in n for n in result["notes"])
+    # The kept collision and the genuinely dropped pin are distinct anomalies.
+    assert result["warning_count"] == 2
+
+
+@pytest.mark.parametrize(
+    ("results", "bom_load_error", "timeout_pages", "ambiguous_count", "orphan_count", "collision_count"),
+    [
+        ([{"group": "A (Unverified)", "component count": 1}], None, [], 0, 0, 0),
+        ([], "could not load BOM", [], 0, 0, 0),
+        ([], None, [2], 0, 0, 0),
+        ([], None, [], 1, 0, 0),
+        ([], None, [], 0, 1, 0),
+        ([], None, [], 0, 0, 1),
+    ],
+    ids=[
+        "unverified-group",
+        "bom-load-error",
+        "annotation-timeout",
+        "ambiguous-token",
+        "dropped-orphan-pin",
+        "kept-bom-collision",
+    ],
+)
+def test_refdes_warning_count_includes_each_anomaly_source(
+    results: list[dict],
+    bom_load_error: str | None,
+    timeout_pages: list[int],
+    ambiguous_count: int,
+    orphan_count: int,
+    collision_count: int,
+) -> None:
+    from refdes_extractor.runtime import _count_refdes_warnings
+
+    assert _count_refdes_warnings(
+        results,
+        bom_load_error=bom_load_error,
+        annotation_timeout_pages=timeout_pages,
+        ambiguous_count=ambiguous_count,
+        orphan_count=orphan_count,
+        collision_count=collision_count,
+    ) == 1
+
+
+def test_refdes_warning_count_excludes_informational_rows_and_notes() -> None:
+    """Gap placeholders, coverage inventory, and ordinary notes stay neutral."""
+    from refdes_extractor.runtime import _count_refdes_warnings
+
+    informational_results = [
+        {
+            "group": "DIG-002 (GROUP NOT DETECTED)",
+            "component count": 0,
+            "_is_gap": True,
+            "_row_style": "gap",
+            "validation notes": "Expected group missing from schematic (sequence gap).",
+        },
+        {
+            "group": "DIG-001 (Verified)",
+            "component count": 1,
+            "_row_style": "default",
+            "validation notes": "Coverage inventory only; no review condition.",
+        },
+    ]
+
+    assert _count_refdes_warnings(
+        informational_results,
+        bom_load_error=None,
+        annotation_timeout_pages=[],
+        ambiguous_count=0,
+        orphan_count=0,
+        collision_count=0,
+    ) == 0
 
 
 def test_annotation_timeout_option_plumbed_and_surfaces_warning(

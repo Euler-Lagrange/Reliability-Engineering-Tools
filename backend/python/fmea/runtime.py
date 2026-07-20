@@ -731,6 +731,27 @@ def _progress_percent(
     return stage, min(99, max(start, percent))
 
 
+def _count_processor_warnings(processor: FMEAProcessor) -> int:
+    """Count every processor anomaly row exposed in an output summary sheet.
+
+    ``bom_additions`` is intentionally absent: that sheet is an informational
+    inheritance/paste-back inventory, not a condition requiring review.
+    """
+    return sum(
+        len(getattr(processor, collection_name, []))
+        for collection_name in (
+            "fmr_warnings",
+            "usage_warnings",
+            "no_matches",
+            "unmatched_hda",
+            "group_missing_in_bom",
+            "bom_missing_ref_rows",
+            "bom_duplicate_refdes",
+            "part_usage_discrepancies",
+        )
+    )
+
+
 def execute_run_request(
     body: dict[str, Any],
     *,
@@ -1099,10 +1120,8 @@ def execute_run_request(
         percent=100,
     )
 
-    fmr_count = len(processor.fmr_warnings)
-    usage_count = len(processor.usage_warnings)
     no_match_count = len(processor.no_matches)
-    warning_count = fmr_count + usage_count + no_match_count
+    warning_count = _count_processor_warnings(processor)
 
     notes = []
     if workflow_id == "fill_gaps":
