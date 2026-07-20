@@ -2,19 +2,23 @@ import { useEffect, useEffectEvent } from "react";
 import { executeRunResultSchema, type SidecarRunEvent } from "../../contracts/sidecar";
 import { resolveToolIdForWorkflow } from "../../app/toolRegistry";
 import { useGlobalLogStore } from "../../stores/globalLogStore";
+import { useNotificationStore } from "../../stores/notificationStore";
 import {
   buildActiveRunFromAccepted,
   useRunStore,
   type ActiveRunState,
 } from "../../stores/runStore";
 import { backendClient } from "./client";
+import { describeBackendError } from "./cancelError";
 import { INACTIVE_PHASES, patchFromRunEvent } from "./runLifecycle";
+import { BACKEND_RETRY_DELAYS } from "./retryPolicy";
 
 export function useBackendRunSubscription() {
   const appendRunLog = useRunStore((state) => state.appendLog);
   const patchActiveRun = useRunStore((state) => state.patchActiveRun);
   const setActiveRun = useRunStore((state) => state.setActiveRun);
   const appendGlobalLog = useGlobalLogStore((state) => state.appendLog);
+  const pushNotification = useNotificationStore((state) => state.push);
   const runtimeMode = backendClient.runtimeMode;
 
   const handleRunEvent = useEffectEvent((event: SidecarRunEvent) => {
@@ -102,21 +106,59 @@ export function useBackendRunSubscription() {
 
     let disposed = false;
     let unlisten: (() => void) | undefined;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let retryAttempt = 0;
 
-    void backendClient.subscribeToRunEvents(handleRunEvent).then((unsubscribe) => {
-      if (disposed) {
-        unsubscribe();
-        return;
-      }
-      unlisten = unsubscribe;
-    });
+    function subscribe() {
+      void backendClient
+        .subscribeToRunEvents(handleRunEvent)
+        .then((unsubscribe) => {
+          if (disposed) {
+            unsubscribe();
+            return;
+          }
+          unlisten = unsubscribe;
+        })
+        .catch((error: unknown) => {
+          if (disposed) {
+            return;
+          }
+
+          console.error("Failed to subscribe to backend run events:", error);
+          pushNotification({
+            tone: "error",
+            title: "Run updates unavailable",
+            detail: describeBackendError(
+              error,
+              "Could not listen for backend run updates.",
+            ),
+          });
+
+          if (retryAttempt >= BACKEND_RETRY_DELAYS.length) {
+            return;
+          }
+          const delay = BACKEND_RETRY_DELAYS[retryAttempt];
+          retryAttempt += 1;
+          retryTimer = setTimeout(() => {
+            retryTimer = undefined;
+            if (!disposed) {
+              subscribe();
+            }
+          }, delay);
+        });
+    }
+
+    subscribe();
 
     return () => {
       disposed = true;
+      if (retryTimer) {
+        clearTimeout(retryTimer);
+      }
       unlisten?.();
     };
     // `handleRunEvent` is a `useEffectEvent` return value (stable across
     // renders by design); per React's rules-of-hooks it is intentionally
     // excluded from the dependency array.
-  }, [runtimeMode]);
+  }, [runtimeMode, pushNotification]);
 }

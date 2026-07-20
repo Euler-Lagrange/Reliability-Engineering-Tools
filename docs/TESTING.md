@@ -42,7 +42,7 @@
 | Frontend command palette | `frontend/src/components/primitives/CommandPalette.test.tsx` | 8 | Vitest + RTL |
 | Frontend hold button | `frontend/src/components/primitives/HoldButton.test.tsx` | 6 | Vitest + RTL |
 | Frontend empty state | `frontend/src/components/primitives/EmptyState.test.tsx` | 6 | Vitest + RTL |
-| Frontend run lifecycle | `frontend/src/shared/backend/runLifecycle.test.ts` | 11 | Vitest |
+| Frontend run lifecycle | `frontend/src/shared/backend/runLifecycle.test.ts` | 12 | Vitest |
 | Frontend desktop run controller | `frontend/src/shared/backend/useDesktopRunController.test.ts` | 5 | Vitest |
 | Frontend cancel error | `frontend/src/shared/backend/cancelError.test.ts` | 18 | Vitest |
 | Frontend cancel run | `frontend/src/shared/backend/client.cancelRun.test.ts` | 2 | Vitest |
@@ -50,7 +50,7 @@
 | Frontend contract schemas | `frontend/src/contracts/sidecar.test.ts` | 6 | Vitest |
 | Frontend busy reset | `frontend/src/shared/backend/useBackendBusyReset.test.ts` | 9 | Vitest |
 | Frontend backend bootstrap | `frontend/src/shared/backend/useBackendBootstrap.test.ts` | 6 | Vitest |
-| Frontend run subscription | `frontend/src/shared/backend/useBackendRunSubscription.test.ts` | 8 | Vitest |
+| Frontend run subscription | `frontend/src/shared/backend/useBackendRunSubscription.test.ts` | 10 | Vitest |
 | Frontend theme registry | `frontend/src/shared/theme/themeRegistry.test.ts` | 10 | Vitest |
 | Frontend app shortcuts | `frontend/src/shared/hooks/useAppShortcuts.test.tsx` | 6 | Vitest + RTL |
 | Frontend role-request sequence | `frontend/src/shared/hooks/useRoleRequestSequence.test.ts` | 5 | Vitest |
@@ -78,9 +78,9 @@
 | Frontend shell-hook install | `frontend/src/app/App.shellHooks.test.tsx` | 1 | Vitest + RTL |
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
-| **Frontend subtotal** | | **357** | |
-| Rust bridge unit | `src-tauri/src/lib.rs` | 19 | cargo test |
-| **Total** | | **904** | |
+| **Frontend subtotal** | | **360** | |
+| Rust bridge unit | `src-tauri/src/lib.rs` | 23 | cargo test |
+| **Total** | | **911** | |
 
 ## Backend Tests
 
@@ -254,14 +254,14 @@ neither of which exists under jsdom, so the client returns mock data from
 | `frontend/src/components/primitives/CommandPalette.test.tsx` | 5 — command palette open, search, select, keyboard navigation, dismiss |
 | `frontend/src/components/primitives/HoldButton.test.tsx` | 6 — hold-to-confirm interaction, cancel on release, progress feedback, no confirm when disabled mid-hold |
 | `frontend/src/components/primitives/EmptyState.test.tsx` | 6 — empty state rendering, icon, message, action slot, disabled-action hint |
-| `frontend/src/shared/backend/runLifecycle.test.ts` | 11 — run lifecycle state transitions, settled/disconnected guards, and sticky cancellation |
+| `frontend/src/shared/backend/runLifecycle.test.ts` | 12 — run lifecycle state transitions, settled/disconnected guards, sticky cancellation, and unknown forwarded statuses being logged and clamped to the previous phase |
 | `frontend/src/shared/backend/useDesktopRunController.test.ts` | 5 — status/result terminal ordering, warning-qualified success, duplicate-result idempotency, truthful result-schema-mismatch failure toast, and sticky cancelling reset guard |
 | `frontend/src/shared/backend/cancelError.test.ts` | 18 — cancel error detection, wrapping, propagation across error types, plus `describeBackendError` normalization of raw-string Tauri rejections |
 | `frontend/src/shared/backend/client.cancelRun.test.ts` | 2 — cancel run command dispatch and response handling |
 | `frontend/src/shared/backend/client.runEvents.test.ts` | 2 — production run-event subscription schema parsing |
 | `frontend/src/shared/backend/useBackendBusyReset.test.ts` | 9 — busy state recovery after run completion, error, or unmount |
 | `frontend/src/shared/backend/useBackendBootstrap.test.ts` | 6 — generation-aware reconnect clearing, stale-disconnect rejection, pending-timer cancellation, no overlapping reconnect chains, and no-active-run recovery |
-| `frontend/src/shared/backend/useBackendRunSubscription.test.ts` | 8 — ack-fallback ownership/ordering/idempotency, inactive cross-tool replacement, live-run protection, shell-level fanout, global logs, and schema-mismatch failure |
+| `frontend/src/shared/backend/useBackendRunSubscription.test.ts` | 10 — ack-fallback ownership/ordering/idempotency, inactive cross-tool replacement, live-run protection, shell-level fanout, global logs, schema-mismatch failure, listen-rejection surfacing with backoff retry, and pending-retry cleanup on unmount |
 | `frontend/src/shared/theme/themeRegistry.test.ts` | 10 — theme registry consistency (ids, labels, icons, colorScheme, rail visibility) |
 | `frontend/src/shared/hooks/useRoleRequestSequence.test.ts` | 5 — per-role async request sequencing (stale response suppression) |
 | `frontend/src/shared/hooks/useCopyToClipboard.test.ts` | 3 — clipboard write, success feedback, error handling |

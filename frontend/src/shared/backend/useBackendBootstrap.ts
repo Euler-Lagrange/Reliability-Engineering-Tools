@@ -4,8 +4,7 @@ import { describeBackendError } from "./cancelError";
 import { useNotificationStore } from "../../stores/notificationStore";
 import { useRunStore } from "../../stores/runStore";
 import { useShellStore } from "../../stores/shellStore";
-
-const RECONNECT_DELAYS = [2_000, 4_000, 8_000, 15_000, 30_000];
+import { BACKEND_RETRY_DELAYS } from "./retryPolicy";
 
 export function useBackendBootstrap() {
   const setBackendState = useShellStore((state) => state.setBackendState);
@@ -34,7 +33,10 @@ export function useBackendBootstrap() {
         clearTimeout(reconnectTimer);
         reconnectTimer = undefined;
       }
-      const delay = RECONNECT_DELAYS[Math.min(reconnectAttempt, RECONNECT_DELAYS.length - 1)];
+      const delay =
+        BACKEND_RETRY_DELAYS[
+          Math.min(reconnectAttempt, BACKEND_RETRY_DELAYS.length - 1)
+        ];
       reconnectAttempt++;
       const attemptEpoch = reconnectEpoch;
 
@@ -87,7 +89,7 @@ export function useBackendBootstrap() {
             ) {
               return;
             }
-            if (reconnectAttempt < RECONNECT_DELAYS.length) {
+            if (reconnectAttempt < BACKEND_RETRY_DELAYS.length) {
               attemptReconnect();
             } else {
               setBackendState({

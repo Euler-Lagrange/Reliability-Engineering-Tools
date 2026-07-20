@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SidecarRunEvent } from "../../contracts/sidecar";
 import { MAX_LOG_LINES, useRunStore } from "../../stores/runStore";
 import { patchFromRunEvent, useBackendRunLifecycle } from "./runLifecycle";
@@ -186,5 +186,22 @@ describe("patchFromRunEvent terminal guard", () => {
     const current = buildCurrent("run_terminal_dup", "cancelled");
     const patch = patchFromRunEvent(current, statusEvent("run_terminal_dup", "cancelled"), (p) => p);
     expect(patch?.phase).toBe("cancelled");
+  });
+
+  it("keeps the previous phase and logs an unknown forwarded status", () => {
+    const current = buildCurrent("run_unknown_status", "running");
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const patch = patchFromRunEvent(
+      current,
+      statusEvent("run_unknown_status", "paused_by_future_backend"),
+      (payload) => payload,
+    );
+
+    expect(patch?.phase).toBe("running");
+    expect(consoleError).toHaveBeenCalledWith(
+      "Ignoring unknown backend run status: paused_by_future_backend",
+    );
+    consoleError.mockRestore();
   });
 });

@@ -1,21 +1,21 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useGlobalLogStore } from "../../stores/globalLogStore";
+import { useNotificationStore } from "../../stores/notificationStore";
 import { useRunStore } from "../../stores/runStore";
 import { useBackendRunLifecycle } from "./runLifecycle";
 import { useBackendRunSubscription } from "./useBackendRunSubscription";
 
 let runHandler: ((event: unknown) => void) | null = null;
 
+const { subscribeToRunEventsMock } = vi.hoisted(() => ({
+  subscribeToRunEventsMock: vi.fn(),
+}));
+
 vi.mock("./client", () => ({
   backendClient: {
     runtimeMode: "desktop-bridge" as const,
-    subscribeToRunEvents: vi.fn(async (handler: (event: unknown) => void) => {
-      runHandler = handler;
-      return () => {
-        runHandler = null;
-      };
-    }),
+    subscribeToRunEvents: subscribeToRunEventsMock,
   },
 }));
 
@@ -28,14 +28,85 @@ beforeEach(() => {
     isVisible: false,
     filterMode: "all",
   });
+  useNotificationStore.setState({ notifications: [] });
   runHandler = null;
+  subscribeToRunEventsMock.mockReset();
+  subscribeToRunEventsMock.mockImplementation(
+    async (handler: (event: unknown) => void) => {
+      runHandler = handler;
+      return () => {
+        runHandler = null;
+      };
+    },
+  );
 });
 
 afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.clearAllMocks();
 });
 
 describe("useBackendRunSubscription", () => {
+  it("surfaces a listen rejection and retries the shell subscription with backoff", async () => {
+    vi.useFakeTimers();
+    const listenError = new Error("backend://run-event listener unavailable");
+    subscribeToRunEventsMock.mockRejectedValueOnce(listenError);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const { unmount } = renderHook(() => useBackendRunSubscription());
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(subscribeToRunEventsMock).toHaveBeenCalledTimes(1);
+    expect(consoleError).toHaveBeenCalledWith(
+      "Failed to subscribe to backend run events:",
+      listenError,
+    );
+    expect(useNotificationStore.getState().notifications).toEqual([
+      expect.objectContaining({
+        tone: "error",
+        title: "Run updates unavailable",
+        detail: "backend://run-event listener unavailable",
+      }),
+    ]);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_999);
+    });
+    expect(subscribeToRunEventsMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(subscribeToRunEventsMock).toHaveBeenCalledTimes(2);
+    expect(runHandler).not.toBeNull();
+
+    unmount();
+    expect(runHandler).toBeNull();
+  });
+
+  it("cancels a pending run-event subscription retry on unmount", async () => {
+    vi.useFakeTimers();
+    subscribeToRunEventsMock.mockRejectedValue(
+      new Error("backend://run-event listener unavailable"),
+    );
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const { unmount } = renderHook(() => useBackendRunSubscription());
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(subscribeToRunEventsMock).toHaveBeenCalledTimes(1);
+
+    unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(subscribeToRunEventsMock).toHaveBeenCalledTimes(1);
+  });
+
   it("registers an unclaimed run from ack and applies its following events", () => {
     renderHook(() => useBackendRunSubscription());
 

@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
     collections::HashMap,
@@ -131,7 +131,7 @@ const BACKEND_SESSION_EVENT: &str = "backend://session";
 const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(15);
 const HEARTBEAT_CHECK_INTERVAL: Duration = Duration::from_secs(5);
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 struct BackendHealthResponse {
     status: String,
     backend: String,
@@ -150,7 +150,7 @@ struct SheetListResponse {
     mode: String,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 struct InputInspectionResponse {
     path: String,
     sheet: String,
@@ -168,7 +168,7 @@ struct InputInspectionResponse {
     mode: String,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 struct TemplateAnalysisResponse {
     path: String,
     sheet: String,
@@ -205,12 +205,153 @@ struct RunAcceptedResponse {
     session_generation: u64,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 struct CancelRunResponse {
     accepted: bool,
     run_id: String,
     status: String,
     mode: String,
+}
+
+#[derive(Deserialize)]
+struct BackendHealthPayload {
+    status: String,
+    backend: String,
+    protocol_version: String,
+    log_directory: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct InputInspectionPayload {
+    path: String,
+    sheet: String,
+    header_row: u32,
+    row_count: u32,
+    columns: Vec<String>,
+    preview_rows: Vec<std::collections::BTreeMap<String, String>>,
+    rows_scanned: u32,
+    columns_scanned: u32,
+    header_rows_scanned: Option<u32>,
+    row_cap_applied: bool,
+    column_cap_applied: bool,
+    header_search_cap_applied: bool,
+}
+
+#[derive(Deserialize)]
+struct TemplateAnalysisPayload {
+    path: String,
+    sheet: String,
+    header_row: u32,
+    columns: Vec<String>,
+    merged_range_count: u32,
+    freeze_panes: Option<String>,
+    protected_sheet: bool,
+    rows_scanned: u32,
+    header_rows_scanned: Option<u32>,
+    columns_scanned: u32,
+    row_cap_applied: bool,
+    column_cap_applied: bool,
+    header_search_cap_applied: bool,
+}
+
+fn parse_cancel_run_response(
+    payload: &Value,
+    requested_run_id: &str,
+) -> Result<CancelRunResponse, String> {
+    let payload_object = payload
+        .as_object()
+        .ok_or_else(|| "Python sidecar cancel response was not an object.".to_string())?;
+
+    Ok(CancelRunResponse {
+        // Missing confirmation must be treated conservatively. The frontend
+        // can keep the run live and retry instead of reporting a cancel that
+        // the sidecar never acknowledged.
+        accepted: payload_object
+            .get("accepted")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        run_id: payload_object
+            .get("run_id")
+            .and_then(Value::as_str)
+            .unwrap_or(requested_run_id)
+            .to_string(),
+        status: payload_object
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("cancelling")
+            .to_string(),
+        mode: "desktop-bridge".to_string(),
+    })
+}
+
+fn parse_health_response(payload: &Value) -> Result<BackendHealthResponse, String> {
+    let parsed: BackendHealthPayload = serde_json::from_value(payload.clone()).map_err(|error| {
+        format!("Python sidecar health response is missing or invalid required fields: {error}")
+    })?;
+
+    Ok(BackendHealthResponse {
+        status: parsed.status,
+        backend: parsed.backend,
+        protocol_version: parsed.protocol_version,
+        mode: "desktop-bridge".to_string(),
+        log_directory: parsed.log_directory,
+    })
+}
+
+fn parse_input_inspection_response(payload: &Value) -> Result<InputInspectionResponse, String> {
+    let parsed: InputInspectionPayload = serde_json::from_value(payload.clone()).map_err(|error| {
+        format!(
+            "Python sidecar input-inspection response is missing or invalid required fields: {error}"
+        )
+    })?;
+
+    Ok(InputInspectionResponse {
+        path: parsed.path,
+        sheet: parsed.sheet,
+        header_row: parsed.header_row,
+        row_count: parsed.row_count,
+        columns: parsed.columns,
+        preview_rows: parsed.preview_rows,
+        rows_scanned: parsed.rows_scanned,
+        columns_scanned: parsed.columns_scanned,
+        header_rows_scanned: parsed.header_rows_scanned,
+        row_cap_applied: parsed.row_cap_applied,
+        column_cap_applied: parsed.column_cap_applied,
+        header_search_cap_applied: parsed.header_search_cap_applied,
+        mode: "desktop-bridge".to_string(),
+    })
+}
+
+fn parse_template_analysis_response(payload: &Value) -> Result<TemplateAnalysisResponse, String> {
+    if payload.get("freeze_panes").is_none() {
+        return Err(
+            "Python sidecar template-analysis response is missing required field: freeze_panes"
+                .to_string(),
+        );
+    }
+
+    let parsed: TemplateAnalysisPayload = serde_json::from_value(payload.clone()).map_err(|error| {
+        format!(
+            "Python sidecar template-analysis response is missing or invalid required fields: {error}"
+        )
+    })?;
+
+    Ok(TemplateAnalysisResponse {
+        path: parsed.path,
+        sheet: parsed.sheet,
+        header_row: parsed.header_row,
+        columns: parsed.columns,
+        merged_range_count: parsed.merged_range_count,
+        freeze_panes: parsed.freeze_panes,
+        protected_sheet: parsed.protected_sheet,
+        rows_scanned: parsed.rows_scanned,
+        header_rows_scanned: parsed.header_rows_scanned,
+        columns_scanned: parsed.columns_scanned,
+        row_cap_applied: parsed.row_cap_applied,
+        column_cap_applied: parsed.column_cap_applied,
+        header_search_cap_applied: parsed.header_search_cap_applied,
+        mode: "desktop-bridge".to_string(),
+    })
 }
 
 #[derive(Clone)]
@@ -642,28 +783,7 @@ impl SidecarState {
 
     fn cancel_run_command(&self, run_id: &str) -> Result<CancelRunResponse, String> {
         let payload = self.send_request_command("cancel_run", json!({ "run_id": run_id }))?;
-
-        Ok(CancelRunResponse {
-            accepted: payload
-                .get("accepted")
-                .and_then(Value::as_bool)
-                .unwrap_or(true),
-            run_id: payload
-                .get("run_id")
-                .and_then(Value::as_str)
-                .unwrap_or(run_id)
-                .to_string(),
-            status: payload
-                .get("status")
-                .and_then(Value::as_str)
-                .unwrap_or("cancelling")
-                .to_string(),
-            mode: payload
-                .get("mode")
-                .and_then(Value::as_str)
-                .unwrap_or("desktop-bridge")
-                .to_string(),
-        })
+        parse_cancel_run_response(&payload, run_id)
     }
 
     fn session_status(&self) -> BackendSessionStatusResponse {
@@ -1261,29 +1381,7 @@ fn spawn_managed_sidecar(session: SessionSlot, shared: Arc<SessionShared>) -> Re
 #[tauri::command]
 fn backend_health_check(state: tauri::State<'_, SidecarState>) -> Result<BackendHealthResponse, String> {
     let payload = state.send_request_command("health_check", json!({ "app": "reliability_tools_desktop" }))?;
-
-    Ok(BackendHealthResponse {
-        status: payload
-            .get("status")
-            .and_then(Value::as_str)
-            .unwrap_or("ok")
-            .to_string(),
-        backend: payload
-            .get("backend")
-            .and_then(Value::as_str)
-            .unwrap_or("python-sidecar")
-            .to_string(),
-        protocol_version: payload
-            .get("protocol_version")
-            .and_then(Value::as_str)
-            .unwrap_or(PROTOCOL_VERSION)
-            .to_string(),
-        mode: "desktop-bridge".to_string(),
-        log_directory: payload
-            .get("log_directory")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-    })
+    parse_health_response(&payload)
 }
 
 #[tauri::command]
@@ -1392,78 +1490,7 @@ fn backend_inspect_input(
         }),
     )?;
 
-    let columns = payload
-        .get("columns")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| item.as_str().map(ToOwned::to_owned))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    let preview_rows = payload
-        .get("preview_rows")
-        .and_then(Value::as_array)
-        .map(|rows| {
-            rows.iter()
-                .filter_map(|row| row.as_object())
-                .map(|row| {
-                    row.iter()
-                        .filter_map(|(key, value)| value.as_str().map(|value| (key.clone(), value.to_string())))
-                        .collect::<std::collections::BTreeMap<_, _>>()
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-
-    Ok(InputInspectionResponse {
-        path: payload
-            .get("path")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned)
-            .unwrap_or_else(|| normalized_path.to_string_lossy().into_owned()),
-        sheet: payload
-            .get("sheet")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        header_row: payload
-            .get("header_row")
-            .and_then(Value::as_u64)
-            .unwrap_or_default() as u32,
-        row_count: payload
-            .get("row_count")
-            .and_then(Value::as_u64)
-            .unwrap_or_default() as u32,
-        columns,
-        preview_rows,
-        rows_scanned: payload
-            .get("rows_scanned")
-            .and_then(Value::as_u64)
-            .unwrap_or_default() as u32,
-        columns_scanned: payload
-            .get("columns_scanned")
-            .and_then(Value::as_u64)
-            .unwrap_or_default() as u32,
-        header_rows_scanned: payload
-            .get("header_rows_scanned")
-            .and_then(Value::as_u64)
-            .map(|value| value as u32),
-        row_cap_applied: payload
-            .get("row_cap_applied")
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
-        column_cap_applied: payload
-            .get("column_cap_applied")
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
-        header_search_cap_applied: payload
-            .get("header_search_cap_applied")
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
-        mode: "desktop-bridge".to_string(),
-    })
+    parse_input_inspection_response(&payload)
 }
 
 #[tauri::command]
@@ -1485,71 +1512,7 @@ fn backend_analyze_template(
         }),
     )?;
 
-    let columns = payload
-        .get("columns")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| item.as_str().map(ToOwned::to_owned))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-
-    Ok(TemplateAnalysisResponse {
-        path: payload
-            .get("path")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned)
-            .unwrap_or_else(|| normalized_path.to_string_lossy().into_owned()),
-        sheet: payload
-            .get("sheet")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string(),
-        header_row: payload
-            .get("header_row")
-            .and_then(Value::as_u64)
-            .unwrap_or_default() as u32,
-        columns,
-        merged_range_count: payload
-            .get("merged_range_count")
-            .and_then(Value::as_u64)
-            .unwrap_or_default() as u32,
-        freeze_panes: payload
-            .get("freeze_panes")
-            .and_then(Value::as_str)
-            .map(ToOwned::to_owned),
-        protected_sheet: payload
-            .get("protected_sheet")
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
-        rows_scanned: payload
-            .get("rows_scanned")
-            .and_then(Value::as_u64)
-            .unwrap_or_default() as u32,
-        header_rows_scanned: payload
-            .get("header_rows_scanned")
-            .and_then(Value::as_u64)
-            .map(|v| v as u32),
-        columns_scanned: payload
-            .get("columns_scanned")
-            .and_then(Value::as_u64)
-            .unwrap_or_default() as u32,
-        row_cap_applied: payload
-            .get("row_cap_applied")
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
-        column_cap_applied: payload
-            .get("column_cap_applied")
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
-        header_search_cap_applied: payload
-            .get("header_search_cap_applied")
-            .and_then(Value::as_bool)
-            .unwrap_or(false),
-        mode: "desktop-bridge".to_string(),
-    })
+    parse_template_analysis_response(&payload)
 }
 
 #[tauri::command]
@@ -1768,8 +1731,10 @@ mod tests {
     use super::{
         await_ready, build_session_event_payload, candidate_bases, classify_stdout_line,
         correlation_id, disconnect_if_current, enrich_run_event_for_frontend,
-        merge_disconnect_message, parse_timeout_secs, should_forward_run_event,
-        truncate_crash_value, ReadyOutcome, SessionDisconnectState, StdoutLine,
+        merge_disconnect_message, parse_cancel_run_response, parse_health_response,
+        parse_input_inspection_response, parse_template_analysis_response,
+        parse_timeout_secs, should_forward_run_event, truncate_crash_value, ReadyOutcome,
+        SessionDisconnectState, StdoutLine,
     };
     use serde_json::json;
     use std::path::PathBuf;
@@ -1991,6 +1956,92 @@ mod tests {
     #[test]
     fn parse_timeout_secs_parses_a_valid_override() {
         assert_eq!(parse_timeout_secs(Some("120"), 60), Duration::from_secs(120));
+    }
+
+    #[test]
+    fn cancel_response_missing_accepted_is_never_reported_as_accepted() {
+        let response = parse_cancel_run_response(
+            &json!({"run_id": "run-1", "status": "cancelling"}),
+            "run-1",
+        )
+        .expect("a missing accepted field should produce a conservative response");
+
+        assert!(!response.accepted);
+    }
+
+    #[test]
+    fn health_response_requires_status_and_protocol_version() {
+        let missing_status = json!({
+            "backend": "python-sidecar",
+            "protocol_version": "0.1.0"
+        });
+        assert!(parse_health_response(&missing_status).is_err());
+
+        let missing_protocol = json!({
+            "status": "ok",
+            "backend": "python-sidecar"
+        });
+        assert!(parse_health_response(&missing_protocol).is_err());
+    }
+
+    #[test]
+    fn inspection_response_rejects_missing_required_fields() {
+        let payload = json!({
+            "path": "C:/input.xlsx",
+            "sheet": "Sheet1",
+            "header_row": 1,
+            "row_count": 2,
+            "columns": ["RefDes"],
+            "preview_rows": [{"RefDes": "R1"}],
+            "rows_scanned": 2,
+            "columns_scanned": 1,
+            "row_cap_applied": false,
+            "column_cap_applied": false
+        });
+
+        let error = parse_input_inspection_response(&payload)
+            .expect_err("header_search_cap_applied is required");
+        assert!(error.contains("header_search_cap_applied"));
+    }
+
+    #[test]
+    fn template_response_rejects_missing_required_fields() {
+        let payload = json!({
+            "path": "C:/template.xlsx",
+            "sheet": "Sheet1",
+            "header_row": 1,
+            "columns": ["RefDes"],
+            "merged_range_count": 0,
+            "freeze_panes": null,
+            "protected_sheet": false,
+            "rows_scanned": 2,
+            "columns_scanned": 1,
+            "row_cap_applied": false,
+            "column_cap_applied": false
+        });
+
+        let error = parse_template_analysis_response(&payload)
+            .expect_err("header_search_cap_applied is required");
+        assert!(error.contains("header_search_cap_applied"));
+
+        let missing_freeze_panes = json!({
+            "path": "C:/template.xlsx",
+            "sheet": "Sheet1",
+            "header_row": 1,
+            "columns": ["RefDes"],
+            "merged_range_count": 0,
+            "protected_sheet": false,
+            "rows_scanned": 2,
+            "header_rows_scanned": 1,
+            "columns_scanned": 1,
+            "row_cap_applied": false,
+            "column_cap_applied": false,
+            "header_search_cap_applied": false
+        });
+
+        let error = parse_template_analysis_response(&missing_freeze_panes)
+            .expect_err("freeze_panes must be present even when its value is null");
+        assert!(error.contains("freeze_panes"));
     }
 
     #[test]

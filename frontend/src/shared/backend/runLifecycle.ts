@@ -21,6 +21,16 @@ export { MAX_LOG_LINES };
 export const SETTLED_PHASES = ["success", "failure", "cancelled"] as const satisfies readonly RunMode[];
 export const INACTIVE_PHASES = [...SETTLED_PHASES, "disconnected"] as const satisfies readonly RunMode[];
 export const LIVE_PHASES = ["starting", "running", "cancelling"] as const satisfies readonly RunMode[];
+const RUN_PHASES = [
+  "idle",
+  "starting",
+  "running",
+  "cancelling",
+  "success",
+  "failure",
+  "cancelled",
+  "disconnected",
+] as const satisfies readonly RunMode[];
 
 export interface ManagedRunSession<ResultT> {
   runId: string | null;
@@ -120,8 +130,15 @@ export function patchFromRunEvent(
       // don't reset state if a duplicate ack comes through.
       return null;
     case "status": {
-      const incomingIsSettled = SETTLED_PHASES.some(
+      const incomingPhase = RUN_PHASES.find(
         (phase) => phase === event.payload.status,
+      );
+      if (!incomingPhase) {
+        console.error(`Ignoring unknown backend run status: ${event.payload.status}`);
+        return { phase: current.phase };
+      }
+      const incomingIsSettled = SETTLED_PHASES.some(
+        (phase) => phase === incomingPhase,
       );
       const currentIsSettled = SETTLED_PHASES.some(
         (phase) => phase === current.phase,
@@ -146,10 +163,10 @@ export function patchFromRunEvent(
       }
       return {
         runId: event.run_id,
-        phase: event.payload.status,
+        phase: incomingPhase,
         stage: event.payload.stage,
         statusMessage: event.payload.message,
-        errorMessage: event.payload.status === "failure" ? event.payload.message : null,
+        errorMessage: incomingPhase === "failure" ? event.payload.message : null,
         steps: upsertStep(current.steps, event.payload.stage, event.payload.message, current.progress),
         finishedAt: incomingIsSettled ? new Date().toISOString() : current.finishedAt,
       };
