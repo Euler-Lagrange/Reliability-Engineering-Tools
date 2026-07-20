@@ -33,7 +33,7 @@
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 5 | Vitest + RTL |
 | Frontend escape layers | `frontend/src/shared/hooks/useEscapeLayer.test.ts` | 4 | Vitest |
 | Frontend error boundary | `frontend/src/shared/errors/ErrorBoundary.test.tsx` | 3 | Vitest + RTL |
-| Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 3 | Vitest + RTL |
+| Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 4 | Vitest + RTL |
 | Frontend mapping table | `frontend/src/components/MappingTable.test.tsx` | 13 | Vitest + RTL |
 | Frontend run state panel | `frontend/src/components/RunStatePanel.test.tsx` | 6 | Vitest + RTL |
 | Frontend output folder picker | `frontend/src/components/OutputFolderPicker.test.tsx` | 2 | Vitest + RTL |
@@ -76,9 +76,9 @@
 | Frontend shell-hook install | `frontend/src/app/App.shellHooks.test.tsx` | 1 | Vitest + RTL |
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
-| **Frontend subtotal** | | **346** | |
+| **Frontend subtotal** | | **347** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 19 | cargo test |
-| **Total** | | **855** | |
+| **Total** | | **856** | |
 
 ## Backend Tests
 

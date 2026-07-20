@@ -77,7 +77,7 @@ export function CustomSelect({
         </Select.Trigger>
         <Select.Portal>
           <Select.Content className="custom-select__menu" position="popper" sideOffset={6}>
-            <Select.Viewport>
+            <Select.Viewport className="custom-select__viewport">
               {options.map((option) => (
                 <Select.Item key={option.value} value={option.value} className="custom-select__option">
                   <Select.ItemText>{option.label}</Select.ItemText>

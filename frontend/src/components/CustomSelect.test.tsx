@@ -38,6 +38,32 @@ describe("CustomSelect", () => {
     expect(screen.getByText("Select column…")).toBeInTheDocument();
   });
 
+  test("open menu viewport carries the scroll class", async () => {
+    // Long option lists (a wide BOM's 30+ headers in "Select column") must
+    // scroll. The CSS caps .custom-select__menu height and un-hides the
+    // native scrollbar on .custom-select__viewport — Radix injects a rule
+    // that hides it otherwise. This pins the class wiring the CSS targets;
+    // jsdom cannot verify the visual scrollbar itself.
+    const user = userEvent.setup();
+    render(
+      <CustomSelect
+        label="Mapping select"
+        value="A"
+        options={Array.from({ length: 40 }, (_, i) => ({
+          value: `C${i}`,
+          label: `Column ${i}`,
+        }))}
+      />,
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "Mapping select" }));
+    const listbox = await screen.findByRole("listbox");
+    const viewport = listbox.closest(".custom-select__menu")?.querySelector(
+      ".custom-select__viewport[data-radix-select-viewport]",
+    );
+    expect(viewport).toBeTruthy();
+  });
+
   test("renders an empty trigger without a placeholder unless opted in", () => {
     render(
       <CustomSelect

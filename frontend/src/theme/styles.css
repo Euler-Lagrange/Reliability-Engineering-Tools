@@ -1607,11 +1607,34 @@ button:disabled {
      don't squeeze when the trigger is in a narrow table cell. */
   min-width: max(220px, 100%);
   max-width: 480px;
+  /* Long option lists (a wide BOM's 30+ headers) must scroll instead of
+     running off-screen. Radix popper mode exposes the room below the
+     trigger as --radix-select-content-available-height; cap at 340px so
+     the menu stays a menu even on tall displays. */
+  max-height: min(340px, var(--radix-select-content-available-height, 340px));
   padding: var(--space-1);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   background: var(--surface);
   box-shadow: var(--shadow-popover);
+}
+
+.custom-select__viewport {
+  min-height: 0; /* let the flex viewport shrink below content height */
+}
+
+/* Radix injects `[data-radix-select-viewport] { scrollbar-width: none }`
+   (+ a webkit display:none rule) at runtime because it expects its
+   scroll-button chrome. We use the native scrollbar instead — the
+   higher-specificity selectors win regardless of injection order. */
+.custom-select__viewport[data-radix-select-viewport] {
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.custom-select__viewport[data-radix-select-viewport]::-webkit-scrollbar {
+  display: block;
+  width: 8px;
 }
 
 .custom-select__option {
