@@ -187,6 +187,77 @@ def test_zero_padded_refdes_links_across_sources() -> None:
     assert result["Mode_FR"].iloc[0] == pytest.approx(0.02 * 0.25)  # 0.005
 
 
+@pytest.mark.parametrize(
+    "prediction_rows",
+    [
+        [
+            {"Reference Designator": "R01", "Failure Rate": 0.001},
+            {"Reference Designator": "R1", "Failure Rate": 0.9},
+        ],
+        [
+            {"Reference Designator": "R1", "Failure Rate": 0.9},
+            {"Reference Designator": "R01", "Failure Rate": 0.001},
+        ],
+    ],
+    ids=["low-rate-first", "high-rate-first"],
+)
+def test_conflicting_normalized_prediction_duplicates_choose_max_and_warn(
+    prediction_rows: list[dict[str, object]],
+) -> None:
+    """R01/R1 conflicts are order-independent, conservative, and visible."""
+    pred = pd.DataFrame(prediction_rows)
+    fmea = pd.DataFrame(
+        [{"Failure Mode Causes": "R1", "Failure Mode Ratio": 1.0, "Part Usage": 1.0}]
+    )
+
+    result = _make_logic(pred, fmea).process(COL_MAP)
+
+    assert result["Part_FR"].iloc[0] == pytest.approx(0.9)
+    assert result["Mode_FR"].iloc[0] == pytest.approx(0.9)
+    note = result["Validation_Notes"].iloc[0]
+    assert "R01=0.001" in note
+    assert "R1=0.9" in note
+    assert "maximum" in note.lower()
+    assert "conservative" in note.lower()
+
+
+def test_conflicting_normalized_prediction_duplicates_are_order_independent() -> None:
+    """Swapping conflicting prediction rows must not change any output cell."""
+    prediction_rows = [
+        {"Reference Designator": "R01", "Failure Rate": 0.001},
+        {"Reference Designator": "R1", "Failure Rate": 0.9},
+    ]
+    fmea = pd.DataFrame(
+        [{"Failure Mode Causes": "R1", "Failure Mode Ratio": 1.0, "Part Usage": 1.0}]
+    )
+
+    forward = _make_logic(pd.DataFrame(prediction_rows), fmea.copy()).process(COL_MAP)
+    reverse = _make_logic(
+        pd.DataFrame(list(reversed(prediction_rows))), fmea.copy()
+    ).process(COL_MAP)
+
+    pd.testing.assert_frame_equal(forward, reverse)
+
+
+def test_identical_normalized_prediction_duplicates_are_clean() -> None:
+    """Equivalent R01/R1 rates deduplicate without an output warning."""
+    pred = pd.DataFrame(
+        [
+            {"Reference Designator": "R01", "Failure Rate": 0.25},
+            {"Reference Designator": "R1", "Failure Rate": 0.25},
+        ]
+    )
+    fmea = pd.DataFrame(
+        [{"Failure Mode Causes": "R1", "Failure Mode Ratio": 1.0, "Part Usage": 1.0}]
+    )
+
+    result = _make_logic(pred, fmea).process(COL_MAP)
+
+    assert result["Part_FR"].iloc[0] == pytest.approx(0.25)
+    assert result["Mode_FR"].iloc[0] == pytest.approx(0.25)
+    assert result["Validation_Notes"].iloc[0] == ""
+
+
 def test_invalid_usage_and_ratio_default_to_one() -> None:
     """Out-of-range usage/ratio default to 1.0 and are annotated.
 

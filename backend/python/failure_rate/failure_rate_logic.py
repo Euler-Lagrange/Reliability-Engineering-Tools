@@ -225,22 +225,63 @@ class FMEALinkerLogic:
             pred['FR_Clean'] = pred['FR_Clean'] / 1_000_000_000
         # per_hour: no conversion needed
         
-        # Check for duplicate RefDes in Prediction file - keep first occurrence
-        pred_dupes = pred[pred.duplicated(subset=['RefDes_Norm'], keep=False)]
-        if not pred_dupes.empty:
-            dupe_refs = pred_dupes['RefDes_Norm'].unique()
-            # L5: Show clear total count and sample of duplicates
-            sample = ', '.join(dupe_refs[:5])
-            remaining = len(dupe_refs) - 5
-            suffix = f" (and {remaining} more)" if remaining > 0 else ""
-            self.log(f"  WARNING: Found {len(dupe_refs)} duplicate RefDes entries in Prediction: {sample}{suffix}")
+        # Build one deterministic failure rate per normalized RefDes. Zero-padding
+        # normalization deliberately makes R01 and R1 equivalent, so choosing the
+        # first row would make the linked result depend on workbook row order.
+        # Identical rates are benign duplicates. Conflicting rates use the maximum
+        # as the conservative reliability estimate and are copied to every linked
+        # output row as an actionable Validation_Notes entry.
+        duplicate_conflict_notes: Dict[str, str] = {}
+        benign_duplicate_refs: list[str] = []
+        conflicting_duplicate_refs: list[str] = []
 
-        # Drop duplicates keeping first occurrence, then create lookup
-        pred_deduped = pred.drop_duplicates(subset=['RefDes_Norm'], keep='first')
-        if len(pred_deduped) < len(pred):
-            dropped_count = len(pred) - len(pred_deduped)
-            self.log(f"  Note: Dropped {dropped_count} duplicate rows (keeping first occurrence)")
-        fr_lookup = pred_deduped.set_index('RefDes_Norm')['FR_Clean'].to_dict()
+        for normalized_ref, group in pred.groupby('RefDes_Norm', sort=True):
+            if len(group) < 2:
+                continue
+
+            effective_rates = {float(value) for value in group['FR_Clean']}
+            if len(effective_rates) == 1:
+                benign_duplicate_refs.append(normalized_ref or "<blank>")
+                continue
+
+            conflicting_duplicate_refs.append(normalized_ref or "<blank>")
+
+            def _display_cell(value: Any) -> str:
+                if pd.isna(value):
+                    return "<blank>"
+                text = str(value).strip()
+                return text or "<blank>"
+
+            raw_pairs = sorted({
+                (_display_cell(raw_ref), _display_cell(raw_rate))
+                for raw_ref, raw_rate in zip(group[pred_ref_col], group[pred_fr_col])
+            })
+            pair_text = ", ".join(f"{raw_ref}={raw_rate}" for raw_ref, raw_rate in raw_pairs)
+            duplicate_conflict_notes[normalized_ref] = (
+                f"Conflicting Prediction rates for normalized RefDes {normalized_ref}: "
+                f"{pair_text}; selected the maximum as the conservative reliability estimate"
+            )
+
+        if benign_duplicate_refs:
+            sample = ', '.join(benign_duplicate_refs[:5])
+            remaining = len(benign_duplicate_refs) - 5
+            suffix = f" (and {remaining} more)" if remaining > 0 else ""
+            self.log(
+                f"  Note: Deduplicated {len(benign_duplicate_refs)} normalized "
+                f"Prediction RefDes with identical failure rates: {sample}{suffix}"
+            )
+
+        if conflicting_duplicate_refs:
+            sample = ', '.join(conflicting_duplicate_refs[:5])
+            remaining = len(conflicting_duplicate_refs) - 5
+            suffix = f" (and {remaining} more)" if remaining > 0 else ""
+            self.log(
+                f"  WARNING: Found {len(conflicting_duplicate_refs)} normalized "
+                f"Prediction RefDes with conflicting failure rates; selected the maximum "
+                f"as the conservative reliability estimate: {sample}{suffix}"
+            )
+
+        fr_lookup = pred.groupby('RefDes_Norm', sort=False)['FR_Clean'].max().to_dict()
         self.log(f"  Mapped {len(fr_lookup)} failure rates from Prediction.")
 
         fmea_cause_col = col_map['fmea_cause']
@@ -307,6 +348,8 @@ class FMEALinkerLogic:
                 # for a real link (Tier-1 fix: silent prediction-FR coercion).
                 if refdes in unparseable_fr_refs:
                     notes.append("Prediction FR unparseable (treated as 0.0)")
+                if refdes in duplicate_conflict_notes:
+                    notes.append(duplicate_conflict_notes[refdes])
             elif refdes:
                 part_fr = 0.0
                 missing_refs.add(refdes)

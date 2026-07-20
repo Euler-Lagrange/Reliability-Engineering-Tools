@@ -104,6 +104,54 @@ def test_failure_rate_missing_mapping_uses_display_label(tmp_path: Path) -> None
     assert "fmea_ratio" not in result["toast_text"]
 
 
+def test_failure_rate_conflicting_prediction_duplicates_increment_warning_count(
+    tmp_path: Path,
+) -> None:
+    """A normalized RefDes conflict must qualify the completed run as warning-bearing."""
+    body = _build_body(tmp_path)
+    prediction_path = Path(next(
+        item["path"] for item in body["inputs"] if item["role"] == "prediction"
+    ))
+    pd.DataFrame(
+        [
+            {"Reference Designator": "R01", "Failure Rate": 0.001},
+            {"Reference Designator": "R1", "Failure Rate": 0.9},
+        ]
+    ).to_excel(prediction_path, index=False)
+
+    result = fr_runtime.execute_run_request(body)
+
+    assert result["warning_count"] == 1
+    assert result["secondary_metric"] == "1 warnings"
+    output = pd.read_excel(result["output_file"], sheet_name="Main", keep_default_na=False)
+    note = output["Validation_Notes"].iloc[0]
+    assert "R01=0.001" in note
+    assert "R1=0.9" in note
+
+
+def test_failure_rate_identical_prediction_duplicates_keep_warning_count_clean(
+    tmp_path: Path,
+) -> None:
+    """Benign normalized duplicates must not turn a clean run amber."""
+    body = _build_body(tmp_path)
+    prediction_path = Path(next(
+        item["path"] for item in body["inputs"] if item["role"] == "prediction"
+    ))
+    pd.DataFrame(
+        [
+            {"Reference Designator": "R01", "Failure Rate": 0.25},
+            {"Reference Designator": "R1", "Failure Rate": 0.25},
+        ]
+    ).to_excel(prediction_path, index=False)
+
+    result = fr_runtime.execute_run_request(body)
+
+    assert result["warning_count"] == 0
+    assert result["secondary_metric"] == "0 warnings"
+    output = pd.read_excel(result["output_file"], sheet_name="Main", keep_default_na=False)
+    assert output["Validation_Notes"].iloc[0] == ""
+
+
 def test_failure_rate_cancel_after_verify_cleans_temp_and_skips_promote(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

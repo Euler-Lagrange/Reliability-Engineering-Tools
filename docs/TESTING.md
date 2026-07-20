@@ -11,12 +11,12 @@
 | Backend FMEA Phase D | `backend/tests/test_fmea_phase_d.py` | 119 | pytest |
 | Backend FMEA template analyzer | `backend/tests/test_fmea_template_analyzer.py` | 1 | pytest |
 | Backend FMEA column resolution | `backend/tests/test_fmea_column_resolution.py` | 12 | pytest |
-| Backend Failure-Rate logic | `backend/tests/test_failure_rate_logic.py` | 27 | pytest |
+| Backend Failure-Rate logic | `backend/tests/test_failure_rate_logic.py` | 31 | pytest |
 | Backend RefDes extraction-engine | `backend/tests/test_extraction_engine.py` | 22 | pytest |
 | Backend BOM-compare logic | `backend/tests/test_bom_compare_logic.py` | 57 | pytest |
 | Backend BOM-compare runtime | `backend/tests/test_bom_compare_runtime.py` | 16 | pytest |
 | Backend extraction compare | `backend/tests/test_extraction_compare.py` | 10 | pytest |
-| Backend Failure-Rate runtime | `backend/tests/test_failure_rate_runtime.py` | 4 | pytest |
+| Backend Failure-Rate runtime | `backend/tests/test_failure_rate_runtime.py` | 6 | pytest |
 | Backend read-layer (NA + header dedup) | `backend/tests/test_read_layer.py` | 9 | pytest |
 | Backend excel styles | `backend/tests/test_excel_styles.py` | 3 | pytest |
 | Backend validate output path | `backend/tests/test_validate_output_path.py` | 5 | pytest |
@@ -29,7 +29,7 @@
 | Backend RefDes runtime | `backend/tests/test_refdes_runtime.py` | 36 | pytest |
 | Backend RefDes validation notes | `backend/tests/test_validation_notes.py` | 12 | pytest |
 | Backend RefDes prefix config | `backend/tests/test_refdes_prefix_config.py` | 7 | pytest |
-| **Backend subtotal** | | **503** | |
+| **Backend subtotal** | | **509** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 5 | Vitest + RTL |
 | Frontend escape layers | `frontend/src/shared/hooks/useEscapeLayer.test.ts` | 4 | Vitest |
@@ -80,7 +80,7 @@
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
 | **Frontend subtotal** | | **357** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 19 | cargo test |
-| **Total** | | **879** | |
+| **Total** | | **885** | |
 
 ## Backend Tests
 
@@ -223,11 +223,11 @@ new FMEA tests must do the same or validation will reject the request.
 | FMEA Phase D (in-process, 119 tests) | BOM inheritance, variant handling, failure modes standard filtering, fill-gaps validation, usage fraction calculations, legacy enrichment rejection, functional-to-piecepart preservation, CCA prefix handling, output directory configuration (including unwritable-directory fallback), cancellation across standard/preserve write-verify-promote boundaries and inside the analyzer's pandas re-read, Part Usage (PU) column logic incl. Tier-1 compute-or-blank+flag (instance-count 1/N derivation, blank+PU_GUESSED flag, explicit-value preservation), column override modes, union merge strategies, FMC mapping, bijective FMEA-ID suffix, Batch-1 deep-dive fixes (preserve-mode diagnostic-sheet parity incl. the New-RefDes banner, underscore-column hygiene, `invalid_do_not_map` required-mapping gate + bom_only FMEA-ID exemption), Batch-2 diagnostics language (REASON_CODE_LABELS lockstep scan, PU_PARSE_REPLACED_WITH_COUNT split, Part Usage Diagnostics banner in both writers, Template_Merge_Summary flag legend, named unsupported-combo toast, files-first FMC ordering + structured cards), Batch-4 robustness (FileAccessError on failed post-write verification, negative Part Usage as data-quality warning not AssertionError, NaN-safe append cells), Wave 4 preserve-merge integrity (blank/formula preservation, audited real replacements, numeric-equivalent type preservation, ambiguity rejection, normalized group-ID collision blocking, ownership-marked diagnostics that preserve user sheet-name collisions, selected-main-sheet protection and warning, merged-range and row-dimension rebasing, one-per-run unsupported-feature issues, image/chart preflight warnings, injective exact-first column mapping, case-variant last-header selection, duplicate-header diagnostics, fail-closed header/identity detection, stale-target fingerprint rejection, analyzer handle ownership, per-column insert styles, and collision-safe Merged output promotion) |
 | FMEA template analyzer package preflight (1 test) | Builds a real OOXML image drawing/relationship and proves the no-Pillow loader can drop `Worksheet._images` without suppressing the run-log loss warning. |
 | Inspection caps (subprocess, 4 tests) | `inspect_input` row cap at 20 000 rows, column cap at 100 columns, sparse-sheet row cap by physical rows scanned, header-search cap failure within 1 000 rows |
-| Failure-Rate logic (in-process, 24 tests) | Failure Rate (FR) linker math driven through `FMEALinkerLogic.process`: per-mode `Mode_FR = Part_FR * Usage * Corrected_Ratio` arithmetic, unit-mode scaling to per-hour space, RefDes lookup normalization, and Tier-1 genuine-gap Part Usage handling (blank usage with real FR → NaN Mode_FR, "=1/N" formula-cell-as-NaN, unmatched-RefDes zero preserved, circuit-block roll-up skips blank children) — asserts exact computed numbers |
+| Failure-Rate logic (in-process, 31 tests) | Failure Rate (FR) linker math driven through `FMEALinkerLogic.process`: per-mode `Mode_FR = Part_FR * Usage * Corrected_Ratio` arithmetic, unit-mode scaling to per-hour space, RefDes lookup normalization, deterministic normalized-RefDes duplicate handling (conservative maximum for conflicts; identical-rate deduplication stays clean), and Tier-1 genuine-gap Part Usage handling (blank usage with real FR → NaN Mode_FR, "=1/N" formula-cell-as-NaN, unmatched-RefDes zero preserved, circuit-block roll-up skips blank children) — asserts exact computed numbers |
 | RefDes extraction-engine (in-process, 18 tests) | `_disambiguate_pin_mapping` pin-label collision resolution across the three-tier priority (body center inside group rect → body overlaps rect → nearest body by distance); bounded word extraction across both group-fallback probes; post-join zombie counting and survivor retention for safe document ownership; the Tier-2 #20 pinlist-failure run-log surfacing; and the geometry RefDes-check prefix-allowlist alignment (#6), the `pin_assignment_threshold` config key, and cap-hit run-log warnings |
 | BOM-compare logic (in-process, 31 tests) | BOM Compare range/set math: opt-in RefDes range expansion (`R200-R205` → R200..R205) while the `analyze` orchestrator never expands by default (hyphens denote pins, e.g. `U200-1` reduces to base `U200`), zero-pad preservation, `analyze` set math (Missing in BOM / BOM Not in Groups, both directions), and the custom per-column value-diff contract (`compare_columns` flags a changed value, omitting it reports none, Numeric rule ignores text formatting) |
 | BOM-compare runtime (in-process, 16 tests) | Runtime validation/option wiring plus cancellation cleanup before promotion in group, custom, and extraction-compare output paths |
-| Failure-Rate runtime (in-process, 4 tests) | Runtime validation labels and cancellation cleanup before output promotion |
+| Failure-Rate runtime (in-process, 6 tests) | Runtime validation labels, duplicate-rate warning qualification, clean identical-rate deduplication, and cancellation cleanup before output promotion |
 | RefDes runtime (in-process, 33 tests) | Runtime option validation, output projection, BOM cross-check soft-failure qualification, cancellation checks during group detection / after extraction / before promotion, and zombie-aware PDF close behavior |
 | RefDes silent-loss hotfix (Wave R, in-process, 12 tests) | DIG-4xx incident closure: UNGROUPED (IN/NOT IN BOM) + PROVISIONAL capture for RefDes outside every group rect (NextGen + legacy-hybrid twin); annotation page-timeout collection with 30s default, config option, and toast-qualifying result notes; empty-`/Contents` FreeText label recovery from the annotation appearance; run-length-aware sequence gaps (short-run placeholders, long-run range-summary rows, no silent family skip) with extraction-compare exclusion; the combined 3-page incident regression; bom-collision pin disposition |
 | BOM-compare FMEA detection + sheet naming (in-process, 5 tests) | UX round-2 pair: content-based FMEA detection on the custom path (validated FMEA Level column triggers FMEA-aware mode without a filename hint; explicit-evidence gate so a plain BOM or a substring-only "Record Type" column never misfires; filename fallback unchanged) and the custom-report space-scheme sheet names (`Only In <file>` / `Part Usage` / `Failure Mode Ratio Errors` / `Scope Warnings`) with a no-underscore lockstep guard |
