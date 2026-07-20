@@ -41,7 +41,7 @@ COLUMN_SYNONYMS: Dict[str, List[str]] = {
     # -------------------------------------------------------------------------
     'part_number': [
         'Part Number', 'PartNumber', 'P/N', 'Part_Number', 'PN',
-        'BAE Part Number',
+        'BAE Part Number', 'BAE PN',
     ],
 
     # -------------------------------------------------------------------------

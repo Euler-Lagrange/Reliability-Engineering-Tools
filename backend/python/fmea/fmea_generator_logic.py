@@ -185,20 +185,31 @@ ROW_STYLE_PRIORITY = {
 def resolve_column(df: pd.DataFrame, possible_names: List[str]) -> Optional[str]:
     """Find matching column name from list of possible names.
 
-    M16: Uses minimum match length (4 chars) to avoid false positives.
+    M16: substring matching requires either a >=4-char synonym (plain
+    containment) or, for shorter synonyms like "PN" / "P/N", a word-boundary
+    match — "Customer PN" resolves while "PNP Driver" does not. The boundary
+    rule keeps the original guard ("Ref" must not match "Reference
+    Designator") while letting registered short synonyms work inside
+    compound headers (2026-07-20 field failure: a BOM headed "BAE PN"
+    failed the run because short synonyms were skipped wholesale).
     """
-    MIN_SUBSTRING_MATCH_LEN = 4  # Prevent "Ref" matching "Reference Designator"
+    MIN_SUBSTRING_MATCH_LEN = 4  # Plain containment above this; boundary match below
     cols_lower = {c.lower().strip(): c for c in df.columns}
     # First pass: exact match (case-insensitive)
     for name in possible_names:
         if name.lower().strip() in cols_lower:
             return cols_lower[name.lower().strip()]
-    # Second pass: substring match with minimum length requirement
+    # Second pass: substring match (word-boundary required for short synonyms)
     for c in df.columns:
         c_low = c.lower().strip()
         for name in possible_names:
             name_low = name.lower().strip()
-            if len(name_low) >= MIN_SUBSTRING_MATCH_LEN and name_low in c_low:
+            if len(name_low) >= MIN_SUBSTRING_MATCH_LEN:
+                if name_low in c_low:
+                    return c
+            elif name_low and re.search(
+                rf"(?<![a-z0-9]){re.escape(name_low)}(?![a-z0-9])", c_low
+            ):
                 return c
     return None
 
