@@ -128,10 +128,11 @@ describe("FmeaTool — Phase 5 mapping row visibility", () => {
     renderApp();
     await waitForFmeaTool();
 
-    // piece_part_generate: three statically-required rows carry the marker,
+    // piece_part_generate: four statically-required rows carry the marker
+    // (FMEA-ID, Part Number, Failure Mode, Failure Mode Ratio) —
     // Failure Mode Causes does not (auto-detect is acceptable there).
     const initialMarkers = screen.getAllByLabelText("Required column");
-    expect(initialMarkers).toHaveLength(3);
+    expect(initialMarkers).toHaveLength(4);
     expect(
       initialMarkers.some((marker) =>
         marker.closest("tr")?.textContent?.includes("Failure Mode Causes"),
@@ -143,7 +144,7 @@ describe("FmeaTool — Phase 5 mapping row visibility", () => {
     await user.click(screen.getByRole("button", { name: /merge functional fmea/i }));
 
     const mergeMarkers = screen.getAllByLabelText("Required column");
-    expect(mergeMarkers).toHaveLength(4);
+    expect(mergeMarkers).toHaveLength(5);
     expect(
       mergeMarkers.some((marker) =>
         marker.closest("tr")?.textContent?.includes("Failure Mode Causes"),
@@ -257,8 +258,8 @@ describe("FmeaTool — Phase 5 mapping row visibility", () => {
     await waitForFmeaTool();
 
     const helpButtons = document.querySelectorAll(".mapping-table__help-button");
-    // 11 rows visible in the default piece_part_generate mode (14 - 3 merge).
-    expect(helpButtons.length).toBe(11);
+    // 12 rows visible in the default piece_part_generate mode (15 - 3 merge).
+    expect(helpButtons.length).toBe(12);
   }, FMEA_TOOL_TEST_TIMEOUT_MS);
 
   test("Fix B2: switching workflow mode does not reset inspection-backed mapping", async () => {

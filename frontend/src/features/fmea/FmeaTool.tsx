@@ -30,6 +30,7 @@ import type {
 } from "../../app/types";
 import { DO_NOT_MAP_VALUE } from "../../app/types";
 import { FMEA_COLUMN_METADATA, migrateFmdOverrides, resolveColumnLabel } from "./mappingColumns";
+import { findSynonymMatch } from "./columnSynonyms";
 import {
   buildAggregatedMappingSource,
   buildWorkbookColumnUnion,
@@ -296,7 +297,7 @@ const DEMO_WORKBOOK_COLUMNS: Partial<Record<FileRole, string[]>> = IS_BROWSER_MO
  * `FMEA_COLUMN_METADATA` — this is the single source of truth Phase 5
  * wires into the expandable help panel.
  */
-function buildFmeaMappingRows(
+export function buildFmeaMappingRows(
   workflowId: WorkflowId,
   fmdStandard: "FMD-91" | "FMD-2016",
   inspectedColumns: string[],
@@ -311,8 +312,16 @@ function buildFmeaMappingRows(
     (meta) => {
       const canonical = resolveColumnLabel(meta, fmdStandard);
       const exactMatch = exactMap.get(normalizeHeader(canonical));
+      // 2026-07-20: fall back to the mirrored backend synonyms so headers
+      // like "BAE PN" / "FMD-2016 Commodity Type I" automap instead of
+      // rendering "Select column" while the run would resolve them anyway.
+      const synonymMatch =
+        meta.origin !== "derived" && !exactMatch
+          ? findSynonymMatch(canonical, exactMap)
+          : undefined;
+      const autoMatch = exactMatch ?? synonymMatch;
       const options = Array.from(
-        new Set(exactMatch ? [exactMatch, ...inspectedColumns] : [...inspectedColumns]),
+        new Set(autoMatch ? [autoMatch, ...inspectedColumns] : [...inspectedColumns]),
       );
 
       let mappedTo = "";
@@ -322,12 +331,16 @@ function buildFmeaMappingRows(
           ? "Generated automatically from BOM and grouping data."
           : "No column mapped yet.";
 
-      if (meta.origin !== "derived" && exactMatch) {
-        mappedTo = exactMatch;
+      if (meta.origin !== "derived" && autoMatch) {
+        mappedTo = autoMatch;
         status = "mapped";
-        recommendation = sourceLabel
-          ? `Exact header found in ${sourceLabel}.`
-          : "Exact header found in inspected workbook.";
+        recommendation = exactMatch
+          ? sourceLabel
+            ? `Exact header found in ${sourceLabel}.`
+            : "Exact header found in inspected workbook."
+          : sourceLabel
+            ? `Matched "${autoMatch}" via a known synonym in ${sourceLabel}.`
+            : `Matched "${autoMatch}" via a known synonym.`;
       }
 
       return {

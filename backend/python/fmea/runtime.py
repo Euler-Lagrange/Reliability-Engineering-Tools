@@ -76,6 +76,7 @@ FRONTEND_TO_BACKEND_MAPPING: dict[str, tuple[str, str]] = {
     "FMEA-ID": ("COMPONENT_GROUPING", "component_group"),
     "Failure Mode Causes": ("COMPONENT_GROUPING", "ref_des"),
     # BOM file
+    "Part Number": ("BOM", "part_number"),
     "Component Part Description": ("BOM", "description"),
     "Part Usage": ("BOM", "part_usage"),
     # HDA file — BAE taxonomy
@@ -358,6 +359,10 @@ REQUIRED_MAPPING_CANONICALS: tuple[str, ...] = (
     "FMEA-ID",
     "Failure Mode",
     "Failure Mode Ratio",
+    # 2026-07-20: Part Number became a mappable row. It is a hard-required
+    # BOM column in every workflow (all four consume a BOM and the HDA
+    # commodity join keys on it), so Do-Not-Map must block at validate.
+    "Part Number",
 )
 
 
@@ -664,14 +669,24 @@ def _build_output_name(
     workflow_id: str,
     output_directory: Path | None = None,
 ) -> str:
+    # 2026-07-20 user request: the stem follows the selected workflow card.
+    # Every non-merge workflow produces a piece-part FMEA, so a generation
+    # run must not ship as "MergedFMEA" (a relic of the DarkStar-codename
+    # removal); only the merge workflow keeps the Merged stem. Preserve-mode
+    # outputs are unaffected — they derive from the template's own filename
+    # (fmea_template_writer).
+    stems = {
+        "fill_gaps": "MergedFMEA",
+    }
     suffixes = {
         "bom_only": "BomOnly",
         "fill_gaps": "FillGaps",
         "functional_to_piecepart": "FromFunctional",
     }
+    stem = stems.get(workflow_id, "PiecePartFMEA")
     suffix = suffixes.get(workflow_id, "Standard")
     return build_output_filename(
-        "MergedFMEA",
+        stem,
         suffix,
         output_directory=output_directory,
     )

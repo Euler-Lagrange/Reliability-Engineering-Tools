@@ -7,10 +7,10 @@
 | Backend integration | `backend/tests/test_sidecar_main.py` | 52 | pytest |
 | Backend security audit | `backend/tests/test_security_audit.py` | 27 | pytest |
 | Backend cancel bridge | `backend/tests/test_cancel_bridge.py` | 12 | pytest |
-| Backend output-directory helpers | `backend/tests/test_output_directory_helpers.py` | 18 | pytest |
+| Backend output-directory helpers | `backend/tests/test_output_directory_helpers.py` | 19 | pytest |
 | Backend FMEA Phase D | `backend/tests/test_fmea_phase_d.py` | 119 | pytest |
 | Backend FMEA template analyzer | `backend/tests/test_fmea_template_analyzer.py` | 1 | pytest |
-| Backend FMEA column resolution | `backend/tests/test_fmea_column_resolution.py` | 8 | pytest |
+| Backend FMEA column resolution | `backend/tests/test_fmea_column_resolution.py` | 12 | pytest |
 | Backend Failure-Rate logic | `backend/tests/test_failure_rate_logic.py` | 27 | pytest |
 | Backend RefDes extraction-engine | `backend/tests/test_extraction_engine.py` | 22 | pytest |
 | Backend BOM-compare logic | `backend/tests/test_bom_compare_logic.py` | 57 | pytest |
@@ -29,7 +29,7 @@
 | Backend RefDes runtime | `backend/tests/test_refdes_runtime.py` | 36 | pytest |
 | Backend RefDes validation notes | `backend/tests/test_validation_notes.py` | 12 | pytest |
 | Backend RefDes prefix config | `backend/tests/test_refdes_prefix_config.py` | 7 | pytest |
-| **Backend subtotal** | | **498** | |
+| **Backend subtotal** | | **503** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 5 | Vitest + RTL |
 | Frontend escape layers | `frontend/src/shared/hooks/useEscapeLayer.test.ts` | 4 | Vitest |
@@ -62,7 +62,8 @@
 | Frontend FMEA tool | `frontend/src/features/fmea/FmeaTool.test.tsx` | 13 | Vitest + RTL |
 | Frontend FMEA inspection | `frontend/src/features/fmea/FmeaTool.inspection.test.tsx` | 6 | Vitest + RTL |
 | Frontend FMEA onboarding | `frontend/src/features/fmea/FmeaTool.pristine.test.tsx` | 4 | Vitest + RTL |
-| Frontend mapping columns | `frontend/src/features/fmea/mappingColumns.test.ts` | 27 | Vitest |
+| Frontend mapping columns | `frontend/src/features/fmea/mappingColumns.test.ts` | 28 | Vitest |
+| Frontend FMEA synonym automap | `frontend/src/features/fmea/columnSynonyms.test.ts` | 9 | Vitest |
 | Frontend mapping analysis | `frontend/src/features/fmea/mappingAnalysis.test.ts` | 5 | Vitest |
 | Frontend BOM Compare tool | `frontend/src/features/bom-compare/BomCompareTool.test.tsx` | 24 | Vitest + RTL |
 | Frontend Failure Rate tool | `frontend/src/features/failure-rate/FailureRateTool.test.tsx` | 5 | Vitest + RTL |
@@ -77,9 +78,9 @@
 | Frontend shell-hook install | `frontend/src/app/App.shellHooks.test.tsx` | 1 | Vitest + RTL |
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 4 | Vitest + RTL |
-| **Frontend subtotal** | | **347** | |
+| **Frontend subtotal** | | **357** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 19 | cargo test |
-| **Total** | | **864** | |
+| **Total** | | **879** | |
 
 ## Backend Tests
 

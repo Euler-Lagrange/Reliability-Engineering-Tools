@@ -5925,7 +5925,7 @@ def _assert_fmea_cancel_after_verify_skips_promote(
     pattern = (
         "target_fmea_Merged_*.xlsx"
         if preserve_formatting
-        else "MergedFMEA_Standard_*.xlsx"
+        else "PiecePartFMEA_Standard_*.xlsx"
     )
     assert not list(tmp_path.glob(pattern))
     assert not list(tmp_path.glob(".*.part.xlsx"))

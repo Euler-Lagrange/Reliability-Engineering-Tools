@@ -103,7 +103,7 @@ def test_build_output_filename_without_directory_keeps_filename_only_api(
         (
             fmea_runtime,
             ("piece_part_generate",),
-            "MergedFMEA_Standard_20260714_010203.xlsx",
+            "PiecePartFMEA_Standard_20260714_010203.xlsx",
         ),
     ],
 )
@@ -124,6 +124,28 @@ def test_runtime_output_builders_choose_suffix_two_on_collision(
 
     assert selected_name == base_name.replace(".xlsx", " (2).xlsx")
     assert existing.read_bytes() == b"existing output"
+
+
+def test_fmea_output_stem_follows_workflow(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """2026-07-20 user request: the FMEA output filename stem follows the
+    selected workflow card — a piece-part generation must not ship as
+    "MergedFMEA" (a relic of the DarkStar-codename removal). Only the
+    merge workflow keeps the Merged stem."""
+    _freeze_output_clock(monkeypatch)
+    expected = {
+        "piece_part_generate": "PiecePartFMEA_Standard_20260714_010203.xlsx",
+        "bom_only": "PiecePartFMEA_BomOnly_20260714_010203.xlsx",
+        "functional_to_piecepart": "PiecePartFMEA_FromFunctional_20260714_010203.xlsx",
+        "fill_gaps": "MergedFMEA_FillGaps_20260714_010203.xlsx",
+    }
+    for workflow_id, name in expected.items():
+        assert (
+            fmea_runtime._build_output_name(workflow_id, output_directory=tmp_path)
+            == name
+        ), workflow_id
 
 
 def test_build_output_filename_fails_after_collision_suffix_99(

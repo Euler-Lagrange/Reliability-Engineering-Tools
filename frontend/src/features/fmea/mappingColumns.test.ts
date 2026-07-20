@@ -24,8 +24,26 @@ const findByCanonical = (canonical: string): FmeaColumnMetadata => {
 };
 
 describe("FMEA_COLUMN_METADATA — Phase 5 canonical column list", () => {
-  test("has exactly 14 entries", () => {
-    expect(FMEA_COLUMN_METADATA).toHaveLength(14);
+  test("has exactly 15 entries", () => {
+    expect(FMEA_COLUMN_METADATA).toHaveLength(15);
+  });
+
+  test("Part Number row is required, mapped-origin, and visible everywhere", () => {
+    // 2026-07-20: Part Number is one of only two hard-required BOM columns
+    // (it drives the HDA commodity join) but the card never offered it —
+    // auto-detect was the only path and a miss failed the run outright.
+    const pn = findByCanonical("Part Number");
+    expect(pn.required).toBe(true);
+    expect(pn.origin).toBe("mapped");
+    const modes: WorkflowId[] = [
+      "piece_part_generate",
+      "bom_only",
+      "functional_to_piecepart",
+      "fill_gaps",
+    ];
+    for (const mode of modes) {
+      expect(pn.isVisibleInMode(mode)).toBe(true);
+    }
   });
 
   test("every entry has non-empty help text of reasonable length", () => {
@@ -89,27 +107,27 @@ describe("FMEA_COLUMN_METADATA — visibility filters", () => {
     }
   });
 
-  test("bom_only mode exposes 10 rows (14 - FMEA-ID - 3 merge-only)", () => {
+  test("bom_only mode exposes 11 rows (15 - FMEA-ID - 3 merge-only)", () => {
     const visible = FMEA_COLUMN_METADATA.filter((meta) =>
       meta.isVisibleInMode("bom_only"),
     );
-    expect(visible).toHaveLength(10);
+    expect(visible).toHaveLength(11);
   });
 
-  test("merge modes expose all 14 rows", () => {
+  test("merge modes expose all 15 rows", () => {
     for (const mode of ["functional_to_piecepart", "fill_gaps"] as const) {
       const visible = FMEA_COLUMN_METADATA.filter((meta) =>
         meta.isVisibleInMode(mode),
       );
-      expect(visible).toHaveLength(14);
+      expect(visible).toHaveLength(15);
     }
   });
 
-  test("piece_part_generate mode exposes 11 rows", () => {
+  test("piece_part_generate mode exposes 12 rows", () => {
     const visible = FMEA_COLUMN_METADATA.filter((meta) =>
       meta.isVisibleInMode("piece_part_generate"),
     );
-    expect(visible).toHaveLength(11);
+    expect(visible).toHaveLength(12);
   });
 });
 
@@ -259,7 +277,7 @@ describe("FMEA_COLUMN_METADATA — origin flags", () => {
 
   test("most rows carry the mapped origin", () => {
     const mapped = FMEA_COLUMN_METADATA.filter((meta) => meta.origin === "mapped");
-    // 14 total - 1 derived - 3 merge_only = 10 mapped
-    expect(mapped).toHaveLength(10);
+    // 15 total - 1 derived - 3 merge_only = 11 mapped
+    expect(mapped).toHaveLength(11);
   });
 });

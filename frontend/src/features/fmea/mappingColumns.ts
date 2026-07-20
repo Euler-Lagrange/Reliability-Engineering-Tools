@@ -3,7 +3,7 @@ import type { MappingOrigin, WorkflowId } from "../../app/types";
 /**
  * Phase 5: canonical FMEA mapping column metadata.
  *
- * Single source of truth for the 14 FMEA mapping rows rendered in the
+ * Single source of truth for the 15 FMEA mapping rows rendered in the
  * Column Mapping SectionCard. Each entry carries:
  *
  *   - `canonical`      — the default display label (rows 6 and 7 override
@@ -70,6 +70,14 @@ export const FMEA_COLUMN_METADATA: readonly FmeaColumnMetadata[] = [
     // Tradeoff: plan says required in merge modes only, but `required`
     // is static. Merge-mode enforcement lives in the backend validator.
     required: false,
+    isVisibleInMode: () => true,
+  },
+  {
+    canonical: "Part Number",
+    help:
+      "Part number for each BOM line (e.g. `BAE PN`, `P/N`, `Part Number`). Required: it drives the HDA commodity join — the generator looks up each part's commodity classification by part number, and the run cannot resolve failure modes without it. Leave unmapped to auto-detect common headers, or pick the column explicitly when your BOM uses a nonstandard name.",
+    origin: "mapped",
+    required: true,
     isVisibleInMode: () => true,
   },
   {
