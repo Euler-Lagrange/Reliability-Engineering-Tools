@@ -102,10 +102,6 @@ Do not re-flag these without new evidence; each was examined and accepted.
   `App.keepalive.test.tsx`) under heavy machine load; every flake passes in
   isolation. Root-caused 2026-07 (cold lazy-chunk imports vs the RTL default
   timeout); mitigated in `vitest.setup.ts`, residual under extreme load.
-- `docs/TESTING.md`'s detailed descriptive inventory has some pre-existing
-  stale per-file counts (contract, command-palette, run-lifecycle suites);
-  the primary inventory table and aggregate counts are current and are the
-  ones kept in lockstep.
 - FMEA's onboarding EmptyState is desktop-only by design — the browser-mock
   preview deliberately stages a working demo instead.
 
