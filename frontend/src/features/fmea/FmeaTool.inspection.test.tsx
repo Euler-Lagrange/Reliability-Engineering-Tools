@@ -76,8 +76,8 @@ function inputCard(label: string) {
 }
 
 // A blocking validate_run result whose validation card is rendered in the
-// Preview tab. Used to seed a stale card that a subsequent browse / sheet
-// change must clear (Fix 2).
+// persistent Validation panel. Used to seed a stale card that a subsequent
+// browse / sheet change must clear (Fix 2).
 const STALE_VALIDATION = {
   ok: false as const,
   reason_code: "blocked",

@@ -13,8 +13,8 @@ import type { MappingOrigin, WorkflowId } from "../../app/types";
  *                        the approved plan section A4. These strings are
  *                        user-facing, reviewed content — do not edit
  *                        without a plan update.
- *   - `origin`         — drives the status chip. `"derived"` rows render
- *                        with the read-only "Derived" chip even when the
+ *   - `origin`         — drives the mapping-state badge. `"derived"` rows render
+ *                        with the read-only "Derived" state even when the
  *                        user has not picked a mapping. `"merge_only"`
  *                        rows are hidden in non-merge modes.
  *   - `required`       — critical columns. Selecting "— Do Not Map —" for
@@ -42,7 +42,7 @@ export interface FmeaColumnMetadata {
   getLabel?: (fmdStandard: "FMD-91" | "FMD-2016") => string;
   /** Rich "About this column" body text. Verbatim from plan section A4. */
   help: string;
-  /** Drives status chip behavior downstream. */
+  /** Drives mapping-state badge behavior downstream. */
   origin: MappingOrigin;
   /** Hard-required columns. See tradeoff note in file header. */
   required: boolean;

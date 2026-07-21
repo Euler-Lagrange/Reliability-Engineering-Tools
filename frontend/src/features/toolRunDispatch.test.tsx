@@ -69,12 +69,6 @@ function deferred<T>() {
 
 async function runTool(startLabel: string) {
   const user = userEvent.setup();
-  // v2 N5: FMEA's Run rail is persistent (no tab); the other tools keep
-  // their Preview/Run tabs until the rail pattern is cloned to them.
-  const runTab = screen.queryByRole("tab", { name: /^Run$/i });
-  if (runTab) {
-    await user.click(runTab);
-  }
   await user.click(screen.getByRole("button", { name: startLabel }));
 }
 
@@ -365,7 +359,7 @@ describe("tool run dispatch", () => {
     refdes.unmount();
   });
 
-  it("FMEA marks mandatory input roles with a Required chip in desktop mode", async () => {
+  it("FMEA marks mandatory input roles with a required indicator in desktop mode", async () => {
     backendMocks.openExcelFile.mockResolvedValue("C:\\real\\Grouping.xlsx");
     backendMocks.listSheets.mockResolvedValue({
       path: "C:\\real\\Grouping.xlsx",

@@ -87,16 +87,17 @@ const SECTIONS: GuideSection[] = [
         <h3>Concepts you will see in every tool</h3>
         <ul>
           <li>
-            <strong>Workflow cards.</strong> The first card offers the mode
-            choices. The rest of the screen — which inputs appear, which options
-            apply — changes with your pick.
+            <strong>Workflow and numbered setup sections.</strong> The first
+            section offers the mode choices. Inputs, mapping, and options change
+            with your pick, and the topbar shows the active tool&apos;s Mode.
           </li>
           <li>
-            <strong>Input cards with Required chips.</strong> Each input is a
-            card with a Browse button and (for Excel) a sheet dropdown. An
-            unloaded card shows a <em>Required</em> chip when the current
-            workflow needs it. Empty required cards block the run — the app
-            never runs against a fake or example path.
+            <strong>Input rows with required markers.</strong> Each row has a
+            Browse button and (for Excel) a sheet dropdown. Required rows carry
+            a red <code>*</code>; the leading indicator changes from a hollow
+            ring, to an active dot, to a green check when loaded. Empty required
+            rows block the run — the app never runs against a fake or example
+            path.
           </li>
           <li>
             <strong>Column mapping.</strong> A mapping table pairs each field
@@ -107,10 +108,20 @@ const SECTIONS: GuideSection[] = [
             left unmapped and are auto-detected.
           </li>
           <li>
-            <strong>Review / Run panel.</strong> The right-side panel toggles
-            between Preview (sample rows + validation messages) and Run (live
-            progress and the result). <kbd>Ctrl+R</kbd> opens the review
+            <strong>Persistent Run and Validation rail.</strong> Every analysis
+            tool keeps separate Run and Validation cards visible on the right.
+            Run shows readiness, Start/Cancel, progress, phases, and the result;
+            Validation shows the current messages. Press{" "}
+            <kbd>Ctrl+Enter</kbd> (<kbd>Cmd+Enter</kbd> on macOS) to start only
+            when the visible tool is ready and focus is not editable.{" "}
+            <kbd>Ctrl+R</kbd> / <kbd>Cmd+R</kbd> opens the separate Review
             drawer.
+          </li>
+          <li>
+            <strong>Run log and backend health.</strong> The cross-tool strip at
+            the bottom keeps logging across tool switches and shows the current
+            backend status and bridge mode on its right edge. Full diagnostics
+            remain in Settings.
           </li>
           <li>
             <strong>Output folder.</strong> Defaults to the folder of your
@@ -170,9 +181,22 @@ const SECTIONS: GuideSection[] = [
             values replace them and are audited on <code>Merge Changes</code>.
           </li>
           <li>
+            <strong>New-workbook filenames</strong> identify the workflow:{" "}
+            <code>PiecePartFMEA_Standard_*</code>,{" "}
+            <code>PiecePartFMEA_BomOnly_*</code>,{" "}
+            <code>PiecePartFMEA_FromFunctional_*</code>, or{" "}
+            <code>MergedFMEA_FillGaps_*</code>. Preserve-formatting copies keep
+            the selected target&apos;s stem.
+          </li>
+          <li>
             <strong>Part Usage</strong>: leave unmapped to auto-count instances.
             If you map it and it disagrees with the computed count, the row is
             flagged and listed on the Part Usage Diagnostics sheet.
+          </li>
+          <li>
+            <strong>Part Number mapping</strong> is required in every workflow.
+            If it cannot be detected, choose the correct source column; leaving
+            it unresolved or selecting Do Not Map blocks validation.
           </li>
           <li>
             <strong>Local / Next Higher / End Effect</strong>: generated
@@ -269,6 +293,15 @@ const SECTIONS: GuideSection[] = [
             [<strong key="w">Extraction Compare</strong>, "Two RefDes-extraction outputs (rev A vs rev B)", "Fixed schema — no mappings or options; reports Appeared / Disappeared / Moved Groups"],
           ]}
         />
+        <p>
+          <strong>Optional display names.</strong> Each input row can replace a
+          generic role such as File 1 or Grouping with a name like{" "}
+          <code>Rev A</code>, <code>Supplier BOM</code>, or{" "}
+          <code>CPU Grouping</code>. The name appears in mapping labels and in
+          the report&apos;s Summary/source labels. Leave it blank for the
+          standard role label and canonical role/file-stem fallback; it never
+          changes matching.
+        </p>
         <h3>Options</h3>
         <ul>
           <li>
@@ -387,8 +420,9 @@ const SECTIONS: GuideSection[] = [
           <li>
             <strong>Geometry analysis</strong> + adaptive page gating qualify
             pins by vector geometry; the Advanced section tunes batch size,
-            distances, and thresholds — every field has a tooltip, all 16
-            options are range-checked before the run, and defaults are safe.
+            distances, thresholds, and the per-page annotation timeout — every
+            field has a tooltip, all 17 options are range-checked before the
+            run, and defaults are safe.
           </li>
         </ul>
         <h3>Reading the output</h3>
@@ -486,11 +520,14 @@ const SECTIONS: GuideSection[] = [
         </p>
         <h3>Crash dumps</h3>
         <p>
-          Unhandled errors write a timestamped file under{" "}
-          <code>~/.reliability_tools/logs/crashes/</code>. Every dump opens
-          with a review-before-sharing banner because a crash can echo BOM /
-          part values — read it before sending it on. Only the newest 20 are
-          kept.
+          Unhandled Python exceptions and Rust panics write timestamped files
+          under <code>~/.reliability_tools/logs/crashes/</code>. Those files
+          open with a review-before-sharing banner and truncate embedded values
+          because a crash can echo BOM / part data — read them before sharing.
+          The Python writer prunes the shared crash-file backlog to the newest
+          20 when it writes a dump. Frontend global errors do not write a disk
+          file today; they go to the developer console and an in-app
+          notification.
         </p>
         <Callout>
           &ldquo;N warning(s) captured in the output workbook&rdquo; on a

@@ -4,10 +4,12 @@ Plain-English reference for the five tools in Reliability Tools Desktop.
 Written for reliability engineers who want to know what each tool does, what
 it needs, and what it produces.
 
-The app has one tab per tool along the left-hand rail. Every tool follows the
-same pattern: pick your input files, map the columns if the app cannot detect
-them automatically, set any options, and click **Run**. Progress appears in
-the execution log at the bottom of the tab.
+The app has one tab per tool along the 224 px left-hand rail. Every analysis
+tool follows the same pattern: work through the numbered setup sections, then
+use the persistent **Run** and **Validation** cards in the 320 px right rail.
+Press Ctrl/Cmd+Enter to start when the visible tool is ready and focus is not
+in an editable field. Progress also streams to the 30 px cross-tool log strip
+at the bottom of the shell.
 
 Domain acronyms used throughout: **FMEA** (Failure Mode and Effects Analysis),
 **FMECA** (Failure Mode, Effects, and Criticality Analysis), **BOM** (Bill of
@@ -125,10 +127,19 @@ input file. You can override this by clicking the output directory picker,
 which opens the OS folder dialog. The selected directory persists across tab
 switches and app reloads.
 
+New-workbook filenames expose the selected workflow:
+`PiecePartFMEA_Standard_<timestamp>.xlsx`,
+`PiecePartFMEA_BomOnly_<timestamp>.xlsx`,
+`PiecePartFMEA_FromFunctional_<timestamp>.xlsx`, or
+`MergedFMEA_FillGaps_<timestamp>.xlsx`. Preserve-formatting copies retain the
+selected target's stem and use the collision-safe naming described below.
+
 ### Column Mapping Bulk Actions
 
 The mapping table supports bulk operations alongside per-row dropdowns:
 
+- **Part Number** — required in every FMEA workflow. An unresolved mapping or
+  **— Do Not Map —** selection blocks validation instead of guessing.
 - **Apply all suggestions** — auto-fills every mapping row with the
   backend's suggested column match from `inspect_input`.
 - **Clear all mappings** — resets all mapping selections to empty.
@@ -209,13 +220,14 @@ FMEA when the workflow is Merge Functional → Piece-Part), mapped to
 ## BOM Compare
 
 > Labeled **BOM Comparison Tool** in the app rail. Backend workflow IDs are
-> still `bom_compare_group` and `bom_compare_custom`.
+> `bom_compare_group`, `bom_compare_custom`, and `extraction_compare`.
 
 ### What it does
 
 Compares two files and reports what is missing, extra, or mismatched. It has
-two workflows: one for checking grouping coverage against a BOM, and one for
-diffing two arbitrary BOMs (or BOM-like files such as FMEAs).
+three workflows: grouping coverage against a BOM, a generic delta between two
+BOM-like files, and a fixed-schema comparison of two RefDes extraction
+outputs.
 
 ### When to use it
 
@@ -254,6 +266,13 @@ The app auto-detects the RefDes column, the part number column, and other
 common fields by matching header names against a synonym dictionary. If a
 column is not detected, you can map it manually from a dropdown next to each
 field.
+
+Each input row also has an optional **Display name**. A typed name (for
+example, `Rev A`, `Supplier BOM`, or `CPU Grouping`) replaces generic role
+text in that file's mapping labels and flows into the Excel report's Summary
+and source labels. Leave it blank to keep the normal role label in the UI and
+the canonical role/file-stem fallback in the report. It does not change the
+comparison data or matching rules.
 
 ### Output
 
@@ -477,9 +496,10 @@ Choose:
 - **Advanced controls** — a collapsed section exposing the remaining engine
   tuning parameters (geometry subprocess / batch timeout / checkpoint,
   pin-assignment threshold, RefDes search radius, the adaptive-orphan
-  thresholds, and pinlist-prefers-annotation). Defaults are tuned for typical
-  schematics; each control has a hover tooltip explaining what it does, and
-  every option is type/range-validated at run time.
+  thresholds, pinlist-prefers-annotation, and the per-page annotation timeout).
+  Defaults are tuned for typical schematics; each control has a hover tooltip
+  explaining what it does, and all 17 options are type/range-validated at run
+  time.
 
 ### Output
 
@@ -601,6 +621,9 @@ run finish in the log.
   buffer.
 - **Collapsible** — the header chevron collapses the panel when you need
   screen space.
+- **Backend health** — the right side of the strip shows a 6 px status dot,
+  backend state word, and current bridge mode. Detailed health checks remain
+  under Settings.
 - **Ring buffer** — the in-memory buffer holds the most recent 5000
   entries. Older lines are dropped from memory but the canonical full log
   is always written to disk under `~/.reliability_tools/logs/`.

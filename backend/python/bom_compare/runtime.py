@@ -503,7 +503,7 @@ def _run_group_compare(
     )
     # Close each stage with a completed-phrase message: the frontend
     # timeline keeps a stage's LAST message, so without this the step
-    # reads "Comparing..." forever next to a completed chip.
+    # reads "Comparing..." forever next to a completed state.
     emit_progress("Running comparison", "Comparison finished.", 80)
 
     emit_status("running", "Writing workbook", "Writing Excel report...")

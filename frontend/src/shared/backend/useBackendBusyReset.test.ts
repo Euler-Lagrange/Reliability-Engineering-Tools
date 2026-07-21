@@ -210,7 +210,7 @@ describe("useBackendBusyReset", () => {
       });
     });
 
-    // The busy chip should PERSIST — phase reads "idle" (activeRun is null),
+    // The busy status should PERSIST — phase reads "idle" (activeRun is null),
     // idle is not a terminal phase, so the hook leaves busy alone.
     const state = useShellStore.getState();
     expect(state.backendStatus).toBe("busy");

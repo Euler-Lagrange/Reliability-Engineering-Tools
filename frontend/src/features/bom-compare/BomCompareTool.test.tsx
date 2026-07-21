@@ -809,8 +809,8 @@ describe("BomCompareTool custom compare workflow", () => {
   });
 
   // Regression (#17): a finished run's terminal phase lingers in the store, so
-  // when Browse flips the busy chip, useBackendBusyReset sees (terminal phase +
-  // busy) and wipes the "Inspecting..." chip. handleBrowse must clear the stale
+  // when Browse flips the busy status, useBackendBusyReset sees (terminal phase +
+  // busy) and wipes the "Inspecting..." status. handleBrowse must clear the stale
   // terminal run first (guarded, so a live sibling run is never clobbered).
   it("clears a lingering terminal run when browsing a new file", async () => {
     backendMocks.openExcelFile.mockResolvedValue("C:\\real\\Grouping.xlsx");

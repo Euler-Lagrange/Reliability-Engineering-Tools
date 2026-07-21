@@ -22,15 +22,15 @@ import { SETTLED_PHASES } from "./runLifecycle";
  * "Validating..." message, then awaits the async validateRun call.
  * Between the flip and the first status event, activeRun is still null
  * (so this hook reads phase="idle") and on the previous version this
- * hook raced in and cleared the busy chip instantly — the user saw
- * the chip flicker but never settle on "Validating...". Same race for
+ * hook raced in and cleared the busy status instantly — the user saw
+ * the status flicker but never settle on "Validating...". Same race for
  * file inspection flows ("Inspecting workbook for ${role}...").
  *
  * Fix R2-C1: on the SECOND run of the same session, the previous run's
  * terminal phase (success/cancelled/failure) is still sitting in the
  * runStore when the tool flips backendStatus to "busy" again. Without
  * a reset, this hook sees (terminal phase + busy) and instantly clears
- * the busy chip, making "Validating..." flicker away on every second
+ * the busy status, making "Validating..." flicker away on every second
  * run. The fix is in each tool's handleStartRun: call
  * resetDesktopRunSession() BEFORE setBackendState({busy}) so the hook
  * reads phase="idle" when the busy flip arrives.

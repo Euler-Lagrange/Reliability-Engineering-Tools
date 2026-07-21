@@ -322,7 +322,7 @@ describe("MappingTable — Phase 2 infrastructure", () => {
     expect(chip?.textContent).toMatch(/not mapped/i);
   });
 
-  test("status chip renders 'Derived' label when status is derived", () => {
+  test("mapping state renders 'Derived' when status is derived", () => {
     const rows: ColumnMappingRow[] = [
       {
         canonical: "FMEA Level",

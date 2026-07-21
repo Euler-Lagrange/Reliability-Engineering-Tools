@@ -12,27 +12,34 @@ hardcode values in component CSS or inline styles.
 
 | Token | Role | Light Precision (default) |
 |-------|------|---------------------------|
-| `--bg` | Page background | `#f6f8fb` |
+| `--bg` | Page background | `#f6f7f9` |
 | `--surface` | Card and panel background | `#ffffff` |
-| `--surface-muted` | Subtle alternate surface | `#f8fafc` |
-| `--surface-soft` | Recessed inset surface | `#f2f5f9` |
-| `--line` | Default border | `#dfe5ec` |
-| `--line-strong` | Emphasized border (buttons, inputs) | `#c8d1dc` |
-| `--text` | Primary text | `#172433` |
-| `--text-secondary` | Secondary text | `#415268` |
-| `--text-muted` | Tertiary / helper text | `#617289` |
-| `--text-faint` | Eyebrows, labels, faint metadata | `#8794a8` |
-| `--accent` | Primary action / focus | `#235ee7` |
-| `--accent-soft` | Accent fill (active chips, tinted cards) | `#edf3ff` |
-| `--success` | Success text and icons | `#1b8758` |
-| `--success-soft` | Success fill | `#eaf7f0` |
-| `--warning` | Warning text and icons | `#946100` |
-| `--warning-soft` | Warning fill | `#fff6df` |
-| `--danger` | Error text and icons | `#b14433` |
-| `--danger-soft` | Error fill | `#fff0ed` |
+| `--surface-muted` | Subtle alternate surface | `#f6f7f9` |
+| `--surface-soft` | Recessed inset surface | `#f0f2f5` |
+| `--line` | Default border | `#e4e7ec` |
+| `--line-strong` | Emphasized border (buttons, inputs) | `#c9d0da` |
+| `--text` | Primary text | `#14181f` |
+| `--text-secondary` | Secondary text | `#3e4756` |
+| `--text-muted` | Tertiary / helper text | `#5d6675` |
+| `--text-faint` | Eyebrows, labels, faint metadata | `#737c8a` |
+| `--accent` | Primary action / focus | `#2f5bd8` |
+| `--accent-hover` | Primary-action hover | `color-mix(in srgb, var(--accent) 88%, var(--text))` |
+| `--accent-active` | Primary-action press | `color-mix(in srgb, var(--accent) 76%, var(--text))` |
+| `--accent-soft` | Accent fill (selected controls) | `#edf1fc` |
+| `--accent-border` | Selected-control outline | `color-mix(in srgb, var(--accent) 32%, transparent)` |
+| `--success` | Success text and icons | `#1a7f53` |
+| `--success-soft` | Success fill | `#e9f5ef` |
+| `--warning` | Warning text and icons | `#8f5f04` |
+| `--warning-soft` | Warning fill | `#faf3e1` |
+| `--danger` | Error text and icons | `#b2412f` |
+| `--danger-soft` | Error fill | `#fbefec` |
 | `--text-on-accent` | Foreground for elements filled with `--accent` | `#ffffff` |
 
-Every theme overrides the same set of tokens. No theme adds new color names.
+Theme blocks reuse this semantic vocabulary; components do not introduce
+theme-specific color names. Hover/active tones derive from the current
+`--accent` and `--text`, so a theme that changes its accent cannot fall back
+to Light Precision cobalt during interaction. A theme may still override a
+derived interaction token when contrast requires a specialized value.
 
 `--text-on-accent` defaults to `#ffffff` and is overridden per-theme only
 where the accent color demands it — the High Contrast theme sets
@@ -98,12 +105,16 @@ Both fonts are OFL-licensed; the license text travels in
 | `--text-xs`  | 11 px | Eyebrows, microcopy, table headers |
 | `--text-sm`  | 12 px | Helper text, monospace paths |
 | `--text-base`| 13 px | Body, button labels |
-| `--text-md`  | 16 px | Section card titles |
-| `--text-lg`  | 18 px | Subsection headlines |
-| `--text-xl`  | 20 px | Prominent in-page headlines |
-| `--text-2xl` | 24 px | Legacy headline size; retained for unchanged consumers |
-| `--text-xxl` | 28 px | Topbar `<h1>` (bumped in 0.4.5) |
-| `--text-3xl` | 32 px | Hero metric utility (opt-in, see below) |
+| `--text-md`  | 16 px | Panel metrics |
+| `--text-lg`  | 18 px | Result values |
+| `--text-xl`  | 20 px | The single hero metric per tool |
+| `--text-2xl` | 24 px | Modal and full-screen headers |
+| `--text-xxl` | 24 px | Legacy alias; the 48 px topbar does not use it |
+| `--text-3xl` | 24 px | Legacy alias; hero metrics cap at `--text-xl` |
+
+The compact topbar title is an intentional off-grid 14 px at weight 600.
+It is chrome, not a page headline, so do not reconnect it to the legacy
+`--text-xxl` token.
 
 ### Weights
 
@@ -128,14 +139,12 @@ Both fonts are OFL-licensed; the license text travels in
 | Token | Value |
 |-------|-------|
 | `--tracking-tight` | -0.01em |
-| `--tracking-normal` | 0 |
 | `--tracking-wide` | 0.02em |
-| `--tracking-uppercase` | 0.08em |
+| `--tracking-uppercase` | 0.06em |
 
-`--tracking-uppercase` was standardized at `0.08em` in Phase G. Every
-uppercase metadata label — eyebrows, status chips, scenario pill meta,
-header metrics, Mission Control typography overrides — references this
-token so spacing stays consistent across the shell.
+`--tracking-uppercase` is `0.06em`. Design Pass v2 limits uppercase chrome
+to navigation-group labels and log-level tokens; ordinary section labels,
+state words, and topbar text stay sentence case.
 
 ## Spacing Tokens
 
@@ -147,7 +156,7 @@ and `min-height`.
 |-------|-------|--------------|
 | `--space-1` | 4 px | Micro: icon gaps, fine adjustments |
 | `--space-2` | 8 px | Tight: within components |
-| `--space-2-5` | 10 px | Dense: table-cell rhythm, segment padding (promoted from repeated off-grid 10px) |
+| `--space-2-5` | 8 px | Deprecated compatibility alias; prefer `--space-2` or `--space-3` |
 | `--space-3` | 12 px | Standard: between related elements |
 | `--space-4` | 16 px | Comfortable: section padding |
 | `--space-5` | 20 px | Relaxed: rail padding, chrome |
@@ -170,8 +179,8 @@ when the intent is clearer than the pixel value.
 |-------|---------|--------------|
 | `--gap-inline` | `var(--space-2)` (8 px) | Within a single control (icon + label, chip + count) |
 | `--gap-group` | `var(--space-4)` (16 px) | Between related controls inside a form row |
-| `--gap-section` | `var(--space-7)` (32 px) | Between SectionCards or other major regions |
-| `--gap-page` | `var(--space-8)` (48 px) | Major page-level regions |
+| `--gap-section` | `var(--space-6)` (24 px) | Between SectionCards or other major regions |
+| `--gap-page` | `var(--space-7)` (32 px) | Major page-level regions |
 
 Adoption is opportunistic — no call-site migration shipped in 0.4.5.
 
@@ -184,31 +193,24 @@ Expanded from 3 radii to 6 in Phase G.
 | `--radius-xs` | 4 px | Tiny: dropdown items, chips |
 | `--radius-sm` | 6 px | Small: buttons, inputs |
 | `--radius-md` | 8 px | Default: cards, sections |
-| `--radius-lg` | 10 px | Large: prominent containers (analysis cards) |
-| `--radius-xl` | 12 px | Extra: rail tool buttons, brand glyph |
-| `--radius-pill` | 999 px | Pill: badges, progress bars |
+| `--radius-lg` | 8 px | Alias of `--radius-md`; there is no third card radius |
+| `--radius-xl` | 8 px | Legacy alias; rail buttons use the shared system radius |
+| `--radius-pill` | 999 px | Progress and coverage-meter tracks only |
 
 ## Shadow Tokens
 
-**Depth strategy is borders-only by default.** Shadows are reserved for
-floating, focused, or instrument-style elements and exist as named tokens
-so per-theme overrides can tune their intensity.
+**Depth strategy is borders-only for docked surfaces.** Shadows are reserved
+for layers that actually float and for keyboard focus.
 
 | Token | Default value | Intended use |
 |-------|---------------|--------------|
-| `--shadow-popover` | `0 10px 28px rgba(15, 23, 42, 0.12)` | Dropdowns, menus, custom-select popovers |
-| `--shadow-focus-ring` | `0 0 0 3px rgba(35, 94, 231, 0.08)` | `:focus-visible` state on all interactive elements |
-| `--shadow-rail-active` | `0 0 0 1px rgba(35, 94, 231, 0.04), 0 6px 18px rgba(35, 94, 231, 0.08)` | Selected tool button in the rail |
-| `--shadow-toast` | `0 8px 24px rgba(15, 23, 42, 0.08)` | Notification toasts |
+| `--shadow-popover` | `0 4px 16px rgba(15, 20, 30, 0.10), 0 1px 3px rgba(15, 20, 30, 0.08)` | Dropdowns, menus, custom-select popovers |
+| `--shadow-focus-ring` | 2 px accent color-mix ring | `:focus-visible` state on interactive elements |
+| `--shadow-toast` | `0 6px 20px rgba(15, 20, 30, 0.12)` | Notification toasts |
 
-Per-theme overrides exist for `dark_precision`, `midnight_blue`,
-`high_contrast`, `synthwave`, and `mission_control` — dark themes need
-stronger rgba values because light-theme shadows are invisible against
-dark surfaces.
-
-**Don't add decorative box-shadows to the global stylesheet.** If a theme
-needs a glow or halo effect, scope it inside that theme's override block
-(see **Mission Control Theme Exception** below).
+Theme overrides may tune floating-layer shadows for contrast. Selected rail
+rows are tint + accent text, not a shadow or glow. Do not add decorative
+box-shadows to docked shell or tool surfaces.
 
 ## Motion
 
@@ -218,9 +220,9 @@ transition/animation shorthand — reach for a duration token.
 | Token | Value | Use |
 |-------|-------|-----|
 | `--ease` | `cubic-bezier(0.25, 1, 0.5, 1)` | Every transition/animation |
-| `--duration-fast` | `120ms` | Micro-interactions: dense-row hovers, filters |
-| `--duration-base` | `160ms` | Standard control transitions |
-| `--duration-slow` | `220ms` | Larger reveals: drawers, panels, progress |
+| `--duration-fast` | `150ms` | Micro-interactions: dense-row hovers, filters |
+| `--duration-base` | `200ms` | Standard control transitions |
+| `--duration-slow` | `250ms` | Larger reveals: drawers, panels, progress |
 
 ## Icon Size Conventions
 
@@ -232,55 +234,26 @@ component, not via CSS, so each call site picks the right scale. Use
 |------|---------|
 | 12 px | Inline meta (timestamps, counts next to text) |
 | 14 px | Button glyphs (primary/ghost button icons) |
-| 16 px | Chip glyphs (status chips, toggle chips) |
-| 20 px | Rail navigation (tool buttons, theme chip) |
+| 16 px | Toolbar, badge, and toggle glyphs |
+| 20 px | Rail navigation and compact theme toggle |
 | 24 px | Hero / empty state illustrations |
 
-## Asymmetric Padding (AppShell)
+## Shell Geometry (Design Pass v2)
 
-Not every shell surface uses symmetric padding. `AppShell.module.css`
-intentionally uses asymmetric values, each with an inline comment
-explaining the deviation:
+The desktop shell uses four stable geometry anchors:
 
-| Surface | Padding (top / right / bottom / left) | Reason |
-|---------|---------------------------------------|--------|
-| `.rail` | `20 / 16` | Extra vertical breathing room above/below tool icons; narrower sides to keep the rail compact |
-| `.topbar` | `20 / 24 / 0` | Bottom padding is `0` so the accent gradient (see below) sits flush with the content boundary |
-| `.content` | `16 / 24 / 24` | Asymmetric top padding compensates for the topbar's zero-bottom so total gap stays 20 px |
+| Surface | Size | Current role |
+|---------|------|--------------|
+| Navigation rail | 224 px wide | Grouped 30 px navigation rows on the canvas background |
+| Topbar | 48 px high | 14 px tool title, divider, per-tool `Mode · …` label, quiet actions |
+| Global log strip | 30 px collapsed height | Cross-tool log controls and backend-health telemetry |
+| Per-tool side rail | 320 px wide | Persistent **Run** and **Validation** cards in all four analysis tools |
 
-When adjusting these, preserve the inline comment and the reasoning — the
-asymmetry is load-bearing for the accent-gradient alignment.
-
-## Signature Topbar Accent Gradient
-
-Phase G13 introduced a 1 px accent gradient at the top edge of the App
-shell topbar:
-
-```css
-.topbar::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(
-    to right,
-    transparent 28%,
-    var(--accent) 50%,
-    transparent 72%
-  );
-  opacity: 0.35;
-}
-```
-
-This mirrors the existing `.run-log-panel::before` gradient at the top
-edge of the global log panel, creating a visual rhyme where the active
-tool area is framed between two "instrument chrome" lines.
-
-**Invariant.** The gradient stop positions (`28%` / `72%`) must stay in
-sync between `.topbar::before` and `.run-log-panel::before`. If you adjust
-one, adjust the other in the same change.
+The topbar, rail, and log strip are separated by hairline borders. The old
+topbar/log accent gradients, oversized eyebrow/subtitle title stack, and
+decorative active-rail glow are retired. Main tool content uses numbered
+`SectionCard variant="bare"` sections; the 320 px side rail remains visible
+instead of switching between Preview and Run tabs.
 
 ## Global Run Log Panel Styling
 
@@ -291,47 +264,45 @@ Its styling choices:
   additionally apply `font-variant-numeric: tabular-nums` so columns stay
   aligned when the seconds digits change.
 - **Level colors.** Each log level maps to a token:
-  - `info` → `var(--accent)`
+  - `info` → `var(--text-faint)`
   - `warning` → `var(--warning)`
   - `error` → `var(--danger)`
   - `debug` → `var(--text-faint)`
-- **Layout.** Log rows use a 4-column CSS grid: `64px 56px 160px 1fr`
-  (time / level / tool / message).
-- **Body height.** `max-height: 280px` when expanded; scrolls internally.
+- **Layout.** Log rows use a 4-column CSS grid:
+  `56px 42px 64px minmax(0, 1fr)` (time / level / tool / message).
+- **Body height.** User-resizable from 120–640 px, defaulting to 240 px and
+  clamped to leave usable tool chrome visible; scrolls internally and persists
+  the chosen height in local storage.
 - **Collapse.** A chevron button in the header toggles the body.
-- **Top edge.** The 1 px accent gradient described in **Signature Topbar
-  Accent Gradient** — same stop positions, same opacity.
-- **Status dot (added 0.4.5).** A 10 px circle next to the "Run Log"
+- **Status dots.** A canonical 6 px circle next to the "Run Log"
   title reflects the current `runStore.activeRun.phase`:
   idle = `var(--text-faint)`, active = `var(--accent)` with a 1.6 s
   pulse, good = `var(--success)`, warn = `var(--warning)`,
   bad = `var(--danger)`. Decorative only (`aria-hidden`); meaning is
   carried by the log body text itself.
-- **Collapsed count legibility (0.4.5).** The truncation/entry-count
-  text bumped from `var(--text-2xs)` / `var(--text-faint)` to
-  `var(--text-sm)` / `var(--text-secondary)` so the summary reads as
-  data, not decoration.
+- **Backend health.** `GlobalLogPanel` owns the right-aligned backend dot,
+  status word, and bridge-mode label (for example, `Ready · Desktop bridge`).
+  Full diagnostics remain in Settings; backend telemetry does not live in
+  the topbar.
+- **Collapsed count.** The entry count uses
+  `var(--text-2xs)` / `var(--text-faint)`; a truncation warning uses the
+  warning foreground/background pair.
 - **Resize handle (0.4.5).** Hit area widened 6 px → 10 px; the hover
   band still activates on the same rule, just over a larger grab zone.
 
-## Mission Control Theme Exception
+## Mission Control Theme Rules
 
-Mission Control is **the only theme allowed to use decorative
-box-shadows**. Every other theme uses borders-only depth. The two
-exceptions Mission Control carries are the cyan glow on
-`.status-chip--success` and the cyan-tinted halo on `.input-card:hover`
-(documented in the next section).
-
-**Rule.** Do not add new `box-shadow` declarations to the global
-stylesheet for decorative purposes. If you need a glow effect for a
-specific theme, scope it inside that theme's
-`:root[data-theme="..."]` block.
+Mission Control uses the mono family throughout and applies restrained
+uppercase treatment to eyebrow text. Design Pass v2 removed the former
+success-chip and input-card hover glows; there is no live component-level
+glow exception. Like every other theme, its docked surfaces use borders and
+state tint rather than decorative depth.
 
 ## Hover/Focus State Audit
 
 Every interactive element in the shell now has a consistent
 `:focus-visible` style using `var(--shadow-focus-ring)`. The audit covers:
-`.toggle-chip`, `.context-tabs__tab`, `.primary-button`, `.ghost-button`,
+`.toggle-chip`, `.primary-button`, `.ghost-button`,
 `.scenario-pill`, `.choice-card`, `.run-log-panel__action`,
 `.run-log-panel__filter-option`, `.toolButton`, `.themeButton`,
 `.themeOption`, and `.healthButton`.
@@ -372,9 +343,8 @@ Themes are toggled by setting `data-theme` on the `<html>` element from
 corresponds to `data-theme="light_precision"`, not the absence of the
 attribute. The single source of truth for the theme list — id, label,
 icon, native colorScheme, and rail visibility — is
-`frontend/src/shared/theme/themeRegistry.ts`. The shell rail, the
-Settings tool, the topbar chip, and the ThemeController all read from
-that one registry.
+`frontend/src/shared/theme/themeRegistry.ts`. The Settings tool, the rail's
+compact light/dark toggle, and `ThemeController` all read from that registry.
 
 | Theme id | data-theme | Use case | Personality |
 |----------|------------|----------|-------------|
@@ -391,9 +361,8 @@ that one registry.
 
 ## Mission Control Special Rules
 
-Mission Control is the only theme that overrides typography and applies
-component-level rules. The override block at the bottom of `styles.css`
-keeps these restrained:
+Mission Control overrides the typography tokens and keeps its live
+component-level rule limited to eyebrow treatment:
 
 ```css
 :root[data-theme="mission_control"] {
@@ -404,39 +373,20 @@ keeps these restrained:
   font-feature-settings: "tnum" 1, "zero" 1, "cv11" 1;
 }
 
-/* Eyebrows, status chips: uppercase + medium weight */
+/* Eyebrows: uppercase + medium weight */
 :root[data-theme="mission_control"] .eyebrow,
-:root[data-theme="mission_control"] .section-card__eyebrow,
-:root[data-theme="mission_control"] .status-chip {
+:root[data-theme="mission_control"] .section-card__eyebrow {
   text-transform: uppercase;
   letter-spacing: var(--tracking-uppercase);
   font-weight: var(--weight-medium);
-}
-
-/* Subtle cyan glow on success status chips */
-:root[data-theme="mission_control"] .status-chip--success {
-  box-shadow: 0 0 0 1px rgba(0, 217, 255, 0.3),
-              0 0 12px rgba(0, 217, 255, 0.08);
-}
-
-/* Numeric data — tabular nums + slashed zero */
-:root[data-theme="mission_control"] .data-table,
-:root[data-theme="mission_control"] .mapping-table__cell,
-:root[data-theme="mission_control"] .run-result__metric-value {
-  font-variant-numeric: tabular-nums slashed-zero;
-}
-
-/* Cyan accent glow on input cards under hover */
-:root[data-theme="mission_control"] .input-card:hover {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(0, 217, 255, 0.15);
 }
 ```
 
 `tnum` and `zero` are font-feature-settings that map to CSS
 `font-variant-numeric: tabular-nums slashed-zero`. They make every digit
 identical width and disambiguate `0` from `O` — appropriate for instrument
-readouts and metric tables.
+readouts. Mission Control does not restore the deleted status-chip family or
+add a special input-card hover glow.
 
 ## Shared Components
 
@@ -447,11 +397,11 @@ tool's `*Tool.tsx`.
 |-----------|------|---------|
 | `SectionCard` | `SectionCard.tsx` | Bordered card with eyebrow, title, description, and an actions slot. `variant="outlined" \| "divided" \| "bare"` (default `"outlined"`) added in 0.4.5 |
 | `ContextDrawer` | `ContextDrawer.tsx` | Right-anchored overlay "Review" drawer toggled by ⌘R / Ctrl+R (new in 0.4.5). Renders run summary + `output_preview` table; informational, not modal |
-| `InputGrid` | `InputGrid.tsx` | Grid of input file cards with status chips and sheet pickers. Each card carries `data-state="pending\|active\|loaded"` driving the stepper CSS added in 0.4.5 |
+| `InputGrid` | `InputGrid.tsx` | One bordered set of 44 px file rows with step/status indicators, required asterisks, paths, sheet pickers, and Browse actions. Each row carries `data-state="pending\|active\|loaded"` |
 | `MappingTable` | `MappingTable.tsx` | Column-mapping table for canonical → mapped pairs |
-| `RunStatePanel` | `RunStatePanel.tsx` | Sticky run-state panel: button, progress, timeline, result |
-| `WorkflowSelector` | `WorkflowSelector.tsx` | Workflow choice cards (emits both `data-active` and `data-selected`) |
-| `StrategySelector` | `StrategySelector.tsx` | Output strategy cards (emits both `data-active` and `data-selected`) |
+| `RunStatePanel` | `RunStatePanel.tsx` | Persistent Run-rail content: readiness checklist, Start/Cancel action, progress, timeline, and result. A supplied `readiness` prop also arms the guarded Ctrl/Cmd+Enter shortcut |
+| `WorkflowSelector` | `WorkflowSelector.tsx` | Workflow choice cards using `data-selected` and `aria-pressed` |
+| `StrategySelector` | `StrategySelector.tsx` | Output strategy cards using `data-selected` and `aria-pressed` |
 | `CustomSelect` | `CustomSelect.tsx` | Accessible dropdown with keyboard navigation |
 | `ValidationPreview` | `ValidationPreview.tsx` | Pre-run validation message list |
 
@@ -464,7 +414,6 @@ Reusable building-block components extracted from tool surfaces.
 | `CommandPalette` | `CommandPalette.tsx` | Ctrl+K action search and navigation overlay |
 | `ToggleChip` | `ToggleChip.tsx` | Boolean toggle styled as a chip |
 | `OptionsField` | `OptionsField.tsx` | Labeled field wrapper for option controls |
-| `ContextTabs` | `ContextTabs.tsx` | Tabbed context switcher |
 | `CheckboxField` | `CheckboxField.tsx` | Labeled checkbox with description |
 | `OptionsSection` | `OptionsSection.tsx` | Grouped options container with heading |
 | `HoldButton` | `HoldButton.tsx` | Press-and-hold confirmation button |
@@ -476,7 +425,7 @@ The codebase uses two styling strategies:
 
 | Strategy | When |
 |----------|------|
-| Global classes in `styles.css` | Default. Every shared component uses global class names like `.section-card`, `.input-card`, `.status-chip`. Themes target these classes directly. |
+| Global classes in `styles.css` | Default. Every shared component uses global class names like `.section-card`, `.input-card`, `.badge-state`, and `.state-word`. Themes target these classes directly. |
 | CSS modules (`*.module.css`) | Used only for layout that is unique to a feature surface. Current modules: `frontend/src/app/AppShell.module.css` (shell layout), `frontend/src/features/settings/SettingsTool.module.css` (settings page layout), `frontend/src/shared/notifications/NotificationCenter.module.css` (notification stack). |
 
 CSS modules are scoped to a single component import. Use them when the
@@ -485,7 +434,7 @@ intent to theme the surface differently from the rest of the app.
 
 ## Usage Rules
 
-- **Always reference tokens.** Never hardcode `#235ee7`, `13px`, or `8px`
+- **Always reference tokens.** Never hardcode `#2f5bd8`, `13px`, or `8px`
   inside a component. Use `var(--accent)`, `var(--text-base)`,
   `var(--radius-md)` so theme switches and scale tweaks propagate.
 - **Prefer global classes.** A new card surface should reuse `.section-card`
@@ -496,26 +445,23 @@ intent to theme the surface differently from the rest of the app.
   correct use. Do not put themable color or typography rules inside a
   module — they will not pick up theme overrides without duplication.
 - **Mission Control overrides are global.** When adding a new component,
-  test it under Mission Control. If the new surface displays numeric data,
-  add it to the `font-variant-numeric` selector list rather than reinventing
-  the rule per-component.
-- **Status chips use the `--{tone}` / `--{tone}-soft` pair.** Pair every
-  status chip with the matching foreground/background tone token so high
-  contrast and color-blind palettes stay coherent.
+  test it under Mission Control. Numeric data and identifiers should use
+  the shared `.num`/mono treatment instead of a theme-specific selector.
+- **Choose state vocabulary by meaning.** Use a dot + state word for row or
+  timeline state, and reserve `.badge-state` for counts and true alerts.
 
-## Pill, Chip, Badge Vocabulary (0.4.5)
+## Badge, Dot, Tag, and Shortcut Vocabulary
 
-`.status-chip` was previously used for three different jobs — runtime
-state, classification, and keyboard hints — all rendered as filled pills.
-The 0.4.5 design pass split the vocabulary so each job has one
-treatment. `.status-chip` is retained as a legacy alias of `.badge-state`
-so existing call sites keep working; call-site migration is
-opportunistic.
+The old `.status-chip` family and alias were deleted in Design Pass v2.
+Do not reintroduce it: state, classification, workbook identifiers, and
+keyboard hints each have a separate treatment.
 
 | Class | Treatment | Role | Examples |
 |-------|-----------|------|----------|
-| `.badge-state` (+ `--good` / `--warn` / `--bad` / `--idle`) | Filled, semantic color | Runtime state a user needs to notice | `LOADED`, `VALIDATED`, `ERROR`, `MAPPED` |
+| `.badge-state` (+ `--good` / `--warn` / `--bad` / `--idle`) | 18 px, 4 px-radius semantic rectangle | Counts and true alerts | error count, warning count, capped |
+| `.dot` + `.state-word` | 6 px dot plus sentence-case text | Row, mapping, readiness, and timeline state | `Mapped`, `Not mapped`, `Ready` |
 | `.tag-category` | Outlined neutral | Classification without urgency | `FUNCTIONAL`, `PIECE-PART`, `LEAN`, `BALANCED` |
+| `.column-tag` | Mono text on a sunken well | Workbook identifiers | column and sheet names |
 | `.kbd-shortcut` | Text-only monospace, no box | Keyboard hint | `⌘K`, `⌘R`, `CTRL+[` |
 
 Mixing treatments is a smell — a card full of filled pills trains the eye
@@ -529,14 +475,13 @@ when selected:
 
 ```css
 [data-selected="true"] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface));
   color: var(--text);
 }
 
 [data-selected="true"] .eyebrow,
-[data-selected="true"] .section-card__eyebrow,
-[data-selected="true"] .choice-card__eyebrow {
+[data-selected="true"] .section-card__eyebrow {
   color: var(--accent);
 }
 ```
@@ -553,15 +498,16 @@ the `.is-active` class and `aria-selected`, which is a different job
 ## Hero Metric Utility (0.4.5)
 
 A standalone class for the one prominent numeric KPI per tool
-(designator count, diff count, FR rollup total). Available for opt-in;
-no call site adopts it in 0.4.5.
+(designator count, diff count, FR rollup total). `RunStatePanel` and the
+Review drawer use it for result/progress metrics.
 
 ```css
 .hero-metric {
-  font-size: var(--text-3xl);
-  font-weight: var(--weight-semibold);
+  font-family: var(--font-mono);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-medium);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.01em;
   color: var(--text);
   line-height: 1.1;
 }
@@ -576,24 +522,26 @@ type SectionCardVariant = "outlined" | "divided" | "bare";
 | Variant | Treatment | When to use |
 |---------|-----------|-------------|
 | `"outlined"` (default) | 1 px border, `var(--section-surface-primary)` background | Primary cards (choice, inputs, mapping, run panel) |
-| `"divided"` | `border-top` only, `var(--section-surface-muted)` (transparent) background, `padding-inline: 0` | Supporting sections like the Review Panel — quieter than primary |
-| `"bare"` | No border, no background, no inline padding | Free-flow content that just needs the title block |
+| `"divided"` | `border-top` only, `var(--section-surface-muted)` (transparent) background, `padding-inline: 0` | Supporting content that needs separation without a card |
+| `"bare"` | No border, no background, no inline padding | Numbered main workflow sections |
 
-The FMEA, BOM Compare, Failure Rate, and RefDes Extractor tools all use
-`variant="divided"` on their Review Panel SectionCards. Every other
-call site relies on the `"outlined"` default.
+FMEA, BOM Compare, Failure Rate, and RefDes Extractor use numbered
+`variant="bare"` sections for their main workflow spine. The persistent
+320 px side rail uses dedicated `.rail-card` containers for **Run** and
+**Validation**; it is not a SectionCard-based Review/Run tab surface.
 
-## InputGrid Progressive Disclosure (0.4.5)
+## InputGrid Row States
 
 Each `.input-card` now carries a `data-state` attribute computed from
-the input's loaded/pending/active status and a step-indicator span
-showing the step number or `✓`:
+the input's loaded/pending/active status. A 14 px leading indicator shows a
+hollow ring, active dot, or `✓`; required roles use a danger-colored `*`
+with a tooltip. Row text never dims.
 
 | `data-state` | Condition | Visual treatment |
 |--------------|-----------|-------------------|
-| `"pending"` | No path picked yet AND a different card is already `"active"` | Dimmed (`opacity: 0.62`), decoration-tinted background; hover/focus restores full opacity |
-| `"active"` | First card missing a path, OR a card that's resolving sheets | Outlined in `var(--accent)`; full legibility |
-| `"loaded"` | Path set, status `"ready"`, sheets resolved | Decoration-tinted background; indicator flips to ✓ with success tint |
+| `"pending"` | No path picked yet and a different row is active | Hollow neutral ring; full text legibility |
+| `"active"` | First missing path, or a row resolving sheets | Accent ring with an inner dot |
+| `"loaded"` | Path set, status `"ready"`, sheets resolved | Success-colored `✓` |
 
 Every control stays in the DOM regardless of state so existing tests
 still query cards by role/label.
@@ -611,8 +559,13 @@ adding bindings there rather than installing ad-hoc listeners.
 | ⌘[ / Ctrl+[ | Previous tool |
 | ⌘] / Ctrl+] | Next tool |
 | ⌘R / Ctrl+R | Toggle Review drawer (0.4.5) |
+| ⌘Enter / Ctrl+Enter | Start the visible tool when its persistent Run rail is ready |
 | ⌥L / Alt+L | Switch to Light Precision theme |
 | ⌥D / Alt+D | Switch to Dark Precision theme |
 
 Bindings respect `isEditableKeyboardTarget` so typing inside an input
-never hijacks a shortcut.
+never hijacks a shortcut. The Run shortcut is owned by `RunStatePanel`
+rather than `useAppShortcuts`: it is armed only when the panel receives a
+`readiness` prop, ignores busy/disabled state, and rejects any panel under a
+`[hidden]` keep-alive ancestor. Multiple mounted tools therefore cannot
+start together.

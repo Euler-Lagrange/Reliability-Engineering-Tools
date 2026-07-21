@@ -115,7 +115,7 @@ export interface InputFileState {
   isExample?: boolean;
   /**
    * The backend blocks validation when this role has no file. InputGrid
-   * renders a "Required" chip on unloaded required cards so the user can
+   * renders a required indicator on unloaded required rows so the user can
    * tell mandatory inputs from optional ones before clicking Run.
    */
   required?: boolean;
@@ -155,7 +155,7 @@ export interface ColumnMappingRow {
    */
   help?: string;
   /**
-   * Drives status chip colour and visibility logic downstream. `derived`
+   * Drives mapping-state badge colour and visibility downstream. `derived`
    * columns (like FMEA Level) render as read-only informational rows in
    * the mapping table. `merge_only` columns are hidden in non-merge modes.
    */

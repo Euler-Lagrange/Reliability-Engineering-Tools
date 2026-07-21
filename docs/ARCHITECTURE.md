@@ -56,7 +56,7 @@ request, response, and streamed run event.
 │   └── sidecar-protocol.md     # Wire format reference
 ├── scripts/
 │   ├── build_sidecar.py        # PyInstaller bundling
-│   ├── release.bat             # 12-step release pipeline (typechecks + security audit + tests + build + self-tests)
+│   ├── release.bat             # 16-step release pipeline (typechecks + security audit + tests + build + self-tests)
 │   ├── bump-version.mjs        # Bump version across package.json / Cargo.toml / tauri.conf.json in lockstep
 │   ├── tauri-msvc.cmd
 │   └── tauri-runner.mjs
@@ -73,9 +73,17 @@ that hosts:
   tool definitions with id, label, eyebrow, description, Phosphor icon, and a
   lazy-loaded React component. Adding a tool means appending one entry.
 - **Active tool routing** — driven by `useShellStore.activeToolId`, not React Router.
+- **Shell chrome** — a 224 px grouped navigation rail, a 48 px topbar with
+  the active tool's transient `Mode · …` label, and a 30 px GlobalLogPanel
+  strip that owns backend-health telemetry. The old topbar health chips are
+  gone.
 - **Feature directories** (`frontend/src/features/{tool}/`) — each tool owns one
   `*Tool.tsx` component (e.g. `FmeaTool.tsx`, `BomCompareTool.tsx`,
   `FailureRateTool.tsx`, `RefDesExtractorTool.tsx`, `SettingsTool.tsx`).
+- **Analysis-tool layout** — FMEA, BOM Compare, Failure Rate, and RefDes
+  Extractor use numbered bare sections beside a persistent 320 px side rail.
+  That rail always contains separate **Run** and **Validation** cards; the
+  former Preview/Run ContextTabs surface was deleted.
 - **Shared services** (`frontend/src/shared/`):
   - `backend/client.ts` — typed wrapper around Tauri `invoke()` plus
     `isTauriRuntime()` browser-mock fallback.
@@ -113,10 +121,19 @@ that hosts:
   scenarios so the browser preview (`npm run dev`) works without a backend.
 - **Primitives** (`frontend/src/components/primitives/`) — reusable
   building-block components extracted from tool surfaces: `CommandPalette`,
-  `ToggleChip`, `OptionsField`, `ContextTabs`, `CheckboxField`,
-  `OptionsSection`, `HoldButton`, `EmptyState`. The Command Palette
+  `ToggleChip`, `OptionsField`, `CheckboxField`, `OptionsSection`,
+  `HoldButton`, `EmptyState`. The Command Palette
   (Ctrl+K) is mounted at the `AppShell` level and provides cross-tool
   navigation and action dispatch.
+- **Persistent Run rail** (`frontend/src/components/RunStatePanel.tsx`) —
+  receives the visible tool's readiness checklist and owns its Start/Cancel,
+  progress, timeline, and result surfaces. Supplying `readiness` arms a
+  window-level Ctrl/Cmd+Enter listener. The handler ignores editable targets,
+  busy/disabled state, and panels beneath a `[hidden]` keep-alive ancestor, so
+  multiple mounted tools cannot dispatch together.
+- **Global log strip** (`frontend/src/components/GlobalLogPanel.tsx`) —
+  shell-owned cross-tool log, filter/export controls, and the current backend
+  status/mode dot-and-word telemetry. Full health details remain in Settings.
 - **Review drawer** (`frontend/src/components/ContextDrawer.tsx`) — a
   shell-level right-anchored overlay toggled by Ctrl/Cmd+R
   (macOS-aware). It surfaces the active tool's run summary and last
@@ -228,6 +245,8 @@ when `connected` flips false.
 | `backend_execute_run`        | `execute_run`         | `RunAcceptedResponse` (run_id) |
 | `backend_cancel_run`         | `cancel_run`          | `CancelRunResponse` |
 | `backend_read_flet_config`   | `read_flet_config`    | raw JSON |
+| `backend_read_refdes_prefixes` | `read_refdes_prefixes` | raw JSON |
+| `backend_write_refdes_prefixes` | `write_refdes_prefixes` | raw JSON |
 | `reveal_in_file_manager`     | (none — local OS call) | `()` |
 
 `reveal_in_file_manager` takes an absolute path string and spawns the
@@ -263,7 +282,8 @@ stay in sync.
   ISO timestamp, and the `payload` dict. `EMIT_LOCK` serializes writes.
 - **Commands** — `handle_command()` is a flat if/elif over `payload.command`:
   `health_check`, `list_sheets`, `inspect_input`, `analyze_template`,
-  `validate_run`, `execute_run`, `cancel_run`, `read_flet_config`.
+  `validate_run`, `execute_run`, `cancel_run`, `read_flet_config`,
+  `read_refdes_prefixes`, `write_refdes_prefixes`.
 - **Routing** — `route_validate(body)` and `route_execute(body, **kwargs)`
   inspect `body["workflowId"]` and dispatch to the correct runtime adapter:
   - `BOM_COMPARE_WORKFLOWS` → `bom_compare.runtime`
@@ -287,7 +307,7 @@ The protocol has two distinct correlation modes:
 
 | Mode | Field | Used by |
 |------|-------|---------|
-| Request/response | `request_id` | Synchronous commands (health_check, list_sheets, inspect_input, analyze_template, validate_run, cancel_run) |
+| Request/response | `request_id` | Synchronous commands (health_check, list_sheets, inspect_input, analyze_template, validate_run, cancel_run, read_flet_config, read_refdes_prefixes, write_refdes_prefixes) |
 | Streamed run | `run_id` | Long-running executions started by `execute_run` |
 
 ### Synchronous commands
@@ -392,14 +412,17 @@ the protocol's `validations` array.
 
 | Store | File | Persisted | Purpose |
 |-------|------|-----------|---------|
-| `useShellStore` | `frontend/src/stores/shellStore.ts` | yes (`zustand/middleware.persist`, key `reliability-tools-tauri-shell`) | active tool id, backend status/mode/message, last health-check timestamp, per-tool `{fmea,bomCompare,failureRate,refdesExtractor}OutputDirectory: string \| null`, and the `contextOpen` flag consumed by the `ContextDrawer` toggle |
+| `useShellStore` | `frontend/src/stores/shellStore.ts` | partial (`zustand/middleware.persist`, key `reliability-tools-tauri-shell`) | active tool id, backend status/mode/message, last health-check timestamp, transient per-tool `toolModeLabels` updated through `setToolModeLabel`, per-tool `{fmea,bomCompare,failureRate,refdesExtractor}OutputDirectory: string \| null`, and the `contextOpen` flag consumed by the `ContextDrawer` toggle |
 | `useThemeStore` | `frontend/src/stores/themeStore.ts` | yes (`zustand/middleware.persist`, key `reliability-tools-tauri-theme`) | `mode: "system" \| ThemeId` |
 | `useNotificationStore` | `frontend/src/stores/notificationStore.ts` | no | toast list with `push` / `dismiss` / `dismissAll` |
 | `usePreviewStore` | `frontend/src/stores/previewStore.ts` | no | last `output_preview` sample per tool, keyed by `ToolId`. Each tool's validate-run handler writes into it, and the shell-level `ContextDrawer` reads from it so a preview can be rendered independent of which tool is active. |
 
 `shellStore` uses `partialize` to persist only the four per-tool output
-directories plus `contextOpen`; transient fields (backend status, mode,
-message) are excluded so they do not survive a reload with stale values. The shared
+directories plus `contextOpen`; transient fields (active tool, backend status,
+mode/message/check time, and `toolModeLabels`) are excluded so they do not
+survive a reload with stale values. `migrateShellState` returns that same
+five-field persisted shape, so a historical payload cannot introduce mode
+labels during rehydration. The shared
 `OutputFolderPicker` primitive (`frontend/src/components/OutputFolderPicker.tsx`)
 is how every tool exposes the picker — consumers pass the corresponding
 `{tool}OutputDirectory` slice through its `value` / `onChange` props.
@@ -424,7 +447,7 @@ in `shared/backend/runLifecycle.ts`.
   sidecar `.py` file, rejecting network/database imports and subprocess
   calls outside an explicit allowlist (currently just `attrib`). Runs
   from `sidecar_main.py --self-test`, from `pytest`, and from
-  `release.bat` step 3 via `python -m common.security_audit --strict`.
+  `release.bat` step 7 via `python -m common.security_audit --strict`.
 - **Offline invariant** — the Python backend has no network stack. Every
   artifact exchange between frontend and backend goes through file paths
   on the local disk. Adding a network import will fail the security audit
@@ -432,11 +455,12 @@ in `shared/backend/runLifecycle.ts`.
 
 ## Crash Reporting
 
-Three independent crash-capture paths write into the same
+Python and Rust crash-capture paths write into the same
 `<log_dir>/crashes/` directory so a user can zip one folder to share. Each
-dump opens with a **review-before-sharing** banner and truncates any embedded
-value (Decision B), since a crash can echo a BOM / part value into an
-exception or panic message.
+disk dump opens with a **review-before-sharing** banner and truncates any
+embedded value (Decision B), since a crash can echo a BOM / part value into
+an exception or panic message. The frontend reports global errors through
+`console.error` and a notification toast; it does not write a crash file.
 
 | Layer | Hook | Output |
 |-------|------|--------|
@@ -494,7 +518,7 @@ perf baselines, UX findings), `docs/USER_GUIDE.md` (user-facing behavior).
    effect in `useDesktopRunController` deliberately waits for the result
    event; firing on the status event loses the success toast on every
    run. Keyed `${runId}:${phase}` so each terminal fires exactly once.
-3. **The status chip is owned by `useBackendBusyReset`**, which returns it
+3. **Backend status telemetry is owned by `useBackendBusyReset`**, which returns it
    to `ready` on every run-completion terminal (success/failure/cancelled;
    `disconnected` is handled by the bootstrap path instead). Do not write
    `backendStatus: "error"` from tool failure branches - it is dead
@@ -589,9 +613,10 @@ window keydown Escape listener.
 
 ## Quality gates and working discipline
 
-`scripts/release.bat` is the 16-step pipeline ending in self-tests of
-the PACKAGED exe before promotion to `local_build/` - the only place
-frozen-runtime behavior is exercised; never skip it. Test counts live in
+`scripts/release.bat` is the 16-step pipeline ending in self-tests of the
+exact staged desktop/sidecar pair before atomic directory promotion to
+`local_build/` with rollback - the only place frozen-runtime behavior is
+exercised; never skip it. Test counts live in
 four doc locations that move together (Wiring Invariant #10). The
 discipline that kept this codebase healthy through six audit waves:
 failing test first, full suites per batch, an independent adversarial QA

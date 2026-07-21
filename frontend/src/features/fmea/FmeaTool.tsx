@@ -118,7 +118,7 @@ function getVisibleRoles(workflowId: WorkflowId, hdaSource: HdaSource): FileRole
 
 /**
  * Roles the backend's `_required_roles` blocks validation on, per workflow.
- * Drives the "Required" chip on unloaded input cards — keep in lockstep
+ * Drives the required indicator on unloaded input rows — keep in lockstep
  * with `backend/python/fmea/runtime.py`.
  */
 const FMEA_REQUIRED_ROLES: Partial<Record<WorkflowId, FileRole[]>> = {
@@ -236,7 +236,7 @@ function readStoredCcaPrefix(): string {
 // `useDesktopRunController` module so all four tools seed empty desktop slots
 // identically. The shared helper additionally (a) sets a neutral
 // `optional`/"Not loaded" status+tag instead of inheriting the scenario's
-// green `ready`/"Loaded" chip — FMEA's local copy showed loaded-looking chips
+// green `ready`/"Loaded" state — FMEA's local copy showed loaded-looking rows
 // on empty desktop cards — and (b) keeps `isExample: true` (the local copy set
 // `false`); FMEA reads neither flag (no isPristine/EmptyState here, and
 // InputGrid's example styling needs a non-empty path), so the change is inert
@@ -1099,12 +1099,12 @@ export function FmeaTool() {
     });
     // Fix 2: a new file invalidates the previous validate_run result — clear
     // the stale validation cards (including the backend "ready-to-run" info
-    // card) so the Preview tab no longer describes the OLD file/sheet. Guarded
+    // card) so the Validation panel no longer describes the OLD file/sheet. Guarded
     // by the early return above, so browser-mock demo cards are never wiped.
     setValidations([]);
     // Fix #17: clear a lingering terminal run before flipping to busy, else
     // useBackendBusyReset (terminal phase + busy) instantly wipes this
-    // "Inspecting..." chip. Guarded so a live sibling run survives.
+    // "Inspecting..." backend status. Guarded so a live sibling run survives.
     resetDesktopRunSessionUnlessLive();
     setBackendState({
       backendStatus: "busy",
@@ -1194,8 +1194,8 @@ export function FmeaTool() {
 
     if (backendClient.runtimeMode === "desktop-bridge" && nextPath) {
       // Fix 2: a sheet change re-inspects the workbook, invalidating the prior
-      // validate_run result — clear the stale validation cards so the Preview
-      // tab does not describe the previously-selected sheet. Kept on the
+      // validate_run result — clear the stale validation cards so the Validation
+      // panel does not describe the previously-selected sheet. Kept on the
       // desktop-bridge path so browser-mock demo cards are never wiped.
       setValidations([]);
       void inspectRole(role, nextPath, selectedSheet, nextSheets);
@@ -1259,9 +1259,9 @@ export function FmeaTool() {
     );
 
     // Fix R2-C1: clear any stale active run from a previous run BEFORE flipping
-    // the busy chip. If the previous run's phase is still "success"/"cancelled"/
+    // the busy status. If the previous run's phase is still "success"/"cancelled"/
     // "failure" when we flip backendStatus to "busy", useBackendBusyReset will
-    // see (terminal phase + busy) and instantly clear the busy chip, making the
+    // see (terminal phase + busy) and instantly clear the busy status, making the
     // "Validating..." message flicker away on every second run.
     resetDesktopRunSession();
 
@@ -1401,7 +1401,7 @@ export function FmeaTool() {
   return (
     <div className="tool-workspace">
       {/* No per-tool banner: the shell topbar is the single title block
-          (title + description + backend-mode chip live there). */}
+          (title + description + per-tool Mode indicator live there). */}
       <section className="workspace-grid workspace-grid--single">
         <div className="workspace-grid__main">
           {/* v2 N5: numbered bare section strips — 01 Workflow · 02 Inputs ·

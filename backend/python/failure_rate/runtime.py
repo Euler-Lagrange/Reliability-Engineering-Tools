@@ -334,7 +334,7 @@ def execute_run_request(
     logic.load_prediction(pred_path, sheet_name=pred_sheet)
     # Close each stage with a completed-phrase message: the frontend
     # timeline keeps a stage's LAST message, so without this the step
-    # reads "Loading..." forever next to a completed chip.
+    # reads "Loading..." forever next to a completed state.
     emit_progress("Loading prediction", "Prediction workbook loaded.", 5)
 
     emit_status("running", "Loading FMEA", "Loading FMEA workbook...")

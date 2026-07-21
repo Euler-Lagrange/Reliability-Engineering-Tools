@@ -1,6 +1,6 @@
 # Reliability Tools Desktop — User Guide
 
-**Version 0.4.8**
+**Version 1.3.0**
 
 A practical manual for reliability engineers. It assumes you know FMEA, BOM,
 and failure-rate concepts but have never opened this app.
@@ -29,27 +29,31 @@ Python engine, and writes a styled `.xlsx` report.
 
 ### Concepts common to every tool
 
-- **Workflow cards.** The first card offers the workflow/mode choices as
-  selectable cards. The rest of the screen (which inputs, which options) changes
-  with your pick.
-- **Input cards with "Required" chips.** Each input is a card with a Browse
-  button and (for Excel) a sheet dropdown. A card you have not loaded yet shows
-  a **Required** chip if the current workflow needs it; optional inputs are
-  labeled as such. A loaded card shows a checkmark/"Loaded" state. The app never
-  seeds example paths into a real desktop run — empty required cards block the
-  run rather than run against a fake path.
+- **Workflow and numbered setup sections.** The first section offers the
+  workflow/mode choices. The rest of the numbered setup flow (inputs, mapping,
+  and options) changes with your pick, and the 48 px topbar shows the active
+  tool's current **Mode**.
+- **Input rows with required markers.** Each 44 px row has a Browse button and
+  (for Excel) a sheet dropdown. Required inputs carry a red `*`; the leading
+  indicator changes from a hollow ring, to an active dot, to a green check when
+  loaded. The app never seeds example paths into a real desktop run — empty
+  required rows block the run rather than run against a fake path.
 - **Column mapping.** Where a tool must find columns (RefDes, FMR, etc.), a
   mapping table pairs each canonical field with a dropdown of the *actual*
   headers read from your file. Required rows are marked. Every dropdown includes
   **— Do Not Map —**; choosing it on a *required* field blocks the run (it will
   not silently guess). Optional rows may be left unmapped and are auto-detected.
-- **Review / Run panel.** The right-side panel toggles between **Preview**
-  (a sample of your mapped source rows and validation messages) and **Run**
-  (live progress, stages, and the result summary). A shared review drawer opens
-  with `Ctrl+R`.
-- **Run log.** A cross-tool log panel at the bottom of the window streams status
-  and warnings from the running job. It is shared — a run started in one tool
-  keeps logging while you look at another.
+- **Persistent Run and Validation rail.** Every analysis tool keeps a 320 px
+  right rail visible: **Run** shows readiness, Start/Cancel, live progress,
+  phases, and the result; **Validation** shows the current validation messages.
+  Press `Ctrl+Enter` (`Cmd+Enter` on macOS) to start only when the
+  visible tool is ready and focus is not in an editable control. `Ctrl+R`
+  (`Cmd+R`) opens the separate Review drawer for the larger sample and run
+  summary.
+- **Run log and backend health.** A 30 px cross-tool log strip at the bottom of
+  the shell streams status and warnings and shows the backend status/mode on
+  its right edge. It is shared — a run started in one tool keeps logging while
+  you look at another. Full health diagnostics remain in Settings.
 - **Output folder.** Every tool has an **Output Folder** picker. Default is
   *"alongside first input"* (the folder of your first loaded file). An unusable
   chosen folder does not fail the run; it falls back to that default with a
@@ -96,6 +100,13 @@ The two **Merge** modes are the only ones that show and use the effect columns
 | **New Workbook** | Fresh output workbook with all generator columns and summary sheets. Simplest to review, diff, and archive. |
 | **Existing Workbook (Preserve Formatting)** | Writes into a new copy of the selected FMEA workbook; the original is never the output target. Blank generated cells do not replace existing nonblank cells. Different nonblank values do replace them and are listed on `Merge Changes`. New columns are appended at the far right. See the preservation limits below. |
 
+Fresh-workbook filenames identify the workflow:
+`PiecePartFMEA_Standard_<timestamp>.xlsx` (Grouping),
+`PiecePartFMEA_BomOnly_<timestamp>.xlsx` (BOM Only),
+`PiecePartFMEA_FromFunctional_<timestamp>.xlsx` (Merge Functional), and
+`MergedFMEA_FillGaps_<timestamp>.xlsx` (Merge Piece-Part). Preserve-formatting
+copies instead retain the selected target's stem as described below.
+
 ### 2.4 Column mapping
 
 Rows are auto-detected from your headers; override any dropdown. Help text sits
@@ -104,6 +115,7 @@ behind each row's info icon.
 | Column | Required | Notes |
 |--------|----------|-------|
 | FMEA-ID | Yes (hidden in BOM-Only) | Group FMEA-ID prefix, e.g. `PSU-C200`; combined with RefDes + suffix per row. In BOM-Only the CCA Identifier replaces it. |
+| Part Number | Yes | Component identifier used for BOM/FMEA joins. It is auto-detected when possible, but a missing mapping or **— Do Not Map —** selection blocks every workflow. |
 | Failure Mode Causes | Merge modes | Root-cause text. On circuit-block rows, a comma-separated RefDes list defines group membership. |
 | Component Part Description | No | Human-readable part description; derived from the BOM if unmapped. |
 | BAE HDA Commodity Level 1 / 2 | No | Commodity classification used for failure-mode lookup. |
@@ -208,6 +220,14 @@ Three comparison styles, selected in the **Run Setup** card.
 | **Group vs BOM** | A grouping sheet against a BOM (coverage, both directions) | Grouping workbook, BOM workbook | Group / RefDes / BOM RefDes / BOM description | All |
 | **Custom Compare** | Two arbitrary BOMs by RefDes key | File 1, File 2 | File 1 RefDes, File 2 RefDes | Most (see below) |
 | **Extraction Compare** | Two RefDes-extraction outputs (rev A vs rev B) | Extraction A (older), Extraction B (newer) | *none* | *none* |
+
+**Optional display names.** Every BOM Compare input row includes a Display
+name field. Use it when generic roles such as "File 1" or "Grouping" would be
+ambiguous (for example, `Rev A`, `Supplier BOM`, or `CPU Grouping`). A name you
+enter immediately appears in the associated mapping labels and travels into
+the Excel report's Summary/source labels. Leave it blank to use the standard
+role label in the UI and the canonical role or file-stem fallback in the
+report. Display names do not change matching or file selection.
 
 ### 3.1 Options
 
@@ -365,9 +385,10 @@ cross-checks them against a BOM. Start button on the Run panel.
 - **Advanced controls** (collapsed) — geometry subprocess isolation, geometry
   batch timeout (s), checkpoint between batches, pin assignment threshold (pt),
   RefDes search radius (pt), adaptive orphan threshold / ratio / max pages, and
-  pinlist-prefers-annotation. Each has a hover tooltip; defaults are safe.
+  pinlist-prefers-annotation, plus the per-page annotation timeout. Each has a
+  hover tooltip; defaults are safe.
 
-All 16 options are type/range-checked before the run; a bad value blocks with
+All 17 options are type/range-checked before the run; a bad value blocks with
 `Invalid extraction option(s): …`.
 
 ### 5.3 Output workbook
@@ -481,11 +502,13 @@ known) and auto-reconnects with backoff. A live run does not survive a full
 disconnect — re-run once reconnected. You can confirm health under
 **Settings → Backend Diagnostics → Run health check**.
 
-**Crash dumps.** Unhandled errors write a timestamped file under
-`~/.reliability_tools/logs/crashes/` (Python, Rust, and frontend each have their
-own). Every dump opens with a **review-before-sharing banner** because a crash
-can echo BOM/part values into the message, and embedded values are truncated —
-read a dump before sending it on. Only the newest 20 are kept.
+**Crash reporting.** Unhandled Python exceptions and Rust panics write
+timestamped files under `~/.reliability_tools/logs/crashes/`. Those files open
+with a **review-before-sharing banner** and truncate embedded values because a
+crash can echo BOM/part data — read a dump before sending it on. The Python
+writer prunes the shared `crash_*.log` backlog to the newest 20 when it writes a
+dump. Frontend `window.error` / unhandled-promise failures do **not** write a
+disk file today; they go to `console.error` and an in-app notification.
 
 **"N warning(s) captured in the output workbook."** A run that *succeeded* but
 produced warnings shows this instead of a bare file path. It is not a failure —

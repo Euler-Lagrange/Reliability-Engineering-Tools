@@ -244,7 +244,7 @@ class _CancelBridge:
 # ---------------------------------------------------------------------------
 # Option validation (#5 Stage 2)
 # ---------------------------------------------------------------------------
-# All 16 engine parameters are now user-settable from the frontend and spread
+# All 17 engine parameters are now user-settable from the frontend and spread
 # straight into the run payload's ``options`` dict. ``RefDesConfig.from_options``
 # performs NO coercion — a wrong-typed or out-of-range value would flow verbatim
 # into the extraction engine and fail late (or silently misbehave). Validate the
@@ -830,7 +830,7 @@ def execute_run_request(
         stream_log(f"Opened PDF: {Path(pdf_path).name} ({len(doc)} pages)")
         # Close each stage with a completed-phrase message: the frontend
         # timeline keeps a stage's LAST message, so without this the step
-        # reads "Opening PDF..." forever next to a completed chip.
+        # reads "Opening PDF..." forever next to a completed state.
         emit_progress("Opening PDF", "PDF opened.", 10)
 
         emit_status("running", "Extracting annotations", "Extracting annotations from PDF...")

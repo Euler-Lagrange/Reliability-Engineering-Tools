@@ -779,7 +779,7 @@ export function BomCompareTool() {
       ),
     );
     // Fix 2: a new file invalidates the previous validate_run result — clear
-    // the stale validation cards so the Preview tab shows its neutral empty
+    // the stale validation cards so the Validation panel shows its neutral empty
     // state instead of warnings that describe the OLD file/sheet.
     setValidations([]);
     // Bug fix: a new file replaces this role's inspected headers — drop the
@@ -792,7 +792,7 @@ export function BomCompareTool() {
     });
     // Fix #17: clear a lingering terminal run before flipping to busy, else
     // useBackendBusyReset (terminal phase + busy) instantly wipes this
-    // "Inspecting..." chip. Guarded so a live sibling run survives.
+    // "Inspecting..." backend status. Guarded so a live sibling run survives.
     resetDesktopRunSessionUnlessLive();
     setBackendState({
       backendStatus: "busy",
@@ -959,7 +959,7 @@ export function BomCompareTool() {
     );
 
     // Fix 2: a sheet change re-points the input at different data, so the
-    // previous validate_run result is now stale — clear it so Preview shows
+    // previous validate_run result is now stale — clear it so Validation shows
     // its neutral empty state rather than cards describing the OLD sheet.
     setValidations([]);
 
@@ -1000,7 +1000,7 @@ export function BomCompareTool() {
     const runRequest = buildRunRequest();
 
     // Fix R2-C1: clear any stale active run from a previous run BEFORE flipping
-    // the busy chip. Otherwise useBackendBusyReset would see (previous run's
+    // the busy status. Otherwise useBackendBusyReset would see (previous run's
     // terminal phase + busy) and instantly clear the "Validating..." message.
     resetDesktopRunSession();
     setRunLogLines([]);

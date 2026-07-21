@@ -563,7 +563,7 @@ export function RefDesExtractorTool() {
     const runRequest = buildRunRequest();
 
     // Fix R2-C1: clear any stale active run from a previous run BEFORE flipping
-    // the busy chip. Otherwise useBackendBusyReset would see (previous run's
+    // the busy status. Otherwise useBackendBusyReset would see (previous run's
     // terminal phase + busy) and instantly clear the "Validating..." message.
     resetDesktopRunSession();
     setRunLogLines([]);
