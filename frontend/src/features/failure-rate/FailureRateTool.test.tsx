@@ -136,6 +136,31 @@ describe("FailureRateTool stale validation handling", () => {
     expect(screen.queryByText("Link failure rates")).not.toBeInTheDocument();
   });
 
+  // 2026-07-21: in browser preview the demo scenario is staged BEHIND the
+  // pristine card, so "Load example" reveals it instead of claiming example
+  // files don't exist. Desktop keeps the truthful coming-soon notice.
+  it("Load example reveals the staged demo content in browser preview", async () => {
+    const { backendClient } = await import("../../shared/backend/client");
+    (backendClient as unknown as { runtimeMode: string }).runtimeMode = "browser-mock";
+    try {
+      const user = userEvent.setup();
+      render(<FailureRateTool />);
+
+      await user.click(screen.getByRole("button", { name: "Load example" }));
+
+      // Pristine card gone, demo inputs visible with their Example: labels.
+      expect(
+        screen.queryByRole("button", { name: "Load example" }),
+      ).not.toBeInTheDocument();
+      expect(screen.getAllByText(/Example: /).length).toBeGreaterThan(0);
+      // No "coming soon" toast — the examples genuinely loaded.
+      expect(useNotificationStore.getState().notifications).toHaveLength(0);
+    } finally {
+      (backendClient as unknown as { runtimeMode: string }).runtimeMode =
+        "desktop-bridge";
+    }
+  });
+
   // Regression (Fix 2): a stale validate_run result stranded in the Preview
   // tab after the user changed an input file — the previous run's validation
   // cards kept describing the OLD file. Browsing a new file must clear them.

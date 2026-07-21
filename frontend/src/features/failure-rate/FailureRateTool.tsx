@@ -212,12 +212,22 @@ export function FailureRateTool() {
     }
   }
 
-  // Pristine = no real input loaded yet AND no run has been started.
+  // Pristine = no real input loaded yet AND no run has been started AND the
+  // user has not asked to see the staged browser-preview example content.
+  const [exampleRevealed, setExampleRevealed] = useState(false);
   const isPristine =
+    !exampleRevealed &&
     inputStates.every((input) => input.isExample === true) &&
     panelRunMode === "idle";
 
   const handleLoadExample = () => {
+    // Browser preview stages the demo scenario BEHIND the pristine card —
+    // "Load example" reveals it instead of claiming examples don't exist.
+    // Desktop keeps the truthful notice: no bundled workbooks ship yet.
+    if (backendClient.runtimeMode === "browser-mock") {
+      setExampleRevealed(true);
+      return;
+    }
     pushNotification({
       tone: "info",
       title: "Example files coming soon",

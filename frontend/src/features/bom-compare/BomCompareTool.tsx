@@ -636,7 +636,12 @@ export function BomCompareTool() {
   // grid once a real file lands for it — the per-workflow input cache keeps
   // each card's pristine state independent, so loading a file in one
   // workflow never exits pristine for the others.
+  // "Load example" (browser preview only) reveals the staged demo content;
+  // the reveal is tool-wide, not per-workflow — an explicit request to see
+  // demo data applies to every workflow card.
+  const [exampleRevealed, setExampleRevealed] = useState(false);
   const isPristine =
+    !exampleRevealed &&
     visibleInputs.every((input) => input.isExample === true) &&
     panelRunMode === "idle";
 
@@ -670,6 +675,13 @@ export function BomCompareTool() {
     };
 
   const handleLoadExample = () => {
+    // Browser preview stages the demo scenario BEHIND the pristine card —
+    // "Load example" reveals it instead of claiming examples don't exist.
+    // Desktop keeps the truthful notice: no bundled workbooks ship yet.
+    if (backendClient.runtimeMode === "browser-mock") {
+      setExampleRevealed(true);
+      return;
+    }
     pushNotification({
       tone: "info",
       title: "Example files coming soon",

@@ -343,11 +343,20 @@ export function RefDesExtractorTool() {
   // option choice, not engagement, so BOTH modes get the onboarding
   // EmptyState until a real file is browsed. (The pinlist slot appears in
   // the InputGrid as soon as any browse exits pristine.)
+  const [exampleRevealed, setExampleRevealed] = useState(false);
   const isPristine =
+    !exampleRevealed &&
     inputStates.every((input) => input.isExample === true) &&
     panelRunMode === "idle";
 
   const handleLoadExample = () => {
+    // Browser preview stages the demo scenario BEHIND the pristine card —
+    // "Load example" reveals it instead of claiming examples don't exist.
+    // Desktop keeps the truthful notice: no bundled schematics ship yet.
+    if (backendClient.runtimeMode === "browser-mock") {
+      setExampleRevealed(true);
+      return;
+    }
     pushNotification({
       tone: "info",
       title: "Example files coming soon",

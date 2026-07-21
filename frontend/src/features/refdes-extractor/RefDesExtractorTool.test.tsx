@@ -492,3 +492,28 @@ describe("RefDesExtractorTool adaptive geometry gating", () => {
     expect(adaptive).toBeEnabled();
   });
 });
+
+// 2026-07-21: in browser preview the demo scenario is staged BEHIND the
+// pristine card, so "Load example" reveals it instead of claiming example
+// files don't exist. Desktop keeps the truthful coming-soon notice.
+describe("RefDesExtractorTool browser-preview Load example", () => {
+  it("reveals the staged demo content instead of a coming-soon notice", async () => {
+    const { backendClient } = await import("../../shared/backend/client");
+    (backendClient as unknown as { runtimeMode: string }).runtimeMode = "browser-mock";
+    try {
+      const user = userEvent.setup();
+      render(<RefDesExtractorTool />);
+
+      await user.click(screen.getByRole("button", { name: "Load example" }));
+
+      expect(
+        screen.queryByRole("button", { name: "Load example" }),
+      ).not.toBeInTheDocument();
+      expect(screen.getAllByText(/Example: /).length).toBeGreaterThan(0);
+      expect(useNotificationStore.getState().notifications).toHaveLength(0);
+    } finally {
+      (backendClient as unknown as { runtimeMode: string }).runtimeMode =
+        "desktop-bridge";
+    }
+  });
+});
