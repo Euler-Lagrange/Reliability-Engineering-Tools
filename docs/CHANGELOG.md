@@ -40,6 +40,9 @@ frontend across 48 files, and 23 Rust bridge tests.
   staged executables, then atomically promotes the directory with rollback on
   failure. The release pipeline can no longer silently pair a stale executable
   with a new one.
+- Toolchain probes and direct cross-platform launch paths no longer mediate
+  argument arrays through a shell, eliminating Node 24's `DEP0190` warning
+  and keeping those build paths on structured process arguments.
 - **Protocol handling fails closed at the Rust boundary.** Malformed response
   payloads are rejected before forwarding; unknown frontend run phases are
   logged and clamped to the last valid phase; failed run-event listeners retry

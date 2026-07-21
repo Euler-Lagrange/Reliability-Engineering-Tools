@@ -10,7 +10,7 @@ const env = {
 };
 
 function checkCommand(command, args = ["--version"]) {
-  const result = spawnSync(command, args, { shell: true, encoding: "utf8", env });
+  const result = spawnSync(command, args, { encoding: "utf8", env });
   return {
     ok: result.status === 0,
     output: (result.stdout || result.stderr || "").trim(),

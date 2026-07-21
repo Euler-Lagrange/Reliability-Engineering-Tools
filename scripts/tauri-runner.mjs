@@ -12,7 +12,6 @@ const env = {
 };
 
 const readiness = spawnSync("node", ["./scripts/tauri-readiness.mjs"], {
-  shell: true,
   stdio: "inherit",
   env,
 });
@@ -44,10 +43,9 @@ if (platform() === "win32") {
   process.exit(result.status ?? 1);
 }
 
-  const result = spawnSync("./node_modules/.bin/tauri", [mode, ...extraArgs], {
-    shell: true,
-    stdio: "inherit",
-    env,
+const result = spawnSync("./node_modules/.bin/tauri", [mode, ...extraArgs], {
+  stdio: "inherit",
+  env,
 });
 
 process.exit(result.status ?? 1);

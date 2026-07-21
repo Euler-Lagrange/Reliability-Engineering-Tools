@@ -23,7 +23,6 @@ if (platform() !== "win32") {
   const result = spawnSync("cargo", process.argv.slice(2), {
     stdio: "inherit",
     env,
-    shell: true,
   });
   process.exit(result.status ?? 1);
 }
