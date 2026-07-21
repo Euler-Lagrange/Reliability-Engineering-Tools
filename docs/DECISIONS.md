@@ -37,8 +37,9 @@ emitted as they happen.
 
 **Consequences.** No network surface, no firewall dialogs, language-agnostic,
 ordered delivery by construction. The trade-off: stderr had to be routed to
-`DEVNULL` to prevent Windows pipe deadlocks, and a dedicated reader thread
-on the Rust side is required to avoid blocking the main Tokio runtime.
+`DEVNULL` to prevent Windows pipe deadlocks *(superseded — see the 2026-07-20
+amendment below)*, and a dedicated reader thread on the Rust side is required
+to avoid blocking the main Tokio runtime.
 
 **Operational amendment (2026-07-20).** The Rust bridge now pipes sidecar
 stderr and continuously drains it through `spawn_stderr_logger`, preserving
@@ -55,10 +56,11 @@ install Python, pip, or fetch wheels. Options surveyed: the official
 shipped as a Tauri sidecar binary.
 
 **Consequences.** Zero-install user experience: the app ships one `.exe`
-and the sidecar extracts on first launch. Sidecar size is approximately
-53 MB; cold-start extraction takes roughly one second. The trade-off:
-PyInstaller hidden-import hints are required for dynamic imports, and
-upgrading Python versions requires rebuilding the sidecar.
+and the sidecar extracts on first launch *(superseded — the release is now a
+two-executable pair; see the 2026-07-20 amendment below)*. Sidecar size is
+approximately 53 MB; cold-start extraction takes roughly one second. The
+trade-off: PyInstaller hidden-import hints are required for dynamic imports,
+and upgrading Python versions requires rebuilding the sidecar.
 
 **Operational amendment (2026-07-20).** Distribution now treats the portable
 desktop and PyInstaller sidecar as one two-executable release unit. The release
