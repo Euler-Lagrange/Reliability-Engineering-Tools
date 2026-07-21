@@ -36,6 +36,8 @@ set "PAIR_STAGE=%RELEASE_STAGE_ROOT%\pair_%TIMESTAMP%_%RANDOM%"
 set "STAGED_DESKTOP=%PAIR_STAGE%\ReliabilityToolsDesktop.exe"
 set "STAGED_SIDECAR=%PAIR_STAGE%\%SIDECAR_EXE_NAME%"
 set "OUTPUT_BACKUP=%RELEASE_STAGE_ROOT%\last_good_%TIMESTAMP%_%RANDOM%"
+set "PROMOTION_MOVE_ATTEMPTS=6"
+set "PROMOTION_MOVE_DELAY_SECONDS=1"
 
 echo ============================================================ > "%LOGFILE%"
 echo  RELIABILITY TOOLS DESKTOP - RELEASE BUILD >> "%LOGFILE%"
@@ -157,14 +159,14 @@ if not "!PAIR_ENTRY_COUNT!"=="2" goto :invalid_pair_stage
 set "HAD_LAST_GOOD=0"
 if exist "%OUTPUT_BACKUP%" goto :backup_path_collision
 if exist "%OUTPUT_DIR%" (
-    move /y "%OUTPUT_DIR%" "%OUTPUT_BACKUP%" >nul
+    call :move_directory_with_retry "%OUTPUT_DIR%" "%OUTPUT_BACKUP%" "last-good pair to backup"
     if errorlevel 1 goto :backup_last_good_failed
     if exist "%OUTPUT_DIR%" goto :backup_last_good_failed
     if not exist "%OUTPUT_BACKUP%" goto :backup_last_good_failed
     set "HAD_LAST_GOOD=1"
 )
 
-move /y "%PAIR_STAGE%" "%OUTPUT_DIR%" >nul
+call :move_directory_with_retry "%PAIR_STAGE%" "%OUTPUT_DIR%" "verified staged pair into local_build"
 if errorlevel 1 goto :promote_pair_failed
 if not exist "%OUTPUT_EXE%" goto :promote_pair_failed
 if not exist "%OUTPUT_DIR%\%SIDECAR_EXE_NAME%" goto :promote_pair_failed
@@ -318,20 +320,37 @@ goto :fail
 
 :backup_last_good_failed
 echo [ERROR] Could not move the current local_build directory to %OUTPUT_BACKUP%. >> "%LOGFILE%"
-if not exist "%OUTPUT_DIR%" if exist "%OUTPUT_BACKUP%" move /y "%OUTPUT_BACKUP%" "%OUTPUT_DIR%" >nul
+if not exist "%OUTPUT_DIR%" if exist "%OUTPUT_BACKUP%" (
+    call :move_directory_with_retry "%OUTPUT_BACKUP%" "%OUTPUT_DIR%" "last-good backup restoration"
+    if errorlevel 1 goto :backup_restore_failed
+)
+if not exist "%OUTPUT_DIR%" goto :backup_restore_failed
+if exist "%OUTPUT_BACKUP%" goto :backup_restore_failed
 echo.
 echo [FAILED] Could not secure the last-good pair before promotion.
+goto :fail
+
+:backup_restore_failed
+echo [ERROR] Automatic restoration after the backup move failure did not complete. >> "%LOGFILE%"
+echo.
+echo [FAILED] Could not restore local_build after securing the last-good pair.
+if exist "%OUTPUT_BACKUP%" (
+    echo          The prior pair remains intact at:
+    echo          %OUTPUT_BACKUP%
+) else (
+    echo          Inspect local_build and the release log before retrying.
+)
 goto :fail
 
 :promote_pair_failed
 echo [ERROR] Could not move the verified staged pair into %OUTPUT_DIR%. >> "%LOGFILE%"
 if exist "%OUTPUT_DIR%" (
     if exist "%PAIR_STAGE%" goto :pair_rollback_failed
-    move /y "%OUTPUT_DIR%" "%PAIR_STAGE%" >nul
+    call :move_directory_with_retry "%OUTPUT_DIR%" "%PAIR_STAGE%" "failed promoted pair back to staging"
     if errorlevel 1 goto :pair_rollback_failed
 )
 if "!HAD_LAST_GOOD!"=="1" (
-    move /y "%OUTPUT_BACKUP%" "%OUTPUT_DIR%" >nul
+    call :move_directory_with_retry "%OUTPUT_BACKUP%" "%OUTPUT_DIR%" "last-good backup restoration"
     if errorlevel 1 goto :pair_rollback_failed
 )
 echo [INFO] Restored the previous last-good pair after promotion failure. >> "%LOGFILE%"
@@ -381,5 +400,45 @@ exit /b 0
 :cleanup_staging
 if not defined PAIR_STAGE exit /b 0
 if /I "%PAIR_STAGE%"=="%RELEASE_STAGE_ROOT%" exit /b 1
-if exist "%PAIR_STAGE%" rmdir /s /q "%PAIR_STAGE%" >nul 2>&1
+for /l %%A in (1,1,%PROMOTION_MOVE_ATTEMPTS%) do (
+    if not exist "%PAIR_STAGE%" exit /b 0
+    rmdir /s /q "%PAIR_STAGE%" >nul 2>&1
+    if not exist "%PAIR_STAGE%" exit /b 0
+    if %%A LSS %PROMOTION_MOVE_ATTEMPTS% (
+        call :wait_for_move_retry
+        if errorlevel 1 (
+            echo [WARN] Could not wait before retrying release-stage cleanup. >> "%LOGFILE%"
+            exit /b 1
+        )
+    )
+)
+echo [WARN] Could not remove failed release staging directory %PAIR_STAGE%. >> "%LOGFILE%"
+exit /b 1
+
+:move_directory_with_retry
+setlocal EnableDelayedExpansion
+set "MOVE_SOURCE=%~1"
+set "MOVE_DESTINATION=%~2"
+set "MOVE_DESCRIPTION=%~3"
+for /l %%A in (1,1,%PROMOTION_MOVE_ATTEMPTS%) do (
+    move /y "!MOVE_SOURCE!" "!MOVE_DESTINATION!" >> "%LOGFILE%" 2>&1
+    if not errorlevel 1 (
+        if %%A GTR 1 echo [INFO] Move succeeded on attempt %%A: !MOVE_DESCRIPTION!. >> "%LOGFILE%"
+        endlocal & exit /b 0
+    )
+    if %%A LSS %PROMOTION_MOVE_ATTEMPTS% (
+        echo [WARN] Move attempt %%A failed: !MOVE_DESCRIPTION!. Retrying in %PROMOTION_MOVE_DELAY_SECONDS%s. >> "%LOGFILE%"
+        call :wait_for_move_retry
+        if errorlevel 1 (
+            echo [ERROR] Could not wait before retrying: !MOVE_DESCRIPTION!. >> "%LOGFILE%"
+            endlocal & exit /b 1
+        )
+    )
+)
+echo [ERROR] Move failed after %PROMOTION_MOVE_ATTEMPTS% attempts: !MOVE_DESCRIPTION!. >> "%LOGFILE%"
+endlocal & exit /b 1
+
+:wait_for_move_retry
+powershell -NoProfile -Command "Start-Sleep -Seconds %PROMOTION_MOVE_DELAY_SECONDS%" >nul 2>&1
+if errorlevel 1 exit /b 1
 exit /b 0

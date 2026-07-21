@@ -62,8 +62,9 @@ is written to `logs/release_YYYYMMDD_HHMMSS.log`. On success, the script prints
    `health_check`.
 16. **Promote pair** — verifies that staging contains exactly the two expected
    executables, then promotes the staged directory to `local_build\` with
-   same-volume directory renames. The previous `local_build\` pair is held as
-   a run-specific backup and restored if promotion fails.
+   same-volume directory renames and bounded retries for transient Windows
+   locks. The previous `local_build\` pair is held as a run-specific backup
+   and restored if promotion still fails.
 
 ## Output Artifacts
 

@@ -138,7 +138,7 @@ The script runs the following 16 steps and stops on the first failure
 13. Assemble the exact two-file desktop/sidecar pair in that run-specific staging directory
 14. Self-test the staged desktop (`ReliabilityToolsDesktop.exe --self-test`)
 15. Self-test the staged desktop with the staged sidecar (`ReliabilityToolsDesktop.exe --self-test-backend`)
-16. Atomically promote the verified staged directory to `local_build/`, restoring the previous pair if promotion fails
+16. Atomically promote the verified staged directory to `local_build/` with bounded retries for transient Windows locks, restoring the previous pair if promotion still fails
 
 The outputs are `local_build/ReliabilityToolsDesktop.exe` and
 `local_build/reliability-tools-sidecar.exe`. They are one release unit and

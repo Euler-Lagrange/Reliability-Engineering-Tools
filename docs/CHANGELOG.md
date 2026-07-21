@@ -38,8 +38,9 @@ frontend across 48 files, and 23 Rust bridge tests.
 - **The release unit is now an inseparable desktop/sidecar pair.** The pipeline
   builds into a run-specific staging directory, audits and self-tests the exact
   staged executables, then atomically promotes the directory with rollback on
-  failure. The release pipeline can no longer silently pair a stale executable
-  with a new one.
+  failure. Bounded rename retries absorb transient Windows scanner/process
+  locks before rollback. The release pipeline can no longer silently pair a
+  stale executable with a new one.
 - Toolchain probes and direct cross-platform launch paths no longer mediate
   argument arrays through a shell, eliminating Node 24's `DEP0190` warning
   and keeping those build paths on structured process arguments.
