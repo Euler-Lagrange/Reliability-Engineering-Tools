@@ -285,9 +285,10 @@ fn parse_cancel_run_response(
 }
 
 fn parse_health_response(payload: &Value) -> Result<BackendHealthResponse, String> {
-    let parsed: BackendHealthPayload = serde_json::from_value(payload.clone()).map_err(|error| {
-        format!("Python sidecar health response is missing or invalid required fields: {error}")
-    })?;
+    let parsed: BackendHealthPayload =
+        serde_json::from_value(payload.clone()).map_err(|error| {
+            format!("Python sidecar health response is missing or invalid required fields: {error}")
+        })?;
 
     Ok(BackendHealthResponse {
         status: parsed.status,
@@ -563,7 +564,8 @@ impl SessionShared {
         if let Ok(mut heartbeat_guard) = self.last_heartbeat.lock() {
             *heartbeat_guard = None;
         }
-        let message = merge_disconnect_message(&message, self.take_fatal_sidecar_detail().as_deref());
+        let message =
+            merge_disconnect_message(&message, self.take_fatal_sidecar_detail().as_deref());
         self.fail_all_pending(&message);
         if was_connected {
             self.emit_session_event("disconnected", &message);
@@ -703,8 +705,8 @@ impl SidecarState {
             }
         });
 
-        let payload =
-            serde_json::to_string(&message).map_err(|error| format!("Failed to serialize command: {error}"))?;
+        let payload = serde_json::to_string(&message)
+            .map_err(|error| format!("Failed to serialize command: {error}"))?;
         let write_result = {
             let mut stdin = session
                 .stdin
@@ -718,7 +720,9 @@ impl SidecarState {
 
         if let Err(error) = write_result {
             let message = format!("Failed to send command to managed python sidecar: {error}");
-            let _ = self.shared.resolve_pending(&request_id, Err(message.clone()));
+            let _ = self
+                .shared
+                .resolve_pending(&request_id, Err(message.clone()));
             self.force_disconnect(&message);
             return Err(message);
         }
@@ -757,7 +761,9 @@ impl SidecarState {
     }
 
     fn send_request_command(&self, command_name: &str, body: Value) -> Result<Value, String> {
-        Ok(self.send_command_wait(command_name, body, "result")?.payload)
+        Ok(self
+            .send_command_wait(command_name, body, "result")?
+            .payload)
     }
 
     fn start_run_command(&self, body: Value) -> Result<RunAcceptedResponse, String> {
@@ -807,7 +813,8 @@ impl SidecarState {
 
     fn shutdown(&self) {
         self.shared.set_connected(false);
-        self.shared.fail_all_pending("Desktop shell is shutting down.");
+        self.shared
+            .fail_all_pending("Desktop shell is shutting down.");
         kill_managed_session(&self.session);
     }
 }
@@ -910,7 +917,8 @@ fn spawn_stdout_reader(stdout: ChildStdout, shared: Arc<SessionShared>, session:
                     if let Some(request_id) = request_id {
                         match kind.as_str() {
                             "ack" | "result" => {
-                                let payload = parsed.get("payload").cloned().unwrap_or_else(|| json!({}));
+                                let payload =
+                                    parsed.get("payload").cloned().unwrap_or_else(|| json!({}));
                                 let _ = shared.resolve_pending(
                                     request_id,
                                     Ok(PendingResponse {
@@ -960,7 +968,8 @@ fn spawn_stdout_reader(stdout: ChildStdout, shared: Arc<SessionShared>, session:
                         "heartbeat" => {
                             shared.record_heartbeat();
                         }
-                        "ack" | "status" | "progress" | "log" | "result" | "backend_error" | "cancelled" => {
+                        "ack" | "status" | "progress" | "log" | "result" | "backend_error"
+                        | "cancelled" => {
                             if should_forward_run_event(&kind, has_request_id, has_run_id) {
                                 enrich_run_event_for_frontend(
                                     &mut parsed,
@@ -993,28 +1002,27 @@ fn spawn_heartbeat_supervisor(shared: Arc<SessionShared>, session: SessionSlot) 
     // one must self-retire instead of lingering and double-supervising the new
     // session (which could disconnect a healthy live session on a shared timer).
     let my_generation = shared.current_session_generation();
-    thread::spawn(move || {
-        loop {
-            thread::sleep(HEARTBEAT_CHECK_INTERVAL);
+    thread::spawn(move || loop {
+        thread::sleep(HEARTBEAT_CHECK_INTERVAL);
 
-            if !shared.is_connected() {
-                break;
-            }
+        if !shared.is_connected() {
+            break;
+        }
 
-            if shared.current_session_generation() != my_generation {
-                break;
-            }
+        if shared.current_session_generation() != my_generation {
+            break;
+        }
 
-            if shared.heartbeat_overdue() {
-                disconnect_if_current(
-                    &session,
-                    shared.as_ref(),
-                    my_generation,
-                    "Python sidecar heartbeat timed out — backend may have crashed or hung.".to_string(),
-                    |active_session| active_session.kill(),
-                );
-                break;
-            }
+        if shared.heartbeat_overdue() {
+            disconnect_if_current(
+                &session,
+                shared.as_ref(),
+                my_generation,
+                "Python sidecar heartbeat timed out — backend may have crashed or hung."
+                    .to_string(),
+                |active_session| active_session.kill(),
+            );
+            break;
         }
     });
 }
@@ -1031,9 +1039,7 @@ fn should_forward_run_event(kind: &str, has_request_id: bool, has_run_id: bool) 
         // Other request-correlated messages are command responses, such as
         // cancel_run's `result { status: "cancelling" }`, and must not be
         // replayed as streamed run events.
-        "status" | "progress" | "log" | "result" | "backend_error" | "cancelled" => {
-            !has_request_id
-        }
+        "status" | "progress" | "log" | "result" | "backend_error" | "cancelled" => !has_request_id,
         _ => false,
     }
 }
@@ -1148,8 +1154,9 @@ fn resolve_sidecar_script() -> Result<PathBuf, String> {
         }
     }
 
-    find_existing_relative("backend/python/sidecar_main.py")
-        .ok_or_else(|| "Could not locate backend/python/sidecar_main.py for the desktop bridge.".to_string())
+    find_existing_relative("backend/python/sidecar_main.py").ok_or_else(|| {
+        "Could not locate backend/python/sidecar_main.py for the desktop bridge.".to_string()
+    })
 }
 
 fn resolve_bundled_sidecar() -> Option<PathBuf> {
@@ -1164,7 +1171,9 @@ fn resolve_bundled_sidecar() -> Option<PathBuf> {
 /// during import (Tier-2 #14).
 fn ready_timeout() -> Duration {
     parse_timeout_secs(
-        env::var("RELIABILITY_TOOLS_READY_TIMEOUT_SECS").ok().as_deref(),
+        env::var("RELIABILITY_TOOLS_READY_TIMEOUT_SECS")
+            .ok()
+            .as_deref(),
         60,
     )
 }
@@ -1186,7 +1195,9 @@ fn parse_timeout_secs(raw: Option<&str>, default_secs: u64) -> Duration {
 /// and far faster.
 fn command_timeout() -> Duration {
     parse_timeout_secs(
-        env::var("RELIABILITY_TOOLS_COMMAND_TIMEOUT_SECS").ok().as_deref(),
+        env::var("RELIABILITY_TOOLS_COMMAND_TIMEOUT_SECS")
+            .ok()
+            .as_deref(),
         60,
     )
 }
@@ -1203,13 +1214,16 @@ fn await_ready<R>(rx: &mpsc::Receiver<Result<R, String>>, timeout: Duration) -> 
         Ok(Ok(value)) => ReadyOutcome::Ready(value),
         Ok(Err(message)) => ReadyOutcome::Failed(message),
         Err(mpsc::RecvTimeoutError::Timeout) => ReadyOutcome::TimedOut,
-        Err(mpsc::RecvTimeoutError::Disconnected) => {
-            ReadyOutcome::Failed("Python sidecar readiness channel closed unexpectedly.".to_string())
-        }
+        Err(mpsc::RecvTimeoutError::Disconnected) => ReadyOutcome::Failed(
+            "Python sidecar readiness channel closed unexpectedly.".to_string(),
+        ),
     }
 }
 
-fn spawn_managed_sidecar(session: SessionSlot, shared: Arc<SessionShared>) -> Result<ManagedSidecar, String> {
+fn spawn_managed_sidecar(
+    session: SessionSlot,
+    shared: Arc<SessionShared>,
+) -> Result<ManagedSidecar, String> {
     // On Windows, create the Job Object BEFORE spawning the child, then spawn
     // the child with CREATE_SUSPENDED, assign to the job, and only then resume.
     // Creating the job first avoids a live child when job creation fails, and
@@ -1235,7 +1249,10 @@ fn spawn_managed_sidecar(session: SessionSlot, shared: Arc<SessionShared>) -> Re
             command.creation_flags(CREATE_SUSPENDED);
         }
         command.spawn().map_err(|error| {
-            format!("Failed to start bundled sidecar '{}': {error}", bundled.display())
+            format!(
+                "Failed to start bundled sidecar '{}': {error}",
+                bundled.display()
+            )
         })?
     } else {
         // Development: python interpreter + script
@@ -1379,8 +1396,13 @@ fn spawn_managed_sidecar(session: SessionSlot, shared: Arc<SessionShared>) -> Re
 }
 
 #[tauri::command]
-fn backend_health_check(state: tauri::State<'_, SidecarState>) -> Result<BackendHealthResponse, String> {
-    let payload = state.send_request_command("health_check", json!({ "app": "reliability_tools_desktop" }))?;
+fn backend_health_check(
+    state: tauri::State<'_, SidecarState>,
+) -> Result<BackendHealthResponse, String> {
+    let payload = state.send_request_command(
+        "health_check",
+        json!({ "app": "reliability_tools_desktop" }),
+    )?;
     parse_health_response(&payload)
 }
 
@@ -1552,9 +1574,7 @@ fn backend_read_flet_config(
 }
 
 #[tauri::command]
-fn backend_read_refdes_prefixes(
-    state: tauri::State<'_, SidecarState>,
-) -> Result<Value, String> {
+fn backend_read_refdes_prefixes(state: tauri::State<'_, SidecarState>) -> Result<Value, String> {
     state.send_request_command("read_refdes_prefixes", json!({}))
 }
 
@@ -1577,9 +1597,7 @@ fn resolve_log_directory() -> Option<PathBuf> {
             return Some(PathBuf::from(custom));
         }
     }
-    let home = env::var("USERPROFILE")
-        .or_else(|_| env::var("HOME"))
-        .ok()?;
+    let home = env::var("USERPROFILE").or_else(|_| env::var("HOME")).ok()?;
     if home.is_empty() {
         return None;
     }
@@ -1588,7 +1606,8 @@ fn resolve_log_directory() -> Option<PathBuf> {
 
 /// Decision B: crash dumps can embed source data (a value echoed in a panic
 /// message). Warn before sharing and bound any embedded value.
-const CRASH_DUMP_BANNER: &str = "*** WARNING: this crash dump may contain source data (e.g. BOM / part\n\
+const CRASH_DUMP_BANNER: &str =
+    "*** WARNING: this crash dump may contain source data (e.g. BOM / part\n\
      *** values echoed in a panic message). Review it before sharing.\n\
      ------------------------------------------------------------\n";
 
@@ -1654,13 +1673,19 @@ pub fn run() {
     install_rust_panic_hook();
 
     if env::args().any(|arg| arg == "--self-test") {
-        println!("SELF-TEST OK: Reliability Tools Desktop {}", env!("CARGO_PKG_VERSION"));
+        println!(
+            "SELF-TEST OK: Reliability Tools Desktop {}",
+            env!("CARGO_PKG_VERSION")
+        );
         return;
     }
 
     if env::args().any(|arg| arg == "--self-test-backend") {
         let state = SidecarState::new();
-        match state.send_request_command("health_check", json!({ "app": "reliability_tools_desktop" })) {
+        match state.send_request_command(
+            "health_check",
+            json!({ "app": "reliability_tools_desktop" }),
+        ) {
             Ok(result) => {
                 println!(
                     "BACKEND SELF-TEST OK: {} {} {}",
@@ -1732,9 +1757,9 @@ mod tests {
         await_ready, build_session_event_payload, candidate_bases, classify_stdout_line,
         correlation_id, disconnect_if_current, enrich_run_event_for_frontend,
         merge_disconnect_message, parse_cancel_run_response, parse_health_response,
-        parse_input_inspection_response, parse_template_analysis_response,
-        parse_timeout_secs, should_forward_run_event, truncate_crash_value, ReadyOutcome,
-        SessionDisconnectState, StdoutLine,
+        parse_input_inspection_response, parse_template_analysis_response, parse_timeout_secs,
+        should_forward_run_event, truncate_crash_value, ReadyOutcome, SessionDisconnectState,
+        StdoutLine,
     };
     use serde_json::json;
     use std::path::PathBuf;
@@ -1955,16 +1980,17 @@ mod tests {
 
     #[test]
     fn parse_timeout_secs_parses_a_valid_override() {
-        assert_eq!(parse_timeout_secs(Some("120"), 60), Duration::from_secs(120));
+        assert_eq!(
+            parse_timeout_secs(Some("120"), 60),
+            Duration::from_secs(120)
+        );
     }
 
     #[test]
     fn cancel_response_missing_accepted_is_never_reported_as_accepted() {
-        let response = parse_cancel_run_response(
-            &json!({"run_id": "run-1", "status": "cancelling"}),
-            "run-1",
-        )
-        .expect("a missing accepted field should produce a conservative response");
+        let response =
+            parse_cancel_run_response(&json!({"run_id": "run-1", "status": "cancelling"}), "run-1")
+                .expect("a missing accepted field should produce a conservative response");
 
         assert!(!response.accepted);
     }
