@@ -42,10 +42,12 @@ Opens Vite at `http://localhost:5173`. The shell detects it is not running
 inside Tauri (`isTauriRuntime()` returns false) and serves mock data from
 `frontend/src/mocks/scenarios.ts`. Scenario-seeded state and run results are
 useful for UI iteration without the Python toolchain. Native file/folder
-pickers return no selection outside Tauri, and BOM Compare, Failure Rate, and
-RefDes **Load example** actions are coming-soon stubs, so their input grids are
-not walkthrough-reachable in browser preview. Treat that as a validation gap
-and use desktop hot reload for those picker-to-grid paths.
+pickers return no selection outside Tauri. The BOM Compare, Failure Rate, and
+RefDes **Load example** actions reveal the staged demo scenario in browser
+preview (labelled `Example:` paths), so the input grids are walkthrough-
+reachable; on the desktop runtime the same buttons surface a truthful
+"coming soon" notice because no example workbooks ship on disk. Real
+picker-to-grid flows still need desktop hot reload.
 
 ### Desktop hot reload
 
@@ -64,7 +66,7 @@ fallback). Frontend edits hot-reload; Rust edits require restarting
 
 ```bash
 .venv/Scripts/python.exe backend/python/sidecar_main.py --self-test
-# → SELF-TEST OK: python-sidecar 0.1.0
+# → SELF-TEST OK: python-sidecar 0.1.0 (security_audit: clean)
 ```
 
 Run the sidecar without arguments to drive it manually by pasting NDJSON
@@ -76,7 +78,7 @@ command envelopes into stdin.
 # Frontend (from repo root)
 npm run typecheck         # production TS project
 npm run typecheck:tests   # Vitest files
-npm test                  # vitest run
+npm test                  # vitest run (with coverage)
 
 # Backend
 .venv/Scripts/python.exe -m pytest backend/tests -q

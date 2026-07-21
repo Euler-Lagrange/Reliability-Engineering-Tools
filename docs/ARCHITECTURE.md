@@ -19,7 +19,7 @@ request, response, and streamed run event.
 .
 ├── frontend/                   # React + TypeScript shell
 │   ├── public/
-│   │   └── fonts/              # Inter-Variable.woff2, JetBrainsMono-Variable.ttf
+│   │   └── fonts/              # Inter-Variable.woff2, JetBrainsMono-Variable.ttf + their OFL license texts
 │   ├── src/
 │   │   ├── app/                # AppShell, tool registry, types
 │   │   ├── components/         # Shared UI (SectionCard, MappingTable, …)
@@ -115,8 +115,13 @@ that hosts:
 - **Zustand stores** (`frontend/src/stores/`) — `shellStore`, `themeStore`,
   `notificationStore` (see State Management below).
 - **Contracts** (`frontend/src/contracts/sidecar.ts`) — Zod schemas validate
-  every payload received from Rust. Type drift between Rust/Python and the
-  frontend fails loudly at the schema boundary, not deep inside a render.
+  every payload received from Rust. For synchronous command responses, type
+  drift between Rust/Python and the frontend fails loudly at the schema
+  boundary, not deep inside a render. Streamed events are deliberately
+  softer: a run-event parse failure is logged and the raw payload forwarded
+  (so a malformed terminal event cannot strand a live run), and a
+  session-event parse failure is logged and skipped (the next heartbeat
+  heals the status display).
 - **Mocks** (`frontend/src/mocks/scenarios.ts`) — fully populated demo
   scenarios so the browser preview (`npm run dev`) works without a backend.
 - **Primitives** (`frontend/src/components/primitives/`) — reusable
@@ -147,8 +152,8 @@ that hosts:
 
 - **`ManagedSidecar`** — `Arc<Mutex<Child>>` plus `Arc<Mutex<ChildStdin>>`.
   One sidecar process per desktop window. Killed on window destroy. On
-  Windows the struct also owns an `Option<JobObject>` — see *Windows
-  process lifecycle* below.
+  Windows the struct also owns an `Arc<WindowsJobObject>` held purely for
+  RAII — see *Windows process lifecycle* below.
 - **`SessionShared`** — shared state across reader, supervisor, and command
   threads. Holds the pending-request registry, connection flag, app handle for
   emitting events, the last heartbeat timestamp, and a small
@@ -179,7 +184,9 @@ calls inside a single `MutexGuard` scope.
 ### Stdout reader thread
 
 `spawn_stdout_reader` runs one dedicated thread per session. For each line:
-- Parse JSON; on parse failure call `handle_disconnect`.
+- Parse JSON; a non-JSON line is logged and skipped (a stray C-extension
+  write to fd 1 must not tear down a live run). Only EOF or a genuine read
+  error triggers `handle_disconnect`.
 - For `ack` and `result` with a known `request_id`, resolve the pending sender.
 - For `error` and `backend_error` with a known `request_id`, deliver `Err`.
 - For `heartbeat`, call `record_heartbeat()`.
@@ -263,8 +270,11 @@ with `mode: "desktop-bridge".to_string()` set explicitly (see
 `src-tauri/src/lib.rs` — the `mode` field is hard-wired in each
 `backend_*` handler; grep for `"desktop-bridge".to_string()` to find the
 current call sites). The Python sidecar itself
-only sets `mode` on the `execute_run` ack and the `cancel_run` result;
-every other command relies on the Rust layer to add it before the response
+sets `mode` in four places — the `execute_run` ack, the `execute_run`
+terminal `result`, the `cancel_run` result, and the `validate_run` result
+(the tool runtimes emit it directly, and the Rust `backend_validate_run`
+handler forwards that payload without injecting anything); every other
+command relies on the Rust layer to add it before the response
 crosses the bridge. The Zod schemas in `frontend/src/contracts/` therefore
 validate the **enriched** Rust output, not the raw Python payload — keep
 this in mind when adding new commands so the schema and the Rust handler
@@ -360,7 +370,7 @@ Full payload schemas live in `contracts/sidecar-protocol.md`.
 | Tool | Workflow IDs | Frontend component | Runtime adapter | Logic module |
 |------|--------------|--------------------|-----------------|--------------|
 | FMEA | `piece_part_generate`, `bom_only`, `functional_to_piecepart`, `fill_gaps` | `frontend/src/features/fmea/FmeaTool.tsx` | `fmea/runtime.py` | `fmea/fmea_generator_logic.py` (+ template analyzer/writer) |
-| BOM Compare | `bom_compare_group`, `bom_compare_custom` | `frontend/src/features/bom-compare/BomCompareTool.tsx` | `bom_compare/runtime.py` | `bom_compare/bom_compare_logic.py`, `custom_compare.py` |
+| BOM Compare | `bom_compare_group`, `bom_compare_custom`, `extraction_compare` | `frontend/src/features/bom-compare/BomCompareTool.tsx` | `bom_compare/runtime.py` | `bom_compare/bom_compare_logic.py`, `custom_compare.py`, `extraction_compare.py` |
 | Failure Rate | `failure_rate_link` | `frontend/src/features/failure-rate/FailureRateTool.tsx` | `failure_rate/runtime.py` | `failure_rate/failure_rate_logic.py` |
 | RefDes Extractor | `refdes_extract` | `frontend/src/features/refdes-extractor/RefDesExtractorTool.tsx` | `refdes_extractor/runtime.py` | `refdes_test/refdes_test_logic.py` (+ `refdes_extractor/extraction_engine.py`) |
 | Settings | (none) | `frontend/src/features/settings/SettingsTool.tsx` | (none) | (none) |

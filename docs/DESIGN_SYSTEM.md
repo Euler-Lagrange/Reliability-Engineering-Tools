@@ -224,6 +224,19 @@ transition/animation shorthand — reach for a duration token.
 | `--duration-base` | `200ms` | Standard control transitions |
 | `--duration-slow` | `250ms` | Larger reveals: drawers, panels, progress |
 
+## Z-Index Tokens
+
+Stacking is a five-rung ladder. Never write a raw `z-index` literal — reach
+for a rung token so overlay ordering stays auditable in one place.
+
+| Token | Value | Use |
+|-------|-------|-----|
+| `--z-sticky` | `1` | Sticky in-flow headers and rails |
+| `--z-menu` | `20` | Dropdowns, select popovers |
+| `--z-drawer` | `40` | Review drawer and other shell overlays |
+| `--z-toast` | `50` | Notification toasts |
+| `--z-modal` | `1000` | Full-screen modal layers (command palette, guide overlay) |
+
 ## Icon Size Conventions
 
 Phosphor icons are used throughout the shell. The size is set on the
@@ -336,7 +349,7 @@ This is the "boxes super close together horizontally" fix — without these
 constraints the select cells collapsed to fit their current text and the
 dropdown menus clipped long column names.
 
-## The 10 Themes
+## The 11 Themes
 
 Themes are toggled by setting `data-theme` on the `<html>` element from
 `ThemeController.tsx`. The attribute is **always** set: Light Precision
@@ -348,6 +361,7 @@ compact light/dark toggle, and `ThemeController` all read from that registry.
 
 | Theme id | data-theme | Use case | Personality |
 |----------|------------|----------|-------------|
+| System | resolves to `light_precision` / `dark_precision` (`data-theme-mode="system"`) | Follow the OS light/dark preference | The registry's eleventh entry; `data-theme` always carries the resolved concrete theme |
 | Light Precision | `light_precision` | Daily use on bright displays | Calm blues on near-white surfaces; the workhorse |
 | Dark Precision | `dark_precision` | Long sessions, dim rooms | Slate surfaces with the same blue accent |
 | Signal Slate | `signal_slate` | Reduced-saturation light alternative | Cooler greys with a teal accent |
@@ -404,6 +418,7 @@ tool's `*Tool.tsx`.
 | `StrategySelector` | `StrategySelector.tsx` | Output strategy cards using `data-selected` and `aria-pressed` |
 | `CustomSelect` | `CustomSelect.tsx` | Accessible dropdown with keyboard navigation |
 | `ValidationPreview` | `ValidationPreview.tsx` | Pre-run validation message list |
+| `OutputFolderPicker` | `OutputFolderPicker.tsx` | Output-directory row with native folder dialog, clear action, and backend-error surfacing |
 
 ### Primitives (`components/primitives/`)
 
@@ -418,6 +433,7 @@ Reusable building-block components extracted from tool surfaces.
 | `OptionsSection` | `OptionsSection.tsx` | Grouped options container with heading |
 | `HoldButton` | `HoldButton.tsx` | Press-and-hold confirmation button |
 | `EmptyState` | `EmptyState.tsx` | Placeholder for empty content areas |
+| `NumberField` | `NumberField.tsx` | Labeled controlled numeric input; NaN-guarded change handling with min clamping |
 
 ## CSS Module Conventions
 

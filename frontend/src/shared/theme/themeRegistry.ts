@@ -4,7 +4,7 @@
  * Before this registry existed, theme metadata was duplicated across four
  * files (the shell rail in App.tsx, the Settings tool, the theme store, and
  * the ThemeController). The lists drifted: the rail only exposed 4 of the
- * 7 themes, the topbar label fell through to "Light Precision" for 5 of
+ * then-7 themes, the topbar label fell through to "Light Precision" for 5 of
  * them, and the dark-themes list omitted Mission Control so its native
  * controls rendered with the wrong contrast.
  *

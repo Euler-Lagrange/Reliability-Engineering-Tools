@@ -72,11 +72,16 @@ Both files land in `local_build/`:
 
 | File | Size | Role |
 |------|------|------|
-| `ReliabilityToolsDesktop.exe` | ~9 MB | Tauri shell, React UI, Rust bridge |
+| `ReliabilityToolsDesktop.exe` | ~10 MB | Tauri shell, React UI, Rust bridge |
 | `reliability-tools-sidecar.exe` | ~53 MB | PyInstaller-bundled Python backend |
 
 Both files must ship together. The shell spawns the sidecar by relative path,
 so they must live in the same directory on the recipient's machine.
+
+The desktop exe embeds the bundled fonts (Inter, JetBrains Mono) together
+with their SIL Open Font License texts (`Inter-OFL.txt`,
+`JetBrainsMono-OFL.txt` under `frontend/public/fonts/`), so no separate
+license files need to accompany the distribution.
 
 ## Distributing to Team Members
 

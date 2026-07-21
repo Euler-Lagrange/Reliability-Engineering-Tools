@@ -5,8 +5,10 @@
 > either deliberately accepted, informational, or pending verification on a
 > machine with real technical data. Historical plan/review documents for
 > completed work are deleted once finished — their surviving knowledge lands
-> here. Last consolidated: v1.1.0 (2026-07-14), after the external-review
-> remediation (Waves 1–4 + Wave R) completed.
+> here. Last consolidated: v1.3.0 (2026-07-21), during the documentation
+> sweep — every entry below was re-verified against the v1.3.0 code at that
+> point. (Previous consolidation: v1.1.0, 2026-07-14, after the
+> external-review remediation Waves 1–4 + Wave R.)
 
 ## Pending verification (requires real technical data — not on the dev machine)
 
@@ -41,8 +43,8 @@ Do not re-flag these without new evidence; each was examined and accepted.
   bridge between `spawn()` (CREATE_SUSPENDED) and `AssignProcessToJobObject`
   can leave one suspended, never-scheduled `python.exe` (inert orphan).
   Eliminating it requires `PROC_THREAD_ATTRIBUTE_JOB_LIST` process creation —
-  deferred. Full discussion in `docs/ARCHITECTURE.md`. The shorter CLAUDE.md
-  gotcha compresses this guarantee; reconcile in a later doc sweep.
+  deferred. Full discussion in `docs/ARCHITECTURE.md`. (The CLAUDE.md gotcha
+  now carries a matching caveat — reconciled 2026-07-21.)
 - **Stale stdout reader buffered frames**: generation-guarded teardown stops an
   old reader from killing a successor session, but a stale reader can still
   process already-buffered frames (heartbeat/fatal-detail refresh, or a frame
@@ -70,6 +72,12 @@ Do not re-flag these without new evidence; each was examined and accepted.
 - `sidecar_main._parse_log_level` recognizes embedded `" WARNING:"` text but
   not the leading `"WARNING:"` form, so several streamed warning lines
   classify as INFO in the UI log.
+- **Legacy `.xls` tests pin BIFF8, not BIFF5** (accepted 2026-07-21): the
+  xlwt-generated fixtures are BIFF8 (Excel 97–2003, i.e. every real-world
+  old `.xls`). Genuine Excel-5.0/95 BIFF5 files are untested and expected to
+  stay that way — no such files exist in the user's workflow, `xlrd` handles
+  BIFF5–BIFF8 with the same reader at runtime, and the failure mode would be
+  a loud read error, never silently wrong data.
 - `common/utils.py` read-layer raw `IOError`s — pre-existing, different
   semantics from the fixed write-path class; change only with a caller audit.
 - `build_summary_frames` logs the BOM_Additions rename note as a side effect —

@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Browser-preview "Load example" now reveals the staged demo content** for
+  BOM Compare, Failure Rate, and RefDes Extractor instead of showing a
+  coming-soon notice; the desktop app keeps the truthful notice, and no
+  example data ships on disk. FMEA is unchanged (its browser preview already
+  stages a working demo).
+- `src-tauri/src/lib.rs` is now `cargo fmt`-clean (mechanical reformat, no
+  behavior change).
+
+### Fixed
+
+- Session events that fail envelope validation are now logged and skipped
+  instead of throwing inside the Tauri listener. Run events keep their
+  deliberate raw-forward semantics; both behaviors are test-pinned. Suite
+  totals are now 927: 528 backend, 376 frontend across 48 files, 23 Rust.
+
+### Documentation
+
+- ADR-002 and ADR-003 sentences that no longer describe current behavior
+  (stderr-to-DEVNULL, single-exe shipping) now carry inline superseded
+  pointers to their 2026-07-20 amendments.
+- **2026-07-21 documentation sweep** — every doc verified claim-by-claim
+  against the code by five parallel audits. Protocol doc gained the v1.3.0
+  behaviors it lagged (`.xls`/xlrd routing for `list_sheets`/`inspect_input`,
+  the fail-closed missing-sheet error, RefDes prefix grandfathering and the
+  corrupt-config `warning` field). ARCHITECTURE.md corrected: non-JSON
+  stdout lines are skipped rather than disconnecting, all four Python-set
+  `mode` sites listed, `Arc<WindowsJobObject>` typing, the streamed-event
+  Zod semantics, and `extraction_compare` restored to the wiring matrix.
+  TOOLS.md/USER_GUIDE.md caught up on the merge-workflow card names, the
+  `FMEA Gen New RefDes` sheet, cross-file Part Usage codes, and the FMR
+  `Source` column; USER_GUIDE.md now documents the Settings User Guide card
+  and the 50 MB template-analysis cap. DESIGN_SYSTEM.md gained the z-index
+  token ladder, `NumberField`/`OutputFolderPicker`, and the System theme row.
+  `src-tauri/README.md` refreshed to the current bridge. KNOWN_RESIDUALS.md
+  re-consolidated against v1.3.0 (BIFF5 fixture gap recorded as accepted).
+  Deleted stale reference material: the implemented `design_handoff_v2/`
+  bundle and the never-executed 2026-07-14 overnight-hardening draft plan
+  (both recoverable from git history).
+
 ## [1.3.0] - 2026-07-20 — Audit Remediation, Legacy Excel, Release Hardening
 
 This whole-project remediation release makes mapping and diagnostics more

@@ -20,6 +20,7 @@ frontend/src/           # React + TypeScript UI
   stores/               # Zustand state (shell, theme, notifications)
   contracts/            # Zod schemas for sidecar protocol
   mocks/                # Browser-preview demo data
+  theme/                # Global stylesheet + design tokens (styles.css)
 
 src-tauri/src/          # Rust desktop bridge
   lib.rs                # Managed sidecar session, Tauri commands, heartbeat supervisor
@@ -268,7 +269,7 @@ whenever a suite gains or loses cases.
 - **NaN guards**: Always `pd.notna(value)` before string operations on DataFrame cells
 - **Single active run**: Only one `execute_run` at a time; second request is rejected
 - **Atomic write temp-path extension**: `common/utils.atomic_write_path()` returns `<stem>.<hex>.part<suffix>` so the temp file keeps its `.xlsx` extension. Do NOT rename to drop the suffix — `openpyxl`'s post-write `verify_excel_readable()` sniffs format from the suffix and will reject extension-less temps.
-- **Windows Job Object owns the sidecar**: on Windows the Rust bridge creates a `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` job and assigns the spawned `python.exe` to it (`windows_job` module in `src-tauri/src/lib.rs`). When the bridge process dies, Windows reaps the sidecar automatically. Do NOT remove the assignment — without it a Rust panic that bypasses `on_window_event` orphans a live sidecar process.
+- **Windows Job Object owns the sidecar**: on Windows the Rust bridge creates a `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` job and assigns the spawned `python.exe` to it (`windows_job` module in `src-tauri/src/lib.rs`). When the bridge process dies, Windows reaps the sidecar automatically. Do NOT remove the assignment — without it a Rust panic that bypasses `on_window_event` orphans a live sidecar process. (One accepted gap: a force-kill of the bridge inside the spawn→assign window can leave a suspended, never-scheduled inert orphan — see `docs/reviews/KNOWN_RESIDUALS.md`.)
 - **Shell-level run subscription**: `useBackendRunSubscription` is mounted once in `App.tsx` and owns the subscription to `backend://run-event`. Per-tool hooks (`useBackendRunLifecycle`) project events into local state but do NOT subscribe directly. If you need a new stream subscription, add it next to `useBackendRunSubscription` at the shell level — do not subscribe inside a tool component or you will miss events during tool switches.
 - **Keep-alive tool shell**: `App.tsx` mounts each tool on first visit and keeps it mounted afterwards, hiding inactive tools behind a `[hidden]` pane. Tool-local state (loaded files, sheet selections, mapping overrides) deliberately survives tool switches — do NOT revert to a single `<ActiveToolComponent />` render or add a `key` to tool panes, both of which remount tools and destroy loaded inputs.
 

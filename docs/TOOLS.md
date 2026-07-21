@@ -72,20 +72,20 @@ reviewer.
 
 Choose one before running.
 
-- **Generate Piece-Part from BOM Only** (`bom_only`) — a fast draft that
+- **Piece-Part from BOM Only** (`bom_only`) — a fast draft that
   skips the grouping file and builds an FMEA straight from the BOM and the
   failure-modes library. Best when the design is too early for a grouping
   file.
-- **Generate Piece-Part from Grouping File** (`piece_part_generate`) — the
+- **Piece-Part from Grouping File** (`piece_part_generate`) — the
   standard end-to-end workflow. Creates a piece-part FMEA from the
   circuit-block groups in a grouping workbook, combined with BOM and HDA
   data. Use this for the first full pass once grouping is stable.
-- **Generate Piece-Part from Functional FMEA** (`functional_to_piecepart`) —
+- **Merge Functional FMEA** (`functional_to_piecepart`) —
   detects circuit-block rows in an existing functional FMEA, parses the
   comma-separated RefDes column on each circuit-block row, and expands them
   into piece-part rows beneath each block. The original functional rows are
   preserved as-is.
-- **Fill Gaps (Advanced)** (`fill_gaps`) — takes an existing functional or
+- **Merge Piece-Part FMEA** (`fill_gaps`) — takes an existing functional or
   piece-part FMEA and adds piece-part rows for any BOM components that are
   missing from it. With Preserve Formatting, blank generated values leave
   existing nonblank cells alone; different nonblank values update the output
@@ -174,7 +174,7 @@ When a grouping or functional source references a pin/variant RefDes such as
 `U200-X` that does not exist in the BOM, the generator looks up the base
 RefDes (`U200`) in the BOM and inherits its Part Number, Part Description,
 HDA Commodity 1-2, and FMD Commodity 1-2 fields. Every inherited row is
-recorded in a new **BOM_Additions** sheet in the output workbook, listing
+recorded in a new **FMEA Gen New RefDes** sheet in the output workbook, listing
 RefDes, Base RefDes, Usage fraction (e.g. `1/3`), Part Number, Part
 Description, HDA Commodity 1-2, FMD Commodity 1-2, and Source Workflow. The
 sheet has an explanatory banner at the top instructing reviewers to copy
@@ -201,7 +201,7 @@ multi-instance part is never silently reported as single-use.
 After running Validate, open the Review drawer from the topbar (or press
 ⌘R / Ctrl+R) to see a sample of the source rows this tool will process.
 For FMEA that's the first 20 rows of the BOM workbook (or the functional
-FMEA when the workflow is Merge Functional → Piece-Part), mapped to
+FMEA when the workflow is Merge Functional FMEA), mapped to
 `RefDes / Part Number / Description` columns. Previews are capped at
 20 rows and are skipped for source files larger than 10 MB.
 
@@ -290,9 +290,20 @@ omitted):
 - **Duplicates** — RefDes that appear more than once in either file, with the
   source file named per row.
 - **Part Usage** — when the files carry Part Usage values, this sheet flags
-  any RefDes whose Part Usage does not match the instance count.
+  any RefDes whose Part Usage does not match the instance count. Each row
+  names its **Source** file, and usage is additionally cross-checked against
+  the *other* file's unique-instance count: a usage of `1/N` must agree with
+  the instance count in **both** compared files. Disagreements surface as
+  `PU_COUNT_MATCHES_THIS_FILE_ONLY`, `PU_COUNT_MATCHES_OTHER_FILE_ONLY`, or
+  `PU_CROSS_COUNT_CONFLICT` reason codes (bases absent from one file's
+  membership are skipped, not flagged).
 - **Failure Mode Ratio Errors** — with the Check Failure Mode Ratios option,
   RefDes whose ratios don't sum to 1.0 (same sheet name as the group report).
+  The check follows the strict FMR column (`Failure Mode Ratio` and close
+  synonyms — a generic `Percentage` column never matches) to whichever file
+  carries it, scanning both inputs, and each row names its **Source** file.
+  When neither file has an FMR column the sheet says so in plain language
+  instead of erroring.
 - **Scope Warnings** — FMEA-aware sanity checks. Only populated when the
   comparison involves FMEA-like content. See below.
 

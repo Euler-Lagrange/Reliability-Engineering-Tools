@@ -25,7 +25,7 @@ Python engine, and writes a styled `.xlsx` report.
 | **BOM Comparison Tool** | Diffs grouping-vs-BOM, two BOMs, or two extraction outputs | Two workbooks |
 | **Failure Rate Integration** | Links predicted failure rates onto FMEA failure modes | Prediction workbook + FMEA workbook |
 | **RefDes Extractor** | Pulls reference designators out of an annotated schematic PDF | Schematic PDF (+ optional BOM / pinlist) |
-| **Settings** | Themes, logs, backend health, RefDes prefix editor | — |
+| **Settings** | Themes, logs, backend health, RefDes prefix editor, in-app User Guide | — |
 
 ### Concepts common to every tool
 
@@ -173,6 +173,8 @@ the merge audit sheets are preserve-only and are labeled below.
   dropped with a warning; review all drawings and charts in the output.
 - A protected sheet is modified without its password after a warning in the
   analysis card and run log.
+- Template analysis caps the target workbook at 50 MB — a larger target is
+  rejected at analysis time to keep the full-workbook load bounded.
 - `Template_Merge_Summary` counts matched/unmatched/new groups and
   updated/inserted/flagged rows, with a legend for the diagnostic flags below.
 - In the merged sheet, the Diagnostic column may read:
@@ -238,8 +240,8 @@ Checkboxes in the **Options** card:
 | Loose prefix base match | off | Adds fuzzy prefix base coverage. Base-RefDes matching is *always* on; this is a no-op when **Exact match** is enabled. |
 | Exact match | off | Compare RefDes tokens verbatim — no base-RefDes reduction. |
 | Ignore DNP rows | on | Skip Do-Not-Populate parts before comparing. |
-| Check Part Usage | on | Validate Part Usage against instance counts and add a warnings sheet. |
-| Check Failure Mode Ratios | off | Verify each part's ratios sum to 1.0 and add a check sheet. |
+| Check Part Usage | on | Validate Part Usage against instance counts — in both files, cross-checked — and add a warnings sheet. |
+| Check Failure Mode Ratios | off | Verify each part's ratios sum to 1.0 and add a check sheet. The strict FMR column (`Failure Mode Ratio` — never a generic `Percentage`) is followed to whichever file carries it. |
 | Treat PROV as covered | on | Treat `PROV` groups as covered. **Group vs BOM only** — disabled with a hint elsewhere. |
 
 **Extraction Compare** reads none of these; every checkbox and the mapping card
@@ -261,8 +263,8 @@ rule (Text / Text exact / Numeric).
 | `BOM Not Grouped` | BOM RefDes not in the grouping file. Reason: `Exact token missing in Grouping` / `Not found in Grouping`. |
 | `Warnings` | Low connector coverage and description notes. |
 | `Duplicates` | RefDes duplicated in Grouping or BOM, with counts. |
-| `Failure Mode Ratio Errors` | RefDes whose FMRs don't sum to 1.0, with a Status. |
-| `Part Usage` | Part Usage warnings with Reason Code and Reason. |
+| `Failure Mode Ratio Errors` | RefDes whose FMRs don't sum to 1.0, with a Status and a `Source` column naming the file the ratios came from. |
+| `Part Usage` | Part Usage warnings with Reason Code, Reason, and a `Source` column. A usage of `1/N` is also cross-checked against the other file's unique-instance count; disagreements surface as `PU_COUNT_MATCHES_THIS_FILE_ONLY`, `PU_COUNT_MATCHES_OTHER_FILE_ONLY`, or `PU_CROSS_COUNT_CONFLICT`. |
 
 **Custom Compare** report sheets: `Summary`, `Only In <File 1>`,
 `Only In <File 2>`, `Differences`, `Duplicates`, `Part Usage`,
@@ -460,6 +462,7 @@ marked NOT IN BOM — re-run with a usable BOM.
 | **Logs** | The sidecar log directory (default `~/.reliability_tools/logs/`) with **Copy path** and **Open folder** buttons. |
 | **Backend Diagnostics** | **Run health check** — reports backend name, protocol version, and ping latency. |
 | **RefDes Prefixes** | Edit the custom RefDes prefix list. |
+| **User Guide** | Opens the in-app guide overlay — the same content as this document, with section navigation; Escape closes it. |
 | **About** | App name, platform, shell version, protocol version. |
 
 ### RefDes Prefixes editor

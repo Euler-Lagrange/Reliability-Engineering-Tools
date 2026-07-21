@@ -2,8 +2,9 @@
 
 This folder is reserved for tool example fixtures linked from each tool's
 empty-state "Load example" action. Real example workbooks are not yet
-shipped — the empty-state buttons currently surface a placeholder
-notification instead of loading a real file.
+shipped — on the desktop runtime the buttons surface a truthful
+"coming soon" notification, and in browser preview they reveal the staged
+mock scenario instead of loading a real file.
 
 When example fixtures land they should match these names:
 
@@ -15,6 +16,7 @@ When example fixtures land they should match these names:
 | `failure-rate-example.xlsx` | Failure Rate | Parts list ready for failure-rate enrichment. |
 | `refdes-example.pdf` | RefDes Extractor | Schematic PDF with reference designators on multiple pages. |
 
-Until real fixtures exist, the "Load example" button calls
+Until real fixtures exist, the desktop "Load example" button calls
 `useNotificationStore.push` with an "Example files coming soon" toast so
-the wiring is in place but no broken loader can ship.
+the wiring is in place but no broken loader can ship; browser preview
+reveals the mock-scenario demo content instead (no file is read either way).

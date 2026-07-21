@@ -169,9 +169,9 @@ in-process unit tests can `import fmea.fmea_generator_logic`,
 import sys
 from pathlib import Path
 
-BACKEND_PYTHON = Path(__file__).resolve().parents[1] / "python"
-if str(BACKEND_PYTHON) not in sys.path:
-    sys.path.insert(0, str(BACKEND_PYTHON))
+_BACKEND_PYTHON = Path(__file__).resolve().parents[1] / "python"
+if str(_BACKEND_PYTHON) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_PYTHON))
 ```
 
 This is safe for `test_sidecar_main.py` because those tests spawn fresh
@@ -222,6 +222,7 @@ new FMEA tests must do the same or validation will reject the request.
 | Missing-file validation | `test_sidecar_validate_rejects_missing_required_files` |
 | FMEA Phase D (in-process, 128 tests) | BOM inheritance, variant handling, failure modes standard filtering, fill-gaps validation, usage fraction calculations, legacy enrichment rejection, functional-to-piecepart preservation, CCA prefix handling, output directory configuration (including unwritable-directory fallback), cancellation across standard/preserve write-verify-promote boundaries and inside the analyzer's pandas re-read, actionable run warning counts across all diagnostic collections with informational BOM additions excluded, Part Usage (PU) column logic incl. Tier-1 compute-or-blank+flag (instance-count 1/N derivation, blank+PU_GUESSED flag, explicit-value preservation), column override modes, union merge strategies, FMC mapping, bijective FMEA-ID suffix, Batch-1 deep-dive fixes (preserve-mode diagnostic-sheet parity incl. the New-RefDes banner, underscore-column hygiene, `invalid_do_not_map` required-mapping gate + bom_only FMEA-ID exemption), Batch-2 diagnostics language (REASON_CODE_LABELS lockstep scan, PU_PARSE_REPLACED_WITH_COUNT split, Part Usage Diagnostics banner in both writers, Template_Merge_Summary flag legend, named unsupported-combo toast, files-first FMC ordering + structured cards), Batch-4 robustness (FileAccessError on failed post-write verification, negative Part Usage as data-quality warning not AssertionError, NaN-safe append cells), Wave 4 preserve-merge integrity (blank/formula preservation, audited real replacements, numeric-equivalent type preservation, ambiguity rejection, normalized group-ID collision blocking, ownership-marked diagnostics that preserve user sheet-name collisions, selected-main-sheet protection and warning, merged-range and row-dimension rebasing, one-per-run unsupported-feature issues, image/chart preflight warnings, injective exact-first column mapping, case-variant last-header selection, duplicate-header diagnostics, fail-closed header/identity detection, stale-target fingerprint rejection, analyzer handle ownership, per-column insert styles, and collision-safe Merged output promotion) |
 | FMEA template analyzer package preflight (1 test) | Builds a real OOXML image drawing/relationship and proves the no-Pillow loader can drop `Worksheet._images` without suppressing the run-log loss warning. |
+| FMEA column resolution (in-process, 12 tests) | `resolve_column` synonym matching: BAE PN registered as a part-number synonym, word-boundary matching for short synonyms ("Customer PN" / "Mfr P/N" resolve while "PNP Driver" stays rejected), exact-match and long-synonym behavior pinned, the Part Number mappable-row wiring across all four workflows, and the `columnSynonyms.ts` frontend-mirror lockstep scan |
 | Inspection caps (subprocess, 4 tests) | `inspect_input` row cap at 20 000 rows, column cap at 100 columns, sparse-sheet row cap by physical rows scanned, header-search cap failure within 1 000 rows |
 | Failure-Rate logic (in-process, 31 tests) | Failure Rate (FR) linker math driven through `FMEALinkerLogic.process`: per-mode `Mode_FR = Part_FR * Usage * Corrected_Ratio` arithmetic, unit-mode scaling to per-hour space, RefDes lookup normalization, deterministic normalized-RefDes duplicate handling (conservative maximum for conflicts; identical-rate deduplication stays clean), and Tier-1 genuine-gap Part Usage handling (blank usage with real FR → NaN Mode_FR, "=1/N" formula-cell-as-NaN, unmatched-RefDes zero preserved, circuit-block roll-up skips blank children) — asserts exact computed numbers |
 | RefDes extraction-engine (in-process, 22 tests) | `_disambiguate_pin_mapping` pin-label collision resolution across the three-tier priority (body center inside group rect → body overlaps rect → nearest body by distance); bounded word extraction and timeout/run-log surfacing; post-join zombie counting and survivor retention for safe document ownership; prefix allowlisting and exact blacklist matching; sequence-gap placeholders/range summaries; and legacy-hybrid ungrouped-row retention |
@@ -262,7 +263,7 @@ neither of which exists under jsdom, so the client returns mock data from
 | `frontend/src/shared/backend/useDesktopRunController.test.ts` | 5 — status/result terminal ordering, warning-qualified success, duplicate-result idempotency, truthful result-schema-mismatch failure toast, and sticky cancelling reset guard |
 | `frontend/src/shared/backend/cancelError.test.ts` | 18 — cancel error detection, wrapping, propagation across error types, plus `describeBackendError` normalization of raw-string Tauri rejections |
 | `frontend/src/shared/backend/client.cancelRun.test.ts` | 2 — cancel run command dispatch and response handling |
-| `frontend/src/shared/backend/client.runEvents.test.ts` | 2 — production run-event subscription schema parsing |
+| `frontend/src/shared/backend/client.runEvents.test.ts` | 4 — production run-event Zod parse gate and schema-drift raw-payload forwarding, plus session-event subscription parsing and malformed-event log-and-skip |
 | `frontend/src/shared/backend/useBackendBusyReset.test.ts` | 9 — busy state recovery after run completion, error, or unmount |
 | `frontend/src/shared/backend/useBackendBootstrap.test.ts` | 6 — generation-aware reconnect clearing, stale-disconnect rejection, pending-timer cancellation, no overlapping reconnect chains, and no-active-run recovery |
 | `frontend/src/shared/backend/useBackendRunSubscription.test.ts` | 10 — ack-fallback ownership/ordering/idempotency, inactive cross-tool replacement, live-run protection, shell-level fanout, global logs, schema-mismatch failure, listen-rejection surfacing with backoff retry, and pending-retry cleanup on unmount |
@@ -320,10 +321,11 @@ npm test
 npm run cargo:test
 ```
 
-The release pipeline (`scripts/release.bat`) runs frontend production
-typecheck, frontend test typecheck, Rust `cargo:check`, backend security
-audit, backend tests, and frontend tests before the sidecar and desktop
-builds.
+The release pipeline (`scripts/release.bat`) runs the version consistency
+check, frontend production typecheck, frontend test typecheck, Rust
+`cargo:check` and `cargo:test`, backend security audit, backend tests, and
+frontend tests before the sidecar and desktop builds. See the full 16-step
+list in `docs/DEVELOPMENT.md`.
 
 ## Writing New Backend Tests
 

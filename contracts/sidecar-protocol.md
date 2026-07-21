@@ -99,11 +99,23 @@ health-check completion.
 - `list_sheets`
   - request body: `{ "path": "C:\\path\\to\\file.xlsx" }`
   - result payload: workbook path and sheet names
-  - As of 0.4.2 the handler calls `ensure_file_available()` before
-    `openpyxl.load_workbook()`, so OneDrive cloud-only placeholders are
-    hydrated on demand rather than surfacing an opaque I/O error.
+  - Accepts `.xlsx`/`.xlsm` (openpyxl, read-only/data-only) and legacy
+    BIFF `.xls` (xlrd) — the handler routes by extension through
+    `_open_inspection_workbook()`. If `xlrd` is missing, the command
+    returns an `error` envelope with
+    `"xlrd is not available for legacy .xls workbooks"`.
+  - As of 0.4.2 the handler calls `ensure_file_available()` before opening
+    the workbook, so OneDrive cloud-only placeholders are hydrated on
+    demand rather than surfacing an opaque I/O error.
 - `inspect_input`
   - request body: `{ "path": "...", "sheet": "Sheet1", "role": "bom" }`
+  - Accepts `.xlsx`/`.xlsm` and legacy BIFF `.xls` via the same
+    extension routing as `list_sheets`.
+  - Sheet selection is fail-closed: naming a sheet that is not in the
+    workbook returns a `ValidationError` error envelope listing the
+    available worksheets (`Worksheet '…' was not found. Available
+    worksheets: …`). The first sheet is used only when the request omits
+    or blanks the sheet name.
   - result payload:
     - `path`
     - `sheet`
@@ -127,6 +139,10 @@ health-check completion.
       instead of a partial `result`.
 - `analyze_template`
   - request body: `{ "path": "...", "sheet": "FMEA Sheet", "role": "targetWorkbook" }`
+  - Deliberately `.xlsx`-only (openpyxl) — preserve-mode templates are
+    generated `.xlsx` workbooks, so the legacy `.xls` routing does not
+    apply here. A missing requested sheet is rejected fail-closed exactly
+    like `inspect_input`.
   - result payload:
     - `path`
     - `sheet`
@@ -232,11 +248,12 @@ health-check completion.
   - request body: `{}`
   - result payload:
     - `defaults` — sorted IEEE-315 prefix list (read-only in the UI)
-    - `custom` — the `ref_prefixes` array from `~/.refdes_extractor_config.json` (normalized upper-case, de-duplicated)
+    - `custom` — the `ref_prefixes` array from `~/.refdes_extractor_config.json` (normalized upper-case, de-duplicated, and excluding tokens that duplicate an IEEE-315 default)
     - `path` — absolute path of the config file
+    - `warning` — optional; present when the config file exists but cannot be parsed (corrupt JSON / non-dict payload), so the UI can surface a banner instead of silently showing an empty list
 - `write_refdes_prefixes`
   - request body: `{ "prefixes": ["PS", "XU"] }`
-  - Validation: each entry must match `^[A-Z]{1,5}$` after trim/upper-case; entries duplicating an IEEE-315 default or an earlier entry are dropped silently; any invalid entry rejects the whole write (`error` envelope, file untouched).
+  - Validation: each **new** entry must match `^[A-Z]{1,5}$` after trim/upper-case — tokens already present in the on-disk config are grandfathered past the pattern check so a legacy config can be round-tripped without edits; entries duplicating an IEEE-315 default or an earlier entry are dropped silently; any invalid new entry rejects the whole write (`error` envelope, file untouched).
   - Writes `ref_prefixes` into `~/.refdes_extractor_config.json` atomically (temp file + rename), preserving any other keys in the file.
   - result payload: `{ "custom": [...], "path": "...", "restart_required": true }` — `restart_required` is always true because the extraction engines freeze their prefix-derived regexes at import time; changes apply on the next app launch.
 

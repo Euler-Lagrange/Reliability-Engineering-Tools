@@ -10,18 +10,33 @@ relays NDJSON messages between the two sides.
 - Forward frontend commands to the sidecar over stdin.
 - Stream sidecar events (`result`, `status`, `progress`, `log`, `ack`,
   `cancelled`, `backend_error`) back to the frontend over Tauri event channels.
-- Enforce the 15-second heartbeat timeout and trigger reconnect on disconnect.
+- Enforce the 15-second heartbeat timeout and emit a `backend://session`
+  disconnect event; the frontend (`useBackendBootstrap`) owns reconnection
+  with exponential backoff — the bridge itself never reconnects.
 
 ## Key File
 
 All bridge logic lives in `src/lib.rs`. Highlights:
 
 - `ManagedSidecar` — wraps the child process and its stdin/stdout handles.
+  On Windows it also owns the Job Object (`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`,
+  spawned `CREATE_SUSPENDED` → assign → resume) so a dying bridge can never
+  orphan a live sidecar.
 - Stdout reader thread — parses NDJSON line-by-line, dispatches by `kind`.
+  Non-JSON lines are logged and skipped; only EOF or a read error tears the
+  session down.
 - Heartbeat supervisor — checks the last-seen heartbeat every 5s, kills the
-  session if more than 15s elapse without one.
+  session if more than 15s elapse without one. Reader and supervisor are
+  pinned to a session-generation counter so a stale thread can never act on
+  a newer session.
 - Stdin write lock — every command is serialized through a single `Mutex` so
   two concurrent Tauri commands cannot interleave bytes on the pipe.
+- Bounded waits — sidecar-ready and per-command timeouts fail pending
+  requests loudly instead of hanging the UI.
+- Fatal-error detail merge — the most recent error-level sidecar log line is
+  folded into the user-visible disconnect notification.
+- `reveal_in_file_manager` command, `--self-test` / `--self-test-backend`
+  entry points, and a crash-dump panic hook (`crash_rust_*.log`).
 
 `src/main.rs` is a thin entrypoint that defers to `lib.rs`.
 
