@@ -69,14 +69,44 @@ describe("ValidationPreview", () => {
     expect(screen.queryByRole("button", { name: /full preview/i })).not.toBeInTheDocument();
   });
 
-  it("still renders the issue toolbar with the validation count", () => {
+  it("does not count an informational validation row as an issue", () => {
     render(<ValidationPreview validations={validations} previewRows={[]} />);
 
-    // The count numeral is wrapped in a .num span (v2 numeric rule), so
-    // match on the toolbar element's combined text content.
+    expect(screen.getByText("Ready to run")).toBeInTheDocument();
+    expect(screen.queryByText(/\d+ issues?/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /copy issues/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /export csv/i })).not.toBeInTheDocument();
+  });
+
+  it("counts warning and error rows while leaving information visible", () => {
+    const mixedValidations: ValidationMessage[] = [
+      ...validations,
+      {
+        id: "val-warning",
+        severity: "warning",
+        area: "Mapping",
+        title: "Review suggested mapping",
+        detail: "One optional column has an ambiguous match.",
+      },
+      {
+        id: "val-error",
+        severity: "error",
+        area: "Inputs",
+        title: "Workbook missing",
+        detail: "Select the required workbook.",
+      },
+    ];
+
+    render(<ValidationPreview validations={mixedValidations} previewRows={[]} />);
+
     expect(
-      screen.getByText((_, element) => element?.className === "validation-preview__toolbar-count" && element.textContent === "1 issue"),
+      screen.getByText(
+        (_, element) =>
+          element?.className === "validation-preview__toolbar-count" &&
+          element.textContent === "2 issues",
+      ),
     ).toBeInTheDocument();
+    expect(screen.getByText("Ready to run")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /copy issues/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /export csv/i })).toBeInTheDocument();
   });

@@ -66,12 +66,26 @@ function extractSuggestedValue(row: ColumnMappingRow, mappedValue: string): stri
  * with `not_mapped`. When the row's origin is `derived`, we show the
  * "derived" chip regardless of mapping state.
  */
-function resolveDisplayStatus(row: ColumnMappingRow, mappedValue: string): MappingStatus {
+function resolveDisplayStatus(
+  row: ColumnMappingRow,
+  mappedValue: string,
+  hasExplicitOverride: boolean,
+): MappingStatus {
   if (mappedValue === DO_NOT_MAP_VALUE) {
     return "not_mapped";
   }
   if (row.origin === "derived") {
     return "derived";
+  }
+  if (hasExplicitOverride) {
+    // File/sheet changes can briefly leave a controlled override pointing to
+    // a column that is no longer present in the freshly-inspected options.
+    // Do not call that stale value a valid manual mapping or let it suppress
+    // the required-unmapped count.
+    if (mappedValue && row.options.includes(mappedValue)) {
+      return "manual";
+    }
+    return row.required === true ? "attention" : "not_mapped";
   }
   // UX findings 2026-07-07 #3: an OPTIONAL row that simply has no mapping
   // is not a warning state — demote the amber "attention" chip to the
@@ -131,8 +145,12 @@ export function MappingTable({
       return false;
     }
     const mapped = overrides[row.canonical] ?? row.mappedTo;
-    const status = resolveDisplayStatus(row, mapped);
-    return status !== "mapped" && status !== "derived";
+    const hasExplicitOverride = Object.prototype.hasOwnProperty.call(
+      overrides,
+      row.canonical,
+    );
+    const status = resolveDisplayStatus(row, mapped, hasExplicitOverride);
+    return status !== "mapped" && status !== "manual" && status !== "derived";
   }).length;
   const hasAnySuggestion = rows.some((row) => {
     const mapped = overrides[row.canonical] ?? row.mappedTo;
@@ -149,7 +167,11 @@ export function MappingTable({
   const statusTotals = rows.reduce(
     (acc, row) => {
       const mapped = overrides[row.canonical] ?? row.mappedTo;
-      const status = resolveDisplayStatus(row, mapped);
+      const status = resolveDisplayStatus(
+        row,
+        mapped,
+        Object.prototype.hasOwnProperty.call(overrides, row.canonical),
+      );
       acc[status] = (acc[status] ?? 0) + 1;
       return acc;
     },
@@ -209,7 +231,11 @@ export function MappingTable({
           {rows.map((row) => {
             const mappedValue = overrides[row.canonical] ?? row.mappedTo;
             const suggested = extractSuggestedValue(row, mappedValue);
-            const displayStatus = resolveDisplayStatus(row, mappedValue);
+            const displayStatus = resolveDisplayStatus(
+              row,
+              mappedValue,
+              Object.prototype.hasOwnProperty.call(overrides, row.canonical),
+            );
             const showUseRecommendation =
               !!onApplyRecommendation &&
               suggested !== null &&

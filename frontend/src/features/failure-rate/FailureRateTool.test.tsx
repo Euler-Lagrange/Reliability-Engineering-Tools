@@ -5,6 +5,7 @@ import { FailureRateTool } from "./FailureRateTool";
 import { buildActiveRunFromAccepted, useRunStore } from "../../stores/runStore";
 import { useShellStore } from "../../stores/shellStore";
 import { useNotificationStore } from "../../stores/notificationStore";
+import { usePreviewStore } from "../../stores/previewStore";
 
 const backendMocks = vi.hoisted(() => ({
   validateRun: vi.fn(),
@@ -45,6 +46,7 @@ function resetStores() {
     contextOpen: false,
   });
   useNotificationStore.setState({ notifications: [] });
+  usePreviewStore.getState().clearAll();
 }
 
 beforeEach(() => {
@@ -182,6 +184,11 @@ describe("FailureRateTool stale validation handling", () => {
       await screen.findByText("Select required files: Parts list."),
     ).toBeInTheDocument();
 
+    usePreviewStore.getState().setPreview("failure_rate", {
+      columns: ["Old input"],
+      rows: [["stale preview"]],
+      truncated: false,
+    });
     await user.click(screen.getByRole("button", { name: "Browse for parts list" }));
 
     // Once the new file lands the stale card is gone (neutral empty state).
@@ -191,6 +198,7 @@ describe("FailureRateTool stale validation handling", () => {
         screen.queryByText("Select required files: Parts list."),
       ).not.toBeInTheDocument(),
     );
+    expect(usePreviewStore.getState().byTool.failure_rate).toBeUndefined();
   });
 });
 

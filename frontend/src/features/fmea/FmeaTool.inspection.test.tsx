@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { FmeaTool } from "./FmeaTool";
 import { useShellStore } from "../../stores/shellStore";
+import { usePreviewStore } from "../../stores/previewStore";
 
 const FMEA_INSPECTION_TEST_TIMEOUT_MS = 15_000;
 
@@ -106,6 +107,7 @@ async function seedValidationCard(user: ReturnType<typeof userEvent.setup>) {
 beforeEach(() => {
   vi.clearAllMocks();
   window.localStorage.clear();
+  usePreviewStore.getState().clearAll();
 });
 
 describe("FmeaTool inspection flow", () => {
@@ -308,6 +310,11 @@ describe("FmeaTool inspection flow", () => {
     renderTool();
     // Seed a stale validation card via a blocking validate_run.
     await seedValidationCard(user);
+    usePreviewStore.getState().setPreview("dark_star_fmea", {
+      columns: ["Old input"],
+      rows: [["stale preview"]],
+      truncated: false,
+    });
 
     // Browse a new workbook for the default piece_part_generate Grouping
     // role. A blocked validate_run leaves the run idle and the inputs
@@ -320,6 +327,7 @@ describe("FmeaTool inspection flow", () => {
     await waitFor(() =>
       expect(screen.queryByText("Stale configuration card")).not.toBeInTheDocument(),
     );
+    expect(usePreviewStore.getState().byTool.dark_star_fmea).toBeUndefined();
   }, FMEA_INSPECTION_TEST_TIMEOUT_MS);
 
   // Family 3 fix: a manual mapping override must not outlive the column it
@@ -460,6 +468,11 @@ describe("FmeaTool inspection flow", () => {
 
     // Seed a stale validation card AFTER the file is loaded.
     await seedValidationCard(user);
+    usePreviewStore.getState().setPreview("dark_star_fmea", {
+      columns: ["Old sheet"],
+      rows: [["stale preview"]],
+      truncated: false,
+    });
 
     // Change the selected sheet — this re-inspects and must clear the card.
     await user.click(
@@ -472,5 +485,6 @@ describe("FmeaTool inspection flow", () => {
     await waitFor(() =>
       expect(screen.queryByText("Stale configuration card")).not.toBeInTheDocument(),
     );
+    expect(usePreviewStore.getState().byTool.dark_star_fmea).toBeUndefined();
   }, FMEA_INSPECTION_TEST_TIMEOUT_MS);
 });

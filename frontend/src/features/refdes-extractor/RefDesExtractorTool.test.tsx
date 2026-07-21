@@ -5,6 +5,7 @@ import { RefDesExtractorTool } from "./RefDesExtractorTool";
 import { buildActiveRunFromAccepted, useRunStore } from "../../stores/runStore";
 import { useShellStore } from "../../stores/shellStore";
 import { useNotificationStore } from "../../stores/notificationStore";
+import { usePreviewStore } from "../../stores/previewStore";
 
 const backendMocks = vi.hoisted(() => ({
   validateRun: vi.fn(),
@@ -46,6 +47,7 @@ function resetStores() {
     contextOpen: false,
   });
   useNotificationStore.setState({ notifications: [] });
+  usePreviewStore.getState().clearAll();
 }
 
 beforeEach(() => {
@@ -110,12 +112,24 @@ describe("RefDesExtractorTool piece-part mode", () => {
 
     // Toggling the extraction mode is a light option choice, NOT
     // engagement — the pretty EmptyState must persist in Piece-Part too.
+    usePreviewStore.getState().setPreview("refdes_extractor", {
+      columns: ["Functional mode"],
+      rows: [["stale preview"]],
+      truncated: false,
+    });
     await user.click(screen.getByRole("radio", { name: "Piece-Part" }));
+    expect(usePreviewStore.getState().byTool.refdes_extractor).toBeUndefined();
     expect(screen.getByText("Extract reference designators")).toBeInTheDocument();
 
     // Browsing the schematic is engagement: the grid appears with all
     // three piece-part slots, including the pinlist.
+    usePreviewStore.getState().setPreview("refdes_extractor", {
+      columns: ["Old schematic"],
+      rows: [["stale preview"]],
+      truncated: false,
+    });
     await user.click(screen.getByRole("button", { name: "Browse for schematic" }));
+    expect(usePreviewStore.getState().byTool.refdes_extractor).toBeUndefined();
     expect(await screen.findByText("Schematic PDF")).toBeInTheDocument();
     expect(screen.getByText("BOM workbook (optional)")).toBeInTheDocument();
     expect(screen.getByText("Pinlist file (optional)")).toBeInTheDocument();

@@ -110,6 +110,61 @@ describe("MappingTable — Phase 2 infrastructure", () => {
     expect(screen.getByText("Not mapped")).toBeInTheDocument();
   });
 
+  test("a valid explicit override renders and counts as a manual mapping", () => {
+    const { container } = render(
+      <MappingTable
+        rows={[
+          rowWithHelp({
+            mappedTo: "",
+            status: "attention",
+            options: ["Failure Mode", "Mode"],
+          }),
+        ]}
+        overrides={{ "Failure Mode": "Mode" }}
+        onOverride={vi.fn()}
+        onClearAllMappings={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector('.state-word[data-status="manual"]')).toHaveTextContent(
+      "Manual",
+    );
+    expect(screen.getByText("1 manual")).toBeInTheDocument();
+    expect(screen.queryByText("1 unmapped")).not.toBeInTheDocument();
+  });
+
+  test("an orphaned explicit override is unmapped, with optional rows kept neutral", () => {
+    const { container } = render(
+      <MappingTable
+        rows={[
+          rowWithHelp({
+            mappedTo: "Current Failure Mode",
+            status: "mapped",
+            options: ["Current Failure Mode"],
+          }),
+          rowWithoutHelp({
+            canonical: "Optional Notes",
+            mappedTo: "Current Notes",
+            status: "mapped",
+            options: ["Current Notes"],
+          }),
+        ]}
+        overrides={{
+          "Failure Mode": "Removed Failure Mode",
+          "Optional Notes": "Removed Notes",
+        }}
+        onOverride={vi.fn()}
+        onClearAllMappings={vi.fn()}
+      />,
+    );
+
+    expect(container.querySelector('.state-word[data-status="manual"]')).toBeNull();
+    expect(screen.queryByText(/manual$/i)).not.toBeInTheDocument();
+    expect(screen.getByText("1 unmapped")).toBeInTheDocument();
+    expect(screen.getByText("Attention")).toBeInTheDocument();
+    expect(screen.getByText("Not mapped")).toBeInTheDocument();
+  });
+
   test("marks required rows with a required indicator, optional rows unmarked", () => {
     // rowWithHelp carries required: true; rowWithoutHelp has no required flag.
     render(

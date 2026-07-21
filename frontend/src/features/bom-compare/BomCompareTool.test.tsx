@@ -5,6 +5,7 @@ import { BomCompareTool } from "./BomCompareTool";
 import { buildActiveRunFromAccepted, useRunStore } from "../../stores/runStore";
 import { useShellStore } from "../../stores/shellStore";
 import { useNotificationStore } from "../../stores/notificationStore";
+import { usePreviewStore } from "../../stores/previewStore";
 
 const backendMocks = vi.hoisted(() => ({
   validateRun: vi.fn(),
@@ -45,6 +46,7 @@ function resetStores() {
     contextOpen: false,
   });
   useNotificationStore.setState({ notifications: [] });
+  usePreviewStore.getState().clearAll();
 }
 
 beforeEach(() => {
@@ -232,7 +234,13 @@ describe("BomCompareTool custom compare workflow", () => {
       screen.getByRole("button", { name: "Browse for grouping file" }),
     ).toBeInTheDocument();
 
+    usePreviewStore.getState().setPreview("bom_compare", {
+      columns: ["Group workflow"],
+      rows: [["stale preview"]],
+      truncated: false,
+    });
     await user.click(screen.getByRole("button", { name: /Custom Compare/i }));
+    expect(usePreviewStore.getState().byTool.bom_compare).toBeUndefined();
     expect(screen.getByText("Compare two BOMs")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Browse for first BOM" }),
@@ -552,6 +560,11 @@ describe("BomCompareTool custom compare workflow", () => {
       await screen.findByText("Select required files: Second BOM."),
     ).toBeInTheDocument();
 
+    usePreviewStore.getState().setPreview("bom_compare", {
+      columns: ["Old input"],
+      rows: [["stale preview"]],
+      truncated: false,
+    });
     await user.click(screen.getByRole("button", { name: "Browse for grouping file" }));
 
     // Once the new file lands the stale card is gone (neutral empty state).
@@ -561,6 +574,7 @@ describe("BomCompareTool custom compare workflow", () => {
         screen.queryByText("Select required files: Second BOM."),
       ).not.toBeInTheDocument(),
     );
+    expect(usePreviewStore.getState().byTool.bom_compare).toBeUndefined();
   });
 
   // Regression (Bug 1): Tauri v2 rejects `Result<_, String>` with a RAW

@@ -489,12 +489,28 @@ export function FmeaTool() {
   // launch a second run whose rejection (single-active-run guard) would clear
   // the first, live run's session.
   const isStartingRef = useRef(false);
+  const isValidatingRef = useRef(false);
+  const runConfigurationEpochRef = useRef(0);
   const setBackendState = useShellStore((state) => state.setBackendState);
   const fmeaOutputDirectory = useShellStore((state) => state.fmeaOutputDirectory);
   const setFmeaOutputDirectory = useShellStore((state) => state.setFmeaOutputDirectory);
   const setToolModeLabel = useShellStore((state) => state.setToolModeLabel);
   const pushNotification = useNotificationStore((state) => state.push);
   const setPreview = usePreviewStore((state) => state.setPreview);
+  const clearPreview = usePreviewStore((state) => state.clearPreview);
+
+  function invalidateRunConfiguration() {
+    runConfigurationEpochRef.current += 1;
+    clearPreview("dark_star_fmea");
+    if (isStartingRef.current && isValidatingRef.current) {
+      setBackendState({
+        backendStatus: "ready",
+        backendMode: backendClient.runtimeMode,
+        backendMessage: "Run configuration changed. Review the updated setup and start again.",
+        lastBackendCheckAt: new Date().toISOString(),
+      });
+    }
+  }
 
   const timeline = useMemo(() => buildTimeline(runMode, runIndex, runTemplates), [runIndex, runMode, runTemplates]);
   const progress =
@@ -1042,6 +1058,8 @@ export function FmeaTool() {
       return;
     }
 
+    invalidateRunConfiguration();
+
     // Stale-safe: a fresh browse for this role obsoletes any in-flight
     // listSheets/inspect/analyze for the same role.
     const token = fileRequestSeq.begin(role);
@@ -1156,6 +1174,7 @@ export function FmeaTool() {
   }
 
   function handleSheetChange(role: FileRole, selectedSheet: string) {
+    invalidateRunConfiguration();
     let nextPath = "";
     let nextSheets: string[] = [];
     setInputStates((current) =>
@@ -1222,6 +1241,8 @@ export function FmeaTool() {
       return;
     }
     isStartingRef.current = true;
+    isValidatingRef.current = true;
+    const runConfigurationEpoch = runConfigurationEpochRef.current;
 
     const runRequest = buildRunRequest(
       workflowId,
@@ -1254,6 +1275,10 @@ export function FmeaTool() {
 
     try {
       const validation = await backendClient.validateRun(runRequest);
+      isValidatingRef.current = false;
+      if (runConfigurationEpoch !== runConfigurationEpochRef.current) {
+        return;
+      }
       setValidations(validation.validations);
       // Phase 4: publish output_preview to the shared store so the
       // Review drawer can render the sampled rows. Clearing on failure
@@ -1289,6 +1314,13 @@ export function FmeaTool() {
       armTerminalHandler();
       beginAcceptedRun(await backendClient.executeRun(runRequest));
     } catch (error) {
+      if (
+        isValidatingRef.current &&
+        runConfigurationEpoch !== runConfigurationEpochRef.current
+      ) {
+        return;
+      }
+      isValidatingRef.current = false;
       if (handleExecuteRunDispatchError(error)) {
         return;
       }
@@ -1309,6 +1341,7 @@ export function FmeaTool() {
       // Release the re-entrancy guard once the validate→execute window has
       // closed. A run accepted in this window is owned by the run store and
       // survives.
+      isValidatingRef.current = false;
       isStartingRef.current = false;
     }
   }
@@ -1390,7 +1423,12 @@ export function FmeaTool() {
                   <WorkflowSelector
                     workflows={workflowOptions}
                     selectedWorkflowId={workflowId}
-                    onSelect={setWorkflowId}
+                    onSelect={(nextWorkflowId) => {
+                      if (nextWorkflowId !== workflowId) {
+                        invalidateRunConfiguration();
+                        setWorkflowId(nextWorkflowId);
+                      }
+                    }}
                     disabled={owningRunIsLive}
                   />
                 </OptionsField>
@@ -1682,6 +1720,11 @@ export function FmeaTool() {
               <RunStatePanel
                 runMode={panelRunMode}
                 progress={panelProgress}
+                percent={
+                  LIVE_PHASES.some((phase) => phase === panelRunMode)
+                    ? panelProgress
+                    : undefined
+                }
                 timeline={panelTimeline}
                 result={panelRunResult}
                 cancelledNotice={panelCancelledNotice}

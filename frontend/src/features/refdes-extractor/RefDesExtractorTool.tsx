@@ -193,6 +193,8 @@ export function RefDesExtractorTool() {
   // launch a second run whose rejection (single-active-run guard) would clear
   // the first, live run's session.
   const isStartingRef = useRef(false);
+  const isValidatingRef = useRef(false);
+  const runConfigurationEpochRef = useRef(0);
   const setBackendState = useShellStore((state) => state.setBackendState);
   const refdesExtractorOutputDirectory = useShellStore(
     (state) => state.refdesExtractorOutputDirectory,
@@ -203,6 +205,20 @@ export function RefDesExtractorTool() {
   const setToolModeLabel = useShellStore((state) => state.setToolModeLabel);
   const pushNotification = useNotificationStore((state) => state.push);
   const setPreview = usePreviewStore((state) => state.setPreview);
+  const clearPreview = usePreviewStore((state) => state.clearPreview);
+
+  function invalidateRunConfiguration() {
+    runConfigurationEpochRef.current += 1;
+    clearPreview("refdes_extractor");
+    if (isStartingRef.current && isValidatingRef.current) {
+      setBackendState({
+        backendStatus: "ready",
+        backendMode: backendClient.runtimeMode,
+        backendMessage: "Run configuration changed. Review the updated setup and start again.",
+        lastBackendCheckAt: new Date().toISOString(),
+      });
+    }
+  }
 
   // v2 N2: publish the extraction mode to the shell topbar's inline
   // mode indicator (keyed by tool id — keep-alive siblings never clash).
@@ -381,6 +397,8 @@ export function RefDesExtractorTool() {
       return;
     }
 
+    invalidateRunConfiguration();
+
     if (role === "pdf") {
       setInputStates((current) =>
         current.map((input) =>
@@ -499,6 +517,7 @@ export function RefDesExtractorTool() {
   }
 
   function handleSheetChange(role: FileRole, selectedSheet: string) {
+    invalidateRunConfiguration();
     setInputStates((current) =>
       current.map((input) => {
         if (input.role !== role) {
@@ -538,6 +557,8 @@ export function RefDesExtractorTool() {
       return;
     }
     isStartingRef.current = true;
+    isValidatingRef.current = true;
+    const runConfigurationEpoch = runConfigurationEpochRef.current;
 
     const runRequest = buildRunRequest();
 
@@ -555,6 +576,10 @@ export function RefDesExtractorTool() {
 
     try {
       const validation = await backendClient.validateRun(runRequest);
+      isValidatingRef.current = false;
+      if (runConfigurationEpoch !== runConfigurationEpochRef.current) {
+        return;
+      }
       setValidations(validation.validations);
       setPreview("refdes_extractor", validation.output_preview ?? null);
 
@@ -587,6 +612,13 @@ export function RefDesExtractorTool() {
       armTerminalHandler();
       beginAcceptedRun(await backendClient.executeRun(runRequest));
     } catch (error) {
+      if (
+        isValidatingRef.current &&
+        runConfigurationEpoch !== runConfigurationEpochRef.current
+      ) {
+        return;
+      }
+      isValidatingRef.current = false;
       if (handleExecuteRunDispatchError(error)) {
         return;
       }
@@ -607,6 +639,7 @@ export function RefDesExtractorTool() {
       // Release the re-entrancy guard once the validate→execute window has
       // closed. A run accepted in this window is owned by the run store and
       // survives.
+      isValidatingRef.current = false;
       isStartingRef.current = false;
     }
   }
@@ -706,9 +739,16 @@ export function RefDesExtractorTool() {
                   <ToggleChip<ExtractionMode>
                     ariaLabel="Extraction mode"
                     value={options.extraction_mode}
-                    onChange={(next) =>
-                      setOptions((prev) => ({ ...prev, extraction_mode: next as ExtractionMode }))
-                    }
+                    onChange={(next) => {
+                      const extractionMode = next as ExtractionMode;
+                      if (extractionMode !== options.extraction_mode) {
+                        invalidateRunConfiguration();
+                        setOptions((prev) => ({
+                          ...prev,
+                          extraction_mode: extractionMode,
+                        }));
+                      }
+                    }}
                     options={[
                       { value: "functional", label: "Functional" },
                       { value: "piece_part", label: "Piece-Part" },
@@ -1037,6 +1077,11 @@ export function RefDesExtractorTool() {
               <RunStatePanel
                 runMode={panelRunMode}
                 progress={panelProgress}
+                percent={
+                  LIVE_PHASES.some((phase) => phase === panelRunMode)
+                    ? panelProgress
+                    : undefined
+                }
                 timeline={panelTimeline}
                 result={panelRunResult}
                 onStart={() => {

@@ -100,6 +100,8 @@ export function FailureRateTool() {
   // can't launch a second run whose rejection (single-active-run guard) would
   // clear the first, live run's session.
   const isStartingRef = useRef(false);
+  const isValidatingRef = useRef(false);
+  const runConfigurationEpochRef = useRef(0);
   const setBackendState = useShellStore((state) => state.setBackendState);
   const failureRateOutputDirectory = useShellStore(
     (state) => state.failureRateOutputDirectory,
@@ -109,6 +111,20 @@ export function FailureRateTool() {
   );
   const pushNotification = useNotificationStore((state) => state.push);
   const setPreview = usePreviewStore((state) => state.setPreview);
+  const clearPreview = usePreviewStore((state) => state.clearPreview);
+
+  function invalidateRunConfiguration() {
+    runConfigurationEpochRef.current += 1;
+    clearPreview("failure_rate");
+    if (isStartingRef.current && isValidatingRef.current) {
+      setBackendState({
+        backendStatus: "ready",
+        backendMode: backendClient.runtimeMode,
+        backendMessage: "Run configuration changed. Review the updated setup and start again.",
+        lastBackendCheckAt: new Date().toISOString(),
+      });
+    }
+  }
 
   // Per-role token used to discard stale async listSheets/inspect results.
   const fileRequestSeq = useRoleRequestSequence<FileRole>();
@@ -260,6 +276,8 @@ export function FailureRateTool() {
       }
       return;
     }
+
+    invalidateRunConfiguration();
 
     // Stale-safe: bump the per-role token before any async work begins.
     const browseToken = fileRequestSeq.begin(role);
@@ -445,6 +463,7 @@ export function FailureRateTool() {
   }
 
   function handleSheetChange(role: FileRole, selectedSheet: string) {
+    invalidateRunConfiguration();
     let nextPath = "";
     setInputStates((current) =>
       current.map((input) => {
@@ -496,6 +515,8 @@ export function FailureRateTool() {
       return;
     }
     isStartingRef.current = true;
+    isValidatingRef.current = true;
+    const runConfigurationEpoch = runConfigurationEpochRef.current;
 
     const runRequest = buildRunRequest();
 
@@ -513,6 +534,10 @@ export function FailureRateTool() {
 
     try {
       const validation = await backendClient.validateRun(runRequest);
+      isValidatingRef.current = false;
+      if (runConfigurationEpoch !== runConfigurationEpochRef.current) {
+        return;
+      }
       setValidations(validation.validations);
       setPreview("failure_rate", validation.output_preview ?? null);
 
@@ -545,6 +570,13 @@ export function FailureRateTool() {
       armTerminalHandler();
       beginAcceptedRun(await backendClient.executeRun(runRequest));
     } catch (error) {
+      if (
+        isValidatingRef.current &&
+        runConfigurationEpoch !== runConfigurationEpochRef.current
+      ) {
+        return;
+      }
+      isValidatingRef.current = false;
       if (handleExecuteRunDispatchError(error)) {
         return;
       }
@@ -565,6 +597,7 @@ export function FailureRateTool() {
       // Release the re-entrancy guard once the validate→execute window has
       // closed. A run accepted in this window is owned by the run store and
       // survives.
+      isValidatingRef.current = false;
       isStartingRef.current = false;
     }
   }
@@ -781,6 +814,11 @@ export function FailureRateTool() {
               <RunStatePanel
                 runMode={panelRunMode}
                 progress={panelProgress}
+                percent={
+                  LIVE_PHASES.some((phase) => phase === panelRunMode)
+                    ? panelProgress
+                    : undefined
+                }
                 timeline={panelTimeline}
                 result={panelRunResult}
                 onStart={() => {

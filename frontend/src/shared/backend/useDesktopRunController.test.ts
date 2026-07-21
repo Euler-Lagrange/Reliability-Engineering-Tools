@@ -215,7 +215,9 @@ describe("useDesktopRunController terminal handling", () => {
     expect(notes).toHaveLength(1);
     expect(notes[0].tone).toBe("error");
     expect(notes[0].title).toBe("Run completed, but the result could not be displayed");
-    expect(notes[0].detail).toBe("The output file was written; check the run log.");
+    expect(notes[0].detail).toBe(
+      "Run finished, but the result could not be read; check the run log.",
+    );
   });
 
   it("resetSessionUnlessLive preserves a cancelling run", () => {

@@ -279,6 +279,8 @@ export function BomCompareTool() {
   // launch a second run whose rejection (single-active-run guard) would clear
   // the first, live run's session.
   const isStartingRef = useRef(false);
+  const isValidatingRef = useRef(false);
+  const runConfigurationEpochRef = useRef(0);
   const setBackendState = useShellStore((state) => state.setBackendState);
   const bomCompareOutputDirectory = useShellStore(
     (state) => state.bomCompareOutputDirectory,
@@ -289,6 +291,20 @@ export function BomCompareTool() {
   const setToolModeLabel = useShellStore((state) => state.setToolModeLabel);
   const pushNotification = useNotificationStore((state) => state.push);
   const setPreview = usePreviewStore((state) => state.setPreview);
+  const clearPreview = usePreviewStore((state) => state.clearPreview);
+
+  function invalidateRunConfiguration() {
+    runConfigurationEpochRef.current += 1;
+    clearPreview("bom_compare");
+    if (isStartingRef.current && isValidatingRef.current) {
+      setBackendState({
+        backendStatus: "ready",
+        backendMode: backendClient.runtimeMode,
+        backendMessage: "Run configuration changed. Review the updated setup and start again.",
+        lastBackendCheckAt: new Date().toISOString(),
+      });
+    }
+  }
 
   // v2 N2: publish the selected workflow to the shell topbar's inline
   // mode indicator (keyed by tool id — keep-alive siblings never clash).
@@ -740,6 +756,8 @@ export function BomCompareTool() {
       return;
     }
 
+    invalidateRunConfiguration();
+
     // Stale-safe: bump the per-role token before kicking off async work.
     const token = fileRequestSeq.begin(role);
 
@@ -924,6 +942,7 @@ export function BomCompareTool() {
   }
 
   function handleSheetChange(role: FileRole, selectedSheet: string) {
+    invalidateRunConfiguration();
     let nextPath = "";
     setInputStates((current) =>
       current.map((input) => {
@@ -975,6 +994,8 @@ export function BomCompareTool() {
       return;
     }
     isStartingRef.current = true;
+    isValidatingRef.current = true;
+    const runConfigurationEpoch = runConfigurationEpochRef.current;
 
     const runRequest = buildRunRequest();
 
@@ -992,6 +1013,10 @@ export function BomCompareTool() {
 
     try {
       const validation = await backendClient.validateRun(runRequest);
+      isValidatingRef.current = false;
+      if (runConfigurationEpoch !== runConfigurationEpochRef.current) {
+        return;
+      }
       setValidations(validation.validations);
       setPreview("bom_compare", validation.output_preview ?? null);
 
@@ -1024,6 +1049,13 @@ export function BomCompareTool() {
       armTerminalHandler();
       beginAcceptedRun(await backendClient.executeRun(runRequest));
     } catch (error) {
+      if (
+        isValidatingRef.current &&
+        runConfigurationEpoch !== runConfigurationEpochRef.current
+      ) {
+        return;
+      }
+      isValidatingRef.current = false;
       if (handleExecuteRunDispatchError(error)) {
         return;
       }
@@ -1044,6 +1076,7 @@ export function BomCompareTool() {
       // Release the re-entrancy guard once the validate→execute window has
       // closed (success, validation block, or error). The live run, if one
       // was accepted, is now owned by the run store and survives.
+      isValidatingRef.current = false;
       isStartingRef.current = false;
     }
   }
@@ -1127,7 +1160,12 @@ export function BomCompareTool() {
               <WorkflowSelector
                 workflows={bomCompareWorkflowOptions}
                 selectedWorkflowId={workflowId}
-                onSelect={setWorkflowId}
+                onSelect={(nextWorkflowId) => {
+                  if (nextWorkflowId !== workflowId) {
+                    invalidateRunConfiguration();
+                    setWorkflowId(nextWorkflowId);
+                  }
+                }}
                 disabled={owningRunIsLive}
               />
             </SectionCard>
@@ -1329,6 +1367,11 @@ export function BomCompareTool() {
               <RunStatePanel
                 runMode={panelRunMode}
                 progress={panelProgress}
+                percent={
+                  LIVE_PHASES.some((phase) => phase === panelRunMode)
+                    ? panelProgress
+                    : undefined
+                }
                 timeline={panelTimeline}
                 result={panelRunResult}
                 onStart={() => {

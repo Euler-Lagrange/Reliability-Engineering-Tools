@@ -8,12 +8,14 @@ import { RefDesExtractorTool } from "./refdes-extractor/RefDesExtractorTool";
 import { buildActiveRunFromAccepted, useRunStore } from "../stores/runStore";
 import { useShellStore } from "../stores/shellStore";
 import { useNotificationStore } from "../stores/notificationStore";
+import { usePreviewStore } from "../stores/previewStore";
 
 const backendMocks = vi.hoisted(() => ({
   validateRun: vi.fn(),
   executeRun: vi.fn(),
   cancelRun: vi.fn(),
   openExcelFile: vi.fn(),
+  openPdfFile: vi.fn(),
   listSheets: vi.fn(),
   inspectInput: vi.fn(),
 }));
@@ -31,9 +33,9 @@ vi.mock("../shared/backend/client", () => ({
     executeRun: backendMocks.executeRun,
     cancelRun: backendMocks.cancelRun,
     openExcelFile: backendMocks.openExcelFile,
+    openPdfFile: backendMocks.openPdfFile,
     listSheets: backendMocks.listSheets,
     inspectInput: backendMocks.inspectInput,
-    openPdfFile: vi.fn(),
     openDirectory: vi.fn(),
     revealInFileManager: vi.fn(),
   },
@@ -54,6 +56,15 @@ function resetStores() {
     contextOpen: false,
   });
   useNotificationStore.setState({ notifications: [] });
+  usePreviewStore.getState().clearAll();
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
 }
 
 async function runTool(startLabel: string) {
@@ -87,6 +98,7 @@ beforeEach(() => {
   backendMocks.executeRun.mockReset();
   backendMocks.cancelRun.mockReset();
   backendMocks.openExcelFile.mockReset();
+  backendMocks.openPdfFile.mockReset();
   backendMocks.listSheets.mockReset();
   backendMocks.inspectInput.mockReset();
   backendMocks.validateRun.mockResolvedValue({
@@ -105,6 +117,136 @@ beforeEach(() => {
 });
 
 describe("tool run dispatch", () => {
+  it.each([
+    ["FMEA", "dark_star_fmea", FmeaTool],
+    ["BOM Compare", "bom_compare", BomCompareTool],
+    ["Failure Rate", "failure_rate", FailureRateTool],
+    ["RefDes Extractor", "refdes_extractor", RefDesExtractorTool],
+  ] as const)("wires numeric backend progress into the %s Run rail", (_label, toolId, Tool) => {
+    render(<Tool />);
+
+    act(() => {
+      useRunStore.getState().setActiveRun(
+        buildActiveRunFromAccepted({
+          runId: `run_progress_${toolId}`,
+          toolId,
+          sessionGeneration: 1,
+        }),
+      );
+      useRunStore.getState().patchActiveRun({
+        phase: "running",
+        progress: 37,
+        statusMessage: "Processing workbook rows.",
+      });
+    });
+
+    expect(screen.getByRole("progressbar", { name: "Run progress" })).toHaveAttribute(
+      "aria-valuenow",
+      "37",
+    );
+    expect(screen.getByText("37%")).toBeInTheDocument();
+    expect(screen.queryByText("Working…")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    {
+      tool: "FMEA",
+      toolId: "dark_star_fmea" as const,
+      Tool: FmeaTool,
+      startLabel: "Generate FMEA",
+      browseLabel: "Browse for grouping file",
+    },
+    {
+      tool: "BOM Compare",
+      toolId: "bom_compare" as const,
+      Tool: BomCompareTool,
+      startLabel: "Compare",
+      browseLabel: "Browse for grouping file",
+    },
+    {
+      tool: "Failure Rate",
+      toolId: "failure_rate" as const,
+      Tool: FailureRateTool,
+      startLabel: "Link Rates",
+      browseLabel: "Browse for parts list",
+    },
+    {
+      tool: "RefDes Extractor",
+      toolId: "refdes_extractor" as const,
+      Tool: RefDesExtractorTool,
+      startLabel: "Extract",
+      browseLabel: "Browse for schematic",
+    },
+  ])(
+    "$tool ignores a late validation after configuration changes and permits a fresh run",
+    async ({ toolId, Tool, startLabel, browseLabel }) => {
+      const firstValidation = deferred<{
+        ok: boolean;
+        reason_code: string;
+        toast_text: string;
+        validations: never[];
+        output_preview: {
+          columns: string[];
+          rows: string[][];
+          truncated: boolean;
+        };
+        mode: "desktop-bridge";
+      }>();
+      backendMocks.validateRun.mockImplementationOnce(() => firstValidation.promise);
+      backendMocks.openExcelFile.mockResolvedValue("C:\\changed\\input.xlsx");
+      backendMocks.openPdfFile.mockResolvedValue("C:\\changed\\schematic.pdf");
+      backendMocks.listSheets.mockResolvedValue({
+        path: "C:\\changed\\input.xlsx",
+        sheets: ["Sheet1"],
+        mode: "desktop-bridge",
+      });
+      backendMocks.inspectInput.mockResolvedValue({
+        mode: "desktop-bridge",
+        sheet: "Sheet1",
+        columns: ["Reference Designator", "Part Number"],
+      });
+
+      const user = userEvent.setup();
+      render(<Tool />);
+      usePreviewStore.getState().setPreview(toolId, {
+        columns: ["Original"],
+        rows: [["current preview"]],
+        truncated: false,
+      });
+
+      await user.click(screen.getByRole("button", { name: startLabel }));
+      await waitFor(() => expect(backendMocks.validateRun).toHaveBeenCalledTimes(1));
+
+      await user.click(screen.getByRole("button", { name: browseLabel }));
+      await waitFor(() =>
+        expect(usePreviewStore.getState().byTool[toolId]).toBeUndefined(),
+      );
+
+      await act(async () => {
+        firstValidation.resolve({
+          ok: true,
+          reason_code: "ready",
+          toast_text: "Ready to run.",
+          validations: [],
+          output_preview: {
+            columns: ["Stale"],
+            rows: [["must not return"]],
+            truncated: false,
+          },
+          mode: "desktop-bridge",
+        });
+        await firstValidation.promise;
+      });
+
+      expect(backendMocks.executeRun).not.toHaveBeenCalled();
+      expect(usePreviewStore.getState().byTool[toolId]).toBeUndefined();
+
+      await user.click(screen.getByRole("button", { name: startLabel }));
+      await waitFor(() => expect(backendMocks.validateRun).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
+    },
+  );
+
   it("dispatches the BOM Compare group workflow", async () => {
     render(<BomCompareTool />);
     await runTool("Compare");

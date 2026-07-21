@@ -276,7 +276,7 @@ export function useDesktopRunController(
           ? "Run completed, but the result could not be displayed"
           : options.failureTitle,
         detail: resultSchemaMismatch
-          ? "The output file was written; check the run log."
+          ? "Run finished, but the result could not be read; check the run log."
           : desktopRunSession.statusMessage ?? "Unknown backend execution failure",
       });
       return;

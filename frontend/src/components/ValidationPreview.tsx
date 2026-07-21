@@ -77,16 +77,17 @@ export function ValidationPreview({
   const pushNotification = useNotificationStore((state) => state.push);
   const setContextOpen = useShellStore((state) => state.setContextOpen);
 
-  const issueCount = validations.length;
+  const issues = validations.filter((message) => message.severity !== "info");
+  const issueCount = issues.length;
   const hasIssues = issueCount > 0;
-  const errorCount = validations.filter((message) => message.severity === "error").length;
-  const warningCount = validations.filter((message) => message.severity === "warning").length;
+  const errorCount = issues.filter((message) => message.severity === "error").length;
+  const warningCount = issues.filter((message) => message.severity === "warning").length;
 
   const handleCopyIssues = async () => {
     if (!hasIssues) {
       return;
     }
-    const tsv = buildTsv(validations);
+    const tsv = buildTsv(issues);
     const ok = await copy(tsv);
     pushNotification({
       tone: ok ? "success" : "error",
@@ -101,7 +102,7 @@ export function ValidationPreview({
     if (!hasIssues) {
       return;
     }
-    const csv = buildCsv(validations);
+    const csv = buildCsv(issues);
     const filename = `validation_issues_${Date.now()}.csv`;
     downloadBlob(filename, csv, "text/csv");
     pushNotification({
