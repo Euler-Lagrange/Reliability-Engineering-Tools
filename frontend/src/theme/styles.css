@@ -133,8 +133,10 @@
   /* The ONE accent — desaturated cobalt. Interaction states are
      tokens, not filter:brightness() hacks. */
   --accent: #2f5bd8;
-  --accent-hover: #2a51c2;
-  --accent-active: #2547ab;
+  /* Resolve against the active theme's accent/text at use time so themes
+     that override --accent never fall back to Light Precision cobalt. */
+  --accent-hover: color-mix(in srgb, var(--accent) 88%, var(--text));
+  --accent-active: color-mix(in srgb, var(--accent) 76%, var(--text));
   --accent-soft: #edf1fc;    /* selection tint — quiet */
   --accent-border: color-mix(in srgb, var(--accent) 32%, transparent); /* selected outlines */
 
@@ -282,7 +284,7 @@
   --danger-soft: rgba(255, 122, 122, 0.16);
   --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.55);
   --shadow-focus-ring: 0 0 0 3px rgba(72, 202, 228, 0.20);
-  --shadow-rail-active: 0 0 0 1px rgba(72, 202, 228, 0.20), 0 6px 18px rgba(72, 202, 228, 0.18);
+  --shadow-rail-active: none;
   --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
@@ -310,7 +312,7 @@
   --danger-soft: rgba(255, 68, 68, 0.18);
   --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.7);
   --shadow-focus-ring: 0 0 0 3px rgba(255, 214, 10, 0.4);
-  --shadow-rail-active: 0 0 0 1px rgba(255, 214, 10, 0.4), 0 6px 18px rgba(255, 214, 10, 0.2);
+  --shadow-rail-active: none;
   --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.7);
 }
 
@@ -337,7 +339,7 @@
   --danger-soft: rgba(255, 51, 102, 0.16);
   --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.55);
   --shadow-focus-ring: 0 0 0 3px rgba(255, 42, 213, 0.22);
-  --shadow-rail-active: 0 0 0 1px rgba(255, 42, 213, 0.22), 0 6px 18px rgba(255, 42, 213, 0.18);
+  --shadow-rail-active: none;
   --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
@@ -394,7 +396,7 @@
   --danger-soft: rgba(232, 136, 122, 0.14);
   --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.55);
   --shadow-focus-ring: 0 0 0 3px rgba(125, 211, 168, 0.18);
-  --shadow-rail-active: 0 0 0 1px rgba(125, 211, 168, 0.18), 0 6px 18px rgba(125, 211, 168, 0.14);
+  --shadow-rail-active: none;
   --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
@@ -443,7 +445,7 @@
   --text-muted: #6b7888;
   --text-faint: #4a5663;
 
-  /* Accents — instrument panel glow */
+  /* Accents — instrument-panel palette */
   --accent: #00d9ff;
   --accent-soft: rgba(0, 217, 255, 0.12);
   --success: #00ff88;
@@ -459,13 +461,11 @@
   font-family: var(--font-mono);
   font-feature-settings: "tnum" 1, "zero" 1, "cv11" 1;
 
-  /* Mission Control is the ONLY theme allowed to use decorative
-     box-shadows for instrument-glow effects. Other themes stay
-     borders-only — see the rule overrides at the bottom of this
-     file (search for "Mission Control theme — style overrides"). */
+  /* Elevated overlays and keyboard focus retain functional shadows.
+     Navigation and status components remain tint-and-border based. */
   --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.65);
   --shadow-focus-ring: 0 0 0 3px rgba(0, 217, 255, 0.22);
-  --shadow-rail-active: 0 0 0 1px rgba(0, 217, 255, 0.25), 0 6px 18px rgba(0, 217, 255, 0.16);
+  --shadow-rail-active: none;
   --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.6);
 }
 
@@ -2306,8 +2306,8 @@ tbody tr:hover {
   padding: var(--space-2) var(--space-3) var(--space-2-5);
   /* Phase B2: user-resizable panel. The CSS variable is set inline on
      .run-log-panel by GlobalLogPanel.tsx and persisted to localStorage.
-     The fallback matches the previous hardcoded 280px so first-run
-     users see the same thing as before. */
+     The component initializes first-run height to 240px; this 280px
+     fallback only protects renderers that omit the inline variable. */
   max-height: var(--log-panel-height, 280px);
   overflow-y: auto;
   font-family: var(--font-mono);
@@ -2316,7 +2316,7 @@ tbody tr:hover {
   color: var(--text-secondary);
 }
 
-/* Phase B2: resize handle. Sits between the topbar gradient and the
+/* Phase B2: resize handle. Sits between the log strip and the
    header, providing a thin grab target that lets the user drag the log
    panel taller or shorter. The handle is transparent by default, shows
    a faint band on hover, and latches to the accent color while a drag
@@ -3958,10 +3958,9 @@ tbody tr:hover {
    Applied only when [data-theme="mission_control"] is active.
    Keep restrained — information density, not visual flair.
 
-   IMPORTANT: This is the ONLY theme allowed to use decorative
-   box-shadows for instrument-glow effects (status chip + input
-   card hover). Every other theme stays borders-only. If you add
-   new shadow effects, add them HERE, not to the global stylesheet.
+   Decorative component glows were retired in Design Pass v2.
+   Shadows here are limited to functional overlay elevation and
+   keyboard-focus visibility; navigation and state use tint/borders.
 
    Phosphor icon size conventions used across the suite:
      - 12px: inline meta (eyebrow chevrons, badge icons)
