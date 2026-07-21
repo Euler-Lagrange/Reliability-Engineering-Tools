@@ -28,9 +28,9 @@ The frontend communicates with the Rust bridge via Tauri IPC. The Rust bridge ma
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js `^20.19.0 || >=22.12.0`
 - Rust toolchain (via rustup) with MSVC build tools
-- Python 3.10+ with venv
+- Python 3.11+ with venv
 
 ### Setup
 
@@ -60,21 +60,22 @@ npm test                       # Frontend tests (371 tests across 48 test suites
 
 ```powershell
 npm run tauri:build:portable   # Portable .exe (no installer)
-npm run release                # Full 12-step release pipeline (typechecks + audit + tests + build + self-tests)
+npm run release                # Full 16-step release pipeline (typechecks + audit + tests + staged pair self-tests)
 ```
 
-Release artifact: `local_build\ReliabilityToolsDesktop.exe`
+Release artifacts: `local_build\ReliabilityToolsDesktop.exe` and
+`local_build\reliability-tools-sidecar.exe`. Ship the two executables together.
 
 ### Version management
 
 ```powershell
 npm run version:check          # Verify manifests and lockfile package versions agree
-npm run version:bump -- 0.4.3  # Update all three manifests in lockstep
+npm run version:bump -- patch  # Advance all three source manifests in lockstep
 ```
 
 ## Sidecar Protocol
 
-NDJSON over stdio between Rust and Python. Commands: `health_check`, `list_sheets`, `inspect_input`, `analyze_template`, `validate_run`, `execute_run`, `cancel_run`, `read_flet_config`.
+NDJSON over stdio between Rust and Python. Commands: `health_check`, `list_sheets`, `inspect_input`, `analyze_template`, `validate_run`, `execute_run`, `cancel_run`, `read_flet_config`, `read_refdes_prefixes`, `write_refdes_prefixes`.
 
 - `execute_run` streams progress/log events with a terminal result
 - `health_check` now reports the sidecar log directory so Settings › Logs can reveal it

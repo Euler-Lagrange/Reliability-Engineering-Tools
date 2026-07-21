@@ -40,6 +40,11 @@ ordered delivery by construction. The trade-off: stderr had to be routed to
 `DEVNULL` to prevent Windows pipe deadlocks, and a dedicated reader thread
 on the Rust side is required to avoid blocking the main Tokio runtime.
 
+**Operational amendment (2026-07-20).** The Rust bridge now pipes sidecar
+stderr and continuously drains it through `spawn_stderr_logger`, preserving
+diagnostic output without allowing the pipe to fill. Python subprocess tests
+continue to use `stderr=subprocess.DEVNULL` where stderr is not under test.
+
 ## ADR-003: PyInstaller over embedded Python distribution
 
 **Context.** End users are air-gapped reliability engineers who cannot
@@ -54,6 +59,12 @@ and the sidecar extracts on first launch. Sidecar size is approximately
 53 MB; cold-start extraction takes roughly one second. The trade-off:
 PyInstaller hidden-import hints are required for dynamic imports, and
 upgrading Python versions requires rebuilding the sidecar.
+
+**Operational amendment (2026-07-20).** Distribution now treats the portable
+desktop and PyInstaller sidecar as one two-executable release unit. The release
+pipeline assembles and self-tests the exact pair in a run-specific staging
+directory, then promotes that directory to `local_build/` with rollback to the
+previous pair if promotion fails. Both executables must ship together.
 
 ## ADR-004: Single active run vs multi-run queue
 

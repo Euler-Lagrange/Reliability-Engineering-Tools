@@ -6,12 +6,13 @@ How to build Reliability Tools Desktop and hand it off to teammates.
 
 Recipients do not need any of this — only the person running the build does.
 
-- **Node.js 18 or newer** — for the frontend toolchain and the Tauri CLI wrapper.
+- **Node.js `^20.19.0 || >=22.12.0`** — for the frontend toolchain and the
+  Tauri CLI wrapper.
 - **Rust (stable)** — install via [`rustup`](https://rustup.rs/). Tauri currently
   builds against stable Rust; 1.94.1 is confirmed working.
 - **Microsoft C++ Build Tools (MSVC)** — install the "Desktop development with
   C++" workload from Visual Studio Build Tools.
-- **Python 3.10 or newer** — a virtual environment at `.venv/` in the repo root
+- **Python 3.11 or newer** — a virtual environment at `.venv/` in the repo root
   with backend dependencies and PyInstaller installed.
 - **WebView2 runtime** — preinstalled on Windows 10 and 11; no action needed
   unless you are on a stripped-down LTSC image.
@@ -26,7 +27,7 @@ scripts\release.bat
 
 The build takes about two minutes on a typical dev machine. A timestamped log
 is written to `logs/release_YYYYMMDD_HHMMSS.log`. On success, the script prints
-`STATUS: SUCCESS` and the path to the portable exe.
+`STATUS: SUCCESS` and the paths to both release executables.
 
 ## What the Pipeline Does
 
@@ -46,20 +47,23 @@ is written to `logs/release_YYYYMMDD_HHMMSS.log`. On success, the script prints
 8. **Backend tests** — `pytest backend\tests -q` against the Python sidecar.
 9. **Frontend tests** — `npm test` against the React frontend.
 10. **Sidecar build** — `python scripts\build_sidecar.py` runs PyInstaller and
-   produces `reliability-tools-sidecar.exe` in `local_build\`.
+   produces `reliability-tools-sidecar.exe` in a run-specific directory under
+   `build\release_staging\`.
 11. **Tauri build** — `npm run tauri:build:portable` produces the portable
    desktop exe under `src-tauri\target\...\release\`.
 12. **Locate exe** — finds the packaged exe under `src-tauri\target\...`.
-13. **Stage sidecar** — copies `reliability-tools-sidecar.exe` beside the
-   packaged exe so the release build (which resolves the sidecar exe-adjacent
-   only) can find it during the backend self-test.
-14. **Shell self-test** — launches the portable exe with `--self-test` to
-   verify the Tauri binary starts.
-15. **Backend self-test** — launches with `--self-test-backend` to verify the
-   shell can spawn the sidecar and exchange a `health_check`.
-16. **Promote exe** — copies the verified exe to
-   `local_build\ReliabilityToolsDesktop.exe`. This is the final step, so a
-   build that fails a self-test never overwrites the last-good artifact.
+13. **Assemble staged pair** — copies the packaged desktop into the
+   run-specific staging directory beside `reliability-tools-sidecar.exe`.
+   Release builds resolve the sidecar exe-adjacent only.
+14. **Shell self-test** — launches the exact staged desktop with `--self-test`
+   to verify the Tauri binary starts.
+15. **Backend self-test** — launches the exact staged desktop with
+   `--self-test-backend` to verify it spawns the staged sidecar and exchanges a
+   `health_check`.
+16. **Promote pair** — verifies that staging contains exactly the two expected
+   executables, then promotes the staged directory to `local_build\` with
+   same-volume directory renames. The previous `local_build\` pair is held as
+   a run-specific backup and restored if promotion fails.
 
 ## Output Artifacts
 
@@ -94,9 +98,12 @@ The binary is not code-signed. Click `More info` then `Run anyway`. This
 happens once per user per machine.
 
 **Antivirus flags the sidecar exe.**
-PyInstaller-bundled executables sometimes trigger heuristic detection. Add the
-sidecar exe to the antivirus allow-list. The build pipeline runs backend tests
-before packaging, so the binary is not tampered with.
+PyInstaller-bundled executables sometimes trigger heuristic detection. The
+pipeline runs source tests and a strict security audit before packaging, then
+self-tests the exact staged desktop/sidecar pair. Those checks validate expected
+behavior; they are not code signing or proof that an artifact was never
+tampered with. Follow your organization's security process before allowing or
+distributing the files.
 
 **First launch is slow.**
 On cold start, the PyInstaller sidecar extracts its embedded Python runtime to

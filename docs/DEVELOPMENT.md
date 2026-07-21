@@ -2,9 +2,9 @@
 
 ## Prerequisites
 
-- **Node.js** 18 or newer (for Vite, Vitest, and the Tauri CLI)
+- **Node.js** `^20.19.0 || >=22.12.0` (for Vite, Vitest, and the Tauri CLI)
 - **Rust** stable, installed via `rustup` (any version that supports Tauri 2)
-- **Python** 3.10 or newer (tested on 3.12-3.14; pinned in `requirements.txt`)
+- **Python** 3.11 or newer (tested on 3.12-3.14; pinned in `requirements.txt`)
 - **Windows 10 or 11** with the Microsoft Visual C++ Build Tools (MSVC) —
   required for the `x86_64-pc-windows-msvc` Rust target
 
@@ -40,9 +40,12 @@ npm run dev
 
 Opens Vite at `http://localhost:5173`. The shell detects it is not running
 inside Tauri (`isTauriRuntime()` returns false) and serves mock data from
-`frontend/src/mocks/scenarios.ts`. File pickers, sheet selection, and run
-results all return scripted mock responses. Useful for UI iteration without
-the Python toolchain.
+`frontend/src/mocks/scenarios.ts`. Scenario-seeded state and run results are
+useful for UI iteration without the Python toolchain. Native file/folder
+pickers return no selection outside Tauri, and BOM Compare, Failure Rate, and
+RefDes **Load example** actions are coming-soon stubs, so their input grids are
+not walkthrough-reachable in browser preview. Treat that as a validation gap
+and use desktop hot reload for those picker-to-grid paths.
 
 ### Desktop hot reload
 
@@ -95,8 +98,10 @@ See `docs/TESTING.md` for the full test inventory and gotchas.
 .venv/Scripts/python.exe scripts/build_sidecar.py
 ```
 
-Produces `local_build/reliability-tools-sidecar.exe` via PyInstaller. The
-script self-tests the resulting binary with `--self-test` before exiting.
+Produces `build/sidecar_dev/reliability-tools-sidecar.exe` via PyInstaller.
+The script self-tests the resulting binary with `--self-test` before exiting.
+This is a component-development artifact, not a distributable pair; use the
+full release pipeline to populate `local_build/`.
 
 ### Portable desktop exe (frontend + Rust only)
 
@@ -106,8 +111,8 @@ npm run tauri:build:portable
 
 Produces a single-file portable executable under
 `src-tauri/target/x86_64-pc-windows-msvc/release/reliability-tools-desktop.exe`.
-Tauri picks up the bundled sidecar at runtime if it exists in the same
-ancestor directory tree.
+The packaged desktop resolves the sidecar exe-adjacent only, so
+`reliability-tools-sidecar.exe` must be in the same directory at runtime.
 
 ### Full release pipeline
 
@@ -127,15 +132,17 @@ The script runs the following 16 steps and stops on the first failure
 7. Backend security audit (`python -m common.security_audit --strict` from `backend/python`)
 8. Backend tests (`pytest backend/tests -q`)
 9. Frontend tests (`npm test`)
-10. Sidecar build (`scripts/build_sidecar.py`)
+10. Sidecar build (`scripts/build_sidecar.py`) into a run-specific directory under `build/release_staging/`
 11. Portable desktop build (`npm run tauri:build:portable`)
 12. Locate the packaged exe under `src-tauri/target/...`
-13. Stage the bundled sidecar beside the packaged exe (release resolves it exe-adjacent only)
-14. Packaged self-test (`ReliabilityToolsDesktop.exe --self-test`)
-15. Packaged backend self-test (`ReliabilityToolsDesktop.exe --self-test-backend`)
-16. Promote the verified exe to `local_build/ReliabilityToolsDesktop.exe`
+13. Assemble the exact two-file desktop/sidecar pair in that run-specific staging directory
+14. Self-test the staged desktop (`ReliabilityToolsDesktop.exe --self-test`)
+15. Self-test the staged desktop with the staged sidecar (`ReliabilityToolsDesktop.exe --self-test-backend`)
+16. Atomically promote the verified staged directory to `local_build/`, restoring the previous pair if promotion fails
 
-The output is `local_build/ReliabilityToolsDesktop.exe`.
+The outputs are `local_build/ReliabilityToolsDesktop.exe` and
+`local_build/reliability-tools-sidecar.exe`. They are one release unit and
+must be distributed together.
 
 ## Adding a New Tool
 

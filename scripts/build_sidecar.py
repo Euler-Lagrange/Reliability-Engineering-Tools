@@ -10,8 +10,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 BACKEND = ROOT / "backend" / "python"
 ENTRY = BACKEND / "sidecar_main.py"
-DEFAULT_OUTPUT = ROOT / "local_build"
 BUILD_ROOT = ROOT / "build"
+DEFAULT_OUTPUT = BUILD_ROOT / "sidecar_dev"
 PACKAGE_NAMES = (
     "common",
     "shared",
