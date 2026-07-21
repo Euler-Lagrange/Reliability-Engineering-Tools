@@ -46,7 +46,7 @@
 | Frontend desktop run controller | `frontend/src/shared/backend/useDesktopRunController.test.ts` | 5 | Vitest |
 | Frontend cancel error | `frontend/src/shared/backend/cancelError.test.ts` | 18 | Vitest |
 | Frontend cancel run | `frontend/src/shared/backend/client.cancelRun.test.ts` | 2 | Vitest |
-| Frontend run event client | `frontend/src/shared/backend/client.runEvents.test.ts` | 2 | Vitest |
+| Frontend run event client | `frontend/src/shared/backend/client.runEvents.test.ts` | 4 | Vitest |
 | Frontend contract schemas | `frontend/src/contracts/sidecar.test.ts` | 6 | Vitest |
 | Frontend busy reset | `frontend/src/shared/backend/useBackendBusyReset.test.ts` | 9 | Vitest |
 | Frontend backend bootstrap | `frontend/src/shared/backend/useBackendBootstrap.test.ts` | 6 | Vitest |
@@ -78,9 +78,9 @@
 | Frontend shell-hook install | `frontend/src/app/App.shellHooks.test.tsx` | 1 | Vitest + RTL |
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 5 | Vitest + RTL |
-| **Frontend subtotal** | | **371** | |
+| **Frontend subtotal** | | **373** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 23 | cargo test |
-| **Total** | | **922** | |
+| **Total** | | **924** | |
 
 ## Backend Tests
 

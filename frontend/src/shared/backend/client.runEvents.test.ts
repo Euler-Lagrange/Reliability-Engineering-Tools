@@ -111,3 +111,68 @@ describe("backendClient run-event subscription", () => {
     consoleErrorSpy.mockRestore();
   });
 });
+
+describe("backendClient session-event subscription", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    listenMock.mockReset();
+    (globalThis as unknown as { __TAURI_INTERNALS__: object }).__TAURI_INTERNALS__ = {};
+  });
+
+  it("parses valid session events and invokes the handler", async () => {
+    let tauriCallback: ((event: { payload: unknown }) => void) | null = null;
+    listenMock.mockImplementationOnce(async (_eventName, callback) => {
+      tauriCallback = callback as (event: { payload: unknown }) => void;
+      return () => {};
+    });
+
+    const handler = vi.fn();
+    const { backendClient } = await import("./client");
+
+    await backendClient.subscribeToSessionEvents(handler);
+    const emitSessionEvent = requireRunEventCallback(tauriCallback);
+    emitSessionEvent({
+      payload: {
+        kind: "disconnected",
+        connected: false,
+        backend: "python-sidecar-session",
+        message: "Desktop backend dropped.",
+        session_generation: 7,
+      },
+    });
+
+    expect(handler).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "disconnected", session_generation: 7 }),
+    );
+  });
+
+  it("drops a malformed session event without throwing (log-and-skip)", async () => {
+    // Session events drive the backend-status store, so — unlike run events,
+    // where the raw payload is forwarded to let the terminal guard fire — a
+    // malformed status event is safely SKIPPED: the next heartbeat refreshes
+    // the state, while forwarding garbage could poison the store. The parse
+    // must never throw inside the Tauri listen callback.
+    let tauriCallback: ((event: { payload: unknown }) => void) | null = null;
+    listenMock.mockImplementationOnce(async (_eventName, callback) => {
+      tauriCallback = callback as (event: { payload: unknown }) => void;
+      return () => {};
+    });
+
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const handler = vi.fn();
+    const { backendClient } = await import("./client");
+
+    await backendClient.subscribeToSessionEvents(handler);
+    const emitSessionEvent = requireRunEventCallback(tauriCallback);
+
+    expect(() =>
+      emitSessionEvent({
+        payload: { kind: "exploded", connected: "maybe" },
+      }),
+    ).not.toThrow();
+    expect(handler).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).toHaveBeenCalled();
+
+    consoleErrorSpy.mockRestore();
+  });
+});

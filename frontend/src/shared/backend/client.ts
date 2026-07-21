@@ -308,7 +308,23 @@ export const backendClient: BackendClient = {
   async subscribeToSessionEvents(handler) {
     ensureDesktopRuntime("subscribe_session_events");
     return listen(BACKEND_SESSION_EVENT, (event) => {
-      handler(backendSessionEventSchema.parse(event.payload));
+      // Unlike run events (raw-forwarded so the terminal guard can still
+      // fire — Tier-2 #21 above), a malformed SESSION event is safely
+      // log-and-SKIPPED: session events only drive the backend-status
+      // store, the next heartbeat/status refresh restores truth, and
+      // forwarding garbage could poison that store. Either way the parse
+      // must never throw inside the Tauri listen callback.
+      let sessionEvent;
+      try {
+        sessionEvent = backendSessionEventSchema.parse(event.payload);
+      } catch (error) {
+        console.error(
+          "Session event failed envelope validation (schema drift?); skipping.",
+          error,
+        );
+        return;
+      }
+      handler(sessionEvent);
     });
   },
   async openExcelFile() {
