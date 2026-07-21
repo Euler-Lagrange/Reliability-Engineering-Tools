@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-07-20 — Audit Remediation, Legacy Excel, Release Hardening
+
+This whole-project remediation release makes mapping and diagnostics more
+truthful, adds legacy Excel compatibility, and hardens the frontend/Rust/Python
+and release boundaries. The release baseline is 922 tests: 528 backend, 371
+frontend across 48 files, and 23 Rust bridge tests.
+
+### Added
+
+- **Part Number is now a required, user-correctable FMEA mapping row.** It
+  automaps from the backend synonym vocabulary, can be overridden like the
+  other input columns, and a deliberate Do Not Map choice fails validation in
+  every workflow instead of reaching execution. A TypeScript synonym table now
+  mirrors the relevant backend definitions under a lockstep test, including
+  BAE PN and Roman-numeral FMD/HDA forms; the FMR row deliberately uses only
+  the strict ratio vocabulary.
+- **Legacy `.xls` workbooks are supported by the sidecar discovery path.**
+  Sheet listing and input inspection use the legacy reader when required, and
+  regression coverage exercises list, inspect, and Failure Rate execution.
+- The packaged Inter and JetBrains Mono font directories now include their
+  official OFL license texts.
+
+### Changed
+
+- **FMEA-generated filenames now identify the selected workflow.** Piece-part,
+  BOM-only, and from-functional runs use `PiecePartFMEA_*`; fill-gaps runs keep
+  `MergedFMEA_FillGaps_*`; preserve-formatting output remains derived from the
+  selected template.
+- **The release unit is now an inseparable desktop/sidecar pair.** The pipeline
+  builds into a run-specific staging directory, audits and self-tests the exact
+  staged executables, then atomically promotes the directory with rollback on
+  failure. The release pipeline can no longer silently pair a stale executable
+  with a new one.
+- **Protocol handling fails closed at the Rust boundary.** Malformed response
+  payloads are rejected before forwarding; unknown frontend run phases are
+  logged and clamped to the last valid phase; failed run-event listeners retry
+  with bounded backoff and clean up pending retries on unmount.
+
+### Fixed
+
+- **BOM Compare now checks cross-file Part Usage and the file that actually
+  carries Failure Mode Ratios.** A `1/N` value is compared with unique-instance
+  counts in both inputs, FMR detection uses the strict synonym set, source
+  rows use the configured display names, and NaN values cannot produce a
+  meaningless usage warning. Plain percentage columns are not mistaken for
+  FMR data.
+- Short Part Number synonyms such as `PN` and `P/N` now match compound headers
+  on word boundaries (including the reported `BAE PN` case) without reviving
+  substring false positives such as `PNP` or `Ref` inside longer words.
+- Long CustomSelect menus now stay within the available viewport and expose a
+  usable native scrollbar, including wide spreadsheet column pickers.
+- Failure Rate duplicate RefDes rows are deterministic: conflicting rates use
+  the conservative maximum with a warning, while identical duplicates dedupe
+  cleanly without a false warning.
+- FMEA and RefDes results now count every actionable diagnostic warning while
+  excluding informational rows, so end-user completion states agree with the
+  generated reports.
+- Explicitly selected missing worksheets now fail closed instead of silently
+  falling back to another sheet.
+- Mapping, validation, and Run-rail state stay truthful across all four tools:
+  stale or orphaned manual mappings remain visibly unmapped; informational
+  validation rows do not inflate issue totals or copied issue text; changing a
+  file, sheet, workflow, or mode clears stale preview state and invalidates
+  deferred validation; late validation cannot launch an obsolete run; numeric
+  progress reaches every Run rail; and result-schema failures use accurate
+  completion wording.
+
 ## [1.2.0] - 2026-07-17 — Design Pass v2, Run Rail, BOM Display Names
 
 The full visual refinement from the claude.ai/design "Design Pass v2"
