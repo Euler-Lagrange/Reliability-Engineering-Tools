@@ -23,8 +23,11 @@
 
 [CmdletBinding()]
 param(
-    # Override for testing the presenter against a mock script.
-    [string]$ReleaseScript = (Join-Path $PSScriptRoot 'release.bat'),
+    # Override for testing the presenter against a mock script. Defaults to
+    # release.bat next to this script — resolved in the BODY, not here:
+    # under `powershell -File` on PS 5.1, $PSScriptRoot is empty while
+    # parameter defaults are evaluated.
+    [string]$ReleaseScript,
     [switch]$NoAnsi,
     # Test hook: exercise the ANSI renderer even when output is redirected.
     [switch]$ForceAnsi
@@ -32,6 +35,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
+
+$ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+if (-not $ReleaseScript) { $ReleaseScript = Join-Path $ScriptDir 'release.bat' }
 
 $Esc = [char]27
 $Bel = [char]7
@@ -72,7 +78,7 @@ $StepNames = @(
 # First-run duration guesses (seconds); replaced by measured EMA thereafter.
 $DefaultDurations = @(2, 3, 9, 9, 20, 40, 6, 90, 45, 90, 180, 1, 2, 12, 15, 2)
 
-$RepoRoot = Split-Path -Parent $PSScriptRoot
+$RepoRoot = Split-Path -Parent $ScriptDir
 $TimingsPath = Join-Path $RepoRoot 'logs\release_timings.json'
 
 $Timings = @{ steps = @{}; vitestFiles = 0 }
