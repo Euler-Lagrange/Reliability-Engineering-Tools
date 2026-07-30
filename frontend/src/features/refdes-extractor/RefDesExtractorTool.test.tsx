@@ -368,17 +368,18 @@ describe("RefDesExtractorTool numeric tuning fields", () => {
 });
 
 describe("RefDesExtractorTool advanced engine controls", () => {
-  // Every control carries a hover-tooltip affordance (InfoTip = role="img"
-  // whose accessible name is the tooltip copy). This proves the main-area
-  // controls expose one without opening the advanced disclosure.
-  it("exposes a hover tooltip on the primary controls", () => {
+  // Every control carries a tooltip affordance (InfoTip = a focusable
+  // button whose accessible name is the tooltip copy — keyboard users
+  // can reach it, unlike the old native-title span). This proves the
+  // main-area controls expose one without opening the advanced disclosure.
+  it("exposes a tooltip trigger on the primary controls", () => {
     render(<RefDesExtractorTool />);
 
     expect(
-      screen.getByRole("img", { name: /Functional groups components/i }),
+      screen.getByRole("button", { name: /Functional groups components/i }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("img", { name: /Use vector geometry/i }),
+      screen.getByRole("button", { name: /Use vector geometry/i }),
     ).toBeInTheDocument();
   });
 

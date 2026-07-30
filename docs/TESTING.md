@@ -35,8 +35,8 @@
 | Frontend escape layers | `frontend/src/shared/hooks/useEscapeLayer.test.ts` | 4 | Vitest |
 | Frontend error boundary | `frontend/src/shared/errors/ErrorBoundary.test.tsx` | 3 | Vitest + RTL |
 | Frontend component | `frontend/src/components/CustomSelect.test.tsx` | 4 | Vitest + RTL |
-| Frontend mapping table | `frontend/src/components/MappingTable.test.tsx` | 15 | Vitest + RTL |
-| Frontend run state panel | `frontend/src/components/RunStatePanel.test.tsx` | 6 | Vitest + RTL |
+| Frontend mapping table | `frontend/src/components/MappingTable.test.tsx` | 18 | Vitest + RTL |
+| Frontend run state panel | `frontend/src/components/RunStatePanel.test.tsx` | 10 | Vitest + RTL |
 | Frontend output folder picker | `frontend/src/components/OutputFolderPicker.test.tsx` | 2 | Vitest + RTL |
 | Frontend log panel resize | `frontend/src/components/GlobalLogPanel.resize.test.tsx` | 13 | Vitest + RTL |
 | Frontend command palette | `frontend/src/components/primitives/CommandPalette.test.tsx` | 8 | Vitest + RTL |
@@ -70,7 +70,9 @@
 | Frontend RefDes Extractor tool | `frontend/src/features/refdes-extractor/RefDesExtractorTool.test.tsx` | 18 | Vitest + RTL |
 | Frontend number field | `frontend/src/components/primitives/NumberField.test.tsx` | 6 | Vitest + RTL |
 | Frontend mapping derivation | `frontend/src/shared/mapping/deriveMappingRows.test.ts` | 6 | Vitest |
-| Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 26 | Vitest + RTL |
+| Frontend mapping bulk actions | `frontend/src/shared/mapping/mappingBulkActions.test.ts` | 9 | Vitest |
+| Frontend mock-run mirror | `frontend/src/shared/backend/mockRunMirror.test.ts` | 7 | Vitest |
+| Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 30 | Vitest + RTL |
 | Frontend workflow selector | `frontend/src/components/WorkflowSelector.test.tsx` | 4 | Vitest + RTL |
 | Frontend strategy selector | `frontend/src/components/StrategySelector.test.tsx` | 4 | Vitest + RTL |
 | Frontend input grid | `frontend/src/components/InputGrid.test.tsx` | 3 | Vitest + RTL |
@@ -78,9 +80,9 @@
 | Frontend shell-hook install | `frontend/src/app/App.shellHooks.test.tsx` | 1 | Vitest + RTL |
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 5 | Vitest + RTL |
-| **Frontend subtotal** | | **376** | |
+| **Frontend subtotal** | | **403** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 23 | cargo test |
-| **Total** | | **927** | |
+| **Total** | | **954** | |
 
 ## Backend Tests
 

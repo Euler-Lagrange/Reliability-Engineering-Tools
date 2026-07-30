@@ -102,8 +102,10 @@ describe("MappingTable — Phase 2 infrastructure", () => {
     ];
     render(<MappingTable rows={rows} overrides={{}} onOverride={vi.fn()} />);
 
-    // Only the REQUIRED unmapped row counts toward the badge.
-    expect(screen.getByText("1 unmapped")).toBeInTheDocument();
+    // Only the REQUIRED unmapped row counts toward the badge — and the
+    // label says so ("required unmapped") so a cleared table can't read
+    // "5 unmapped" under 14 visibly unmapped rows.
+    expect(screen.getByText("1 required unmapped")).toBeInTheDocument();
     // The required row keeps its amber Attention chip...
     expect(screen.getByText("Attention")).toBeInTheDocument();
     // ...while the optional row demotes to the neutral Not mapped chip.
@@ -130,7 +132,7 @@ describe("MappingTable — Phase 2 infrastructure", () => {
       "Manual",
     );
     expect(screen.getByText("1 manual")).toBeInTheDocument();
-    expect(screen.queryByText("1 unmapped")).not.toBeInTheDocument();
+    expect(screen.queryByText("1 required unmapped")).not.toBeInTheDocument();
   });
 
   test("an orphaned explicit override is unmapped, with optional rows kept neutral", () => {
@@ -160,7 +162,7 @@ describe("MappingTable — Phase 2 infrastructure", () => {
 
     expect(container.querySelector('.state-word[data-status="manual"]')).toBeNull();
     expect(screen.queryByText(/manual$/i)).not.toBeInTheDocument();
-    expect(screen.getByText("1 unmapped")).toBeInTheDocument();
+    expect(screen.getByText("1 required unmapped")).toBeInTheDocument();
     expect(screen.getByText("Attention")).toBeInTheDocument();
     expect(screen.getByText("Not mapped")).toBeInTheDocument();
   });
@@ -380,5 +382,69 @@ describe("MappingTable — Phase 2 infrastructure", () => {
         within(row).queryByRole("button", { name: /about/i }),
       ).not.toBeInTheDocument();
     }
+  });
+
+  test("Apply all suggestions stays enabled after clear-all (restorable overrides)", async () => {
+    // Regression (2026-07-28): after "Clear all mappings" every row holds a
+    // Do-Not-Map override whose prose recommendation is never a column
+    // name, so the old suggestion gate disabled the button — a dead end.
+    const user = userEvent.setup();
+    const onApply = vi.fn();
+    const rows: ColumnMappingRow[] = [rowWithHelp(), rowWithoutHelp()];
+    render(
+      <MappingTable
+        rows={rows}
+        overrides={{
+          "Failure Mode": DO_NOT_MAP_VALUE,
+          "Part Number": DO_NOT_MAP_VALUE,
+        }}
+        onOverride={vi.fn()}
+        onApplyAllSuggestions={onApply}
+      />,
+    );
+
+    const applyButton = screen.getByRole("button", { name: /apply all suggestions/i });
+    expect(applyButton).not.toBeDisabled();
+    await user.click(applyButton);
+    expect(onApply).toHaveBeenCalledTimes(1);
+  });
+
+  test("Apply all suggestions is disabled when nothing would change", () => {
+    const rows: ColumnMappingRow[] = [rowWithHelp(), rowWithoutHelp()];
+    render(
+      <MappingTable
+        rows={rows}
+        overrides={{}}
+        onOverride={vi.fn()}
+        onApplyAllSuggestions={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /apply all suggestions/i }),
+    ).toBeDisabled();
+  });
+
+  test("the note stays truthful for overridden rows", () => {
+    // A Do-Not-Map row must not keep claiming "Exact header match", and a
+    // manual pick must not keep the stale auto-state note.
+    const rows: ColumnMappingRow[] = [
+      rowWithHelp(),
+      rowWithoutHelp({ canonical: "Part Number" }),
+    ];
+    render(
+      <MappingTable
+        rows={rows}
+        overrides={{
+          "Failure Mode": DO_NOT_MAP_VALUE,
+          "Part Number": "PN",
+        }}
+        onOverride={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Excluded — Do Not Map selected.")).toBeInTheDocument();
+    expect(screen.getByText("Manually selected.")).toBeInTheDocument();
+    expect(screen.queryByText("Exact header match")).not.toBeInTheDocument();
   });
 });

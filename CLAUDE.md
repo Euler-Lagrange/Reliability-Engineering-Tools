@@ -66,7 +66,7 @@ npm run dev              # Vite dev server (browser preview mode)
 npm run build            # Production build
 npm run typecheck        # TypeScript type checking
 npm run typecheck:tests  # TypeScript type checking for Vitest files
-npm test                 # Vitest (376 tests)
+npm test                 # Vitest (403 tests)
 
 # Desktop (requires Rust toolchain)
 npm run tauri:dev        # Dev mode with hot reload
@@ -205,7 +205,7 @@ The audit runs:
 - `pytest.importorskip("fitz")` for RefDes tests requiring PyMuPDF
 - `backend/tests/conftest.py` installs a `sys.path` shim for in-process unit tests
 
-### Frontend Tests (376 total across 48 test files)
+### Frontend Tests (403 total across 50 test files)
 - Vitest + React Testing Library
 - Browser-mock mode (no Tauri runtime needed)
 - `src/app/App.test.tsx`
@@ -213,8 +213,8 @@ The audit runs:
 - `src/app/App.shellHooks.test.tsx` (new — Tier-3 #28 shell-hook install guard)
 - `src/components/ContextDrawer.test.tsx` (new in 0.4.5)
 - `src/components/CustomSelect.test.tsx`
-- `src/components/MappingTable.test.tsx` (valid overrides report Manual; orphaned overrides remain visibly/countably unmapped)
-- `src/components/RunStatePanel.test.tsx` (now covers the Open-folder affordance)
+- `src/components/MappingTable.test.tsx` (valid overrides report Manual; orphaned overrides remain visibly/countably unmapped; 2026-07 review: Apply-all stays enabled after Clear-all, disabled when nothing would change, and overridden rows carry truthful notes)
+- `src/components/RunStatePanel.test.tsx` (Open-folder affordance, readiness-row rendering with tones, and the stat-tile metric split incl. `splitMetric` unit cases)
 - `src/components/ValidationPreview.test.tsx` (compact 2-column preview, EmptyState, Full-preview drawer affordance, informational rows excluded from issue counts/exports)
 - `src/components/OutputFolderPicker.test.tsx` (new — Tier-3 #26 backend-error surfacing)
 - `src/components/GlobalLogPanel.resize.test.tsx`
@@ -233,7 +233,7 @@ The audit runs:
 - `src/features/fmea/columnSynonyms.test.ts` (new — mapping-card synonym automap: BAE PN / Roman-numeral FMD & HDA headers preselect, strict-FMR gate so a generic Percentage column never grabs the ratio row, exact-canonical wins over synonyms, derived rows never automap; the TS mirror is lockstep-scanned from `test_fmea_column_resolution.py`)
 - `src/features/fmea/mappingAnalysis.test.ts`
 - `src/features/settings/SettingsTool.test.tsx` (RefDes prefix editor: load/add/remove/save, client-side validation, browser-mode guard, failed-load Retry recovery, corrupt-config warning banner, and the in-app User Guide overlay: open from the Help card, section nav, Escape close)
-- `src/features/toolRunDispatch.test.tsx` (now covers the FMEA payload keys + the extraction_compare no-mappings/no-options payload + M9 no-demo-content-in-desktop + FMEA Required input chips + the cross-tool run guard + exact execute-timeout acceptance-unknown handling, numeric Run-rail progress, and stale deferred-validation suppression across all four tools, with an afterEach async drain for run-store test isolation)
+- `src/features/toolRunDispatch.test.tsx` (now covers the FMEA payload keys + the extraction_compare no-mappings/no-options payload + M9 no-demo-content-in-desktop + FMEA Required input chips + the cross-tool run guard + exact execute-timeout acceptance-unknown handling, numeric Run-rail progress, required-input readiness denominators per tool (0/3, 0/2, 0/2, 0/1 mirroring the backend REQUIRED role tables), and stale deferred-validation suppression across all four tools, with an afterEach async drain for run-store test isolation)
 - `src/components/WorkflowSelector.test.tsx` (aria-pressed selection semantics + live-run disabled state)
 - `src/components/StrategySelector.test.tsx` (aria-pressed selection semantics + live-run disabled state)
 - `src/components/InputGrid.test.tsx` (per-card copy-path isolation + inspection-pause hint)
@@ -252,13 +252,15 @@ The audit runs:
 - `src/shared/hooks/useRoleRequestSequence.test.ts`
 - `src/shared/hooks/useCopyToClipboard.test.ts`
 - `src/shared/mapping/deriveMappingRows.test.ts` (new in 0.4.6)
+- `src/shared/mapping/mappingBulkActions.test.ts` (new — 2026-07 review: Apply-all restores auto suggestions incl. the clear-all round-trip; Clear-all writes the Do-Not-Map sentinel on every row; the restorable-override gate)
+- `src/shared/backend/mockRunMirror.test.ts` (new — 2026-07 review: browser-mock runs mirror into the shared run store for the Review drawer, stream fixture logs to the Global Log, toast on completion with desktop-matching warning qualification, stale-runId guard)
 - `src/shared/theme/themeRegistry.test.ts`
 - `src/stores/globalLogStore.test.ts`
 - `src/stores/notificationStore.test.ts` (new — toast eviction never drops the incoming)
 - `src/stores/storeMigrations.test.ts` (new — Decision E persist version/migration)
 
 Run `npx vitest run --config frontend/vite.config.ts --reporter=default` to
-see individual counts per file — the suite totals 376 tests and changes
+see individual counts per file — the suite totals 403 tests and changes
 whenever a suite gains or loses cases.
 
 ## Critical Gotchas

@@ -1,7 +1,7 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, test, vi } from "vitest";
-import { RunStatePanel } from "./RunStatePanel";
+import { RunStatePanel, splitMetric } from "./RunStatePanel";
 import type { RunEvent } from "../app/types";
 
 const noopTimeline: RunEvent[] = [];
@@ -87,5 +87,62 @@ describe("RunStatePanel", () => {
     await user.click(screen.getByRole("button", { name: "Open folder" }));
 
     expect(onRevealOutput).toHaveBeenCalledWith("C:\\reports\\output.xlsx");
+  });
+
+  test("renders readiness rows with their values and tones", () => {
+    renderPanel({
+      readiness: [
+        { label: "Inputs loaded", value: "2 / 2", tone: "ok" },
+        { label: "Required mapping", value: "3 / 4", tone: "warn" },
+      ],
+    });
+
+    const list = screen.getByRole("list", { name: "Run readiness" });
+    const rows = within(list).getAllByRole("listitem");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toHaveTextContent("Inputs loaded");
+    expect(rows[0]).toHaveTextContent("2 / 2");
+    expect(rows[0]).toHaveAttribute("data-tone", "ok");
+    expect(rows[1]).toHaveTextContent("Required mapping");
+    expect(rows[1]).toHaveTextContent("3 / 4");
+    expect(rows[1]).toHaveAttribute("data-tone", "warn");
+  });
+
+  test("result metrics typeset as stat tiles — figure split from caption", () => {
+    renderPanel({
+      result: {
+        status: "success",
+        title: "Prototype run completed",
+        summary: "Rows planned.",
+        outputFile: "PiecePartFMEA_Standard.xlsx",
+        primaryMetric: "216 planned rows",
+        secondaryMetric: "10 of 12 auto-mapped",
+        notes: [],
+      },
+    });
+
+    // "216 planned rows" renders as a hero figure plus a small caption
+    // instead of one body-size phrase wrapping over three lines.
+    const hero = screen.getByText("216");
+    expect(hero.className).toContain("hero-metric");
+    expect(screen.getByText("planned rows")).toBeInTheDocument();
+    expect(screen.getByText("10")).toBeInTheDocument();
+    expect(screen.getByText("of 12 auto-mapped")).toBeInTheDocument();
+  });
+});
+
+describe("splitMetric", () => {
+  test("splits a leading figure from its caption", () => {
+    expect(splitMetric("216 planned rows")).toEqual({ value: "216", caption: "planned rows" });
+    expect(splitMetric("92% auto-mapped")).toEqual({ value: "92%", caption: "auto-mapped" });
+    expect(splitMetric("3 missing")).toEqual({ value: "3", caption: "missing" });
+  });
+
+  test("leaves figureless strings unsplit", () => {
+    expect(splitMetric("Changes audited")).toEqual({ value: "Changes audited", caption: "" });
+    expect(splitMetric("Recovery path visible")).toEqual({
+      value: "Recovery path visible",
+      caption: "",
+    });
   });
 });

@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BomCompareTool } from "./bom-compare/BomCompareTool";
@@ -141,6 +141,28 @@ describe("tool run dispatch", () => {
     expect(screen.getByText("37%")).toBeInTheDocument();
     expect(screen.queryByText("Working…")).not.toBeInTheDocument();
   });
+
+  it.each([
+    // Denominators mirror the backends' REQUIRED role tables — the rail
+    // used to show a green "0 / 0" in every tool but FMEA because the
+    // input projections never stamped `required` (2026-07-28 review).
+    ["FMEA", FmeaTool, "0 / 3"],
+    ["BOM Compare", BomCompareTool, "0 / 2"],
+    ["Failure Rate", FailureRateTool, "0 / 2"],
+    ["RefDes Extractor", RefDesExtractorTool, "0 / 1"],
+  ] as const)(
+    "%s Run rail counts required inputs in desktop mode",
+    (_label, Tool, expected) => {
+      render(<Tool />);
+
+      const readiness = screen.getByRole("list", { name: "Run readiness" });
+      const inputsRow = within(readiness)
+        .getAllByRole("listitem")
+        .find((row) => row.textContent?.includes("Inputs loaded"));
+      expect(inputsRow).toBeDefined();
+      expect(inputsRow).toHaveTextContent(expected);
+    },
+  );
 
   it.each([
     {
