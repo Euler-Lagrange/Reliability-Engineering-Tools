@@ -78,7 +78,11 @@ npm run cargo:test       # Rust bridge unit tests via the repo runner
 .venv\Scripts\python.exe backend/python/sidecar_main.py --self-test
 
 # Full release
-scripts/release.bat
+scripts/release.bat      # raw pipeline (16 gated steps, log to logs/)
+scripts/release-ui.bat   # same pipeline via release-ui.ps1: live checklist,
+                         # animated progress bar (per-step durations learned
+                         # into logs/release_timings.json), taskbar progress.
+                         # Pure observer — release.bat is unchanged.
 ```
 
 ## Key Patterns
