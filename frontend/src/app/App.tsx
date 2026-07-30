@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Eye, Faders, MagnifyingGlass, Moon, Sparkle, Sun, Terminal } from "@phosphor-icons/react";
 import styles from "./AppShell.module.css";
 import { toolDefinitions } from "./toolRegistry";
@@ -276,8 +276,12 @@ export function App() {
                 uppercase micro-labels. Shortcut digits stay aligned with the
                 palette's Ctrl+N actions (index across ALL tools). */}
             <nav className={styles.toolList} aria-label="Desktop tools">
+              {/* Fragments (not display:contents wrappers) keep labels and
+                  buttons as direct grid children — display:contents drops
+                  the element from the a11y tree in some engines and broke
+                  the `.navLabel:first-child` margin rule. */}
               {(["Tools", "System"] as const).map((group) => (
-                <div key={group} style={{ display: "contents" }}>
+                <Fragment key={group}>
                   <p className={styles.navLabel}>{group}</p>
                   {toolDefinitions
                     .filter((tool) => (group === "System") === (tool.id === "settings"))
@@ -305,7 +309,7 @@ export function App() {
                         </button>
                       );
                     })}
-                </div>
+                </Fragment>
               ))}
             </nav>
 
@@ -350,7 +354,7 @@ export function App() {
               <div className={styles.statusRow}>
                 <button
                   type="button"
-                  className="topbar__review-toggle"
+                  className={styles.reviewToggle}
                   data-selected={contextOpen}
                   onClick={toggleContext}
                   aria-pressed={contextOpen}
@@ -363,7 +367,7 @@ export function App() {
                 </button>
                 <button
                   type="button"
-                  className="topbar__review-toggle"
+                  className={styles.reviewToggle}
                   onClick={() => setCommandPaletteOpen(true)}
                   aria-label="Open command palette"
                   title={`Command palette (${primaryShortcutLabel("K")})`}

@@ -31,10 +31,10 @@
      v2 commitments (design_handoff_v2/Critique v2.html, R1/R3/R6):
      1. ONE accent. Everything else is gray or a semantic color.
      2. Depth = borders only. Shadows exist solely for floating layers
-        (menu, palette, toast). --shadow-rail-active is retired.
+        (menu, palette, toast, tooltip).
      3. Four text tiers with measured, monotonic contrast:
         text 16.6:1 › secondary 9.3:1 › muted 5.9:1 › faint 4.6:1.
-     4. 4px spacing grid. --space-2-5 (10px) is deprecated → 8px.
+     4. 4px spacing grid — off-grid values carry an annotation.
      5. Radius capped at 8px. Pills survive only on the progress bar.
      ============================================================ */
 
@@ -61,9 +61,7 @@
   --text-md: 16px;    /* panel metrics */
   --text-lg: 18px;    /* result values */
   --text-xl: 20px;    /* the one hero metric per tool */
-  --text-2xl: 24px;   /* reserved: modal/full-screen headers only */
-  --text-xxl: 24px;   /* v2: DEMOTED from 28px — the topbar no longer uses it (48px topbar, 14px title) */
-  --text-3xl: 24px;   /* v2: DEMOTED from 32px — hero metrics cap at --text-xl */
+  --text-2xl: 24px;   /* reserved: modal/full-screen headers only — the scale's ceiling */
 
   /* Line heights */
   --leading-tight: 1.2;
@@ -93,7 +91,6 @@
      min-height in component CSS. Always reach for one of these. */
   --space-1: 4px;     /* micro: icon gaps, fine adjustments */
   --space-2: 8px;     /* tight: within components */
-  --space-2-5: 8px;   /* DEPRECATED alias — was 10px; migrate call sites to --space-2 or --space-3 */
   --space-3: 12px;    /* standard: between related elements */
   --space-4: 16px;    /* comfortable: section padding */
   --space-5: 20px;    /* relaxed: rail padding, chrome */
@@ -153,9 +150,7 @@
      999px pills survive only on the progress bar. */
   --radius-xs: 4px;   /* badges, kbd, micro targets */
   --radius-sm: 6px;   /* controls, buttons, inputs */
-  --radius-md: 8px;   /* cards, grouped lists, popovers */
-  --radius-lg: 8px;   /* alias of md — no third card radius */
-  --radius-xl: 8px;   /* DEMOTED from 12px — rail buttons join the system */
+  --radius-md: 8px;   /* cards, grouped lists, popovers — the largest radius */
   --radius-pill: 999px; /* progress/coverage meter tracks ONLY */
 
   /* ============================================================
@@ -163,7 +158,6 @@
      literally float. Everything docked is flat. */
   --shadow-popover: 0 4px 16px rgba(15, 20, 30, 0.10), 0 1px 3px rgba(15, 20, 30, 0.08);
   --shadow-toast: 0 6px 20px rgba(15, 20, 30, 0.12);
-  --shadow-rail-active: none; /* RETIRED — active nav is tint + text, not glow */
   /* Focus ring — the old 8%-alpha ring was invisible; keyboard users
      stake runs on this. 2px ring at 35% + accent border on the control. */
   --shadow-focus-ring: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
@@ -175,12 +169,18 @@
   --duration-fast: 150ms;
   --duration-base: 200ms;
   --duration-slow: 250ms;
+  /* Ambient loops — continuous indicators, not interaction transitions,
+     so they sit deliberately outside the 150–250ms band. */
+  --duration-loop-spin: 900ms;    /* refresh spinner (Settings health check) */
+  --duration-loop-sweep: 1400ms;  /* indeterminate progress stripe */
+  --duration-loop-pulse: 1600ms;  /* live run-log status dot */
 
   /* Z-index ladder — one scale for every stacked surface. Never write a
      raw z-index literal; add a rung here if a new layer is needed. */
   --z-sticky: 1;
   --z-menu: 20;
   --z-drawer: 40;
+  --z-tooltip: 45; /* above the drawer (ⓘ icons live inside it too), below toasts */
   --z-toast: 50;
   --z-modal: 1000;
 
@@ -229,9 +229,7 @@
 
   /* Dark themes need stronger shadows — light-theme rgba is invisible. */
   --shadow-popover: 0 4px 16px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.4);
-  --shadow-toast: 0 6px 20px rgba(0, 0, 0, 0.5);
-  --shadow-rail-active: none;
-  --shadow-focus-ring: 0 0 0 2px rgba(126, 159, 245, 0.45);
+  --shadow-toast: 0 6px 20px rgba(0, 0, 0, 0.5);  --shadow-focus-ring: 0 0 0 2px rgba(126, 159, 245, 0.45);
 }
 
 :root[data-theme="signal_slate"] {
@@ -283,9 +281,7 @@
   --danger: #ff7a7a;
   --danger-soft: rgba(255, 122, 122, 0.16);
   --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.55);
-  --shadow-focus-ring: 0 0 0 3px rgba(72, 202, 228, 0.20);
-  --shadow-rail-active: none;
-  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-focus-ring: 0 0 0 3px rgba(72, 202, 228, 0.20);  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
 /* High Contrast — accessibility-first. Pure black/white with a yellow
@@ -311,9 +307,7 @@
   --danger: #ff4444;
   --danger-soft: rgba(255, 68, 68, 0.18);
   --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.7);
-  --shadow-focus-ring: 0 0 0 3px rgba(255, 214, 10, 0.4);
-  --shadow-rail-active: none;
-  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.7);
+  --shadow-focus-ring: 0 0 0 3px rgba(255, 214, 10, 0.4);  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.7);
 }
 
 /* Synthwave — neon dev-tool vibe. Hot pink/magenta accents on deep
@@ -338,9 +332,7 @@
   --danger: #ff3366;
   --danger-soft: rgba(255, 51, 102, 0.16);
   --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.55);
-  --shadow-focus-ring: 0 0 0 3px rgba(255, 42, 213, 0.22);
-  --shadow-rail-active: none;
-  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-focus-ring: 0 0 0 3px rgba(255, 42, 213, 0.22);  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
 /* Kraft Paper — warm paper and graphite. Workshop notebook aesthetic.
@@ -395,9 +387,7 @@
   --danger: #e8887a;
   --danger-soft: rgba(232, 136, 122, 0.14);
   --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.55);
-  --shadow-focus-ring: 0 0 0 3px rgba(125, 211, 168, 0.18);
-  --shadow-rail-active: none;
-  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-focus-ring: 0 0 0 3px rgba(125, 211, 168, 0.18);  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
 /* Graphite Dawn — soft charcoal on warm ivory. Newsprint precision.
@@ -464,9 +454,7 @@
   /* Elevated overlays and keyboard focus retain functional shadows.
      Navigation and status components remain tint-and-border based. */
   --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.65);
-  --shadow-focus-ring: 0 0 0 3px rgba(0, 217, 255, 0.22);
-  --shadow-rail-active: none;
-  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --shadow-focus-ring: 0 0 0 3px rgba(0, 217, 255, 0.22);  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.6);
 }
 
 * {
@@ -576,7 +564,7 @@ button:disabled {
 }
 
 .spin {
-  animation: spin 900ms linear infinite;
+  animation: spin var(--duration-loop-spin) linear infinite;
 }
 
 /* ============================================================
@@ -591,7 +579,9 @@ button:disabled {
   top: 0;
   right: 0;
   z-index: var(--z-drawer);
-  width: min(360px, 100vw);
+  /* 420px: the preview table clipped to ~3 columns at 360px while the
+     drawer sat mostly empty vertically — give the table the width. */
+  width: min(420px, 100vw);
   height: 100vh;
   padding: var(--space-5);
   /* 1px seam on the left blends with --line so the drawer feels part
@@ -661,6 +651,10 @@ button:disabled {
 .context-drawer__section {
   display: grid;
   gap: var(--space-3);
+  /* Without this the grid's auto column sizes to the preview table's
+     max-content width and refuses to shrink, starving the scroll
+     container below — the table then clips instead of scrolling. */
+  min-width: 0;
 }
 
 .context-drawer__section .eyebrow {
@@ -1007,7 +1001,7 @@ button:disabled {
   position: relative;
   display: grid;
   gap: var(--space-1);
-  padding: var(--space-2-5) var(--space-3);
+  padding: var(--space-2) var(--space-3);
   color: inherit;
   text-align: left;
   transition:
@@ -1033,7 +1027,7 @@ button:disabled {
 .choice-card__check {
   position: absolute;
   top: var(--space-2);
-  right: var(--space-2-5);
+  right: var(--space-2);
   color: var(--accent);
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
@@ -1272,7 +1266,7 @@ button:disabled {
   justify-content: center;
   gap: var(--space-2);
   min-height: var(--control-h); /* v2: 28px desktop-density control */
-  padding: 0 var(--space-2-5);
+  padding: 0 var(--space-2);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   background: var(--surface);
@@ -1481,7 +1475,7 @@ button:disabled {
   gap: var(--space-2);
   padding: var(--space-3);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   background: var(--surface-soft);
 }
 
@@ -1528,6 +1522,46 @@ button:disabled {
   align-items: center;
   gap: 6px; /* off-grid: tight label-to-control gap */
   white-space: nowrap;
+}
+
+/* PDF rows: no sheets to pick — hide the control but keep the cell's
+   geometry so Browse buttons stay column-aligned across stacked cards. */
+.sheet-picker--none {
+  visibility: hidden;
+}
+
+/* RefDes "Advanced controls" disclosure — previously a 14-property
+   inline style object on the button; the classNames were dead hooks. */
+.refdes-advanced__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: var(--space-1) 0;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-uppercase);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease);
+}
+
+.refdes-advanced__toggle:hover {
+  color: var(--text);
+}
+
+.refdes-advanced__toggle:focus-visible {
+  outline: none;
+  border-radius: var(--radius-xs);
+  box-shadow: var(--shadow-focus-ring);
+}
+
+.refdes-advanced__panel {
+  margin-top: var(--space-3);
 }
 
 .sheet-picker label {
@@ -1678,7 +1712,7 @@ table {
 
 th,
 td {
-  padding: var(--space-2-5) var(--space-3); /* dense cell vertical rhythm */
+  padding: var(--space-2) var(--space-3); /* dense cell vertical rhythm */
   border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: top;
@@ -1742,9 +1776,9 @@ tbody tr:hover {
 .help-guide__nav {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 2px; /* off-grid: hairline nav row separation */
   padding: var(--space-4);
-  width: 208px;
+  width: 208px; /* off-grid: fits the longest section title without wrap */
   flex-shrink: 0;
   border-right: 1px solid var(--line);
   background: var(--surface);
@@ -1759,7 +1793,7 @@ tbody tr:hover {
   font: inherit;
   font-size: var(--text-base);
   text-align: left;
-  padding: 6px 10px;
+  padding: 6px 10px; /* off-grid: dense nav-link hug */
   border-radius: var(--radius-sm);
   cursor: pointer;
 }
@@ -1824,7 +1858,7 @@ tbody tr:hover {
   background: var(--surface-muted);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  padding: 1px 5px;
+  padding: 1px 5px; /* off-grid: text-tag hug */
   color: var(--text);
   white-space: nowrap;
 }
@@ -1844,7 +1878,7 @@ tbody tr:hover {
 
 .help-guide__table th {
   text-align: left;
-  padding: 8px 12px;
+  padding: var(--space-2) var(--space-3);
   background: var(--surface-muted);
   color: var(--text-faint);
   font-size: var(--text-xs);
@@ -1854,7 +1888,7 @@ tbody tr:hover {
 }
 
 .help-guide__table td {
-  padding: 8px 12px;
+  padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--line);
   color: var(--text-muted);
   vertical-align: top;
@@ -2149,7 +2183,7 @@ tbody tr:hover {
 
 .run-log-panel__status-dot[data-status="active"] {
   background: var(--accent);
-  animation: run-log-panel__status-pulse 1.6s var(--ease) infinite;
+  animation: run-log-panel__status-pulse var(--duration-loop-pulse) var(--ease) infinite;
 }
 
 .run-log-panel__status-dot[data-status="good"] {
@@ -2275,7 +2309,7 @@ tbody tr:hover {
   align-items: center;
   gap: 6px; /* off-grid: dot-to-word optical gap */
   margin-left: var(--space-1);
-  padding-left: var(--space-2-5);
+  padding-left: var(--space-2);
   border-left: 1px solid var(--line);
   color: var(--text-muted);
   font-size: var(--text-xs);
@@ -2303,7 +2337,7 @@ tbody tr:hover {
   border-top: 1px solid var(--line);
   /* v2 N3: the log body is a sunken well, not a card. */
   background: var(--surface-soft);
-  padding: var(--space-2) var(--space-3) var(--space-2-5);
+  padding: var(--space-2) var(--space-3) var(--space-2);
   /* Phase B2: user-resizable panel. The CSS variable is set inline on
      .run-log-panel by GlobalLogPanel.tsx and persisted to localStorage.
      The component initializes first-run height to 240px; this 280px
@@ -2433,7 +2467,7 @@ tbody tr:hover {
 .execution-log {
   display: grid;
   gap: var(--space-2);
-  padding: var(--space-2-5) var(--space-3); /* matches table cell density */
+  padding: var(--space-2) var(--space-3); /* matches table cell density */
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface-muted);
@@ -2490,7 +2524,7 @@ tbody tr:hover {
 
 .run-result {
   display: grid;
-  gap: var(--space-2-5); /* result body density */
+  gap: var(--space-2); /* result body density */
   padding: var(--space-3);
 }
 
@@ -2514,7 +2548,7 @@ tbody tr:hover {
 .run-result__metric {
   display: grid;
   gap: 2px; /* off-grid: extreme-tight metric stack */
-  padding: var(--space-2) var(--space-2-5);
+  padding: var(--space-2) var(--space-2);
   background: var(--surface);
 }
 
@@ -2524,6 +2558,20 @@ tbody tr:hover {
   font-weight: var(--weight-medium);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
+}
+
+/* Stat-tile caption under the split figure ("planned rows" beneath
+   "216"). Must out-rank the `.run-result__metric span` eyebrow group
+   selector above — the caption is lowercase body text, not an eyebrow. */
+.run-result__metric .run-result__metric-caption {
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-normal);
+  letter-spacing: normal;
+  text-transform: none;
+  padding-top: 0;
+  line-height: 1.35;
 }
 
 .run-result__notes {
@@ -2602,7 +2650,7 @@ tbody tr:hover {
   justify-content: center;
   gap: var(--space-2);
   min-height: 24px; /* off-grid: table-control tier */
-  padding: 0 var(--space-2-5);
+  padding: 0 var(--space-2);
   border: 1px solid transparent;
   border-radius: var(--radius-xs);
   background: transparent;
@@ -2688,6 +2736,37 @@ tbody tr:hover {
   margin-top: 2px; /* off-grid: optical alignment with the field label cap-height */
   color: var(--text-faint);
   cursor: help;
+  /* The trigger is now a real <button> (keyboard-reachable tooltip) —
+     neutralize the UA button chrome. */
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+}
+
+.refdes-infotip:hover {
+  color: var(--text-secondary);
+}
+
+.refdes-infotip:focus-visible {
+  outline: none;
+  border-radius: var(--radius-xs);
+  box-shadow: var(--shadow-focus-ring);
+}
+
+/* Shared tooltip surface (Radix portal content) — joins the floating
+   family: select menu, command palette, drawer. */
+.tooltip-content {
+  z-index: var(--z-tooltip);
+  max-width: 320px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  box-shadow: var(--shadow-popover);
 }
 
 .checkbox-field {
@@ -2992,7 +3071,7 @@ tbody tr:hover {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin-bottom: var(--space-2-5);
+  margin-bottom: var(--space-2);
 }
 
 .rail-card__header h2 {
@@ -3042,7 +3121,7 @@ tbody tr:hover {
 /* Result path well + action row + hairline metrics grid. */
 .run-result__path {
   display: block;
-  padding: var(--space-2) var(--space-2-5);
+  padding: var(--space-2) var(--space-2);
   border-radius: var(--radius-sm);
   background: var(--surface-soft);
   color: var(--text-secondary);
@@ -3050,7 +3129,12 @@ tbody tr:hover {
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
   line-height: 1.5;
-  word-break: break-all;
+  /* One line + ellipsis — break-all shattered filenames mid-extension
+     ("…101200.x / lsx"). The title attribute and the Copy-path button
+     both expose the full value. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .run-result__actions {
@@ -3083,7 +3167,7 @@ tbody tr:hover {
     transparent 100%
   );
   background-size: 200% 100%;
-  animation: run-state-indeterminate 1400ms linear infinite;
+  animation: run-state-indeterminate var(--duration-loop-sweep) linear infinite;
 }
 
 @keyframes run-state-indeterminate {
@@ -3521,46 +3605,9 @@ tbody tr:hover {
    Keep additive; don't modify Phase 1/2/3 selectors above.
    ============================================================ */
 
-/* Topbar quiet buttons (Review toggle, palette). v2 N2: ghost until
-   hover, 28px control height, no permanent border weight. */
-.topbar__review-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: var(--control-h);
-  padding: 0 var(--space-2-5);
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  cursor: pointer;
-  transition:
-    border-color var(--duration-fast) var(--ease),
-    background var(--duration-fast) var(--ease),
-    color var(--duration-fast) var(--ease);
-}
-
-.topbar__review-toggle:hover {
-  background: var(--surface-muted);
-  color: var(--text);
-}
-
-.topbar__review-toggle:focus-visible {
-  outline: none;
-  box-shadow: var(--shadow-focus-ring);
-}
-
-.topbar__review-toggle[data-selected="true"] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.topbar__review-toggle .kbd-shortcut {
-  margin-left: var(--space-1);
-}
+/* Topbar quiet buttons (Review toggle, palette) moved to
+   AppShell.module.css (`.reviewToggle`) — they are shell-only chrome,
+   and the shell must not split its styling across two systems. */
 
 /* ---- Toast dwell tuning (Task 5) -------------------------------- */
 
@@ -3632,7 +3679,7 @@ tbody tr:hover {
   overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-popover);
 }
 

@@ -233,6 +233,13 @@ export interface RunEventTemplate {
   title: string;
   detail: string;
   progress: number;
+  /**
+   * Demo log lines the browser-mock replay streams into the Global Log
+   * strip when this event becomes active. Desktop runs stream real
+   * backend logs instead — this field exists so the preview can
+   * demonstrate the same surface.
+   */
+  logs?: string[];
 }
 
 export interface RunEvent extends RunEventTemplate {

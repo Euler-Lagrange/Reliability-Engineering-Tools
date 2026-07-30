@@ -4,6 +4,10 @@ import {
   InputGrid,
 } from "../../components/InputGrid";
 import { MappingTable } from "../../components/MappingTable";
+import {
+  applyAllSuggestions,
+  clearAllMappings,
+} from "../../shared/mapping/mappingBulkActions";
 import { RunStatePanel, runStatusWord, type RunReadinessItem } from "../../components/RunStatePanel";
 import { SectionCard } from "../../components/SectionCard";
 import { StrategySelector } from "../../components/StrategySelector";
@@ -13,7 +17,18 @@ import { EmptyState } from "../../components/primitives/EmptyState";
 import { OptionsField } from "../../components/primitives/OptionsField";
 import { ToggleChip } from "../../components/primitives/ToggleChip";
 import { FolderOpen, TreeStructure } from "@phosphor-icons/react";
-import { demoScenarios, outputStrategies, workflowOptions } from "../../mocks/scenarios";
+import {
+  demoScenarios,
+  outputStrategies,
+  resolveFmeaDemoScenario,
+  workflowOptions,
+} from "../../mocks/scenarios";
+import {
+  mirrorMockRunCancelled,
+  mirrorMockRunEvent,
+  mirrorMockRunStart,
+  mirrorMockRunTerminal,
+} from "../../shared/backend/mockRunMirror";
 import type {
   AnalysisContextCard,
   ColumnMappingRow,
@@ -489,6 +504,9 @@ export function FmeaTool() {
   // launch a second run whose rejection (single-active-run guard) would clear
   // the first, live run's session.
   const isStartingRef = useRef(false);
+  // Synthetic run id for mirroring browser-mock runs into the shared
+  // run store (Review drawer, Global Log, cross-tool guard surfaces).
+  const mockRunIdRef = useRef<string | null>(null);
   const isValidatingRef = useRef(false);
   const runConfigurationEpochRef = useRef(0);
   const setBackendState = useShellStore((state) => state.setBackendState);
@@ -630,7 +648,14 @@ export function FmeaTool() {
       // stale entry, so no staleness can leak into a run.
       setRunMode("idle");
       setRunIndex(-1);
-      setRunTemplates(initialRunTemplates);
+      // Browser-mock: seed the idle timeline from the workflow's own
+      // fixture so the Run rail previews the steps this mode will replay.
+      setRunTemplates(
+        IS_BROWSER_MOCK
+          ? resolveFmeaDemoScenario(workflowId, outputStrategyId).runSequence
+              .events
+          : initialRunTemplates,
+      );
       setRunResult(null);
       setRunLogLines([]);
       setCancelledNotice(null);
@@ -655,6 +680,15 @@ export function FmeaTool() {
     startTransition(() => {
       setRunMode("idle");
       setRunIndex(-1);
+      if (IS_BROWSER_MOCK) {
+        // A strategy change can select a different demo fixture (e.g.
+        // fill_gaps + preserve replays the failure fixture) — refresh the
+        // idle timeline to match. Desktop templates are strategy-agnostic.
+        setRunTemplates(
+          resolveFmeaDemoScenario(workflowId, outputStrategyId).runSequence
+            .events,
+        );
+      }
       setRunResult(null);
       setRunLogLines([]);
       setCancelledNotice(null);
@@ -678,19 +712,34 @@ export function FmeaTool() {
 
     if (runIndex >= events.length - 1) {
       const resultTimer = window.setTimeout(() => {
-        setRunResult(baseScenario.runSequence.result);
-        setRunMode(baseScenario.runSequence.result.status);
+        // Per-workflow result: each (workflow, strategy) pair replays its
+        // own fixture — every mode used to end in demoScenarios[0]'s
+        // result regardless of what was selected.
+        const result = resolveFmeaDemoScenario(
+          workflowId,
+          outputStrategyId,
+        ).runSequence.result;
+        setRunResult(result);
+        setRunMode(result.status);
+        mirrorMockRunTerminal("dark_star_fmea", mockRunIdRef.current, result);
       }, 520);
 
       return () => window.clearTimeout(resultTimer);
     }
 
     const timer = window.setTimeout(() => {
+      const nextTemplate = events[runIndex + 1];
       setRunIndex((current) => current + 1);
+      if (nextTemplate) {
+        mirrorMockRunEvent("dark_star_fmea", mockRunIdRef.current, nextTemplate);
+        if (nextTemplate.logs?.length) {
+          setRunLogLines((current) => [...current, ...(nextTemplate.logs ?? [])]);
+        }
+      }
     }, 520);
 
     return () => window.clearTimeout(timer);
-  }, [runIndex, runMode, runTemplates]);
+  }, [runIndex, runMode, runTemplates, workflowId, outputStrategyId]);
 
   const workflowInputs = useMemo(
     () => buildWorkflowInputs(inputStates, workflowId, hdaSource),
@@ -1217,8 +1266,17 @@ export function FmeaTool() {
     }
 
     if (backendClient.runtimeMode !== "desktop-bridge") {
-      setRunTemplates(baseScenario.runSequence.events);
-      setRunLogLines([]);
+      // Per-workflow demo: replay the fixture that matches the selected
+      // workflow + output strategy, and mirror the run into the shared
+      // run store so the Review drawer / Global Log see it too.
+      const scenario = resolveFmeaDemoScenario(workflowId, outputStrategyId);
+      const firstEvent = scenario.runSequence.events[0];
+      mockRunIdRef.current = mirrorMockRunStart("dark_star_fmea");
+      setRunTemplates(scenario.runSequence.events);
+      setRunLogLines(firstEvent?.logs ?? []);
+      if (firstEvent) {
+        mirrorMockRunEvent("dark_star_fmea", mockRunIdRef.current, firstEvent);
+      }
       setCancelledNotice(null);
       setRunResult(null);
       setRunMode("running");
@@ -1675,31 +1733,17 @@ export function FmeaTool() {
               onApplyRecommendation={(canonical, suggested) =>
                 setMappingOverrides((current) => ({ ...current, [canonical]: suggested }))
               }
-              onApplyAllSuggestions={() => {
-                setMappingOverrides((current) => {
-                  const next = { ...current };
-                  for (const row of effectiveMappings) {
-                    const mapped = next[row.canonical] ?? row.mappedTo;
-                    if (row.recommendation && row.options.includes(row.recommendation) && row.recommendation !== mapped) {
-                      next[row.canonical] = row.recommendation;
-                    }
-                  }
-                  return next;
-                });
-              }}
-              onClearAllMappings={() => {
-                // "Clear all" is an explicit Do-Not-Map request — we set
-                // every row to the DO_NOT_MAP sentinel so the backend sees
-                // intentional unmapping rather than a blank mapping that
-                // could be silently auto-resolved. Phase 2 infra change.
-                setMappingOverrides(() => {
-                  const next: Record<string, string> = {};
-                  for (const row of effectiveMappings) {
-                    next[row.canonical] = DO_NOT_MAP_VALUE;
-                  }
-                  return next;
-                });
-              }}
+              onApplyAllSuggestions={() =>
+                setMappingOverrides((current) =>
+                  applyAllSuggestions(current, effectiveMappings),
+                )
+              }
+              onClearAllMappings={() =>
+                // "Clear all" is an explicit Do-Not-Map request — every row
+                // gets the sentinel so the backend sees intentional
+                // unmapping rather than a blank mapping.
+                setMappingOverrides(() => clearAllMappings(effectiveMappings))
+              }
             />
           </SectionCard>
         </div>
@@ -1757,6 +1801,7 @@ export function FmeaTool() {
                   setRunMode("idle");
                   setRunIndex(-1);
                   setRunResult(null);
+                  mirrorMockRunCancelled("dark_star_fmea", mockRunIdRef.current);
                   setCancelledNotice("Demo run cancelled. The workspace returned to a safe idle state without losing context.");
                 }}
               />

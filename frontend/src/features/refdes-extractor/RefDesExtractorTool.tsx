@@ -14,10 +14,17 @@ import { OptionsField } from "../../components/primitives/OptionsField";
 import { OptionsSection } from "../../components/primitives/OptionsSection";
 import { OutputFolderPicker } from "../../components/OutputFolderPicker";
 import { ToggleChip } from "../../components/primitives/ToggleChip";
+import { Tooltip } from "../../components/primitives/Tooltip";
 import { CaretDown, CaretRight, Info, MagnifyingGlass } from "@phosphor-icons/react";
 import {
   refdesDemoScenarios,
 } from "../../mocks/scenarios";
+import {
+  mirrorMockRunCancelled,
+  mirrorMockRunEvent,
+  mirrorMockRunStart,
+  mirrorMockRunTerminal,
+} from "../../shared/backend/mockRunMirror";
 import type {
   FileRole,
   InputFileState,
@@ -108,16 +115,16 @@ const OPTION_TOOLTIPS: Record<string, string> = {
     "When a pinlist is provided, prefer fast annotation-first pin qualification over full geometry.",
 };
 
-// Minimal accessible hover-tooltip affordance. No dedicated tooltip primitive
-// exists in components/primitives, so this reuses the project's established
-// pattern: a Phosphor ``Info`` icon (as in MappingTable) carrying a native
-// ``title`` (hover tooltip) plus an ``aria-label`` (screen-reader text). It is
-// non-interactive by design — never triggers a native alert/confirm.
+// ⓘ affordance backed by the shared Tooltip primitive: styled surface,
+// instant-ish hover, and keyboard reachability (the trigger is a real
+// button, so focus shows the tooltip — native `title` never did).
 function InfoTip({ text }: { text: string }) {
   return (
-    <span className="refdes-infotip" role="img" aria-label={text} title={text}>
-      <Info size={14} weight="regular" aria-hidden="true" />
-    </span>
+    <Tooltip content={text}>
+      <button type="button" className="refdes-infotip" aria-label={text}>
+        <Info size={14} weight="regular" aria-hidden="true" />
+      </button>
+    </Tooltip>
   );
 }
 
@@ -193,6 +200,9 @@ export function RefDesExtractorTool() {
   // launch a second run whose rejection (single-active-run guard) would clear
   // the first, live run's session.
   const isStartingRef = useRef(false);
+  // Synthetic run id for mirroring browser-mock runs into the shared
+  // run store (Review drawer, Global Log, cross-tool guard surfaces).
+  const mockRunIdRef = useRef<string | null>(null);
   const isValidatingRef = useRef(false);
   const runConfigurationEpochRef = useRef(0);
   const setBackendState = useShellStore((state) => state.setBackendState);
@@ -240,8 +250,15 @@ export function RefDesExtractorTool() {
     return roles;
   }, [options.extraction_mode]);
 
+  // Stamp `required` per backend truth (refdes_extractor/runtime.py:
+  // pdf is required, bom/pinlist optional). The Run rail's "Inputs
+  // loaded" readiness row and InputGrid's required markers read it —
+  // without the stamp the rail reported a green "0 / 0".
   const visibleInputs = useMemo(
-    () => inputStates.filter((i) => inputRoles.includes(i.role as FileRole)),
+    () =>
+      inputStates
+        .filter((i) => inputRoles.includes(i.role as FileRole))
+        .map((input) => ({ ...input, required: input.role === "pdf" })),
     [inputStates, inputRoles],
   );
 
@@ -261,19 +278,56 @@ export function RefDesExtractorTool() {
 
     if (runIndex >= events.length - 1) {
       const resultTimer = window.setTimeout(() => {
-        setRunResult(baseScenario.runSequence.result);
-        setRunMode(baseScenario.runSequence.result.status);
+        // The fixture's notes are static — restate backend + extraction
+        // mode from the options actually selected so a Piece-Part run
+        // never reports "Extraction mode: functional."
+        const fixture = baseScenario.runSequence.result;
+        const result = {
+          ...fixture,
+          notes: fixture.notes.map((note) => {
+            if (note.startsWith("Backend:")) {
+              return `Backend: ${
+                options.backend_mode === "auto" ? "nextgen" : options.backend_mode
+              }.`;
+            }
+            if (note.startsWith("Extraction mode:")) {
+              return `Extraction mode: ${
+                options.extraction_mode === "piece_part"
+                  ? "piece-part"
+                  : "functional"
+              }.`;
+            }
+            return note;
+          }),
+        };
+        setRunResult(result);
+        setRunMode(result.status);
+        mirrorMockRunTerminal("refdes_extractor", mockRunIdRef.current, result);
       }, 520);
 
       return () => window.clearTimeout(resultTimer);
     }
 
     const timer = window.setTimeout(() => {
+      const nextTemplate = events[runIndex + 1];
       setRunIndex((current) => current + 1);
+      if (nextTemplate) {
+        mirrorMockRunEvent("refdes_extractor", mockRunIdRef.current, nextTemplate);
+        if (nextTemplate.logs?.length) {
+          setRunLogLines((current) => [...current, ...(nextTemplate.logs ?? [])]);
+        }
+      }
     }, 520);
 
     return () => window.clearTimeout(timer);
-  }, [runIndex, runMode, runTemplates, baseScenario.runSequence.result]);
+  }, [
+    runIndex,
+    runMode,
+    runTemplates,
+    baseScenario.runSequence.result,
+    options.backend_mode,
+    options.extraction_mode,
+  ]);
 
   const timeline = useMemo(() => buildTimeline(runMode, runIndex, runTemplates), [runIndex, runMode, runTemplates]);
   const progress =
@@ -542,8 +596,13 @@ export function RefDesExtractorTool() {
 
   async function handleStartRun() {
     if (backendClient.runtimeMode !== "desktop-bridge") {
+      const firstEvent = baseScenario.runSequence.events[0];
+      mockRunIdRef.current = mirrorMockRunStart("refdes_extractor");
       setRunTemplates(baseScenario.runSequence.events);
-      setRunLogLines([]);
+      setRunLogLines(firstEvent?.logs ?? []);
+      if (firstEvent) {
+        mirrorMockRunEvent("refdes_extractor", mockRunIdRef.current, firstEvent);
+      }
       setCancelledNotice(null);
       setRunResult(null);
       setRunMode("running");
@@ -665,6 +724,7 @@ export function RefDesExtractorTool() {
     setRunMode("idle");
     setRunIndex(-1);
     setRunResult(null);
+    mirrorMockRunCancelled("refdes_extractor", mockRunIdRef.current);
     setCancelledNotice("Demo run cancelled. The workspace returned to a safe idle state.");
   }
 
@@ -873,22 +933,6 @@ export function RefDesExtractorTool() {
                   aria-expanded={advancedOpen}
                   aria-controls="refdes-advanced-panel"
                   onClick={() => setAdvancedOpen((open) => !open)}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "var(--space-2)",
-                    appearance: "none",
-                    border: "none",
-                    background: "transparent",
-                    padding: "var(--space-1) 0",
-                    color: "var(--text-secondary)",
-                    fontFamily: "inherit",
-                    fontSize: "var(--text-xs)",
-                    fontWeight: "var(--weight-semibold)",
-                    letterSpacing: "var(--tracking-uppercase)",
-                    textTransform: "uppercase",
-                    cursor: "pointer",
-                  }}
                 >
                   {advancedOpen ? (
                     <CaretDown size={12} weight="bold" />
@@ -901,8 +945,7 @@ export function RefDesExtractorTool() {
                 {advancedOpen ? (
                   <div
                     id="refdes-advanced-panel"
-                    className="options-section__grid"
-                    style={{ marginTop: "var(--space-3)" }}
+                    className="options-section__grid refdes-advanced__panel"
                   >
                     <OptionRow info={OPTION_TOOLTIPS.geometry_subprocess_enabled}>
                       <CheckboxField

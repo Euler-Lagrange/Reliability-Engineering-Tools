@@ -21,6 +21,34 @@ export interface RunReadinessItem {
   tone?: "ok" | "warn" | "bad";
 }
 
+/**
+ * Split a metric string like "216 planned rows" into a leading figure
+ * ("216") and its caption ("planned rows") so the result card can
+ * typeset a proper stat tile — big tabular numeral, small label —
+ * instead of wrapping the whole phrase at one size over three lines.
+ * Strings that don't lead with a figure render unsplit at body size.
+ */
+export function splitMetric(text: string): { value: string; caption: string } {
+  const match = text.match(/^(\S*\d\S*)\s+(.+)$/);
+  if (!match) {
+    return { value: text, caption: "" };
+  }
+  return { value: match[1], caption: match[2] };
+}
+
+function MetricValue({ text, hero = false }: { text: string; hero?: boolean }) {
+  const { value, caption } = splitMetric(text);
+  if (!caption) {
+    return <strong className={hero ? "hero-metric" : undefined}>{text}</strong>;
+  }
+  return (
+    <>
+      <strong className={hero ? "hero-metric" : undefined}>{value}</strong>
+      <span className="run-result__metric-caption">{caption}</span>
+    </>
+  );
+}
+
 interface RunStatePanelProps {
   runMode: RunMode;
   progress: number;
@@ -401,11 +429,11 @@ export function RunStatePanel({
           <div className="run-result__metrics">
             <div className="run-result__metric">
               <span>Primary</span>
-              <strong className="hero-metric">{result.primaryMetric}</strong>
+              <MetricValue text={result.primaryMetric} hero />
             </div>
             <div className="run-result__metric">
               <span>Secondary</span>
-              <strong>{result.secondaryMetric}</strong>
+              <MetricValue text={result.secondaryMetric} />
             </div>
           </div>
           <ul className="run-result__notes">

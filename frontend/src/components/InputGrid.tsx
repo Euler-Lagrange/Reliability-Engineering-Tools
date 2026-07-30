@@ -173,18 +173,25 @@ export function InputGrid({
                 onChange={(event) => onNicknameChange(input.role, event.target.value)}
               />
             ) : null}
-            <div className="sheet-picker">
-              <label>Sheet</label>
-              <CustomSelect
-                label={`${input.label} sheet`}
-                value={input.selectedSheet}
-                options={input.sheets.map((sheet) => ({ value: sheet.label, label: sheet.label }))}
-                disabled={sheetDisabled}
-                disabledReason={sheetDisabledReason}
-                variant="quiet"
-                onChange={(sheet) => onSheetChange?.(input.role, sheet)}
-              />
-            </div>
+            {input.role === "pdf" ? (
+              /* PDFs have no sheets — a permanently-disabled empty "Sheet"
+                 dropdown reads as breakage. Keep the cell (hidden) so the
+                 Browse buttons stay column-aligned across stacked cards. */
+              <div className="sheet-picker sheet-picker--none" aria-hidden="true" />
+            ) : (
+              <div className="sheet-picker">
+                <label>Sheet</label>
+                <CustomSelect
+                  label={`${input.label} sheet`}
+                  value={input.selectedSheet}
+                  options={input.sheets.map((sheet) => ({ value: sheet.label, label: sheet.label }))}
+                  disabled={sheetDisabled}
+                  disabledReason={sheetDisabledReason}
+                  variant="quiet"
+                  onChange={(sheet) => onSheetChange?.(input.role, sheet)}
+                />
+              </div>
+            )}
             <button
               type="button"
               className="ghost-button ghost-button--sm"

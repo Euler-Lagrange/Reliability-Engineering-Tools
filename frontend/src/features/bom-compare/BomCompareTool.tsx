@@ -34,6 +34,16 @@ import type {
 import { DO_NOT_MAP_VALUE } from "../../app/types";
 import { backendClient, type RunRequestBody } from "../../shared/backend/client";
 import { deriveMappingRows } from "../../shared/mapping/deriveMappingRows";
+import {
+  applyAllSuggestions,
+  clearAllMappings,
+} from "../../shared/mapping/mappingBulkActions";
+import {
+  mirrorMockRunCancelled,
+  mirrorMockRunEvent,
+  mirrorMockRunStart,
+  mirrorMockRunTerminal,
+} from "../../shared/backend/mockRunMirror";
 import { buildWorkbookColumnUnion } from "../fmea/mappingAnalysis";
 import { describeBackendError } from "../../shared/backend/cancelError";
 import { parentDirectoryForPath } from "../../shared/backend/fileManager";
@@ -183,12 +193,9 @@ function sanitizeInterruptedInput(input: InputFileState): InputFileState {
  * labelling (which rendered lowercase "ignore dnp", "check fmr", ...). Keyed by
  * the option key so the render loop below can look each one up.
  *
- * Two entries carry NO descriptive `hint` here on purpose:
- *   - `treat_prov_as_covered` — its only hint is the MODE-GATING one computed in
- *     the render loop ("Group vs BOM mode only" / "BOM compare modes only"),
- *     preserved exactly as before.
- *   - `base_match` keeps its verbatim prefix-matching hint (unchanged wording).
- * In every mode the mode-gating hint (when present) still wins over the
+ * `base_match` keeps its verbatim prefix-matching hint (unchanged wording).
+ * In every mode the mode-gating hint computed in the render loop ("Group
+ * vs BOM mode only" / "BOM compare modes only") still wins over the
  * descriptive hint below — an inert control must explain WHY it is inert
  * (Wiring Invariant #2), not show its normal description.
  */
@@ -211,6 +218,9 @@ const OPTION_META: Record<string, { label: string; hint?: string }> = {
   },
   treat_prov_as_covered: {
     label: "Treat PROV as covered",
+    // The one option that shipped with no descriptive hint — every
+    // sibling has one, and a bare checkbox label reads as unfinished.
+    hint: "Count provisional (PROV) groupings as covered when checking coverage.",
   },
   base_match: {
     label: "Loose prefix base match",
@@ -220,6 +230,11 @@ const OPTION_META: Record<string, { label: string; hint?: string }> = {
 
 export function BomCompareTool() {
   const baseScenario = bomCompareDemoScenarios[0];
+  // Every workflow has its own fixture (inputs AND runSequence) — the
+  // replay must never fall back to the Group-vs-BOM result for Custom /
+  // Extraction Compare runs.
+  const scenarioForWorkflow = (target: WorkflowId) =>
+    bomCompareDemoScenarios.find((s) => s.workflowId === target) ?? baseScenario;
   const [workflowId, setWorkflowId] = useState<WorkflowId>(baseScenario.workflowId);
   const [inputStates, setInputStates] = useState<InputFileState[]>(() =>
     seedInputsForRuntime(baseScenario.inputs),
@@ -279,6 +294,9 @@ export function BomCompareTool() {
   // launch a second run whose rejection (single-active-run guard) would clear
   // the first, live run's session.
   const isStartingRef = useRef(false);
+  // Synthetic run id for mirroring browser-mock runs into the shared
+  // run store (Review drawer, Global Log, cross-tool guard surfaces).
+  const mockRunIdRef = useRef<string | null>(null);
   const isValidatingRef = useRef(false);
   const runConfigurationEpochRef = useRef(0);
   const setBackendState = useShellStore((state) => state.setBackendState);
@@ -462,7 +480,9 @@ export function BomCompareTool() {
       }
       setRunMode("idle");
       setRunIndex(-1);
-      setRunTemplates(baseScenario.runSequence.events);
+      // Per-workflow demo timeline — Custom / Extraction Compare replay
+      // their own fixtures, not the Group-vs-BOM one.
+      setRunTemplates(scenarioForWorkflow(workflowId).runSequence.events);
       setRunResult(null);
       setRunLogLines([]);
       setCancelledNotice(null);
@@ -489,27 +509,44 @@ export function BomCompareTool() {
 
     if (runIndex >= events.length - 1) {
       const resultTimer = window.setTimeout(() => {
-        setRunResult(baseScenario.runSequence.result);
-        setRunMode(baseScenario.runSequence.result.status);
+        // Per-workflow result: an Extraction Compare run must report the
+        // extraction diff, not the Group-vs-BOM fixture.
+        const result = scenarioForWorkflow(workflowId).runSequence.result;
+        setRunResult(result);
+        setRunMode(result.status);
+        mirrorMockRunTerminal("bom_compare", mockRunIdRef.current, result);
       }, 520);
 
       return () => window.clearTimeout(resultTimer);
     }
 
     const timer = window.setTimeout(() => {
+      const nextTemplate = events[runIndex + 1];
       setRunIndex((current) => current + 1);
+      if (nextTemplate) {
+        mirrorMockRunEvent("bom_compare", mockRunIdRef.current, nextTemplate);
+        if (nextTemplate.logs?.length) {
+          setRunLogLines((current) => [...current, ...(nextTemplate.logs ?? [])]);
+        }
+      }
     }, 520);
 
     return () => window.clearTimeout(timer);
-  }, [runIndex, runMode, runTemplates, baseScenario.runSequence.result]);
+  }, [runIndex, runMode, runTemplates, workflowId]);
 
-  // Compute visible inputs from current workflow
+  // Compute visible inputs from current workflow. Every visible role is
+  // required in every BOM Compare workflow (backend truth:
+  // bom_compare/runtime.py REQUIRED_ROLES), so stamp `required` here —
+  // the Run rail's "Inputs loaded" readiness row and InputGrid's
+  // required markers both read it, and un-stamped rows made the rail
+  // report a green "0 / 0" no matter what was loaded.
   const roles = workflowInputRoles[workflowId] ?? [];
   const visibleInputs = useMemo(
     () =>
       roles
         .map((role) => inputStates.find((input) => input.role === role))
-        .filter((input): input is InputFileState => Boolean(input)),
+        .filter((input): input is InputFileState => Boolean(input))
+        .map((input) => ({ ...input, required: true })),
     [inputStates, roles],
   );
 
@@ -982,8 +1019,14 @@ export function BomCompareTool() {
 
   async function handleStartRun() {
     if (backendClient.runtimeMode !== "desktop-bridge") {
-      setRunTemplates(baseScenario.runSequence.events);
-      setRunLogLines([]);
+      const scenario = scenarioForWorkflow(workflowId);
+      const firstEvent = scenario.runSequence.events[0];
+      mockRunIdRef.current = mirrorMockRunStart("bom_compare");
+      setRunTemplates(scenario.runSequence.events);
+      setRunLogLines(firstEvent?.logs ?? []);
+      if (firstEvent) {
+        mirrorMockRunEvent("bom_compare", mockRunIdRef.current, firstEvent);
+      }
       setCancelledNotice(null);
       setRunResult(null);
       setRunMode("running");
@@ -1035,7 +1078,7 @@ export function BomCompareTool() {
       if (!validation.ok) {
         setRunMode("idle");
         setRunIndex(-1);
-        setRunTemplates(baseScenario.runSequence.events);
+        setRunTemplates(scenarioForWorkflow(workflowId).runSequence.events);
         resetDesktopRunSession();
         setBackendState({
           backendStatus: "ready",
@@ -1051,7 +1094,7 @@ export function BomCompareTool() {
         return;
       }
 
-      setRunTemplates(baseScenario.runSequence.events);
+      setRunTemplates(scenarioForWorkflow(workflowId).runSequence.events);
       setBackendState({
         backendStatus: "busy",
         backendMode: validation.mode,
@@ -1105,6 +1148,7 @@ export function BomCompareTool() {
     setRunMode("idle");
     setRunIndex(-1);
     setRunResult(null);
+    mirrorMockRunCancelled("bom_compare", mockRunIdRef.current);
     setCancelledNotice("Demo run cancelled. The workspace returned to a safe idle state.");
   }
 
@@ -1268,40 +1312,29 @@ export function BomCompareTool() {
                 onApplyRecommendation={(canonical, suggested) =>
                   setMappingOverrides((current) => ({ ...current, [canonical]: suggested }))
                 }
-                onApplyAllSuggestions={() => {
-                  setMappingOverrides((current) => {
-                    const next = { ...current };
-                    for (const row of mappingRows) {
-                      const mapped = next[row.canonical] ?? row.mappedTo;
-                      if (
-                        row.recommendation &&
-                        row.options.includes(row.recommendation) &&
-                        row.recommendation !== mapped
-                      ) {
-                        next[row.canonical] = row.recommendation;
-                      }
-                    }
-                    return next;
-                  });
-                }}
-                onClearAllMappings={() => {
-                  // "Clear all" is an explicit Do-Not-Map request; see
-                  // MappingTable Phase 2 comment. Sets every row to the
-                  // sentinel so the backend can distinguish intentional
-                  // unmapping from missing defaults.
-                  setMappingOverrides(() => {
-                    const next: Record<string, string> = {};
-                    for (const row of mappingRows) {
-                      next[row.canonical] = DO_NOT_MAP_VALUE;
-                    }
-                    return next;
-                  });
-                }}
+                onApplyAllSuggestions={() =>
+                  setMappingOverrides((current) =>
+                    applyAllSuggestions(current, mappingRows),
+                  )
+                }
+                onClearAllMappings={() =>
+                  // "Clear all" is an explicit Do-Not-Map request — every
+                  // row gets the sentinel so the backend can distinguish
+                  // intentional unmapping from missing defaults.
+                  setMappingOverrides(() => clearAllMappings(mappingRows))
+                }
               />
             </SectionCard>
             ) : null}
 
-            <OptionsSection variant="bare" step={4} title="Options">
+            {/* Step numbers follow the VISIBLE sections: Extraction
+                Compare hides the mapping card, so Options is 03 there —
+                a hardcoded 4 rendered a 01/02/04 spine. */}
+            <OptionsSection
+              variant="bare"
+              step={workflowId !== "extraction_compare" ? 4 : 3}
+              title="Options"
+            >
               {Object.entries(options).map(([key, value]) => {
                 // treat_prov_as_covered keys off the grouping file's
                 // group-name column ("PROV" groups), which a two-BOM custom

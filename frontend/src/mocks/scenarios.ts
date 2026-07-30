@@ -4,6 +4,7 @@ import type {
   FileRole,
   InputFileState,
   OutputStrategy,
+  OutputStrategyId,
   ValidationMessage,
   WorkflowId,
   WorkflowOption,
@@ -251,30 +252,38 @@ const successEvents = [
     title: "Resolve sheets and profile",
     detail: "Mapped workbook inputs against the selected column profile.",
     progress: 18,
+    logs: [
+      "Opened Grouping workbook — sheet 'Grouping' resolved.",
+      "Opened BOM workbook — sheet 'Main BOM' (216 rows).",
+    ],
   },
   {
     id: "event-2",
     title: "Normalize source columns",
     detail: "Applied canonical names and preserved manual overrides.",
     progress: 34,
+    logs: ["Canonicalized 12 source columns (1 manual override preserved)."],
   },
   {
     id: "event-3",
     title: "Generate base rows",
     detail: "Built piece-part candidates and grouped them by canonical IDs.",
     progress: 58,
+    logs: ["Generated 216 piece-part candidate rows across 34 canonical groups."],
   },
   {
     id: "event-4",
     title: "Apply enrichments",
     detail: "Copied safe effect fields from optional source FMEAs.",
     progress: 77,
+    logs: ["Enriched 87 rows with effect fields from source FMEAs."],
   },
   {
     id: "event-5",
     title: "Plan workbook output",
     detail: "Prepared a formatting-preserved update plan against the selected template.",
     progress: 92,
+    logs: ["Planned workbook output — 6 sheets, formatting preserved."],
   },
 ];
 
@@ -284,18 +293,23 @@ const failureEvents = [
     title: "Resolve sheets and profile",
     detail: "Loaded target workbook metadata and planned the update scope.",
     progress: 20,
+    logs: ["Opened target workbook — 6 sheets, 2 protected."],
   },
   {
     id: "event-f2",
     title: "Generate gap rows",
     detail: "Detected missing piece-part rows from the existing FMEA workbook.",
     progress: 47,
+    logs: ["Detected 14 missing piece-part rows."],
   },
   {
     id: "event-f3",
     title: "Inspect workbook constraints",
     detail: "Template analysis found a protected sheet that the output copy will modify without a password.",
     progress: 71,
+    logs: [
+      "BLOCKED: protected sheet 'FMEA' would be modified without a password.",
+    ],
   },
 ];
 
@@ -329,9 +343,14 @@ export const demoScenarios: DemoScenario[] = [
         status: "success",
         title: "Prototype run completed",
         summary: "216 output rows were planned with one manual column review still visible in the UI.",
-        outputFile: "MergedFMEA_Standard_20260403_101200.xlsx",
+        // Workflow-stem contract (2026-07-20): PiecePartFMEA_* for every
+        // generation workflow — MergedFMEA_* belongs to fill_gaps only.
+        outputFile: "PiecePartFMEA_Standard_20260403_101200.xlsx",
         primaryMetric: "216 planned rows",
-        secondaryMetric: "92% auto-mapped",
+        // Must agree with the staged mapping table (10 mapped · 1 derived
+        // · 1 unmapped) — a "92% auto-mapped" chip beside an unmapped
+        // required row read as a contradiction.
+        secondaryMetric: "10 of 12 auto-mapped",
         notes: ["No backend work was executed.", "Workbook output is illustrative only."],
       },
     },
@@ -341,7 +360,7 @@ export const demoScenarios: DemoScenario[] = [
     label: "Fill Gaps",
     description: "Delta-oriented scenario that reads an existing FMEA and targets only missing piece-part rows.",
     workflowId: "fill_gaps",
-    outputStrategyId: "existing_workbook_preserve_formatting",
+    outputStrategyId: "new_workbook_standard",
     inputs: allPrototypeInputs,
     mappings: [],
     validations: [
@@ -359,11 +378,14 @@ export const demoScenarios: DemoScenario[] = [
       result: {
         status: "success",
         title: "Gap-fill simulation completed",
-        summary: "14 missing rows were identified and staged into a workbook copy plan.",
-        outputFile: "Customer_FMEA_Merged_20260403_103500.xlsx",
+        summary: "14 missing rows were identified and merged into a new workbook plan.",
+        // MergedFMEA_FillGaps_* is the fill_gaps new-workbook stem
+        // (workflow-stem contract 2026-07-20; the in-app User Guide
+        // documents the same names).
+        outputFile: "MergedFMEA_FillGaps_20260403_103500.xlsx",
         primaryMetric: "14 gap rows",
         secondaryMetric: "2 workbook notes",
-        notes: ["Preserve-formatting path shown.", "No file was written."],
+        notes: ["New-workbook merge shown.", "No file was written."],
       },
     },
   },
@@ -402,7 +424,10 @@ export const demoScenarios: DemoScenario[] = [
     id: "warning-heavy",
     label: "Warning Heavy",
     description: "Stress case for validation density, manual review, and high-visibility diagnostic messaging.",
-    workflowId: "piece_part_generate",
+    // Reachable slot: BOM-Only mode + Existing Workbook strategy. Every
+    // fixture must map to a (workflow, strategy) pair the UI can select
+    // — this one was previously shadowed by preserve-formatting.
+    workflowId: "bom_only",
     outputStrategyId: "existing_workbook_preserve_formatting",
     inputs: allPrototypeInputs,
     mappings: [],
@@ -425,7 +450,9 @@ export const demoScenarios: DemoScenario[] = [
     id: "success-run",
     label: "Success Run",
     description: "Focused run-state demo that ends in a successful workbook plan summary.",
-    workflowId: "piece_part_generate",
+    // Reachable slot: Merge Functional mode + Existing Workbook strategy
+    // (previously shadowed by preserve-formatting).
+    workflowId: "functional_to_piecepart",
     outputStrategyId: "existing_workbook_preserve_formatting",
     inputs: allPrototypeInputs,
     mappings: [],
@@ -475,7 +502,96 @@ export const demoScenarios: DemoScenario[] = [
       },
     },
   },
+  {
+    id: "functional-to-piecepart",
+    label: "Merge Functional",
+    description: "Functional-level FMEA expanded into piece-part rows via group-level union merge.",
+    workflowId: "functional_to_piecepart",
+    outputStrategyId: "new_workbook_standard",
+    inputs: allPrototypeInputs,
+    mappings: [],
+    validations: [
+      {
+        id: "v-5",
+        severity: "info",
+        area: "Preview",
+        title: "Example preview seeded",
+        detail:
+          "Preview rows below come from the demo scenario. Live mapping status appears under Column Mapping.",
+      },
+    ],
+    previewRows,
+    runSequence: {
+      events: successEvents,
+      result: {
+        status: "success",
+        title: "Functional expansion completed",
+        summary: "Functional-level rows were expanded into piece-part rows using group-level union merge.",
+        outputFile: "PiecePartFMEA_FromFunctional_20260403_104900.xlsx",
+        primaryMetric: "182 planned rows",
+        secondaryMetric: "24 functions expanded",
+        notes: ["No backend work was executed.", "Workbook output is illustrative only."],
+      },
+    },
+  },
+  {
+    id: "bom-only",
+    label: "BOM Only",
+    description: "Minimal piece-part build from just a BOM and failure modes under one CCA identifier.",
+    workflowId: "bom_only",
+    outputStrategyId: "new_workbook_standard",
+    inputs: allPrototypeInputs,
+    mappings: [],
+    validations: [
+      {
+        id: "v-6",
+        severity: "info",
+        area: "Preview",
+        title: "Example preview seeded",
+        detail:
+          "Preview rows below come from the demo scenario. Live mapping status appears under Column Mapping.",
+      },
+    ],
+    previewRows,
+    runSequence: {
+      events: successEvents,
+      result: {
+        status: "success",
+        title: "BOM-only build completed",
+        summary: "Piece-part rows were generated for a single CCA from the BOM and failure-modes inputs.",
+        outputFile: "PiecePartFMEA_BomOnly_20260403_105900.xlsx",
+        primaryMetric: "148 planned rows",
+        secondaryMetric: "1 CCA prefix",
+        notes: [
+          "FMEA-IDs use the CCA identifier you entered as their prefix.",
+          "No backend work was executed.",
+        ],
+      },
+    },
+  },
 ];
+
+/**
+ * Resolve the FMEA demo scenario for a (workflow, output-strategy)
+ * pair. Every pair the UI can select maps to exactly one fixture, so
+ * the browser-mock replay shows workflow-correct events, result copy,
+ * and output-filename stems (the workflow-stem contract) instead of
+ * replaying `demoScenarios[0]` for every mode.
+ */
+export function resolveFmeaDemoScenario(
+  workflowId: WorkflowId,
+  outputStrategyId: OutputStrategyId,
+): DemoScenario {
+  return (
+    demoScenarios.find(
+      (scenario) =>
+        scenario.workflowId === workflowId &&
+        scenario.outputStrategyId === outputStrategyId,
+    ) ??
+    demoScenarios.find((scenario) => scenario.workflowId === workflowId) ??
+    demoScenarios[0]
+  );
+}
 
 export const bomCompareInputs: Record<string, InputFileState> = {
   grouping: {
@@ -669,9 +785,27 @@ export const bomCompareDemoScenarios: DemoScenario[] = [
     previewRows: [],
     runSequence: {
       events: [
-        { id: "bc-1", title: "Read input files", detail: "Loading grouping and BOM workbooks.", progress: 15 },
-        { id: "bc-2", title: "Run comparison", detail: "Comparing RefDes coverage between files.", progress: 60 },
-        { id: "bc-3", title: "Write report", detail: "Writing Excel comparison report.", progress: 100 },
+        {
+          id: "bc-1",
+          title: "Read input files",
+          detail: "Loading grouping and BOM workbooks.",
+          progress: 15,
+          logs: ["Loaded grouping workbook (34 groups) and BOM (216 rows)."],
+        },
+        {
+          id: "bc-2",
+          title: "Run comparison",
+          detail: "Comparing RefDes coverage between files.",
+          progress: 60,
+          logs: ["Compared 216 base RefDes — 3 missing in BOM, 1 extra."],
+        },
+        {
+          id: "bc-3",
+          title: "Write report",
+          detail: "Writing Excel comparison report.",
+          progress: 100,
+          logs: ["Wrote comparison report — 4 sheets."],
+        },
       ],
       result: {
         status: "success",
@@ -704,9 +838,27 @@ export const bomCompareDemoScenarios: DemoScenario[] = [
     previewRows: [],
     runSequence: {
       events: [
-        { id: "bcc-1", title: "Read input files", detail: "Loading both BOM workbooks.", progress: 15 },
-        { id: "bcc-2", title: "Run comparison", detail: "Diffing RefDes keys between File 1 and File 2.", progress: 60 },
-        { id: "bcc-3", title: "Write report", detail: "Writing Excel comparison report.", progress: 100 },
+        {
+          id: "bcc-1",
+          title: "Read input files",
+          detail: "Loading both BOM workbooks.",
+          progress: 15,
+          logs: ["Loaded File 1 (198 rows) and File 2 (203 rows)."],
+        },
+        {
+          id: "bcc-2",
+          title: "Run comparison",
+          detail: "Diffing RefDes keys between File 1 and File 2.",
+          progress: 60,
+          logs: ["Diffed RefDes keys — 5 only in File 1, 2 only in File 2."],
+        },
+        {
+          id: "bcc-3",
+          title: "Write report",
+          detail: "Writing Excel comparison report.",
+          progress: 100,
+          logs: ["Wrote comparison report — 3 sheets."],
+        },
       ],
       result: {
         status: "success",
@@ -739,9 +891,27 @@ export const bomCompareDemoScenarios: DemoScenario[] = [
     previewRows: [],
     runSequence: {
       events: [
-        { id: "exc-1", title: "Read input files", detail: "Loading both extraction workbooks.", progress: 15 },
-        { id: "exc-2", title: "Compare extractions", detail: "Diffing component groups between revisions.", progress: 60 },
-        { id: "exc-3", title: "Write report", detail: "Writing Excel comparison report.", progress: 100 },
+        {
+          id: "exc-1",
+          title: "Read input files",
+          detail: "Loading both extraction workbooks.",
+          progress: 15,
+          logs: ["Loaded rev A (244 components) and rev B (246 components)."],
+        },
+        {
+          id: "exc-2",
+          title: "Compare extractions",
+          detail: "Diffing component groups between revisions.",
+          progress: 60,
+          logs: ["Diffed groups — 3 appeared, 1 disappeared, 2 moved."],
+        },
+        {
+          id: "exc-3",
+          title: "Write report",
+          detail: "Writing Excel comparison report.",
+          progress: 100,
+          logs: ["Wrote extraction-compare report — 4 sheets."],
+        },
       ],
       result: {
         status: "success",
@@ -860,9 +1030,27 @@ export const failureRateDemoScenarios: DemoScenario[] = [
     previewRows: [],
     runSequence: {
       events: [
-        { id: "fr-1", title: "Load input files", detail: "Loading prediction and FMEA workbooks.", progress: 10 },
-        { id: "fr-2", title: "Link failure rates", detail: "Matching prediction rates to FMEA failure modes.", progress: 70 },
-        { id: "fr-3", title: "Write report", detail: "Writing Excel output with linked rates.", progress: 100 },
+        {
+          id: "fr-1",
+          title: "Load input files",
+          detail: "Loading prediction and FMEA workbooks.",
+          progress: 10,
+          logs: ["Loaded prediction (1512 rows) and FMEA (1500 rows)."],
+        },
+        {
+          id: "fr-2",
+          title: "Link failure rates",
+          detail: "Matching prediction rates to FMEA failure modes.",
+          progress: 70,
+          logs: ["Linked 1500 rows — 12 rows carried data-quality warnings."],
+        },
+        {
+          id: "fr-3",
+          title: "Write report",
+          detail: "Writing Excel output with linked rates.",
+          progress: 100,
+          logs: ["Wrote linked-rate workbook."],
+        },
       ],
       result: {
         status: "success",
@@ -871,6 +1059,9 @@ export const failureRateDemoScenarios: DemoScenario[] = [
         outputFile: "DRIVE\\outputs\\FailureRate_Link_20260406.xlsx",
         primaryMetric: "1500 rows",
         secondaryMetric: "12 warnings",
+        // Drives the warning-qualified success toast, mirroring the
+        // desktop controller's warning_count handling.
+        warningCount: 12,
         notes: ["Failure rate linking mode: matched prediction rates to FMEA failure modes."],
       },
     },
@@ -930,10 +1121,34 @@ export const refdesDemoScenarios: DemoScenario[] = [
     previewRows: [],
     runSequence: {
       events: [
-        { id: "rd-1", title: "Load input files", detail: "Loading BOM and pinlist.", progress: 8 },
-        { id: "rd-2", title: "Open PDF", detail: "Extracting annotations from schematic.", progress: 18 },
-        { id: "rd-3", title: "Extract components", detail: "Running adaptive geometry extraction.", progress: 90 },
-        { id: "rd-4", title: "Write report", detail: "Writing Excel results.", progress: 100 },
+        {
+          id: "rd-1",
+          title: "Load input files",
+          detail: "Loading BOM and pinlist.",
+          progress: 8,
+          logs: ["Loaded BOM — 251 component rows."],
+        },
+        {
+          id: "rd-2",
+          title: "Open PDF",
+          detail: "Extracting annotations from schematic.",
+          progress: 18,
+          logs: ["Opened schematic PDF — 42 pages, 12 group boxes."],
+        },
+        {
+          id: "rd-3",
+          title: "Extract components",
+          detail: "Running adaptive geometry extraction.",
+          progress: 90,
+          logs: ["Extracted 245 components (10 groups verified, 2 unverified)."],
+        },
+        {
+          id: "rd-4",
+          title: "Write report",
+          detail: "Writing Excel results.",
+          progress: 100,
+          logs: ["Wrote extraction workbook — 5 sheets."],
+        },
       ],
       result: {
         status: "success" as const,

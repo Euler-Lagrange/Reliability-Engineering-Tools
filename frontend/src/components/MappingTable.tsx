@@ -7,6 +7,7 @@ import {
   type MappingStatus,
 } from "../app/types";
 import { useEscapeLayer } from "../shared/hooks/useEscapeLayer";
+import { hasRestorableOverride } from "../shared/mapping/mappingBulkActions";
 import { CustomSelect } from "./CustomSelect";
 
 interface MappingTableProps {
@@ -156,6 +157,12 @@ export function MappingTable({
     const mapped = overrides[row.canonical] ?? row.mappedTo;
     return extractSuggestedValue(row, mapped) !== null;
   });
+  // "Apply all suggestions" must stay enabled after "Clear all
+  // mappings": the cleared rows carry no quoted-synonym suggestion
+  // text, but every override that hides an auto-match (or is the
+  // Do-Not-Map sentinel) is restorable by the bulk action.
+  const applyAllWouldChange =
+    hasAnySuggestion || hasRestorableOverride(overrides, rows);
   const hasAnyOverride = Object.keys(overrides).length > 0;
   const showToolbar =
     !!onApplyAllSuggestions || !!onClearAllMappings || unmappedCount > 0;
@@ -181,7 +188,10 @@ export function MappingTable({
   if (statusTotals.mapped) countSegments.push(`${statusTotals.mapped} mapped`);
   if (statusTotals.manual) countSegments.push(`${statusTotals.manual} manual`);
   if (statusTotals.derived) countSegments.push(`${statusTotals.derived} derived`);
-  if (unmappedCount > 0) countSegments.push(`${unmappedCount} unmapped`);
+  // "required" qualifier: the count deliberately covers required rows
+  // only (UX findings 2026-07-07 #3) — say so, or a fully-cleared table
+  // reads "5 unmapped" under 14 visibly unmapped rows.
+  if (unmappedCount > 0) countSegments.push(`${unmappedCount} required unmapped`);
 
   return (
     <div className="table-shell">
@@ -200,7 +210,7 @@ export function MappingTable({
             <button
               type="button"
               className="ghost-button ghost-button--sm"
-              disabled={!hasAnySuggestion}
+              disabled={!applyAllWouldChange}
               onClick={onApplyAllSuggestions}
             >
               Apply all suggestions
@@ -230,12 +240,25 @@ export function MappingTable({
         <tbody>
           {rows.map((row) => {
             const mappedValue = overrides[row.canonical] ?? row.mappedTo;
+            const hasExplicitOverride = Object.prototype.hasOwnProperty.call(
+              overrides,
+              row.canonical,
+            );
             const suggested = extractSuggestedValue(row, mappedValue);
             const displayStatus = resolveDisplayStatus(
               row,
               mappedValue,
-              Object.prototype.hasOwnProperty.call(overrides, row.canonical),
+              hasExplicitOverride,
             );
+            // The recommendation text describes the AUTO state — once the
+            // user overrides a row, keep the note truthful instead of
+            // showing "Exact header found…" beside a Do-Not-Map row.
+            const noteText =
+              hasExplicitOverride && mappedValue === DO_NOT_MAP_VALUE
+                ? "Excluded — Do Not Map selected."
+                : displayStatus === "manual"
+                  ? "Manually selected."
+                  : row.recommendation;
             const showUseRecommendation =
               !!onApplyRecommendation &&
               suggested !== null &&
@@ -332,8 +355,8 @@ export function MappingTable({
                 </td>
                 <td>
                   <div className="mapping-table__recommendation-cell">
-                    <span className="mapping-table__note" title={row.recommendation || undefined}>
-                      {row.recommendation}
+                    <span className="mapping-table__note" title={noteText || undefined}>
+                      {noteText}
                     </span>
                     {showUseRecommendation && suggested ? (
                       <button

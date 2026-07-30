@@ -29,6 +29,16 @@ import type {
 import { DO_NOT_MAP_VALUE } from "../../app/types";
 import { backendClient, type RunRequestBody } from "../../shared/backend/client";
 import { deriveMappingRows } from "../../shared/mapping/deriveMappingRows";
+import {
+  applyAllSuggestions,
+  clearAllMappings,
+} from "../../shared/mapping/mappingBulkActions";
+import {
+  mirrorMockRunCancelled,
+  mirrorMockRunEvent,
+  mirrorMockRunStart,
+  mirrorMockRunTerminal,
+} from "../../shared/backend/mockRunMirror";
 import { buildWorkbookColumnUnion } from "../fmea/mappingAnalysis";
 import { describeBackendError } from "../../shared/backend/cancelError";
 import { parentDirectoryForPath } from "../../shared/backend/fileManager";
@@ -100,6 +110,9 @@ export function FailureRateTool() {
   // can't launch a second run whose rejection (single-active-run guard) would
   // clear the first, live run's session.
   const isStartingRef = useRef(false);
+  // Synthetic run id for mirroring browser-mock runs into the shared
+  // run store (Review drawer, Global Log, cross-tool guard surfaces).
+  const mockRunIdRef = useRef<string | null>(null);
   const isValidatingRef = useRef(false);
   const runConfigurationEpochRef = useRef(0);
   const setBackendState = useShellStore((state) => state.setBackendState);
@@ -145,15 +158,24 @@ export function FailureRateTool() {
 
     if (runIndex >= events.length - 1) {
       const resultTimer = window.setTimeout(() => {
-        setRunResult(baseScenario.runSequence.result);
-        setRunMode(baseScenario.runSequence.result.status);
+        const result = baseScenario.runSequence.result;
+        setRunResult(result);
+        setRunMode(result.status);
+        mirrorMockRunTerminal("failure_rate", mockRunIdRef.current, result);
       }, 520);
 
       return () => window.clearTimeout(resultTimer);
     }
 
     const timer = window.setTimeout(() => {
+      const nextTemplate = events[runIndex + 1];
       setRunIndex((current) => current + 1);
+      if (nextTemplate) {
+        mirrorMockRunEvent("failure_rate", mockRunIdRef.current, nextTemplate);
+        if (nextTemplate.logs?.length) {
+          setRunLogLines((current) => [...current, ...(nextTemplate.logs ?? [])]);
+        }
+      }
     }, 520);
 
     return () => window.clearTimeout(timer);
@@ -501,8 +523,13 @@ export function FailureRateTool() {
 
   async function handleStartRun() {
     if (backendClient.runtimeMode !== "desktop-bridge") {
+      const firstEvent = baseScenario.runSequence.events[0];
+      mockRunIdRef.current = mirrorMockRunStart("failure_rate");
       setRunTemplates(baseScenario.runSequence.events);
-      setRunLogLines([]);
+      setRunLogLines(firstEvent?.logs ?? []);
+      if (firstEvent) {
+        mirrorMockRunEvent("failure_rate", mockRunIdRef.current, firstEvent);
+      }
       setCancelledNotice(null);
       setRunResult(null);
       setRunMode("running");
@@ -624,12 +651,17 @@ export function FailureRateTool() {
     setRunMode("idle");
     setRunIndex(-1);
     setRunResult(null);
+    mirrorMockRunCancelled("failure_rate", mockRunIdRef.current);
     setCancelledNotice("Demo run cancelled. The workspace returned to a safe idle state.");
   }
 
   // v2 N5-clone: Run-rail readiness + section meta derive from state the
-  // tool already tracks.
-  const requiredInputStates = inputStates.filter((input) => input.required);
+  // tool already tracks. Both roles are required (backend truth:
+  // failure_rate/runtime.py) — stamp `required` here so the readiness
+  // row and InputGrid's required markers see it; un-stamped rows made
+  // the rail report a green "0 / 0" no matter what was loaded.
+  const workflowInputs = inputStates.map((input) => ({ ...input, required: true }));
+  const requiredInputStates = workflowInputs.filter((input) => input.required);
   const loadedRequiredInputStates = requiredInputStates.filter((input) => !!input.path).length;
   const loadedInputStates = inputStates.filter((input) => !!input.path).length;
   const frMappingTotals = mappingRows.reduce(
@@ -712,7 +744,7 @@ export function FailureRateTool() {
                 />
               ) : (
                 <InputGrid
-                  inputs={inputStates}
+                  inputs={workflowInputs}
                   onBrowse={handleBrowse}
                   onSheetChange={handleSheetChange}
                   browseDisabledReason={fileInspectionDisabledReason}
@@ -756,35 +788,17 @@ export function FailureRateTool() {
                 onApplyRecommendation={(canonical, suggested) =>
                   setMappingOverrides((current) => ({ ...current, [canonical]: suggested }))
                 }
-                onApplyAllSuggestions={() => {
-                  setMappingOverrides((current) => {
-                    const next = { ...current };
-                    for (const row of mappingRows) {
-                      const mapped = next[row.canonical] ?? row.mappedTo;
-                      if (
-                        row.recommendation &&
-                        row.options.includes(row.recommendation) &&
-                        row.recommendation !== mapped
-                      ) {
-                        next[row.canonical] = row.recommendation;
-                      }
-                    }
-                    return next;
-                  });
-                }}
-                onClearAllMappings={() => {
-                  // "Clear all" is an explicit Do-Not-Map request; see
-                  // MappingTable Phase 2 comment. Sets every row to the
-                  // sentinel so the backend can distinguish intentional
-                  // unmapping from missing defaults.
-                  setMappingOverrides(() => {
-                    const next: Record<string, string> = {};
-                    for (const row of mappingRows) {
-                      next[row.canonical] = DO_NOT_MAP_VALUE;
-                    }
-                    return next;
-                  });
-                }}
+                onApplyAllSuggestions={() =>
+                  setMappingOverrides((current) =>
+                    applyAllSuggestions(current, mappingRows),
+                  )
+                }
+                onClearAllMappings={() =>
+                  // "Clear all" is an explicit Do-Not-Map request — every
+                  // row gets the sentinel so the backend can distinguish
+                  // intentional unmapping from missing defaults.
+                  setMappingOverrides(() => clearAllMappings(mappingRows))
+                }
               />
             </SectionCard>
 
