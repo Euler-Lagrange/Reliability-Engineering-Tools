@@ -66,7 +66,7 @@ npm run dev              # Vite dev server (browser preview mode)
 npm run build            # Production build
 npm run typecheck        # TypeScript type checking
 npm run typecheck:tests  # TypeScript type checking for Vitest files
-npm test                 # Vitest (403 tests)
+npm test                 # Vitest (406 tests)
 
 # Desktop (requires Rust toolchain)
 npm run tauri:dev        # Dev mode with hot reload
@@ -205,7 +205,7 @@ The audit runs:
 - `pytest.importorskip("fitz")` for RefDes tests requiring PyMuPDF
 - `backend/tests/conftest.py` installs a `sys.path` shim for in-process unit tests
 
-### Frontend Tests (403 total across 50 test files)
+### Frontend Tests (406 total across 51 test files)
 - Vitest + React Testing Library
 - Browser-mock mode (no Tauri runtime needed)
 - `src/app/App.test.tsx`
@@ -253,14 +253,15 @@ The audit runs:
 - `src/shared/hooks/useCopyToClipboard.test.ts`
 - `src/shared/mapping/deriveMappingRows.test.ts` (new in 0.4.6)
 - `src/shared/mapping/mappingBulkActions.test.ts` (new — 2026-07 review: Apply-all restores auto suggestions incl. the clear-all round-trip; Clear-all writes the Do-Not-Map sentinel on every row; the restorable-override gate)
-- `src/shared/backend/mockRunMirror.test.ts` (new — 2026-07 review: browser-mock runs mirror into the shared run store for the Review drawer, stream fixture logs to the Global Log, toast on completion with desktop-matching warning qualification, stale-runId guard)
+- `src/shared/backend/mockRunMirror.test.ts` (new — 2026-07 review: browser-mock runs mirror into the shared run store for the Review drawer, stream fixture logs to the Global Log, toast on completion with desktop-matching warning qualification, stale-runId guards symmetric across event/terminal/cancel)
+- `src/features/mockRunLifecycle.test.tsx` (new — QA sweep: a browser-mock demo run drives the shared stores end-to-end through success, and the cross-tool guard blocks a second tool's demo start instead of evicting the live run)
 - `src/shared/theme/themeRegistry.test.ts`
 - `src/stores/globalLogStore.test.ts`
 - `src/stores/notificationStore.test.ts` (new — toast eviction never drops the incoming)
 - `src/stores/storeMigrations.test.ts` (new — Decision E persist version/migration)
 
 Run `npx vitest run --config frontend/vite.config.ts --reporter=default` to
-see individual counts per file — the suite totals 403 tests and changes
+see individual counts per file — the suite totals 406 tests and changes
 whenever a suite gains or loses cases.
 
 ## Critical Gotchas

@@ -628,7 +628,15 @@ export function FmeaTool() {
   // validations here is correct — they may no longer apply to the new mode.
   useEffect(() => {
     startTransition(() => {
-      setValidations(initialValidations);
+      // Browser-mock: demo validations belong to the RESOLVED scenario —
+      // seeding demoScenarios[0]'s cards beside another workflow's
+      // events/result recreated the demo-contradiction class this
+      // fixture work removed (QA sweep 2026-07-30 finding #3).
+      setValidations(
+        IS_BROWSER_MOCK
+          ? resolveFmeaDemoScenario(workflowId, outputStrategyId).validations
+          : [],
+      );
       setMappingOverrides({});
       // Fix B2: inspection / analysis state is keyed by FileRole and is
       // NOT workflow-specific, so the previous
@@ -683,11 +691,13 @@ export function FmeaTool() {
       if (IS_BROWSER_MOCK) {
         // A strategy change can select a different demo fixture (e.g.
         // fill_gaps + preserve replays the failure fixture) — refresh the
-        // idle timeline to match. Desktop templates are strategy-agnostic.
-        setRunTemplates(
-          resolveFmeaDemoScenario(workflowId, outputStrategyId).runSequence
-            .events,
-        );
+        // idle timeline AND the demo validations to match. Desktop is
+        // untouched: the B-Strategy fix (preserving user validations on
+        // strategy change) applies to real validation output only, and
+        // these are fixture cards.
+        const scenario = resolveFmeaDemoScenario(workflowId, outputStrategyId);
+        setRunTemplates(scenario.runSequence.events);
+        setValidations(scenario.validations);
       }
       setRunResult(null);
       setRunLogLines([]);
@@ -1266,6 +1276,13 @@ export function FmeaTool() {
     }
 
     if (backendClient.runtimeMode !== "desktop-bridge") {
+      // Mirrored mock runs share the single-slot run store with desktop
+      // runs — honour the same cross-tool guard so a second tool's demo
+      // start can't evict a live run's Review-drawer state (QA sweep
+      // 2026-07-30 finding #1).
+      if (guardCrossToolRun()) {
+        return;
+      }
       // Per-workflow demo: replay the fixture that matches the selected
       // workflow + output strategy, and mirror the run into the shared
       // run store so the Review drawer / Global Log see it too.
@@ -1818,7 +1835,12 @@ export function FmeaTool() {
             >
               <ValidationPreview
                 validations={previewValidations}
-                previewRows={IS_BROWSER_MOCK ? baseScenario.previewRows : []}
+                previewRows={
+                  IS_BROWSER_MOCK
+                    ? resolveFmeaDemoScenario(workflowId, outputStrategyId)
+                        .previewRows
+                    : []
+                }
                 analysisCards={analysisCards}
               />
             </ErrorBoundary>

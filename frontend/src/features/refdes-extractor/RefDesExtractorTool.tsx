@@ -596,6 +596,12 @@ export function RefDesExtractorTool() {
 
   async function handleStartRun() {
     if (backendClient.runtimeMode !== "desktop-bridge") {
+      // Mirrored mock runs share the single-slot run store — honour the
+      // cross-tool guard so a second tool's demo start can't evict a
+      // live run (QA sweep 2026-07-30 finding #1).
+      if (guardCrossToolRun()) {
+        return;
+      }
       const firstEvent = baseScenario.runSequence.events[0];
       mockRunIdRef.current = mirrorMockRunStart("refdes_extractor");
       setRunTemplates(baseScenario.runSequence.events);

@@ -108,13 +108,13 @@ Both fonts are OFL-licensed; the license text travels in
 | `--text-md`  | 16 px | Panel metrics |
 | `--text-lg`  | 18 px | Result values |
 | `--text-xl`  | 20 px | The single hero metric per tool |
-| `--text-2xl` | 24 px | Modal and full-screen headers |
-| `--text-xxl` | 24 px | Legacy alias; the 48 px topbar does not use it |
-| `--text-3xl` | 24 px | Legacy alias; hero metrics cap at `--text-xl` |
+| `--text-2xl` | 24 px | Modal and full-screen headers — the scale's ceiling |
+
+The legacy `--text-xxl` / `--text-3xl` aliases were removed in the
+2026-07 token pruning (both had collapsed to 24 px with zero call sites).
 
 The compact topbar title is an intentional off-grid 14 px at weight 600.
-It is chrome, not a page headline, so do not reconnect it to the legacy
-`--text-xxl` token.
+It is chrome, not a page headline.
 
 ### Weights
 
@@ -156,7 +156,6 @@ and `min-height`.
 |-------|-------|--------------|
 | `--space-1` | 4 px | Micro: icon gaps, fine adjustments |
 | `--space-2` | 8 px | Tight: within components |
-| `--space-2-5` | 8 px | Deprecated compatibility alias; prefer `--space-2` or `--space-3` |
 | `--space-3` | 12 px | Standard: between related elements |
 | `--space-4` | 16 px | Comfortable: section padding |
 | `--space-5` | 20 px | Relaxed: rail padding, chrome |
@@ -192,10 +191,12 @@ Expanded from 3 radii to 6 in Phase G.
 |-------|-------|--------------|
 | `--radius-xs` | 4 px | Tiny: dropdown items, chips |
 | `--radius-sm` | 6 px | Small: buttons, inputs |
-| `--radius-md` | 8 px | Default: cards, sections |
-| `--radius-lg` | 8 px | Alias of `--radius-md`; there is no third card radius |
-| `--radius-xl` | 8 px | Legacy alias; rail buttons use the shared system radius |
+| `--radius-md` | 8 px | Default: cards, sections — the largest radius |
 | `--radius-pill` | 999 px | Progress and coverage-meter tracks only |
+
+The `--radius-lg` / `--radius-xl` aliases (both 8 px) and the deprecated
+`--space-2-5` alias were removed in the 2026-07 token pruning — write
+`--radius-md` / `--space-2` instead.
 
 ## Shadow Tokens
 

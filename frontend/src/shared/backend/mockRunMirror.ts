@@ -63,14 +63,19 @@ export function mirrorMockRunTerminal(
   result: RunResult,
 ): void {
   const { activeRun, patchActiveRun } = useRunStore.getState();
-  if (runId && activeRun?.runId === runId) {
-    patchActiveRun({
-      phase: result.status,
-      progress: result.status === "success" ? 100 : activeRun.progress,
-      statusMessage: result.title,
-      finishedAt: new Date().toISOString(),
-    });
+  // Stale-runId guard covers EVERYTHING (store patch, log, toast) —
+  // symmetric with the event/cancel mirrors. A run that lost the store
+  // slot must not toast a completion the drawer can't show (QA sweep
+  // 2026-07-30 finding #2).
+  if (!runId || activeRun?.runId !== runId) {
+    return;
   }
+  patchActiveRun({
+    phase: result.status,
+    progress: result.status === "success" ? 100 : activeRun.progress,
+    statusMessage: result.title,
+    finishedAt: new Date().toISOString(),
+  });
   const warningCount = result.warningCount ?? 0;
   appendMockRunLogs(
     toolId,

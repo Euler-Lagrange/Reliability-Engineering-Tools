@@ -71,7 +71,8 @@
 | Frontend number field | `frontend/src/components/primitives/NumberField.test.tsx` | 6 | Vitest + RTL |
 | Frontend mapping derivation | `frontend/src/shared/mapping/deriveMappingRows.test.ts` | 6 | Vitest |
 | Frontend mapping bulk actions | `frontend/src/shared/mapping/mappingBulkActions.test.ts` | 9 | Vitest |
-| Frontend mock-run mirror | `frontend/src/shared/backend/mockRunMirror.test.ts` | 7 | Vitest |
+| Frontend mock-run mirror | `frontend/src/shared/backend/mockRunMirror.test.ts` | 8 | Vitest |
+| Frontend mock-run lifecycle | `frontend/src/features/mockRunLifecycle.test.tsx` | 2 | Vitest + RTL |
 | Frontend tool dispatch | `frontend/src/features/toolRunDispatch.test.tsx` | 30 | Vitest + RTL |
 | Frontend workflow selector | `frontend/src/components/WorkflowSelector.test.tsx` | 4 | Vitest + RTL |
 | Frontend strategy selector | `frontend/src/components/StrategySelector.test.tsx` | 4 | Vitest + RTL |
@@ -80,9 +81,9 @@
 | Frontend shell-hook install | `frontend/src/app/App.shellHooks.test.tsx` | 1 | Vitest + RTL |
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 5 | Vitest + RTL |
-| **Frontend subtotal** | | **403** | |
+| **Frontend subtotal** | | **406** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 23 | cargo test |
-| **Total** | | **954** | |
+| **Total** | | **957** | |
 
 ## Backend Tests
 

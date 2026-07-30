@@ -175,9 +175,22 @@ export function InputGrid({
             ) : null}
             {input.role === "pdf" ? (
               /* PDFs have no sheets — a permanently-disabled empty "Sheet"
-                 dropdown reads as breakage. Keep the cell (hidden) so the
-                 Browse buttons stay column-aligned across stacked cards. */
-              <div className="sheet-picker sheet-picker--none" aria-hidden="true" />
+                 dropdown reads as breakage. Render the SAME picker markup
+                 hidden (visibility, not an empty div) so the cell keeps its
+                 real width and Browse buttons stay column-aligned across
+                 stacked cards; visibility:hidden also drops it from the
+                 a11y tree. */
+              <div className="sheet-picker sheet-picker--none" aria-hidden="true">
+                <label>Sheet</label>
+                <CustomSelect
+                  label={`${input.label} sheet`}
+                  value=""
+                  options={[]}
+                  disabled
+                  variant="quiet"
+                  onChange={() => {}}
+                />
+              </div>
             ) : (
               <div className="sheet-picker">
                 <label>Sheet</label>

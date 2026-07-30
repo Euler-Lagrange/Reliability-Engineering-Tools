@@ -413,7 +413,10 @@ export const demoScenarios: DemoScenario[] = [
         status: "success",
         title: "Formatting-preserved plan ready",
         summary: "The simulated merge wrote a reviewable workbook copy and surfaced its protected-sheet warning.",
-        outputFile: "Customer_FMEA_Merged_20260403_110800.xlsx",
+        // Preserve-formatting copies keep the selected TARGET's stem
+        // (backend build_template_output_path: Path(target).stem +
+        // "_Merged_<ts>"). Demo target: Customer_FMEA_Template.xlsx.
+        outputFile: "Customer_FMEA_Template_Merged_20260403_110800.xlsx",
         primaryMetric: "1 protected sheet",
         secondaryMetric: "Changes audited",
         notes: ["Planner/executor behavior is simulated.", "The original target remains unchanged; the copy is the output."],
@@ -472,7 +475,8 @@ export const demoScenarios: DemoScenario[] = [
         status: "success",
         title: "Workbook plan simulation finished",
         summary: "The generator reached a review-ready state with clean completion messaging and output metadata.",
-        outputFile: "Customer_FMEA_Merged_20260403_113100.xlsx",
+        // Target-stem rule — see the preserve-formatting fixture note.
+        outputFile: "Customer_FMEA_Template_Merged_20260403_113100.xlsx",
         primaryMetric: "5 timeline stages",
         secondaryMetric: "100% run completion",
         notes: ["No backend call occurred.", "This fixture exists only to evaluate UX."],

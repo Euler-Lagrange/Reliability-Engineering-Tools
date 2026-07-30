@@ -229,7 +229,8 @@
 
   /* Dark themes need stronger shadows — light-theme rgba is invisible. */
   --shadow-popover: 0 4px 16px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.4);
-  --shadow-toast: 0 6px 20px rgba(0, 0, 0, 0.5);  --shadow-focus-ring: 0 0 0 2px rgba(126, 159, 245, 0.45);
+  --shadow-toast: 0 6px 20px rgba(0, 0, 0, 0.5);
+  --shadow-focus-ring: 0 0 0 2px rgba(126, 159, 245, 0.45);
 }
 
 :root[data-theme="signal_slate"] {
@@ -281,7 +282,8 @@
   --danger: #ff7a7a;
   --danger-soft: rgba(255, 122, 122, 0.16);
   --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.55);
-  --shadow-focus-ring: 0 0 0 3px rgba(72, 202, 228, 0.20);  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-focus-ring: 0 0 0 3px rgba(72, 202, 228, 0.20);
+  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
 /* High Contrast — accessibility-first. Pure black/white with a yellow
@@ -307,7 +309,8 @@
   --danger: #ff4444;
   --danger-soft: rgba(255, 68, 68, 0.18);
   --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.7);
-  --shadow-focus-ring: 0 0 0 3px rgba(255, 214, 10, 0.4);  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.7);
+  --shadow-focus-ring: 0 0 0 3px rgba(255, 214, 10, 0.4);
+  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.7);
 }
 
 /* Synthwave — neon dev-tool vibe. Hot pink/magenta accents on deep
@@ -332,7 +335,8 @@
   --danger: #ff3366;
   --danger-soft: rgba(255, 51, 102, 0.16);
   --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.55);
-  --shadow-focus-ring: 0 0 0 3px rgba(255, 42, 213, 0.22);  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-focus-ring: 0 0 0 3px rgba(255, 42, 213, 0.22);
+  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
 /* Kraft Paper — warm paper and graphite. Workshop notebook aesthetic.
@@ -387,7 +391,8 @@
   --danger: #e8887a;
   --danger-soft: rgba(232, 136, 122, 0.14);
   --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.55);
-  --shadow-focus-ring: 0 0 0 3px rgba(125, 211, 168, 0.18);  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-focus-ring: 0 0 0 3px rgba(125, 211, 168, 0.18);
+  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
 /* Graphite Dawn — soft charcoal on warm ivory. Newsprint precision.
@@ -454,7 +459,8 @@
   /* Elevated overlays and keyboard focus retain functional shadows.
      Navigation and status components remain tint-and-border based. */
   --shadow-popover: 0 10px 28px rgba(0, 0, 0, 0.65);
-  --shadow-focus-ring: 0 0 0 3px rgba(0, 217, 255, 0.22);  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --shadow-focus-ring: 0 0 0 3px rgba(0, 217, 255, 0.22);
+  --shadow-toast: 0 8px 24px rgba(0, 0, 0, 0.6);
 }
 
 * {

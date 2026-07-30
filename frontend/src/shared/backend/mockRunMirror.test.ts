@@ -70,6 +70,22 @@ describe("mockRunMirror", () => {
     expect(activeRun?.progress).toBe(0);
   });
 
+  test("a stale runId is fully silent at terminal — no patch, log, or toast", () => {
+    // QA sweep 2026-07-30 finding #2: the terminal mirror used to guard
+    // only the store patch, so an evicted run still toasted its
+    // completion while its cancel stayed silent. All three mirrors are
+    // now symmetric.
+    const oldRunId = mirrorMockRunStart("bom_compare");
+    const newRunId = mirrorMockRunStart("bom_compare");
+    mirrorMockRunTerminal("bom_compare", oldRunId, successResult);
+
+    const activeRun = useRunStore.getState().activeRun;
+    expect(activeRun?.runId).toBe(newRunId);
+    expect(activeRun?.phase).toBe("running");
+    expect(useNotificationStore.getState().notifications).toHaveLength(0);
+    expect(useGlobalLogStore.getState().entries).toHaveLength(0);
+  });
+
   test("terminal success settles the run, logs a closing line, and toasts", () => {
     const runId = mirrorMockRunStart("bom_compare");
     mirrorMockRunTerminal("bom_compare", runId, successResult);

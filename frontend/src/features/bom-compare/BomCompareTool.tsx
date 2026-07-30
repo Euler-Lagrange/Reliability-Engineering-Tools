@@ -535,8 +535,9 @@ export function BomCompareTool() {
   }, [runIndex, runMode, runTemplates, workflowId]);
 
   // Compute visible inputs from current workflow. Every visible role is
-  // required in every BOM Compare workflow (backend truth:
-  // bom_compare/runtime.py REQUIRED_ROLES), so stamp `required` here —
+  // required in every BOM Compare workflow (backend truth: the
+  // required-roles table in bom_compare/runtime.py), so stamp `required`
+  // here —
   // the Run rail's "Inputs loaded" readiness row and InputGrid's
   // required markers both read it, and un-stamped rows made the rail
   // report a green "0 / 0" no matter what was loaded.
@@ -1019,6 +1020,12 @@ export function BomCompareTool() {
 
   async function handleStartRun() {
     if (backendClient.runtimeMode !== "desktop-bridge") {
+      // Mirrored mock runs share the single-slot run store — honour the
+      // cross-tool guard so a second tool's demo start can't evict a
+      // live run (QA sweep 2026-07-30 finding #1).
+      if (guardCrossToolRun()) {
+        return;
+      }
       const scenario = scenarioForWorkflow(workflowId);
       const firstEvent = scenario.runSequence.events[0];
       mockRunIdRef.current = mirrorMockRunStart("bom_compare");
