@@ -155,6 +155,13 @@ def _is_suffix_of(token: str, base: str) -> bool:
     canon = canonicalize_refdes(token)
     if not canon or canon == base or "-" not in canon:
         return False
+    # Same-prefix range guard (J1-J5, CN1-CN3): is_pin_notation lacks the
+    # range discrimination is_instance_notation has, so apply it here —
+    # a range token is not a manual expansion of its first element.
+    prefix_match = re.match(r"^([A-Z]+)", canon)
+    suffix = canon.split("-", 1)[1]
+    if prefix_match and len(suffix) > 1 and suffix.startswith(prefix_match.group(1)):
+        return False
     if not (is_instance_notation(canon) or is_pin_notation(canon)):
         return False
     return get_usage_base_refdes(canon) == base
@@ -210,9 +217,11 @@ def _plan_columns(
     plan_notes: List[str] = []
 
     def _uniquify(name: str) -> str:
-        final = name
+        final = f"{name} (old)"
+        n = 2
         while final.strip().casefold() in unified_fold:
-            final = f"{final} (old)"
+            final = f"{name} (old {n})"
+            n += 1
         return final
 
     def _claim(old_col: str, target: str) -> None:
@@ -242,18 +251,25 @@ def _plan_columns(
 
     for pair in column_pairs or []:
         if len(pair) < 2:
+            plan_notes.append("A malformed column pair entry was ignored")
             continue
         a, b = str(pair[0]), str(pair[1])
         old_match = old_by_fold.get(a.strip().casefold())
         new_match = by_fold.get(b.strip().casefold())
-        if old_match is not None and new_match is not None and old_match not in handled:
-            _claim(old_match, new_match)
-            handled.add(old_match)
-        else:
+        if old_match is None or new_match is None:
             plan_notes.append(
                 f'Column pair "{a}" -> "{b}" did not match the loaded '
                 f"headers and was ignored"
             )
+            continue
+        if old_match in handled:
+            plan_notes.append(
+                f'Column pair "{a}" -> "{b}" was ignored — "{a}" is '
+                f"already mapped by an earlier pair"
+            )
+            continue
+        _claim(old_match, new_match)
+        handled.add(old_match)
 
     for c in old_cols:
         if c in handled:
@@ -264,7 +280,9 @@ def _plan_columns(
         _claim(c, target)
 
     # Tool-authored columns never clobber user data: collision-guard the
-    # names against the union ("Status" in a source file -> "Merge Status").
+    # names against the union case-insensitively (same fold set _uniquify
+    # uses), so a case-shadowed header like "status" still forces the
+    # escalation to "Merge Status".
     tool_columns: Dict[str, str] = {}
     for key, wanted in (
         ("status", COL_STATUS),
@@ -272,8 +290,9 @@ def _plan_columns(
         ("notes", COL_NOTES),
     ):
         name = wanted
-        while name in unified:
+        while name.strip().casefold() in unified_fold:
             name = f"Merge {name}"
         unified.append(name)
+        unified_fold.add(name.strip().casefold())
         tool_columns[key] = name
     return unified, old_to_unified, tool_columns, plan_notes

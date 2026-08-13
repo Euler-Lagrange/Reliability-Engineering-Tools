@@ -112,6 +112,54 @@ def test_plan_columns_old_only_headers_are_trimmed():
     assert old_map["  Sheet Number  "] == "Sheet Number"
 
 
+def test_plan_columns_duplicate_pair_note():
+    old = pd.DataFrame(columns=["Ref"])
+    new = pd.DataFrame(columns=["RefDes", "Part Number"])
+    cols, old_map, _tool, notes = _plan_columns(
+        old, new, [("Ref", "RefDes"), ("Ref", "Part Number")]
+    )
+    # First pair wins; the second pair references an old column that's
+    # already mapped, which is a truthfully different situation from an
+    # unresolved pair.
+    assert old_map == {"Ref": "RefDes"}
+    assert len(notes) == 1
+    assert "already mapped by an earlier pair" in notes[0]
+    assert '"Ref"' in notes[0] and '"Part Number"' in notes[0]
+
+
+def test_plan_columns_malformed_pair_note():
+    old = pd.DataFrame(columns=["Ref"])
+    new = pd.DataFrame(columns=["RefDes"])
+    cols, old_map, _tool, notes = _plan_columns(old, new, [("Ref",)])
+    assert len(notes) == 1
+    assert notes[0] == "A malformed column pair entry was ignored"
+    # The malformed pair doesn't block normal fold-identity fallback... but
+    # "Ref" doesn't fold-match "RefDes" so it becomes its own old-only column.
+    assert old_map == {"Ref": "Ref"}
+
+
+def test_plan_columns_tool_collision_case_insensitive():
+    old = pd.DataFrame(columns=["status"])
+    new = pd.DataFrame(columns=["RefDes"])
+    cols, _old_map, tool, _notes = _plan_columns(old, new, None)
+    assert tool["status"] == "Merge Status"
+    # The user's own "status" column must survive untouched in the union.
+    assert "status" in cols
+    assert "Status" not in cols
+
+
+def test_plan_columns_readable_uniquification():
+    old = pd.DataFrame(columns=["Qty", "QTY", "qty"])
+    new = pd.DataFrame(columns=["Qty"])
+    cols, old_map, _tool, _notes = _plan_columns(old, new, None)
+    assert "QTY (old)" in cols
+    assert "qty (old 2)" in cols
+    # No triple-stacked "(old) (old) (old)" suffixes.
+    assert not any("(old) (old)" in c for c in cols)
+    assert old_map["QTY"] == "QTY (old)"
+    assert old_map["qty"] == "qty (old 2)"
+
+
 @pytest.mark.parametrize(
     ("a", "b", "equal"),
     [
@@ -175,6 +223,10 @@ def test_row_tokens_variants():
         ("u2000", "U2000", False),
         ("U2000", "U2000", False),
         ("", "U2000", False),
+        ("J1-J5", "J1", False),
+        ("P2-P4", "P2", False),
+        ("CN1-CN3", "CN1", False),
+        ("X1-X9", "X1", False),
     ],
 )
 def test_is_suffix_of_matrix(token, base, expected):
