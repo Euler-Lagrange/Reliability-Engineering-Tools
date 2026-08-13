@@ -10,13 +10,21 @@ import pandas as pd
 import pytest
 
 from bom_compare.unified_bom import (
+    COL_NOTES,
+    COL_SOURCE,
+    COL_STATUS,
+    STATUS_ADDED,
+    STATUS_CHANGED,
+    STATUS_DELETE,
     _cell_text,
     _is_blank,
     _is_suffix_of,
     _plan_columns,
     _row_tokens,
     _values_equal,
+    build_unified_bom,
 )
+from common import CancellationError
 
 
 def test_plan_columns_union_order_and_tool_columns():
@@ -231,3 +239,279 @@ def test_row_tokens_variants():
 )
 def test_is_suffix_of_matrix(token, base, expected):
     assert _is_suffix_of(token, base) is expected
+
+
+def _merge(old_rows, new_rows, **kwargs):
+    """Shorthand: both files use a 'RefDes' key column unless overridden."""
+    old_df = pd.DataFrame(old_rows)
+    new_df = pd.DataFrame(new_rows)
+    kwargs.setdefault("old_refdes_col", "RefDes")
+    kwargs.setdefault("new_refdes_col", "RefDes")
+    return build_unified_bom(old_df, new_df, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Statuses, sources, styles
+# ---------------------------------------------------------------------------
+
+def test_added_row_is_green_and_noted():
+    result = _merge(
+        [{"RefDes": "R1", "Part Number": "PN-1"}],
+        [{"RefDes": "R1", "Part Number": "PN-1"},
+         {"RefDes": "R9", "Part Number": "PN-9"}],
+    )
+    frame = result.frame
+    assert list(frame["RefDes"]) == ["R1", "R9"]
+    added = frame.iloc[1]
+    assert added[COL_STATUS] == STATUS_ADDED
+    assert added[COL_SOURCE] == "New BOM only"
+    assert "add to the FMEAs" in added[COL_NOTES]
+    assert result.row_styles[1] == "success"
+    assert result.counts["added"] == 1
+
+
+def test_unchanged_row_has_no_status_and_source_both():
+    result = _merge([{"RefDes": "R1"}], [{"RefDes": "R1"}])
+    row = result.frame.iloc[0]
+    assert row[COL_STATUS] == ""
+    assert row[COL_SOURCE] == "Both"
+    assert row[COL_NOTES] == ""
+    assert result.row_styles[0] == ""
+    assert result.counts["unchanged"] == 1
+
+
+def test_deleted_row_inserted_inline_after_anchor():
+    result = _merge(
+        [{"RefDes": "R1"}, {"RefDes": "R99"}, {"RefDes": "R2"}],
+        [{"RefDes": "R1"}, {"RefDes": "R2"}],
+    )
+    assert list(result.frame["RefDes"]) == ["R1", "R99", "R2"]
+    row = result.frame.iloc[1]
+    assert row[COL_STATUS] == STATUS_DELETE
+    assert row[COL_SOURCE] == "Old BOM only"
+    assert "remove from the FMEAs" in row[COL_NOTES]
+    assert result.row_styles[1] == "error"
+    assert result.counts["deleted"] == 1
+
+
+def test_deleted_first_row_goes_to_top():
+    result = _merge(
+        [{"RefDes": "R99"}, {"RefDes": "R1"}],
+        [{"RefDes": "R1"}],
+    )
+    assert list(result.frame["RefDes"]) == ["R99", "R1"]
+
+
+def test_consecutive_deletions_keep_old_file_order():
+    result = _merge(
+        [{"RefDes": "R1"}, {"RefDes": "R97"}, {"RefDes": "R98"}, {"RefDes": "R99"}],
+        [{"RefDes": "R1"}],
+    )
+    assert list(result.frame["RefDes"]) == ["R1", "R97", "R98", "R99"]
+
+
+# ---------------------------------------------------------------------------
+# Conflict rule
+# ---------------------------------------------------------------------------
+
+def test_changed_value_new_wins_and_noted():
+    result = _merge(
+        [{"RefDes": "R1", "Part Description": "RES 10K 1%"}],
+        [{"RefDes": "R1", "Part Description": "RES 10.5K 1%"}],
+    )
+    row = result.frame.iloc[0]
+    assert row["Part Description"] == "RES 10.5K 1%"
+    assert row[COL_STATUS] == STATUS_CHANGED
+    assert row[COL_SOURCE] == "Both"
+    assert (
+        'Part Description changed from "RES 10K 1%" to "RES 10.5K 1%"'
+        in row[COL_NOTES]
+    )
+    assert result.row_styles[0] == "warning"
+    assert result.counts["changed"] == 1
+    # Value changes are the feature's point, not data-integrity warnings.
+    assert result.warning_count == 0
+
+
+def test_numeric_equivalent_values_are_not_changes():
+    result = _merge(
+        [{"RefDes": "R1", "Qty": 10}],
+        [{"RefDes": "R1", "Qty": "10.0"}],
+    )
+    row = result.frame.iloc[0]
+    assert row[COL_STATUS] == ""
+    assert row[COL_NOTES] == ""
+
+
+def test_blank_new_value_keeps_old_and_warns():
+    result = _merge(
+        [{"RefDes": "R1", "Part Description": "RES 10K"}],
+        [{"RefDes": "R1", "Part Description": ""}],
+    )
+    row = result.frame.iloc[0]
+    assert row["Part Description"] == "RES 10K"
+    assert 'Part Description: kept old value "RES 10K" (new was blank)' in row[COL_NOTES]
+    assert row[COL_STATUS] == STATUS_CHANGED
+    assert result.warning_count == 1
+
+
+def test_old_only_column_carries_manual_data_silently():
+    result = _merge(
+        [{"RefDes": "R1", "Sheet Number": "12"}],
+        [{"RefDes": "R1"}],
+    )
+    row = result.frame.iloc[0]
+    assert row["Sheet Number"] == "12"
+    # Old-only column carry is expected behavior — no note, no status.
+    assert row[COL_STATUS] == ""
+
+
+# ---------------------------------------------------------------------------
+# Duplicates, DNP, multi-token rows, empties, NaN, plan notes, cancellation
+# ---------------------------------------------------------------------------
+
+def test_duplicate_new_refdes_first_wins_and_flagged():
+    result = _merge(
+        [{"RefDes": "R1", "Part Number": "PN-1"}],
+        [{"RefDes": "R1", "Part Number": "PN-1"},
+         {"RefDes": "R1", "Part Number": "PN-DUP"}],
+    )
+    dup = result.frame.iloc[1]
+    assert "Duplicate RefDes R1" in dup[COL_NOTES]
+    assert dup[COL_STATUS] == STATUS_CHANGED
+    assert result.warning_count == 1
+
+
+def test_dnp_old_only_row_not_emitted_as_delete():
+    result = _merge(
+        [{"RefDes": "R1", "Description": "Res"},
+         {"RefDes": "R99", "Description": "DNP spare"}],
+        [{"RefDes": "R1", "Description": "Res"}],
+        old_desc_col="Description",
+        ignore_dnp=True,
+    )
+    assert list(result.frame["RefDes"]) == ["R1"]
+    assert result.counts["deleted"] == 0
+    assert result.counts["dnp_skipped"] == 1
+
+
+def test_dnp_old_only_row_emitted_when_ignore_dnp_off():
+    result = _merge(
+        [{"RefDes": "R1", "Description": "Res"},
+         {"RefDes": "R99", "Description": "DNP spare"}],
+        [{"RefDes": "R1", "Description": "Res"}],
+        old_desc_col="Description",
+        ignore_dnp=False,
+    )
+    assert list(result.frame["RefDes"]) == ["R1", "R99"]
+
+
+def test_multi_token_old_row_partial_delete_names_origin():
+    result = _merge(
+        [{"RefDes": "R1, R2, R3", "Group": "CPU"}],
+        [{"RefDes": "R1"}, {"RefDes": "R2"}],
+    )
+    # The old row survives via R1's match (entry 0), so its deleted token
+    # anchors right after that backbone row.
+    assert list(result.frame["RefDes"]) == ["R1", "R3", "R2"]
+    deleted = result.frame.iloc[1]
+    assert deleted[COL_STATUS] == STATUS_DELETE
+    assert 'From an old row listing "R1, R2, R3"' in deleted[COL_NOTES]
+    assert deleted["Group"] == "CPU"
+
+
+def test_multi_token_new_row_mixed_status_is_changed():
+    result = _merge(
+        [{"RefDes": "R1", "Group": "CPU"}],
+        [{"RefDes": "R1, R9", "Group": "CPU"}],
+    )
+    row = result.frame.iloc[0]
+    assert row[COL_STATUS] == STATUS_CHANGED  # not Added: only R9 is new
+    assert "R9 is not in Old BOM" in row[COL_NOTES]
+
+
+def test_multi_token_new_row_all_new_is_added():
+    result = _merge(
+        [{"RefDes": "R1"}],
+        [{"RefDes": "R8, R9"}],
+    )
+    # R1 is an unrelated, unmatched old-only row; per the "deletions with
+    # no surviving anchor go at the top" rule it lands at iloc[0], so the
+    # row under test is located by RefDes rather than assumed position.
+    row = result.frame[result.frame["RefDes"] == "R8, R9"].iloc[0]
+    assert row[COL_STATUS] == STATUS_ADDED
+
+
+def test_empty_new_file_emits_all_deletes():
+    result = _merge([{"RefDes": "R1"}], [])
+    assert list(result.frame["RefDes"]) == ["R1"]
+    assert result.frame.iloc[0][COL_STATUS] == STATUS_DELETE
+
+
+def test_empty_old_file_all_added():
+    result = _merge([], [{"RefDes": "R1"}])
+    assert result.frame.iloc[0][COL_STATUS] == STATUS_ADDED
+
+
+def test_nan_refdes_cells_do_not_crash():
+    result = _merge(
+        [{"RefDes": None, "X": "1"}, {"RefDes": "R1", "X": "2"}],
+        [{"RefDes": "R1", "X": "2"}, {"RefDes": float("nan"), "X": "3"}],
+    )
+    assert len(result.frame) == 2  # NaN old row has no tokens -> no delete
+
+
+def test_numeric_headers_do_not_crash():
+    old = pd.DataFrame([["R1", "5"]], columns=[0, 1])
+    new = pd.DataFrame([["R1", "6"]], columns=[0, 1])
+    result = build_unified_bom(old, new, old_refdes_col="0", new_refdes_col="0")
+    assert result.frame.iloc[0][COL_STATUS] == STATUS_CHANGED  # "5" -> "6" noted
+
+
+def test_unlisted_prefix_suffix_becomes_flagged_delete():
+    # R is not in the instance-notation prefix whitelist, so R1-1 never
+    # carries — it must surface as a visible Delete with the review note.
+    result = _merge(
+        [{"RefDes": "R1-1", "Sheet Number": "4"}],
+        [{"RefDes": "R1"}],
+    )
+    frame = result.frame
+    deleted = frame[frame["RefDes"] == "R1-1"].iloc[0]
+    assert deleted[COL_STATUS] == STATUS_DELETE
+    assert "manual expansion was not auto-carried" in deleted[COL_NOTES]
+    assert deleted["Sheet Number"] == "4"
+
+
+def test_plan_notes_surface_in_result():
+    result = _merge(
+        [{"RefDes": "R1", "Part Number": "PN", "Part number": "pn2"}],
+        [{"RefDes": "R1", "Part Number": "PN"}],
+    )
+    assert any("kept separately" in n for n in result.notes)
+    assert result.warning_count >= 1
+
+
+def test_summary_note_wording_and_counts():
+    result = _merge(
+        [{"RefDes": "R1"}, {"RefDes": "R99"}],
+        [{"RefDes": "R1"}, {"RefDes": "R9"}],
+    )
+    assert result.counts["added"] == 1
+    assert result.counts["deleted"] == 1
+    note = result.notes[0]
+    assert note.startswith("Unified BOM: ")
+    assert "1 added" in note and "1 to delete" in note
+
+
+def test_cancellation_via_stop_event():
+    stop = threading.Event()
+    stop.set()
+    rows = [{"RefDes": f"R{i}"} for i in range(10)]
+    with pytest.raises(CancellationError):
+        build_unified_bom(
+            pd.DataFrame(rows),
+            pd.DataFrame(rows),
+            old_refdes_col="RefDes",
+            new_refdes_col="RefDes",
+            stop_event=stop,
+        )
