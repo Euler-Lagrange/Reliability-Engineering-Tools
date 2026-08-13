@@ -14,8 +14,10 @@ from bom_compare.unified_bom import (
     COL_SOURCE,
     COL_STATUS,
     STATUS_ADDED,
+    STATUS_CARRIED,
     STATUS_CHANGED,
     STATUS_DELETE,
+    STATUS_SUPERSEDED,
     _cell_text,
     _is_blank,
     _is_suffix_of,
@@ -730,3 +732,121 @@ def test_cancellation_via_stop_event():
             new_refdes_col="RefDes",
             stop_event=stop,
         )
+
+
+# ---------------------------------------------------------------------------
+# Task 3: suffix/pin carry-forward with supersession
+# ---------------------------------------------------------------------------
+
+def test_suffix_carry_forward_supersedes_bare_row():
+    result = _merge(
+        [{"RefDes": "U2000-1", "Part Number": "PN-123", "Sheet Number": "5"},
+         {"RefDes": "U2000-2", "Part Number": "PN-123", "Sheet Number": "6"}],
+        [{"RefDes": "U2000", "Part Number": "PN-123"}],
+    )
+    frame = result.frame
+    assert list(frame["RefDes"]) == ["U2000", "U2000-1", "U2000-2"]
+    bare = frame.iloc[0]
+    assert bare[COL_STATUS] == STATUS_SUPERSEDED
+    assert bare[COL_SOURCE] == "New BOM (superseded)"
+    assert (
+        "Superseded by 2 carried rows (U2000-1 … U2000-2) — delete this row"
+        in bare[COL_NOTES]
+    )
+    assert result.row_styles[0] == "highlight"
+    for i in (1, 2):
+        assert frame.iloc[i][COL_STATUS] == STATUS_CARRIED
+        assert frame.iloc[i][COL_SOURCE] == "Old BOM (carried)"
+        assert result.row_styles[i] == "warning"
+    assert frame.iloc[1]["Sheet Number"] == "5"
+    assert frame.iloc[2]["Sheet Number"] == "6"
+    assert result.counts["superseded"] == 1
+    assert result.counts["carried"] == 2
+    assert result.counts["deleted"] == 0
+
+
+def test_pin_style_rows_carry_exactly_like_suffix_rows():
+    result = _merge(
+        [{"RefDes": "J4-P1", "Signal": "GND"},
+         {"RefDes": "J4-20", "Signal": "VCC"}],
+        [{"RefDes": "J4"}],
+    )
+    frame = result.frame
+    assert list(frame["RefDes"]) == ["J4", "J4-P1", "J4-20"]
+    assert frame.iloc[0][COL_STATUS] == STATUS_SUPERSEDED
+    assert frame.iloc[1][COL_STATUS] == STATUS_CARRIED
+    assert frame.iloc[1]["Signal"] == "GND"
+    assert frame.iloc[2]["Signal"] == "VCC"
+
+
+def test_uniform_column_rule_updates_pn_but_not_per_row_data():
+    result = _merge(
+        [{"RefDes": "U2000-1", "Part Number": "123-456", "Sheet Number": "5"},
+         {"RefDes": "U2000-2", "Part Number": "123-456", "Sheet Number": "6"}],
+        [{"RefDes": "U2000", "Part Number": "123-789", "Sheet Number": "9"}],
+    )
+    frame = result.frame
+    carried = frame.iloc[1:3]
+    assert list(carried["Part Number"]) == ["123-789", "123-789"]
+    assert (
+        'Part Number updated from "123-456" to "123-789" by New BOM'
+        in frame.iloc[1][COL_NOTES]
+    )
+    assert list(carried["Sheet Number"]) == ["5", "6"]
+    assert result.warning_count == 1
+
+
+def test_blank_new_value_never_overwrites_carried_rows():
+    result = _merge(
+        [{"RefDes": "U1-1", "Part Number": "PN-A"},
+         {"RefDes": "U1-2", "Part Number": "PN-A"}],
+        [{"RefDes": "U1", "Part Number": ""}],
+    )
+    carried = result.frame.iloc[1:3]
+    assert list(carried["Part Number"]) == ["PN-A", "PN-A"]
+
+
+def test_new_only_columns_fill_carried_rows_from_bare_row():
+    result = _merge(
+        [{"RefDes": "U1-1", "Part Number": "PN-A"},
+         {"RefDes": "U1-2", "Part Number": "PN-A"}],
+        [{"RefDes": "U1", "Part Number": "PN-A", "Supplier": "ACME"}],
+    )
+    carried = result.frame.iloc[1:3]
+    assert list(carried["Supplier"]) == ["ACME", "ACME"]
+
+
+def test_old_bare_and_suffix_rows_supersession_still_wins():
+    result = _merge(
+        [{"RefDes": "U1", "Part Number": "PN-A"},
+         {"RefDes": "U1-1", "Part Number": "PN-A"}],
+        [{"RefDes": "U1", "Part Number": "PN-A"}],
+    )
+    frame = result.frame
+    assert list(frame["RefDes"]) == ["U1", "U1-1"]
+    assert frame.iloc[0][COL_STATUS] == STATUS_SUPERSEDED
+    assert frame.iloc[1][COL_STATUS] == STATUS_CARRIED
+
+
+def test_suffixes_present_in_both_files_match_exactly():
+    result = _merge(
+        [{"RefDes": "U1-1"}, {"RefDes": "U1-2"}],
+        [{"RefDes": "U1-1"}, {"RefDes": "U1-2"}],
+    )
+    assert list(result.frame[COL_STATUS]) == ["", ""]
+    assert result.counts["carried"] == 0
+
+
+def test_carry_skips_suffixes_the_new_file_already_lists():
+    result = _merge(
+        [{"RefDes": "U1-1", "Sheet Number": "5"},
+         {"RefDes": "U1-2", "Sheet Number": "6"}],
+        [{"RefDes": "U1"},
+         {"RefDes": "U1-1", "Sheet Number": "50"}],
+    )
+    frame = result.frame
+    # U1-2 carries under the bare row; U1-1 exact-matches its own new row.
+    assert list(frame["RefDes"]) == ["U1", "U1-2", "U1-1"]
+    assert frame.iloc[0][COL_STATUS] == STATUS_SUPERSEDED
+    assert frame.iloc[1][COL_STATUS] == STATUS_CARRIED
+    assert frame.iloc[2][COL_STATUS] == STATUS_CHANGED  # 5 -> 50 noted

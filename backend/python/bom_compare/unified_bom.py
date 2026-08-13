@@ -440,16 +440,33 @@ def _old_row_is_dnp(
     return bool(dnp_re.search(text))
 
 
-# Task 3 fills these two in; the core treats "no suffix entries" as "no
-# supersession" so this task is complete without them. Signatures already
-# take the context plus the scan indexes Task 3's carry-forward logic will
-# need, so wiring them up won't require touching any call site below.
 def _collect_suffix_entries(
     ctx: _MergeContext,
     tokens: List[str],
     old_suffix_rows_for_base: Dict[str, List[Tuple[int, str]]],
+    new_all_tokens: set,
 ) -> List[Tuple[int, str]]:
-    return []
+    """Old suffix/pin rows to carry forward under a bare new row.
+
+    Triggers only for a single-token new row whose token IS its own usage
+    base — a bare RefDes like "U2000" (not "U2000-1", and not a
+    multi-token cell). Suffix tokens the new file lists on their own row
+    are excluded: those exact-match their own backbone row instead of
+    carrying (see test_carry_skips_suffixes_the_new_file_already_lists).
+    Order is preserved from old_suffix_rows_for_base (old-file row order),
+    which the SUPERSEDED span note and the carried-row zip in the caller
+    both depend on.
+    """
+    if len(tokens) != 1:
+        return []
+    tok = tokens[0]
+    if get_usage_base_refdes(tok) != tok:
+        return []
+    return [
+        (old_idx, suffix_tok)
+        for old_idx, suffix_tok in old_suffix_rows_for_base.get(tok, [])
+        if suffix_tok not in new_all_tokens
+    ]
 
 
 def _build_carried_rows(
@@ -458,7 +475,85 @@ def _build_carried_rows(
     suffix_entries: List[Tuple[int, str]],
     new_all_tokens: set,
 ) -> Tuple[List[Tuple[Dict[str, Any], List[str]]], int]:
-    return [], 0
+    """Build the carried rows for one superseded bare row's suffix group.
+
+    Carried rows keep the old data verbatim. A shared column (present in
+    both files, and not a key column) is overwritten from the bare row's
+    value ONLY when every carried old row agrees on that column (the
+    uniform-column rule) AND the bare row's value is non-blank and
+    genuinely differs — recorded once per column in the returned
+    integrity count, with an update note on every carried row. Columns
+    the old file left blank on a given row (including columns the old
+    file never had at all) fall back to the bare row's value silently —
+    there is no old value being "kept verbatim" to protect there.
+
+    Returns (rows, integrity_count) where ``rows`` is a list of
+    (values, notes) aligned 1:1 with ``suffix_entries`` — the caller
+    zips them together, so order and length must match exactly.
+    """
+    if not suffix_entries:
+        return [], 0
+
+    bare_row = ctx.new_df.iloc[bare_new_idx]
+    base = get_usage_base_refdes(suffix_entries[0][1])
+
+    # Uniform-column scan: for every shared, non-key column, check whether
+    # all carried old rows agree AND the bare row's value is a genuine,
+    # non-blank difference. Computed once per column (not per row) so the
+    # integrity count reflects columns, not carried-row multiplicity.
+    overwrites: Dict[str, Tuple[str, str]] = {}
+    integrity_count = 0
+    for old_name, uni_col in ctx.old_to_unified.items():
+        if (
+            old_name == str(ctx.old_refdes_col)
+            or uni_col == str(ctx.new_refdes_col)
+            or uni_col == ctx.refdes_out_col
+        ):
+            continue  # key columns are never diffed/overwritten
+        if uni_col not in ctx.new_cols_set:
+            continue  # old-only column: pure carry, never a candidate
+
+        group_values = [
+            ctx.old_df.iloc[old_idx][old_name] for old_idx, _tok in suffix_entries
+        ]
+        if any(not _values_equal(group_values[0], v) for v in group_values[1:]):
+            continue  # old suffix rows disagree — not uniform
+
+        group_text = _cell_text(group_values[0])
+        if not group_text:
+            continue  # nothing to "update from"; blank-fill below handles it
+
+        new_text = _cell_text(bare_row[uni_col])
+        if not new_text or _values_equal(group_text, new_text):
+            continue  # blank new value never overwrites; no genuine diff
+
+        overwrites[uni_col] = (group_text, new_text)
+        integrity_count += 1
+
+    rows: List[Tuple[Dict[str, Any], List[str]]] = []
+    for old_idx, tok in suffix_entries:
+        values = _fill_row_from_old(ctx, old_idx)
+        # New-only columns (and any shared column left blank on this
+        # particular old row) fall back to the bare row's value silently
+        # — pure addition, not an overwrite of real old data.
+        for name in ctx.new_cols_set:
+            if _is_blank(values[name]) and not _is_blank(bare_row[name]):
+                values[name] = bare_row[name]
+        values[ctx.refdes_out_col] = tok
+
+        notes = [
+            f"Carried forward from {ctx.old_label} (manual suffix row of {base})"
+        ]
+        for uni_col, (old_text, new_text) in overwrites.items():
+            values[uni_col] = bare_row[uni_col]
+            notes.append(
+                f'{uni_col} updated from "{old_text}" to "{new_text}" '
+                f"by {ctx.new_label}"
+            )
+
+        rows.append((values, notes))
+
+    return rows, integrity_count
 
 
 def build_unified_bom(
@@ -657,7 +752,9 @@ def build_unified_bom(
             if t in old_first_row_for_token and new_token_first_row.get(t) == new_idx
         }
 
-        suffix_entries = _collect_suffix_entries(ctx, tokens, old_suffix_rows_for_base)
+        suffix_entries = _collect_suffix_entries(
+            ctx, tokens, old_suffix_rows_for_base, new_all_tokens
+        )
 
         # B1: any old-file duplicate notes owned by the old row(s) this
         # backbone row consumed — surfaced here, before the status
