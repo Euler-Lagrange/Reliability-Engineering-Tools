@@ -663,6 +663,61 @@ def test_differing_key_column_names_keep_old_key_when_new_file_empty():
     assert "Reference Designator" in result.frame.columns
 
 
+def test_differing_key_column_names_do_not_suppress_real_new_file_column():
+    # B6 regression: the OLD key's header text can coincide with a REAL
+    # data column the NEW file owns, distinct from the new file's own key
+    # column ("Reference Designator" here). Suppression must only remove
+    # a column the old key actually OWNS — never a column the new file
+    # populates itself, or that column's real values silently vanish via
+    # the DataFrame(..., columns=unified_cols) projection.
+    old_df = pd.DataFrame([{"RefDes": "R1", "Sheet": "3"}])
+    new_df = pd.DataFrame([
+        {"Reference Designator": "R1", "RefDes": "ALT-1", "PN": "PN-1"},
+    ])
+    result = build_unified_bom(
+        old_df, new_df,
+        old_refdes_col="RefDes",
+        new_refdes_col="Reference Designator",
+    )
+    assert "RefDes" in result.frame.columns
+    assert result.frame.iloc[0]["RefDes"] == "ALT-1"
+
+
+def test_duplicate_old_note_pops_once_when_row_is_both_matched_and_delete_source():
+    # Pin: the SAME old row can supply both a backbone match (via one
+    # token on a multi-token cell) and a Delete row (via another token on
+    # that same cell) while also carrying a duplicate-old-RefDes note.
+    # The note must land exactly once — on the backbone match, which
+    # processes (and pops) it first — never duplicated onto the Delete row.
+    result = _merge(
+        [{"RefDes": "R1, D9"}, {"RefDes": "R1"}],
+        [{"RefDes": "R1"}],
+    )
+    matched = result.frame[result.frame["RefDes"] == "R1"].iloc[0]
+    deleted = result.frame[result.frame["RefDes"] == "D9"].iloc[0]
+    dup_note = "Duplicate RefDes R1 in Old BOM — old row 3 was not merged"
+    assert dup_note in matched[COL_NOTES]
+    assert dup_note not in deleted[COL_NOTES]
+    assert result.warning_count == 1
+
+
+def test_duplicate_old_note_attaches_to_exactly_one_of_two_delete_rows():
+    # Pin: when a dup-noted old row produces MULTIPLE deleted tokens, the
+    # single pop() call only fires for the first token processed — the
+    # second Delete row sourced from the same old row must not also carry
+    # the note (no double-count), but the note must not vanish either.
+    result = _merge(
+        [{"RefDes": "D8, D9"}, {"RefDes": "D8"}],
+        [{"RefDes": "R1"}],
+    )
+    d8 = result.frame[result.frame["RefDes"] == "D8"].iloc[0]
+    d9 = result.frame[result.frame["RefDes"] == "D9"].iloc[0]
+    dup_note = "Duplicate RefDes D8 in Old BOM — old row 3 was not merged"
+    has_dup = [dup_note in d8[COL_NOTES], dup_note in d9[COL_NOTES]]
+    assert has_dup.count(True) == 1
+    assert result.warning_count == 1
+
+
 def test_cancellation_via_stop_event():
     stop = threading.Event()
     stop.set()

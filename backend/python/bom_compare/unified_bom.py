@@ -523,6 +523,8 @@ def build_unified_bom(
     unified_cols, old_to_unified, tool_cols, plan_notes = _plan_columns(
         old_df, new_df, column_pairs
     )
+    new_cols_set = {str(c) for c in new_df.columns}
+
     # B6: when the two files' key columns have different headers, the old
     # key's own column renders blank on every surviving row and filled only
     # on Delete rows — a broken-looking column. Row identity lives in the
@@ -530,19 +532,23 @@ def build_unified_bom(
     # their notes, so drop the old key's target from the union entirely.
     # Skipped when the new file is empty: there's no new key column to
     # anchor identity to, so the old key column remains the output key.
+    # Also skipped when the old key's target is a column the NEW file
+    # itself owns (e.g. old key header "RefDes" name-collides with a real
+    # "RefDes" data column while the new file's actual key is "Reference
+    # Designator") — that column isn't the old key's alone to remove; the
+    # new file's own values live there and must not be silently dropped.
+    old_key_target = old_to_unified.get(str(old_refdes_col))
     if (
         not new_df.empty
-        and str(new_refdes_col) in unified_cols
-        and old_to_unified.get(str(old_refdes_col)) != str(new_refdes_col)
+        and old_key_target is not None
+        and old_key_target != str(new_refdes_col)
+        and old_key_target not in new_cols_set
     ):
-        old_key_target = old_to_unified.pop(str(old_refdes_col), None)
-        if old_key_target in unified_cols:
-            unified_cols.remove(old_key_target)
+        old_to_unified.pop(str(old_refdes_col))
+        unified_cols.remove(old_key_target)
     status_col = tool_cols["status"]
     source_col = tool_cols["source"]
     notes_col = tool_cols["notes"]
-
-    new_cols_set = {str(c) for c in new_df.columns}
 
     # The column Delete/Carried rows write their RefDes token into: the
     # new file's key column when it exists, else the old key's target.
