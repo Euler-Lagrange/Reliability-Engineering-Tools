@@ -503,6 +503,166 @@ def test_summary_note_wording_and_counts():
     assert "1 added" in note and "1 to delete" in note
 
 
+# ---------------------------------------------------------------------------
+# Adversarial-QA hardening batch (B1-B6)
+# ---------------------------------------------------------------------------
+
+def test_duplicate_old_refdes_surfaces_note_and_is_dropped():
+    # B1: a duplicate old RefDes must never vanish silently — the surviving
+    # (first-occurrence) row's notes must say so, and the second row's data
+    # must genuinely be dropped (not silently overwrite the first).
+    result = _merge(
+        [{"RefDes": "R1", "Sheet Number": "10", "Note": "checked"},
+         {"RefDes": "R1", "Sheet Number": "77", "Note": "SECOND"}],
+        [{"RefDes": "R1"}],
+    )
+    row = result.frame.iloc[0]
+    assert (
+        "Duplicate RefDes R1 in Old BOM — old row 3 was not merged"
+        in row[COL_NOTES]
+    )
+    assert row[COL_STATUS] == STATUS_CHANGED
+    assert result.warning_count == 1
+    assert row["Sheet Number"] == "10"
+    assert row["Note"] == "checked"
+
+
+def test_duplicate_old_refdes_note_reaches_delete_row():
+    # B1: when the duplicated token is old-only (deleted, not matched by
+    # the backbone), the duplicate note must land on the Delete row.
+    result = _merge(
+        [{"RefDes": "R5", "X": "a"}, {"RefDes": "R5", "X": "b"}],
+        [{"RefDes": "R1"}],
+    )
+    delete_row = result.frame[result.frame["RefDes"] == "R5"].iloc[0]
+    assert delete_row[COL_STATUS] == STATUS_DELETE
+    assert (
+        "Duplicate RefDes R5 in Old BOM — old row 3 was not merged"
+        in delete_row[COL_NOTES]
+    )
+    assert result.warning_count == 1
+
+
+def test_duplicate_old_refdes_leftover_when_first_occurrence_dnp_suppressed():
+    # B1: if the first occurrence itself is DNP-suppressed (never emitted
+    # as a Delete row and never matched by the backbone), the duplicate
+    # note has nowhere to attach — it must still surface in result.notes.
+    result = _merge(
+        [{"RefDes": "R1", "Description": "DNP spare"},
+         {"RefDes": "R1", "Description": "DNP spare 2"}],
+        [],
+        old_desc_col="Description",
+        ignore_dnp=True,
+    )
+    assert any(
+        "Duplicate RefDes R1 in Old BOM — old row 3 was not merged" in n
+        for n in result.notes
+    )
+    assert result.warning_count == 1
+
+
+def test_dnp_detection_strips_control_characters():
+    # B2: a stray control character embedded in the RefDes/description text
+    # must not defeat DNP detection — every sibling site strips these.
+    result = _merge(
+        [{"RefDes": "R1", "Description": "Res"},
+         {"RefDes": "R99", "Description": "SPARE D\x00NP DO NOT LOAD"}],
+        [{"RefDes": "R1", "Description": "Res"}],
+        old_desc_col="Description",
+        ignore_dnp=True,
+    )
+    assert result.counts["dnp_skipped"] == 1
+    assert "R99" not in list(result.frame["RefDes"])
+
+
+def test_duplicate_new_row_source_reflects_known_token():
+    # B3: a duplicate new-file row whose token IS in the old file must not
+    # claim "New BOM only" just because match-by-luck excluded it.
+    result = _merge(
+        [{"RefDes": "R1", "Part Number": "PN-1"}],
+        [{"RefDes": "R1", "Part Number": "PN-1"},
+         {"RefDes": "R1", "Part Number": "PN-DUP"}],
+    )
+    dup = result.frame.iloc[1]
+    assert dup[COL_SOURCE] == "Both"
+
+
+def test_invalid_dnp_regex_falls_back_with_note():
+    # B4: an invalid custom DNP pattern falls back to the default silently
+    # in effect, but must not be silent in the notes.
+    result = _merge(
+        [{"RefDes": "R1"}],
+        [{"RefDes": "R1"}],
+        dnp_regex="[unclosed",
+    )
+    assert (
+        "Unified BOM: the custom DNP pattern was invalid — the default "
+        "pattern was used." in result.notes
+    )
+
+
+def test_differing_old_values_old_only_column_is_a_warning():
+    # B5: two old rows feeding one multi-token new row disagree on an
+    # old-only column's value — that's a genuine data conflict, not free.
+    result = _merge(
+        [{"RefDes": "R1", "Sheet Number": "10"},
+         {"RefDes": "R2", "Sheet Number": "20"}],
+        [{"RefDes": "R1, R2"}],
+    )
+    row = result.frame.iloc[0]
+    assert "differing old values" in row[COL_NOTES]
+    assert result.warning_count == 1
+
+
+def test_differing_old_values_shared_column_blank_new_is_a_warning():
+    # B5: same conflict, but on a shared column where the new cell is
+    # blank — the first old value is kept (flagged) and the second old
+    # row's disagreement must ALSO be flagged, not silently dropped.
+    result = _merge(
+        [{"RefDes": "R1", "Part Description": "A"},
+         {"RefDes": "R2", "Part Description": "B"}],
+        [{"RefDes": "R1, R2", "Part Description": ""}],
+    )
+    row = result.frame.iloc[0]
+    assert "differing old values" in row[COL_NOTES]
+    # One blank-keep flag (R1's carry) + one differing-values flag (R2's
+    # conflict with the value R1 already put in the cell).
+    assert result.warning_count == 2
+
+
+def test_differing_key_column_names_suppress_old_key_column():
+    # B6: when the two files' key columns have different headers, the old
+    # key column renders blank on every surviving row and filled only on
+    # Delete rows — a broken-looking column. It must be dropped from the
+    # union; Delete rows still carry their token in the new key column.
+    old_df = pd.DataFrame([
+        {"Reference Designator": "R1"},
+        {"Reference Designator": "R99"},
+    ])
+    new_df = pd.DataFrame([{"RefDes": "R1"}])
+    result = build_unified_bom(
+        old_df, new_df,
+        old_refdes_col="Reference Designator",
+        new_refdes_col="RefDes",
+    )
+    assert "Reference Designator" not in result.frame.columns
+    deleted = result.frame[result.frame[COL_STATUS] == STATUS_DELETE].iloc[0]
+    assert deleted["RefDes"] == "R99"
+
+
+def test_differing_key_column_names_keep_old_key_when_new_file_empty():
+    # B6: with no new file at all, there is no new key column to speak
+    # of — the old key column must remain as the output key, unsuppressed.
+    old_df = pd.DataFrame([{"Reference Designator": "R1"}])
+    new_df = pd.DataFrame([])
+    result = build_unified_bom(
+        old_df, new_df,
+        old_refdes_col="Reference Designator",
+        new_refdes_col="RefDes",
+    )
+    assert "Reference Designator" in result.frame.columns
+
+
 def test_cancellation_via_stop_event():
     stop = threading.Event()
     stop.set()

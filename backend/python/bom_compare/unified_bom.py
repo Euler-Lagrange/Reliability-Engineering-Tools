@@ -15,13 +15,14 @@ Design spec: docs/superpowers/specs/2026-08-13-unified-bom-design.md
 import re
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple
 
 import pandas as pd
 
 from common import CancellationError, get_tool_logger
 from common.exceptions import ColumnMappingError
 from common.refdes_utils import (
+    CONTROL_CHARS_PATTERN,
     canonicalize_refdes,
     get_usage_base_refdes,
     is_instance_notation,
@@ -298,6 +299,168 @@ def _plan_columns(
     return unified, old_to_unified, tool_columns, plan_notes
 
 
+class _Entry(NamedTuple):
+    """One row awaiting emission into the final Unified BOM frame."""
+    values: Dict[str, Any]
+    status: str
+    source: str
+    notes: List[str]
+
+
+@dataclass
+class _MergeContext:
+    """Read-only merge state shared by the per-row builder functions below.
+
+    Extracted (2026-08 adversarial-QA hardening pass) so the builders read
+    and test as ordinary functions instead of nine closures buried inside
+    one long function body. Holds exactly what build_matched_row /
+    fill_row_from_old / old_row_is_dnp / the Task-3 suffix-carry stubs
+    capture from build_unified_bom's local scope; per-call extras (like
+    the DNP regex, or the token/index scans built during the merge) are
+    passed as explicit parameters instead of folded in here.
+    """
+
+    old_df: pd.DataFrame
+    new_df: pd.DataFrame
+    old_refdes_col: str
+    new_refdes_col: str
+    unified_cols: List[str]
+    old_to_unified: Dict[str, str]
+    new_cols_set: set
+    refdes_out_col: str
+    old_label: str
+    new_label: str
+
+
+def _blank_row(ctx: _MergeContext) -> Dict[str, Any]:
+    return {c: "" for c in ctx.unified_cols}
+
+
+def _build_matched_row(
+    ctx: _MergeContext, new_idx: int, token_to_old_row: Dict[str, int]
+) -> Tuple[Dict[str, Any], List[str], int]:
+    """New row's values merged with its matched old row(s).
+
+    Returns (values, notes, integrity_flags). New values win; a blank
+    new cell keeps the old value (flagged); old-only columns carry
+    silently. Multi-token rows diff against every distinct matched old
+    row, prefixing notes with the tokens each row covers.
+    """
+    values = _blank_row(ctx)
+    # Per-row .iloc access (here and throughout the builders below) is the
+    # readable form, kept deliberately at this scale — QA measured 0.73s
+    # for a full merge @ 3000 rows.
+    row = ctx.new_df.iloc[new_idx]
+    for name in ctx.new_cols_set:
+        if not _is_blank(row[name]):
+            values[name] = row[name]
+
+    notes: List[str] = []
+    integrity_flags = 0
+    rows_to_tokens: Dict[int, List[str]] = {}
+    for tok, old_idx in token_to_old_row.items():
+        rows_to_tokens.setdefault(old_idx, []).append(tok)
+    multi = len(rows_to_tokens) > 1
+    for old_idx in sorted(rows_to_tokens):
+        prefix = f"[{', '.join(sorted(rows_to_tokens[old_idx]))}] " if multi else ""
+        old_row = ctx.old_df.iloc[old_idx]
+        for old_name, uni_col in ctx.old_to_unified.items():
+            # The key columns define matching; their textual difference
+            # (multi-token cells, formatting) is already expressed by
+            # the row statuses — never diff or blank-keep them.
+            if old_name == str(ctx.old_refdes_col) or uni_col == str(ctx.new_refdes_col):
+                continue
+            old_val = old_row[old_name]
+            if _is_blank(old_val):
+                continue
+            current = values.get(uni_col, "")
+            if uni_col in ctx.new_cols_set:
+                new_val = row[uni_col]
+                if _is_blank(new_val):
+                    if _is_blank(current):
+                        values[uni_col] = old_val
+                        notes.append(
+                            f'{prefix}{uni_col}: kept old value '
+                            f'"{_cell_text(old_val)}" (new was blank)'
+                        )
+                        integrity_flags += 1
+                    elif not _values_equal(current, old_val):
+                        notes.append(
+                            f'{prefix}{uni_col}: differing old values — '
+                            f'kept "{_cell_text(current)}"'
+                        )
+                        integrity_flags += 1
+                elif not _values_equal(old_val, new_val):
+                    notes.append(
+                        f'{prefix}{uni_col} changed from '
+                        f'"{_cell_text(old_val)}" to "{_cell_text(new_val)}"'
+                    )
+            else:
+                # Old-only column: the general manual-data carry.
+                if _is_blank(current):
+                    values[uni_col] = old_val
+                elif not _values_equal(current, old_val):
+                    notes.append(
+                        f'{prefix}{uni_col}: differing old values — '
+                        f'kept "{_cell_text(current)}"'
+                    )
+                    integrity_flags += 1
+    return values, notes, integrity_flags
+
+
+def _fill_row_from_old(ctx: _MergeContext, old_idx: int) -> Dict[str, Any]:
+    """A row built purely from an old row (Delete / Carried rows)."""
+    values = _blank_row(ctx)
+    old_row = ctx.old_df.iloc[old_idx]
+    for old_name, uni_col in ctx.old_to_unified.items():
+        val = old_row[old_name]
+        if not _is_blank(val):
+            values[uni_col] = val
+    return values
+
+
+def _old_row_is_dnp(
+    ctx: _MergeContext,
+    old_idx: int,
+    *,
+    ignore_dnp: bool,
+    dnp_re: "re.Pattern[str]",
+    old_desc_col: Optional[str],
+) -> bool:
+    if not ignore_dnp:
+        return False
+    row = ctx.old_df.iloc[old_idx]
+    text = _cell_text(row[ctx.old_refdes_col])
+    if old_desc_col and old_desc_col in ctx.old_df.columns:
+        text = f"{text} {_cell_text(row[old_desc_col])}"
+    # B2: strip control characters before matching, like every sibling
+    # site — an embedded control char (e.g. a stray null byte) can split
+    # a keyword like "DNP" and defeat the word-boundary match.
+    text = CONTROL_CHARS_PATTERN.sub("", text)
+    return bool(dnp_re.search(text))
+
+
+# Task 3 fills these two in; the core treats "no suffix entries" as "no
+# supersession" so this task is complete without them. Signatures already
+# take the context plus the scan indexes Task 3's carry-forward logic will
+# need, so wiring them up won't require touching any call site below.
+def _collect_suffix_entries(
+    ctx: _MergeContext,
+    tokens: List[str],
+    old_suffix_rows_for_base: Dict[str, List[Tuple[int, str]]],
+) -> List[Tuple[int, str]]:
+    return []
+
+
+def _build_carried_rows(
+    ctx: _MergeContext,
+    bare_new_idx: int,
+    suffix_entries: List[Tuple[int, str]],
+    new_all_tokens: set,
+) -> Tuple[List[Tuple[Dict[str, Any], List[str]]], int]:
+    return [], 0
+
+
 def build_unified_bom(
     old_df: pd.DataFrame,
     new_df: pd.DataFrame,
@@ -349,14 +512,32 @@ def build_unified_bom(
     # Falsy regex falls back to the canonical default, NEVER re.compile('')
     # (mirrors custom_compare / group_analysis).
     dnp_source = dnp_regex or DEFAULT_DNP_REGEX
+    invalid_dnp_regex = False
     try:
         dnp_re = re.compile(dnp_source, re.I)
     except re.error:
+        _logger.warning(f"Invalid DNP regex pattern, using default: {dnp_regex}")
         dnp_re = re.compile(DEFAULT_DNP_REGEX, re.I)
+        invalid_dnp_regex = True
 
     unified_cols, old_to_unified, tool_cols, plan_notes = _plan_columns(
         old_df, new_df, column_pairs
     )
+    # B6: when the two files' key columns have different headers, the old
+    # key's own column renders blank on every surviving row and filled only
+    # on Delete rows — a broken-looking column. Row identity lives in the
+    # new key column, and Delete rows already carry the original cell in
+    # their notes, so drop the old key's target from the union entirely.
+    # Skipped when the new file is empty: there's no new key column to
+    # anchor identity to, so the old key column remains the output key.
+    if (
+        not new_df.empty
+        and str(new_refdes_col) in unified_cols
+        and old_to_unified.get(str(old_refdes_col)) != str(new_refdes_col)
+    ):
+        old_key_target = old_to_unified.pop(str(old_refdes_col), None)
+        if old_key_target in unified_cols:
+            unified_cols.remove(old_key_target)
     status_col = tool_cols["status"]
     source_col = tool_cols["source"]
     notes_col = tool_cols["notes"]
@@ -371,6 +552,19 @@ def build_unified_bom(
         else old_to_unified.get(str(old_refdes_col), str(old_refdes_col))
     )
 
+    ctx = _MergeContext(
+        old_df=old_df,
+        new_df=new_df,
+        old_refdes_col=old_refdes_col,
+        new_refdes_col=new_refdes_col,
+        unified_cols=unified_cols,
+        old_to_unified=old_to_unified,
+        new_cols_set=new_cols_set,
+        refdes_out_col=refdes_out_col,
+        old_label=old_label,
+        new_label=new_label,
+    )
+
     def check_cancel(i: int) -> None:
         if stop_event is not None and i % _CANCEL_CHECK_EVERY == 0 and stop_event.is_set():
             raise CancellationError("Unified BOM merge cancelled.")
@@ -381,12 +575,25 @@ def build_unified_bom(
     old_tokens_by_row: List[List[str]] = []
     old_first_row_for_token: Dict[str, int] = {}
     old_suffix_rows_for_base: Dict[str, List[Tuple[int, str]]] = {}
+    # B1: a duplicate old RefDes must never vanish silently. Keyed by the
+    # FIRST occurrence's row index so the note can attach wherever that
+    # row ends up (a backbone match or a Delete row) — popped from there,
+    # never double-counted; anything still unpopped after both passes
+    # (e.g. the first occurrence was itself DNP-suppressed) is a leftover
+    # surfaced separately.
+    old_dup_notes_by_first_row: Dict[int, List[str]] = {}
     for idx in range(len(old_df)):
         check_cancel(idx)
         tokens = _row_tokens(old_df.iloc[idx][old_refdes_col])
         old_tokens_by_row.append(tokens)
         for tok in tokens:
             if tok in old_first_row_for_token:
+                old_dup_notes_by_first_row.setdefault(
+                    old_first_row_for_token[tok], []
+                ).append(
+                    f"Duplicate RefDes {tok} in {old_label} — old row "
+                    f"{idx + 2} was not merged (first occurrence used)"
+                )
                 continue  # first old occurrence wins (deterministic)
             old_first_row_for_token[tok] = idx
             base = get_usage_base_refdes(tok)
@@ -414,101 +621,9 @@ def build_unified_bom(
     new_all_tokens = set(new_token_first_row)
 
     # ------------------------------------------------------------------
-    # Row builders
-    # ------------------------------------------------------------------
-    def blank_row() -> Dict[str, Any]:
-        return {c: "" for c in unified_cols}
-
-    def build_matched_row(
-        new_idx: int, token_to_old_row: Dict[str, int]
-    ) -> Tuple[Dict[str, Any], List[str], int]:
-        """New row's values merged with its matched old row(s).
-
-        Returns (values, notes, integrity_flags). New values win; a blank
-        new cell keeps the old value (flagged); old-only columns carry
-        silently. Multi-token rows diff against every distinct matched old
-        row, prefixing notes with the tokens each row covers.
-        """
-        values = blank_row()
-        row = new_df.iloc[new_idx]
-        for name in new_cols_set:
-            if not _is_blank(row[name]):
-                values[name] = row[name]
-
-        notes: List[str] = []
-        flags = 0
-        rows_to_tokens: Dict[int, List[str]] = {}
-        for tok, old_idx in token_to_old_row.items():
-            rows_to_tokens.setdefault(old_idx, []).append(tok)
-        multi = len(rows_to_tokens) > 1
-        for old_idx in sorted(rows_to_tokens):
-            prefix = f"[{', '.join(sorted(rows_to_tokens[old_idx]))}] " if multi else ""
-            old_row = old_df.iloc[old_idx]
-            for old_name, uni_col in old_to_unified.items():
-                # The key columns define matching; their textual difference
-                # (multi-token cells, formatting) is already expressed by
-                # the row statuses — never diff or blank-keep them.
-                if old_name == str(old_refdes_col) or uni_col == str(new_refdes_col):
-                    continue
-                old_val = old_row[old_name]
-                if _is_blank(old_val):
-                    continue
-                current = values.get(uni_col, "")
-                if uni_col in new_cols_set:
-                    new_val = row[uni_col]
-                    if _is_blank(new_val):
-                        if _is_blank(current):
-                            values[uni_col] = old_val
-                            notes.append(
-                                f'{prefix}{uni_col}: kept old value '
-                                f'"{_cell_text(old_val)}" (new was blank)'
-                            )
-                            flags += 1
-                        elif not _values_equal(current, old_val):
-                            notes.append(
-                                f'{prefix}{uni_col}: differing old values — '
-                                f'kept "{_cell_text(current)}"'
-                            )
-                    elif not _values_equal(old_val, new_val):
-                        notes.append(
-                            f'{prefix}{uni_col} changed from '
-                            f'"{_cell_text(old_val)}" to "{_cell_text(new_val)}"'
-                        )
-                else:
-                    # Old-only column: the general manual-data carry.
-                    if _is_blank(current):
-                        values[uni_col] = old_val
-                    elif not _values_equal(current, old_val):
-                        notes.append(
-                            f'{prefix}{uni_col}: differing old values — '
-                            f'kept "{_cell_text(current)}"'
-                        )
-        return values, notes, flags
-
-    def fill_row_from_old(old_idx: int) -> Dict[str, Any]:
-        """A row built purely from an old row (Delete / Carried rows)."""
-        values = blank_row()
-        old_row = old_df.iloc[old_idx]
-        for old_name, uni_col in old_to_unified.items():
-            val = old_row[old_name]
-            if not _is_blank(val):
-                values[uni_col] = val
-        return values
-
-    # Task 3 fills these two in; the core treats "no suffix entries" as
-    # "no supersession" so this task is complete without them.
-    def _collect_suffix_entries(tokens: List[str]) -> List[Tuple[int, str]]:
-        return []
-
-    def _build_carried_rows(
-        bare_new_idx: int, suffix_entries: List[Tuple[int, str]]
-    ) -> Tuple[List[Tuple[Dict[str, Any], List[str]]], int]:
-        return [], 0
-
-    # ------------------------------------------------------------------
     # Backbone emission: every new-file row, in order.
     # ------------------------------------------------------------------
-    entries: List[Tuple[Dict[str, Any], str, str, List[str]]] = []
+    entries: List[_Entry] = []
     consumed_old_rows: Dict[int, int] = {}  # old row idx -> entry idx
     carried_tokens: set = set()
     counts = {
@@ -536,14 +651,24 @@ def build_unified_bom(
             if t in old_first_row_for_token and new_token_first_row.get(t) == new_idx
         }
 
-        suffix_entries = _collect_suffix_entries(tokens)
+        suffix_entries = _collect_suffix_entries(ctx, tokens, old_suffix_rows_for_base)
 
-        values, notes, flags = build_matched_row(new_idx, token_to_old_row)
-        warning_flags += flags + len(dup_notes)
-        notes = dup_notes + notes
+        # B1: any old-file duplicate notes owned by the old row(s) this
+        # backbone row consumed — surfaced here, before the status
+        # decision, so they count toward Changed like any other note.
+        dup_old_notes: List[str] = []
+        for old_idx in sorted(set(token_to_old_row.values())):
+            dup_old_notes.extend(old_dup_notes_by_first_row.pop(old_idx, []))
+
+        values, notes, integrity_flags = _build_matched_row(ctx, new_idx, token_to_old_row)
+        warning_flags += integrity_flags + len(dup_notes) + len(dup_old_notes)
+        notes = dup_notes + dup_old_notes + notes
 
         added_tokens = [t for t in tokens if t not in old_first_row_for_token]
-        matched_any = bool(token_to_old_row)
+        # B3: Source reflects genuine token membership in the old file, not
+        # whether THIS row happened to win the match (a duplicate new row
+        # never matches, even when its token is known to the old file).
+        known_in_old = any(t in old_first_row_for_token for t in tokens)
 
         if suffix_entries:
             status = STATUS_SUPERSEDED
@@ -566,41 +691,34 @@ def build_unified_bom(
                 notes.append(f"{t} is not in {old_label} — new on this row")
             if notes:
                 status = STATUS_CHANGED
-                source = src_both if matched_any else src_new_only
+                source = src_both if known_in_old else src_new_only
                 counts["changed"] += 1
             else:
                 status = ""
-                source = src_both if matched_any else src_new_only
+                source = src_both if known_in_old else src_new_only
                 counts["unchanged"] += 1
 
         entry_idx = len(entries)
-        entries.append((values, status, source, notes))
+        entries.append(_Entry(values, status, source, notes))
         for old_idx in set(token_to_old_row.values()):
             consumed_old_rows.setdefault(old_idx, entry_idx)
 
         if suffix_entries:
-            carried_rows, cflags = _build_carried_rows(new_idx, suffix_entries)
+            carried_rows, cflags = _build_carried_rows(
+                ctx, new_idx, suffix_entries, new_all_tokens
+            )
             warning_flags += cflags
             for (cvalues, cnotes), (old_idx, tok) in zip(carried_rows, suffix_entries):
                 carried_tokens.add(tok)
                 centry_idx = len(entries)
-                entries.append((cvalues, STATUS_CARRIED, src_carried, cnotes))
+                entries.append(_Entry(cvalues, STATUS_CARRIED, src_carried, cnotes))
                 consumed_old_rows.setdefault(old_idx, centry_idx)
                 counts["carried"] += 1
 
     # ------------------------------------------------------------------
     # Deletion pass: old-only tokens, inserted inline after their anchor.
     # ------------------------------------------------------------------
-    def old_row_is_dnp(old_idx: int) -> bool:
-        if not ignore_dnp:
-            return False
-        row = old_df.iloc[old_idx]
-        text = _cell_text(row[old_refdes_col])
-        if old_desc_col and old_desc_col in old_df.columns:
-            text = f"{text} {_cell_text(row[old_desc_col])}"
-        return bool(dnp_re.search(text))
-
-    insertions: Dict[int, List[Tuple[Dict[str, Any], str, str, List[str]]]] = {}
+    insertions: Dict[int, List[_Entry]] = {}
     dnp_skipped = 0
     anchor = -1
     for old_idx in range(len(old_df)):
@@ -616,14 +734,16 @@ def build_unified_bom(
         ]
         if not deleted_tokens:
             continue
-        if old_row_is_dnp(old_idx):
+        if _old_row_is_dnp(
+            ctx, old_idx, ignore_dnp=ignore_dnp, dnp_re=dnp_re, old_desc_col=old_desc_col
+        ):
             dnp_skipped += len(deleted_tokens)
             continue
         original_cell = _cell_text(old_df.iloc[old_idx][old_refdes_col])
         multi = len(tokens) > 1
         bucket = insertions.setdefault(anchor, [])
         for tok in deleted_tokens:
-            values = fill_row_from_old(old_idx)
+            values = _fill_row_from_old(ctx, old_idx)
             values[refdes_out_col] = tok
             base = get_usage_base_refdes(tok)
             if tok != base and base in new_all_tokens:
@@ -640,8 +760,24 @@ def build_unified_bom(
             row_notes = [note]
             if multi:
                 row_notes.append(f'From an old row listing "{original_cell}"')
-            bucket.append((values, STATUS_DELETE, src_old_only, row_notes))
+            # B1: this Delete row IS the anchor for any old-file duplicate
+            # note owned by old_idx (the first occurrence) — attach and
+            # count it here so it's never dropped nor double-counted.
+            dup_old_notes_here = old_dup_notes_by_first_row.pop(old_idx, [])
+            row_notes.extend(dup_old_notes_here)
+            warning_flags += len(dup_old_notes_here)
+            bucket.append(_Entry(values, STATUS_DELETE, src_old_only, row_notes))
             counts["deleted"] += 1
+
+    # B1: anything still left in the dict belongs to a duplicate whose
+    # first occurrence was never emitted at all (e.g. DNP-suppressed) —
+    # it has no row to attach to, so it surfaces in the run notes instead
+    # of vanishing.
+    leftover_dup_notes: List[str] = []
+    for pending_notes in old_dup_notes_by_first_row.values():
+        for note in pending_notes:
+            leftover_dup_notes.append(note)
+            warning_flags += 1
 
     # ------------------------------------------------------------------
     # Assembly
@@ -649,7 +785,7 @@ def build_unified_bom(
     final_rows: List[Dict[str, Any]] = []
     row_styles: List[str] = []
 
-    def emit(entry: Tuple[Dict[str, Any], str, str, List[str]]) -> None:
+    def emit(entry: _Entry) -> None:
         values, status, source, entry_notes = entry
         values[status_col] = status
         values[source_col] = source
@@ -674,6 +810,15 @@ def build_unified_bom(
     notes_out = [summary]
     notes_out.extend(plan_notes)
     warning_flags += len(plan_notes)
+    notes_out.extend(leftover_dup_notes)
+    if invalid_dnp_regex:
+        # B4: a bad custom DNP pattern falls back silently in effect, but
+        # must not be silent in the notes — the compare side already
+        # counts this against warning_count, so it isn't added again here.
+        notes_out.append(
+            "Unified BOM: the custom DNP pattern was invalid — the default "
+            "pattern was used."
+        )
     if dnp_skipped:
         notes_out.append(
             f"Unified BOM: {dnp_skipped} DNP-only old RefDes were not emitted "
