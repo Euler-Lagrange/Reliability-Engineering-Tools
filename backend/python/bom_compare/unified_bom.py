@@ -24,10 +24,16 @@ from common.exceptions import ColumnMappingError
 from common.refdes_utils import (
     canonicalize_refdes,
     get_usage_base_refdes,
+    is_instance_notation,
+    is_pin_notation,
     split_refdes_list,
 )
 
-from .bom_compare_logic import DEFAULT_DNP_REGEX
+# NOTE: DEFAULT_DNP_REGEX is deliberately NOT imported at module level.
+# bom_compare_logic re-exports this module (facade pattern), so a
+# module-level import here would make `import bom_compare.unified_bom`
+# order-dependent (ImportError when imported before the facade).
+# build_unified_bom lazy-imports it at call time instead.
 
 _logger = get_tool_logger("bom_compare")
 
@@ -79,24 +85,54 @@ def _is_blank(value: Any) -> bool:
     return _cell_text(value) == ""
 
 
+_PLAIN_DECIMAL = re.compile(r"^[+-]?\d+(?:\.\d*)?$")
+
+
+def _canonical_decimal(text: str) -> Optional[str]:
+    """Canonical form for plain decimal literals, else None.
+
+    Only plain decimals qualify (no exponents, underscores, or thousands
+    separators): numeric equivalence exists to absorb Excel float
+    formatting ("10" vs "10.0"), never to equate rewritten identifiers
+    ("0123" vs "123" IS a change worth reporting).
+    """
+    if not _PLAIN_DECIMAL.match(text):
+        return None
+    sign = "-" if text.startswith("-") else ""
+    body = text.lstrip("+-")
+    if "." in body:
+        int_part, frac = body.split(".", 1)
+        frac = frac.rstrip("0")
+    else:
+        int_part, frac = body, ""
+    return f"{sign}{int_part}.{frac}" if frac else f"{sign}{int_part}"
+
+
 def _values_equal(a: Any, b: Any) -> bool:
     """Trimmed, case-insensitive, numeric-equivalent comparison.
 
     '10' vs '10.0' is NOT a change; 'RES 10K' vs 'res 10k' is NOT a
     change. The new value still lands in the cell either way — this only
-    decides whether the difference is *reported*.
+    decides whether the difference is *reported*. Numeric equivalence is
+    restricted to plain-decimal formatting differences (see
+    _canonical_decimal) — it never equates renumbered identifiers like
+    "0123" vs "123" or float-precision-losing comparisons.
     """
     ta, tb = _cell_text(a), _cell_text(b)
     if ta.casefold() == tb.casefold():
         return True
-    try:
-        return float(ta) == float(tb)
-    except (TypeError, ValueError):
-        return False
+    ca = _canonical_decimal(ta)
+    if ca is not None:
+        cb = _canonical_decimal(tb)
+        if cb is not None:
+            return ca == cb
+    return False
 
 
 def _row_tokens(cell: Any) -> List[str]:
     """Canonical RefDes tokens for one cell (multi-token cells split)."""
+    if cell is None or (pd.api.types.is_scalar(cell) and pd.isna(cell)):
+        return []
     tokens: List[str] = []
     for tok in split_refdes_list(cell):
         canon = canonicalize_refdes(tok)
@@ -106,32 +142,55 @@ def _row_tokens(cell: Any) -> List[str]:
 
 
 def _is_suffix_of(token: str, base: str) -> bool:
-    """True when ``token`` is a manual suffix/pin row of ``base``.
+    """True when ``token`` is a manual HYPHENATED suffix/pin row of ``base``.
 
-    Pin-style tokens (J4-P1) and instance suffixes (U2000-3) both reduce
-    to their component base via get_usage_base_refdes; the token must
-    actually differ from the base so a bare row never counts as its own
-    suffix.
+    Only hyphenated instance/pin notation qualifies (U2000-1, U2000-D4,
+    J4-P1) — the user's manual expansions are always hyphenated. Range
+    tokens (R1-R3) are excluded via is_instance_notation/is_pin_notation
+    (a range is not an expansion of its first element), and trailing-letter
+    variants (U1A) are excluded as distinct schematic parts. Prefixes
+    outside the instance/pin notation sets simply never carry — their
+    old rows surface as flagged Delete rows instead (visible, not silent).
     """
-    return token != base and get_usage_base_refdes(token) == base
+    canon = canonicalize_refdes(token)
+    if not canon or canon == base or "-" not in canon:
+        return False
+    if not (is_instance_notation(canon) or is_pin_notation(canon)):
+        return False
+    return get_usage_base_refdes(canon) == base
 
 
 def _plan_columns(
     old_df: pd.DataFrame,
     new_df: pd.DataFrame,
     column_pairs: Optional[List[Tuple[str, str]]],
-) -> Tuple[List[str], Dict[str, str], Dict[str, str]]:
+) -> Tuple[List[str], Dict[str, str], Dict[str, str], List[str]]:
     """Build the unified column layout.
 
-    Returns (unified_columns, old_to_unified, tool_columns) where:
+    Returns (unified_columns, old_to_unified, tool_columns, plan_notes)
+    where:
     - unified_columns: the new file's columns in original order, then
       old-only columns (old-file order), then the three tool-authored
       columns (Status / Source / Change Notes).
     - old_to_unified: every old column name -> the unified column it
-      fills. Identity is case-insensitive exact header match; explicit
-      column_pairs (old_col, new_col) win over the name match.
+      fills. Identity is case-insensitive, trimmed exact header match;
+      explicit column_pairs (old_col, new_col, ...) win over the name
+      match and are themselves resolved case-insensitively/trimmed
+      against both frames' real headers. Extra tuple elements (e.g. a
+      rule string) are accepted and ignored.
     - tool_columns: {"status": ..., "source": ..., "notes": ...} — the
       actual (collision-guarded) tool column names.
+    - plan_notes: human-readable notes about anything that could not be
+      resolved cleanly — an explicit pair that didn't match a loaded
+      header, or two old columns that fold onto the same unified target
+      (the first claims it; the rest keep their own data under a
+      uniquified " (old)"-suffixed name — data is never dropped).
+
+    Every target may be claimed by exactly ONE old column: explicit pairs
+    claim first (in the order given), then remaining old columns claim by
+    case-insensitive/trimmed name match (old-file order). A losing old
+    column never overwrites the winner's column — it keeps its own data
+    under its own (uniquified) name instead.
     """
     new_cols = [str(c) for c in new_df.columns]
     old_cols = [str(c) for c in old_df.columns]
@@ -140,21 +199,69 @@ def _plan_columns(
     for c in new_cols:
         by_fold.setdefault(c.strip().casefold(), c)
 
-    old_to_unified: Dict[str, str] = {}
-    for pair in column_pairs or []:
-        old_col, new_col = str(pair[0]), str(pair[1])
-        if old_col in old_cols and new_col in new_cols:
-            old_to_unified[old_col] = new_col
+    old_by_fold: Dict[str, str] = {}
     for c in old_cols:
-        if c in old_to_unified:
-            continue
-        old_to_unified[c] = by_fold.get(c.strip().casefold(), c)
+        old_by_fold.setdefault(c.strip().casefold(), c)
 
-    unified = list(new_cols)
+    unified: List[str] = list(new_cols)
+    unified_fold: set = {c.strip().casefold() for c in unified}
+    claimed_by_fold: Dict[str, str] = {}
+    old_to_unified: Dict[str, str] = {}
+    plan_notes: List[str] = []
+
+    def _uniquify(name: str) -> str:
+        final = name
+        while final.strip().casefold() in unified_fold:
+            final = f"{final} (old)"
+        return final
+
+    def _claim(old_col: str, target: str) -> None:
+        fold_key = target.strip().casefold()
+        prior = claimed_by_fold.get(fold_key)
+        if prior is None:
+            old_to_unified[old_col] = target
+            claimed_by_fold[fold_key] = old_col
+            if fold_key not in unified_fold:
+                unified.append(target)
+                unified_fold.add(fold_key)
+            return
+        # Collision: this old column never overwrites the winner. It
+        # keeps its own data under a uniquified name instead of being
+        # silently discarded.
+        final = _uniquify(old_col.strip())
+        old_to_unified[old_col] = final
+        unified.append(final)
+        unified_fold.add(final.strip().casefold())
+        claimed_by_fold[final.strip().casefold()] = old_col
+        plan_notes.append(
+            f'Old column "{old_col}" kept separately as "{final}" — '
+            f'"{target}" was already filled by old column "{prior}"'
+        )
+
+    handled: set = set()
+
+    for pair in column_pairs or []:
+        if len(pair) < 2:
+            continue
+        a, b = str(pair[0]), str(pair[1])
+        old_match = old_by_fold.get(a.strip().casefold())
+        new_match = by_fold.get(b.strip().casefold())
+        if old_match is not None and new_match is not None and old_match not in handled:
+            _claim(old_match, new_match)
+            handled.add(old_match)
+        else:
+            plan_notes.append(
+                f'Column pair "{a}" -> "{b}" did not match the loaded '
+                f"headers and was ignored"
+            )
+
     for c in old_cols:
-        target = old_to_unified[c]
-        if target not in unified:
-            unified.append(target)
+        if c in handled:
+            continue
+        handled.add(c)
+        c_trim = c.strip()
+        target = by_fold.get(c_trim.casefold(), c_trim)
+        _claim(c, target)
 
     # Tool-authored columns never clobber user data: collision-guard the
     # names against the union ("Status" in a source file -> "Merge Status").
@@ -169,4 +276,4 @@ def _plan_columns(
             name = f"Merge {name}"
         unified.append(name)
         tool_columns[key] = name
-    return unified, old_to_unified, tool_columns
+    return unified, old_to_unified, tool_columns, plan_notes
