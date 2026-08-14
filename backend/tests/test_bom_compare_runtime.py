@@ -620,11 +620,13 @@ def test_custom_run_unified_newer_file1_swaps_direction(tmp_path: Path) -> None:
     assert result["status"] == "success"
     ws = load_workbook(result["output_file"])["Unified BOM"]
     refdes = [ws.cell(row=r, column=1).value for r in range(2, ws.max_row + 1)]
-    # Backbone = bomA rows (suffix rows) in order; the old file's bare U2000
-    # is their base — covered by carry logic only when the NEW side is bare,
-    # which it is not here, so U2000-1/U2000-2 lead the sheet.
-    assert refdes[0] == "U2000-1"
-    assert refdes[1] == "U2000-2"
+    # Spec "reverse case": with File 1 (the suffix rows) as the NEWER file,
+    # the old side's bare U2000 is an unmatched old-only row — it anchors at
+    # the top as a Delete, and the suffix rows are plain Added backbone rows.
+    assert refdes == ["U2000", "U2000-1", "U2000-2"]
+    status_idx = [c.value for c in ws[1]].index("Status") + 1
+    statuses = [ws.cell(row=r, column=status_idx).value for r in range(2, ws.max_row + 1)]
+    assert statuses == ["Delete", "Added", "Added"]
 
 
 def test_validate_rejects_bad_unified_newer_file(tmp_path: Path) -> None:
