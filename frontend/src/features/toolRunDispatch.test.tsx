@@ -292,10 +292,11 @@ describe("tool run dispatch", () => {
     expect(body.options).toEqual({});
   });
 
-  it("forwards the six comparison options to the backend (base_match defaults off)", async () => {
-    // All six BOM Compare checkboxes must reach the backend in the run body so
-    // the runtime adapter can wire them. base_match defaults to FALSE so a
+  it("forwards the seven comparison options to the backend (base_match defaults off)", async () => {
+    // All seven BOM Compare checkboxes must reach the backend in the run body
+    // so the runtime adapter can wire them. base_match defaults to FALSE so a
     // default run keeps loose base matching off (byte-identical to pre-wiring).
+    // create_unified_bom also defaults FALSE (Task 7, 2026-08-13).
     render(<BomCompareTool />);
     await runTool("Compare");
 
@@ -308,6 +309,7 @@ describe("tool run dispatch", () => {
       check_part_usage: true,
       check_fmr: false,
       treat_prov_as_covered: true,
+      create_unified_bom: false,
     });
   });
 
