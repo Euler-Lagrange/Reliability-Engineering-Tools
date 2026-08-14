@@ -320,6 +320,16 @@ const SECTIONS: GuideSection[] = [
             PROV groups as covered.
           </li>
           <li>
+            <strong>Create Unified BOM</strong> — Group vs BOM and Custom
+            Compare only; adds a merged Unified BOM tab to the report. The
+            newer file is the backbone and the older file&apos;s manual
+            suffix/pin rows are carried forward. Rows are color-coded (green
+            added, red delete, blue superseded, yellow changed/carried) with
+            a Status / Source / Change Notes triple for filtering. Enabling
+            it reveals a newer-file picker to say which input is the newer
+            one.
+          </li>
+          <li>
             FMEA-aware checks (Scope Warnings sheet, composite duplicate
             identity) turn on when a file is recognized as an FMEA — by
             filename <em>or</em> by a validated FMEA Level column in its

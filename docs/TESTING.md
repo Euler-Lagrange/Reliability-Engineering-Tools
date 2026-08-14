@@ -14,7 +14,8 @@
 | Backend Failure-Rate logic | `backend/tests/test_failure_rate_logic.py` | 31 | pytest |
 | Backend RefDes extraction-engine | `backend/tests/test_extraction_engine.py` | 22 | pytest |
 | Backend BOM-compare logic | `backend/tests/test_bom_compare_logic.py` | 57 | pytest |
-| Backend BOM-compare runtime | `backend/tests/test_bom_compare_runtime.py` | 16 | pytest |
+| Backend BOM-compare runtime | `backend/tests/test_bom_compare_runtime.py` | 27 | pytest |
+| Backend unified-BOM | `backend/tests/test_unified_bom.py` | 105 | pytest |
 | Backend extraction compare | `backend/tests/test_extraction_compare.py` | 10 | pytest |
 | Backend Failure-Rate runtime | `backend/tests/test_failure_rate_runtime.py` | 6 | pytest |
 | Backend read-layer (NA + header dedup) | `backend/tests/test_read_layer.py` | 9 | pytest |
@@ -29,7 +30,7 @@
 | Backend RefDes runtime | `backend/tests/test_refdes_runtime.py` | 43 | pytest |
 | Backend RefDes validation notes | `backend/tests/test_validation_notes.py` | 12 | pytest |
 | Backend RefDes prefix config | `backend/tests/test_refdes_prefix_config.py` | 7 | pytest |
-| **Backend subtotal** | | **528** | |
+| **Backend subtotal** | | **644** | |
 | Frontend shell | `frontend/src/app/App.test.tsx` | 11 | Vitest + RTL |
 | Frontend context drawer | `frontend/src/components/ContextDrawer.test.tsx` | 5 | Vitest + RTL |
 | Frontend escape layers | `frontend/src/shared/hooks/useEscapeLayer.test.ts` | 4 | Vitest |
@@ -65,7 +66,7 @@
 | Frontend mapping columns | `frontend/src/features/fmea/mappingColumns.test.ts` | 28 | Vitest |
 | Frontend FMEA synonym automap | `frontend/src/features/fmea/columnSynonyms.test.ts` | 9 | Vitest |
 | Frontend mapping analysis | `frontend/src/features/fmea/mappingAnalysis.test.ts` | 5 | Vitest |
-| Frontend BOM Compare tool | `frontend/src/features/bom-compare/BomCompareTool.test.tsx` | 26 | Vitest + RTL |
+| Frontend BOM Compare tool | `frontend/src/features/bom-compare/BomCompareTool.test.tsx` | 32 | Vitest + RTL |
 | Frontend Failure Rate tool | `frontend/src/features/failure-rate/FailureRateTool.test.tsx` | 6 | Vitest + RTL |
 | Frontend RefDes Extractor tool | `frontend/src/features/refdes-extractor/RefDesExtractorTool.test.tsx` | 18 | Vitest + RTL |
 | Frontend number field | `frontend/src/components/primitives/NumberField.test.tsx` | 6 | Vitest + RTL |
@@ -81,9 +82,9 @@
 | Frontend shell-hook install | `frontend/src/app/App.shellHooks.test.tsx` | 1 | Vitest + RTL |
 | Frontend scenario completeness | `frontend/src/mocks/scenarios.test.ts` | 2 | Vitest |
 | Frontend validation preview | `frontend/src/components/ValidationPreview.test.tsx` | 5 | Vitest + RTL |
-| **Frontend subtotal** | | **406** | |
+| **Frontend subtotal** | | **412** | |
 | Rust bridge unit | `src-tauri/src/lib.rs` | 23 | cargo test |
-| **Total** | | **957** | |
+| **Total** | | **1079** | |
 
 ## Backend Tests
 
@@ -230,7 +231,8 @@ new FMEA tests must do the same or validation will reject the request.
 | Failure-Rate logic (in-process, 31 tests) | Failure Rate (FR) linker math driven through `FMEALinkerLogic.process`: per-mode `Mode_FR = Part_FR * Usage * Corrected_Ratio` arithmetic, unit-mode scaling to per-hour space, RefDes lookup normalization, deterministic normalized-RefDes duplicate handling (conservative maximum for conflicts; identical-rate deduplication stays clean), and Tier-1 genuine-gap Part Usage handling (blank usage with real FR → NaN Mode_FR, "=1/N" formula-cell-as-NaN, unmatched-RefDes zero preserved, circuit-block roll-up skips blank children) — asserts exact computed numbers |
 | RefDes extraction-engine (in-process, 22 tests) | `_disambiguate_pin_mapping` pin-label collision resolution across the three-tier priority (body center inside group rect → body overlaps rect → nearest body by distance); bounded word extraction and timeout/run-log surfacing; post-join zombie counting and survivor retention for safe document ownership; prefix allowlisting and exact blacklist matching; sequence-gap placeholders/range summaries; and legacy-hybrid ungrouped-row retention |
 | BOM-compare logic (in-process, 57 tests) | BOM Compare range/set math and pin/base normalization; group/custom missing-item checks; display-label propagation; strict FMR detection and source reporting; opt-in DNP, PROV, loose-match, and compare-column behavior; FMEA content detection; report-sheet naming; and two-directional cross-file Part Usage checks, including NaN-safe direct-helper behavior |
-| BOM-compare runtime (in-process, 16 tests) | Runtime validation/option wiring plus cancellation cleanup before promotion in group, custom, and extraction-compare output paths |
+| BOM-compare runtime (in-process, 27 tests) | Runtime validation/option wiring plus cancellation cleanup before promotion in group, custom, and extraction-compare output paths; incl. the 2026-08-13 Unified BOM option wiring (tab emission, direction swap, custom-path DNP desc detection, notes cap, `invalid_unified_newer_file` validate-time rejection, pre-cancel temp hygiene) |
+| Unified BOM (in-process, 105 tests) | `build_unified_bom` merge engine: column-union planning with collision safety, canonical-decimal value equivalence, Status/Source/Change Notes assignment, inline deletion anchoring, suffix/pin carry-forward with carry-once + consensus uniform-column rule, superseded bare rows, DNP suppression, duplicate surfacing, the genuine-deletion vs. likely-suffix-replacement note split, styled sheet writer read-back, and a facade import-order pin |
 | Failure-Rate runtime (in-process, 6 tests) | Runtime validation labels, duplicate-rate warning qualification, clean identical-rate deduplication, and cancellation cleanup before output promotion |
 | RefDes runtime (in-process, 43 tests) | Runtime option validation, output projection, BOM cross-check soft-failure qualification, complete actionable warning counts (unverified groups, BOM-load errors, annotation timeouts, ambiguous tokens, dropped orphans, retained BOM collisions), informational-row exclusion, cancellation checks during group detection / after extraction / before promotion, and zombie-aware PDF close behavior |
 | RefDes silent-loss hotfix (Wave R, in-process, 12 tests) | DIG-4xx incident closure: UNGROUPED (IN/NOT IN BOM) + PROVISIONAL capture for RefDes outside every group rect (NextGen + legacy-hybrid twin); annotation page-timeout collection with 30s default, config option, and toast-qualifying result notes; empty-`/Contents` FreeText label recovery from the annotation appearance; run-length-aware sequence gaps (short-run placeholders, long-run range-summary rows, no silent family skip) with extraction-compare exclusion; the combined 3-page incident regression; bom-collision pin disposition |
@@ -284,7 +286,7 @@ neither of which exists under jsdom, so the client returns mock data from
 | `frontend/src/features/fmea/mappingColumns.test.ts` | 28 — column synonym matching, priority ordering, ambiguity resolution, Part Number mapping, and FMD override-key migration |
 | `frontend/src/features/fmea/columnSynonyms.test.ts` | 9 — backend-synonym mirror, BAE PN and Roman-numeral matching, exact-match precedence, strict FMR matching, and derived-row exclusion |
 | `frontend/src/features/fmea/mappingAnalysis.test.ts` | 5 — mapping completeness analysis, gap detection, suggestions, multi-source provenance merging (resolveSheetInspections removed as dead code in the 2026-07 deep-dive Batch 4) |
-| `frontend/src/features/bom-compare/BomCompareTool.test.tsx` | 26 — custom slots, workflow-local onboarding/cache behavior, inspection recovery, run guards and error surfacing, header-derived mapping, dispatch options, display-name inputs, custom column pairs, selector locking, cross-tool inspection pause, browser-preview Load-example reveal |
+| `frontend/src/features/bom-compare/BomCompareTool.test.tsx` | 32 — custom slots, workflow-local onboarding/cache behavior, inspection recovery, run guards and error surfacing, header-derived mapping, dispatch options, display-name inputs, custom column pairs, selector locking, cross-tool inspection pause, browser-preview Load-example reveal, and the Create Unified BOM checkbox/newer-file-picker/payload tests (nickname-derived picker labels, extraction-mode payload staying clean of both unified keys) |
 | `frontend/src/features/failure-rate/FailureRateTool.test.tsx` | 6 — stale-validation clearing, real-header mapping derivation, cross-tool inspection pause, onboarding conformance, and browser-preview Load-example reveal |
 | `frontend/src/features/refdes-extractor/RefDesExtractorTool.test.tsx` | 18 — piece-part pinlist slot, pristine behavior, dispatch and inspection guards, adaptive geometry, numeric tuning, advanced controls, annotation-page timeout, and browser-preview Load-example reveal |
 | `frontend/src/components/primitives/NumberField.test.tsx` | 6 — numeric value parsing, NaN guard, clamping, and native numeric attributes |

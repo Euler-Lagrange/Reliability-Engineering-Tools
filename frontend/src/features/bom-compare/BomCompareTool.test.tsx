@@ -1005,4 +1005,59 @@ describe("Create Unified BOM option", () => {
       screen.getByRole("checkbox", { name: /Create Unified BOM/i }),
     ).toBeDisabled();
   });
+
+  it("newer-file picker option labels derive from typed nicknames", async () => {
+    // Nickname inputs only render once the pristine onboarding card is
+    // exited (InputGrid replaces EmptyState) — browse for the grouping
+    // file first, same as the display-name test above.
+    backendMocks.openExcelFile.mockResolvedValue("C:\\real\\Grouping.xlsx");
+    backendMocks.listSheets.mockResolvedValue({
+      path: "C:\\real\\Grouping.xlsx",
+      sheets: ["Grouping"],
+      mode: "desktop-bridge",
+    });
+    backendMocks.inspectInput.mockResolvedValue({
+      mode: "desktop-bridge",
+      sheet: "Grouping",
+      columns: ["Component Group", "Reference Designator"],
+    });
+
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+
+    await user.click(screen.getByRole("button", { name: "Browse for grouping file" }));
+    await screen.findByText("Grouping workbook");
+
+    // Group workflow's two roles ("grouping"/"bom") each render a nickname
+    // input via InputGrid's onNicknameChange wiring, aria-labeled
+    // "<role label> display name".
+    await user.type(
+      screen.getByRole("textbox", { name: "Grouping workbook display name" }),
+      "Rev A Grouping",
+    );
+    await user.click(screen.getByRole("checkbox", { name: /^Create Unified BOM/ }));
+    await user.click(
+      screen.getByRole("combobox", { name: "Newer BOM (merge wins conflicts)" }),
+    );
+
+    expect(await screen.findByRole("option", { name: "Rev A Grouping" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "BOM workbook" })).toBeInTheDocument();
+  });
+
+  it("keeps create_unified_bom/unified_newer_file out of the Extraction Compare payload", async () => {
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+
+    // Enable the option in group mode (where it's live), then switch to
+    // Extraction Compare — the checkbox is disabled there but its prior
+    // `true` state must not leak into the fixed-schema payload.
+    await user.click(screen.getByRole("checkbox", { name: /^Create Unified BOM/ }));
+    await user.click(screen.getByRole("button", { name: /Extraction Compare/i }));
+    await user.click(screen.getByRole("button", { name: "Compare" }));
+
+    await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
+    const request = backendMocks.executeRun.mock.calls[0][0];
+    expect(request.options).not.toHaveProperty("create_unified_bom");
+    expect(request.options).not.toHaveProperty("unified_newer_file");
+  });
 });

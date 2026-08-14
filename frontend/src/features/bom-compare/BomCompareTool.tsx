@@ -124,6 +124,22 @@ const NICKNAME_OPTION_KEYS: Partial<Record<FileRole, string>> = {
 };
 
 /**
+ * Unified BOM (2026-08-13): last-resort human label for the newer-file
+ * picker when a role has no input-card label yet (e.g. before inspection).
+ * Mirrors the `MAPPING_FIELD_META` convention above — a static map instead
+ * of falling back to the raw internal role string. Only these four roles
+ * are reachable from `unifiedRoles`.
+ */
+type UnifiedSlotRole = "grouping" | "bom" | "bomA" | "bomB";
+
+const UNIFIED_SLOT_ROLE_LABELS: Record<UnifiedSlotRole, string> = {
+  grouping: "Grouping workbook",
+  bom: "BOM workbook",
+  bomA: "File 1",
+  bomB: "File 2",
+};
+
+/**
  * Family 1 fix: seed inputs from the demo scenario in browser-mock mode (so
  * the preview is populated) but from empty desktop slots in the real desktop
  * runtime (so no fake example path leaks into a run). Used for both the
@@ -744,13 +760,14 @@ export function BomCompareTool() {
   // workflow (backend: grouping/bom for the group path, bomA/bomB for
   // custom). The picker shows the user's own nickname for that role when
   // one is set, falling back to the role's input-card label.
-  const unifiedRoles: [FileRole, FileRole] =
+  const unifiedRoles: [UnifiedSlotRole, UnifiedSlotRole] =
     workflowId === "bom_compare_custom" ? ["bomA", "bomB"] : ["grouping", "bom"];
 
   const unifiedSlotLabel = (slot: "file1" | "file2"): string => {
     const role = slot === "file1" ? unifiedRoles[0] : unifiedRoles[1];
     const nickname = (fileNicknames[role] ?? "").trim();
-    const roleLabel = inputStates.find((input) => input.role === role)?.label ?? role;
+    const roleLabel =
+      inputStates.find((input) => input.role === role)?.label ?? UNIFIED_SLOT_ROLE_LABELS[role];
     return nickname || roleLabel;
   };
 

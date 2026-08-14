@@ -512,6 +512,25 @@ def test_bare_old_row_flags_new_expansion_rows_when_deleted():
     assert "likely replaced by suffix rows" in delete_row[COL_NOTES]
 
 
+def test_genuine_deletion_keeps_plain_delete_note():
+    """Negative control for the reverse case above: when the old file's
+    bare row truly has no trace in the new file (no bare match, no base
+    match, no expansion/suffix rows either), the Delete row must keep the
+    plain "remove from the FMEAs" wording — not the "expansion rows"/
+    "auto-carried" review language reserved for likely suffix-row
+    replacements."""
+    result = _merge(
+        [{"RefDes": "R7"}],
+        [{"RefDes": "R1"}],
+    )
+    frame = result.frame
+    delete_row = frame[frame["RefDes"] == "R7"].iloc[0]
+    assert delete_row[COL_STATUS] == STATUS_DELETE
+    assert delete_row[COL_NOTES] == "Not in New BOM — remove from the FMEAs"
+    assert "expansion rows" not in delete_row[COL_NOTES]
+    assert "auto-carried" not in delete_row[COL_NOTES]
+
+
 def test_plan_notes_surface_in_result():
     result = _merge(
         [{"RefDes": "R1", "Part Number": "PN", "Part number": "pn2"}],

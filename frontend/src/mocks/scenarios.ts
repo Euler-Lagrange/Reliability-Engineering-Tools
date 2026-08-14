@@ -818,7 +818,10 @@ export const bomCompareDemoScenarios: DemoScenario[] = [
         outputFile: "DRIVE\\outputs\\BomCompare_Group_20260406.xlsx",
         primaryMetric: "3 missing",
         secondaryMetric: "1 warning",
-        notes: ["Group vs BOM mode: compared grouping against BOM."],
+        notes: [
+          "Group vs BOM mode: compared grouping against BOM.",
+          "Unified BOM tab (optional): merged rows color-coded — added green, deletions red, carried rows yellow.",
+        ],
       },
     },
   },
@@ -871,7 +874,10 @@ export const bomCompareDemoScenarios: DemoScenario[] = [
         outputFile: "DRIVE\\outputs\\BomCompare_Custom_20260406.xlsx",
         primaryMetric: "7 differences",
         secondaryMetric: "0 warnings",
-        notes: ["Custom mode: compared two BOMs directly by RefDes key."],
+        notes: [
+          "Custom mode: compared two BOMs directly by RefDes key.",
+          "Unified BOM tab (optional): merged rows color-coded — added green, deletions red, carried rows yellow.",
+        ],
       },
     },
   },

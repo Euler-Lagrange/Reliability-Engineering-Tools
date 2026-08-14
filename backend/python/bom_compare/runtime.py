@@ -242,8 +242,7 @@ def _capped_unified_notes(unified: Any) -> list[str]:
     kept = notes[:_UNIFIED_NOTES_CAP]
     remaining = len(notes) - _UNIFIED_NOTES_CAP
     kept.append(
-        f"…and {remaining} more Unified BOM notes — see the Unified BOM "
-        f"tab's Change Notes column."
+        f"…and {remaining} more Unified BOM notes were trimmed from this summary."
     )
     return kept
 

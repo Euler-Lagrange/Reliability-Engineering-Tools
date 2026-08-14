@@ -710,7 +710,7 @@ def test_capped_unified_notes_truncates_with_rollup() -> None:
 
     assert len(capped) == 21
     assert capped[:20] == [f"note {i}" for i in range(20)]
-    assert capped[20].startswith("…and 30 more Unified BOM notes")
+    assert capped[20] == "…and 30 more Unified BOM notes were trimmed from this summary."
 
 
 def test_capped_unified_notes_passes_through_when_under_cap() -> None:

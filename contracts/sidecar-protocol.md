@@ -338,12 +338,19 @@ body. Currently defined fields:
   sheet) — and `key_mode` (`"refdes_list"` default vs `"exact"`). Both are
   **custom-only**; with no `compare_columns` the custom path reports RefDes
   presence/absence only.
+  `create_unified_bom` — bool, default `false`, **group + custom only**
+  (extraction never sends it) — adds a merged Unified BOM tab to the report.
+  `unified_newer_file` — `"file1"` | `"file2"`, default `"file2"`; `file1` is
+  the grouping/bomA slot, `file2` is the bom/bomB slot; only sent when
+  `create_unified_bom` is `true`.
 - Mapping values may carry the Do-Not-Map sentinel `"__do_not_map__"`
   (single source of truth: `shared/pre_run_validation.DO_NOT_MAP_SENTINEL`
   mirrored by `frontend/src/app/types.ts` `DO_NOT_MAP_VALUE`). A REQUIRED
   mapping set to the sentinel blocks validation with `reason_code`
   `"invalid_do_not_map"` — it must never reach the execute path as a
   literal column name.
+  `"invalid_unified_newer_file"` — `unified_newer_file` is missing or not
+  `"file1"`/`"file2"` while `create_unified_bom` is `true`.
 
 The legacy `enrichments` field has been removed. The backend tolerates
 legacy payloads for backward compatibility but hard-fails with
