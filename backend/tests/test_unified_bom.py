@@ -850,3 +850,131 @@ def test_carry_skips_suffixes_the_new_file_already_lists():
     assert frame.iloc[0][COL_STATUS] == STATUS_SUPERSEDED
     assert frame.iloc[1][COL_STATUS] == STATUS_CARRIED
     assert frame.iloc[2][COL_STATUS] == STATUS_CHANGED  # 5 -> 50 noted
+
+
+# ---------------------------------------------------------------------------
+# Adversarial-QA hardening batch on Task 3 (Fixes 1-4)
+# ---------------------------------------------------------------------------
+
+def test_duplicate_bare_row_carries_suffix_block_only_once():
+    # Fix 1: a second new-file row bearing the same bare base must not
+    # re-supersede/re-carry the suffix group — the block carries exactly
+    # once, and the duplicate bare row falls through to the ordinary
+    # duplicate-token path (Changed/Both/dup note).
+    result = _merge(
+        [{"RefDes": "U2000-1", "Sheet Number": "1"},
+         {"RefDes": "U2000-2", "Sheet Number": "2"}],
+        [{"RefDes": "U2000"}, {"RefDes": "U2000"}],
+    )
+    frame = result.frame
+    assert list(frame["RefDes"]) == ["U2000", "U2000-1", "U2000-2", "U2000"]
+    assert frame.iloc[0][COL_STATUS] == STATUS_SUPERSEDED
+    assert frame.iloc[1][COL_STATUS] == STATUS_CARRIED
+    assert frame.iloc[2][COL_STATUS] == STATUS_CARRIED
+    dup_row = frame.iloc[3]
+    assert dup_row[COL_STATUS] == STATUS_CHANGED
+    assert dup_row[COL_SOURCE] == "Both"
+    assert "Duplicate RefDes U2000" in dup_row[COL_NOTES]
+    assert result.counts["carried"] == 2
+    assert result.counts["superseded"] == 1
+
+
+def test_uniform_rule_overwrites_when_group_has_one_non_blank_value():
+    # Fix 2 (a): non-blank consensus among the group's populated cells
+    # (blanks excluded), bare row differs -> every carried row's cell
+    # (blank or not) is overwritten, with a note on each, flagged once.
+    result = _merge(
+        [{"RefDes": "U1-1", "Part Number": "OLD-PN"},
+         {"RefDes": "U1-2", "Part Number": ""},
+         {"RefDes": "U1-3", "Part Number": ""}],
+        [{"RefDes": "U1", "Part Number": "NEW-PN"}],
+    )
+    carried = result.frame.iloc[1:4]
+    assert list(carried["Part Number"]) == ["NEW-PN", "NEW-PN", "NEW-PN"]
+    for _, row in carried.iterrows():
+        assert (
+            'Part Number updated from "OLD-PN" to "NEW-PN" by New BOM'
+            in row[COL_NOTES]
+        )
+    assert result.warning_count == 1
+
+
+def test_uniform_rule_blank_fills_with_consensus_when_bare_matches():
+    # Fix 2 (b): same group, but the bare row's value equals the group's
+    # consensus -> no overwrite/no note; blank cells fill with the
+    # consensus text instead (silent), non-blank cells are untouched.
+    result = _merge(
+        [{"RefDes": "U1-1", "Part Number": "OLD-PN"},
+         {"RefDes": "U1-2", "Part Number": ""},
+         {"RefDes": "U1-3", "Part Number": ""}],
+        [{"RefDes": "U1", "Part Number": "OLD-PN"}],
+    )
+    carried = result.frame.iloc[1:4]
+    assert list(carried["Part Number"]) == ["OLD-PN", "OLD-PN", "OLD-PN"]
+    for _, row in carried.iterrows():
+        assert "updated from" not in row[COL_NOTES]
+    assert result.warning_count == 0
+
+
+def test_genuine_disagreement_leaves_every_cell_verbatim():
+    # Fix 2 (c): the old suffix rows genuinely disagree (not just blanks)
+    # -> every cell (including blanks) stays exactly as the old data has
+    # it; no bare-row backfill, no note, no flag.
+    result = _merge(
+        [{"RefDes": "U1-1", "Sheet Number": "1"},
+         {"RefDes": "U1-2", "Sheet Number": "2"},
+         {"RefDes": "U1-3", "Sheet Number": ""}],
+        [{"RefDes": "U1", "Sheet Number": "9"}],
+    )
+    carried = result.frame.iloc[1:4]
+    assert list(carried["Sheet Number"]) == ["1", "2", ""]
+    for _, row in carried.iterrows():
+        assert "Sheet Number" not in row[COL_NOTES]
+    assert result.warning_count == 0
+
+
+def test_uniform_rule_single_row_group_still_overwrites_and_flags():
+    # Fix 2 (d): pin the trivial single-row-group case — consensus of one
+    # is still a consensus, so a genuine bare-row difference still
+    # overwrites and flags exactly like a multi-row group would.
+    result = _merge(
+        [{"RefDes": "U1-1", "Part Number": "OLD"}],
+        [{"RefDes": "U1", "Part Number": "NEW"}],
+    )
+    carried = result.frame.iloc[1]
+    assert carried["Part Number"] == "NEW"
+    assert 'Part Number updated from "OLD" to "NEW" by New BOM' in carried[COL_NOTES]
+    assert result.warning_count == 1
+
+
+def test_uniform_rule_counts_once_per_column_not_per_row():
+    # Fix 2 (e): two independently-uniform-and-changed columns in the same
+    # carried group must flag twice (once per column), proving the
+    # integrity count is column-scoped, not row-scoped.
+    result = _merge(
+        [{"RefDes": "U1-1", "Part Number": "OLD-PN", "Value": "10K"},
+         {"RefDes": "U1-2", "Part Number": "OLD-PN", "Value": "10K"}],
+        [{"RefDes": "U1", "Part Number": "NEW-PN", "Value": "22K"}],
+    )
+    carried = result.frame.iloc[1:3]
+    assert list(carried["Part Number"]) == ["NEW-PN", "NEW-PN"]
+    assert list(carried["Value"]) == ["22K", "22K"]
+    assert result.warning_count == 2
+
+
+def test_duplicate_old_suffix_row_note_lands_on_carried_row():
+    # Fix 3: a duplicated old RefDes that's ALSO a manual suffix row must
+    # have its duplicate note anchor to the visible carried row it
+    # produces, not fall through silently into result.notes.
+    result = _merge(
+        [{"RefDes": "U2000-1", "Sheet Number": "FIRST"},
+         {"RefDes": "U2000-1", "Sheet Number": "SECOND"},
+         {"RefDes": "U2000-2"}],
+        [{"RefDes": "U2000"}],
+    )
+    frame = result.frame
+    carried = frame[frame["RefDes"] == "U2000-1"].iloc[0]
+    assert "Duplicate RefDes U2000-1" in carried[COL_NOTES]
+    assert carried["Sheet Number"] == "FIRST"
+    assert not any("Duplicate RefDes U2000-1" in n for n in result.notes)
+    assert result.warning_count == 1

@@ -477,15 +477,37 @@ def _build_carried_rows(
 ) -> Tuple[List[Tuple[Dict[str, Any], List[str]]], int]:
     """Build the carried rows for one superseded bare row's suffix group.
 
-    Carried rows keep the old data verbatim. A shared column (present in
-    both files, and not a key column) is overwritten from the bare row's
-    value ONLY when every carried old row agrees on that column (the
-    uniform-column rule) AND the bare row's value is non-blank and
-    genuinely differs — recorded once per column in the returned
-    integrity count, with an update note on every carried row. Columns
-    the old file left blank on a given row (including columns the old
-    file never had at all) fall back to the bare row's value silently —
-    there is no old value being "kept verbatim" to protect there.
+    Carried rows keep the old data verbatim EXCEPT per this per-column
+    consensus policy, decided once per shared column (present in the new
+    file, and not a key column) — never fabricating a mixed group out of
+    blanks, and never letting one straggler blank cell block a real
+    consensus among the rest of the group:
+
+    - No non-blank value anywhere in the group ("nothing to keep"): pure
+      addition — every row's cell fills from the bare row's value
+      (silent).
+    - Every non-blank value in the group agrees (consensus), by
+      ``_values_equal``:
+        - the bare row's value is non-blank AND genuinely differs from
+          the consensus -> EVERY row's cell (blank or not) is overwritten
+          to the bare value, with an update note on every carried row,
+          flagged once for the column (not once per row).
+        - otherwise (bare row blank, or matches the consensus) -> only
+          the group's BLANK cells fill with the consensus's own original
+          text (silent); non-blank cells keep their own text untouched —
+          this protects formatting variants like "5" vs "5.0" from being
+          rewritten to the consensus's literal spelling.
+    - The non-blank values genuinely disagree: every cell, including
+      blanks, is left exactly as the old data has it — no bare-row
+      backfill (a per-suffix column like Sheet Number legitimately
+      varies row to row, and backfilling would fabricate data), no note,
+      no flag (the disagreement is the user's own data shape, not
+      something the merge should treat as noise-worthy).
+
+    Old-only columns (no old_to_unified target in the new file) are
+    always pure carry, untouched here. Genuinely new-only columns
+    (absent from the old file entirely) keep the plain blank-fill-from-
+    bare-row behavior, independent of the policy above.
 
     Returns (rows, integrity_count) where ``rows`` is a list of
     (values, notes) aligned 1:1 with ``suffix_entries`` — the caller
@@ -497,11 +519,17 @@ def _build_carried_rows(
     bare_row = ctx.new_df.iloc[bare_new_idx]
     base = get_usage_base_refdes(suffix_entries[0][1])
 
-    # Uniform-column scan: for every shared, non-key column, check whether
-    # all carried old rows agree AND the bare row's value is a genuine,
-    # non-blank difference. Computed once per column (not per row) so the
-    # integrity count reflects columns, not carried-row multiplicity.
-    overwrites: Dict[str, Tuple[str, str]] = {}
+    # Fix 4 (perf): materialize the group's old rows once, outside the
+    # per-column loop, instead of re-indexing old_df per (column, row)
+    # pair — O(cols x rows) .iloc lookups instead of O(cols x rows) with
+    # a DataFrame re-index each time.
+    group_rows = [ctx.old_df.iloc[old_idx] for old_idx, _tok in suffix_entries]
+    old_mapped_cols = set(ctx.old_to_unified.values())
+
+    # Per shared, non-key column: decide once whether it overwrites every
+    # row, blank-fills only the group's blank rows, or is left alone.
+    overwrite_cols: Dict[str, Tuple[str, str]] = {}
+    blank_fill_cols: Dict[str, Any] = {}
     integrity_count = 0
     for old_name, uni_col in ctx.old_to_unified.items():
         if (
@@ -513,38 +541,52 @@ def _build_carried_rows(
         if uni_col not in ctx.new_cols_set:
             continue  # old-only column: pure carry, never a candidate
 
-        group_values = [
-            ctx.old_df.iloc[old_idx][old_name] for old_idx, _tok in suffix_entries
-        ]
-        if any(not _values_equal(group_values[0], v) for v in group_values[1:]):
-            continue  # old suffix rows disagree — not uniform
+        col_values = [row[old_name] for row in group_rows]
+        non_blank = [v for v in col_values if not _is_blank(v)]
 
-        group_text = _cell_text(group_values[0])
-        if not group_text:
-            continue  # nothing to "update from"; blank-fill below handles it
+        if not non_blank:
+            # Nothing in the old data to protect for this column.
+            blank_fill_cols[uni_col] = bare_row[uni_col]
+            continue
 
+        consensus = non_blank[0]
+        if any(not _values_equal(consensus, v) for v in non_blank[1:]):
+            continue  # genuine disagreement — leave every cell verbatim
+
+        consensus_text = _cell_text(consensus)
         new_text = _cell_text(bare_row[uni_col])
-        if not new_text or _values_equal(group_text, new_text):
-            continue  # blank new value never overwrites; no genuine diff
+        if new_text and not _values_equal(consensus_text, new_text):
+            overwrite_cols[uni_col] = (consensus_text, new_text)
+            integrity_count += 1
+        else:
+            blank_fill_cols[uni_col] = consensus
 
-        overwrites[uni_col] = (group_text, new_text)
-        integrity_count += 1
+    new_only_cols = ctx.new_cols_set - old_mapped_cols
 
     rows: List[Tuple[Dict[str, Any], List[str]]] = []
     for old_idx, tok in suffix_entries:
         values = _fill_row_from_old(ctx, old_idx)
-        # New-only columns (and any shared column left blank on this
-        # particular old row) fall back to the bare row's value silently
-        # — pure addition, not an overwrite of real old data.
-        for name in ctx.new_cols_set:
+
+        # Genuinely new-only columns (never populated by the old file at
+        # all) fall back to the bare row's value silently when blank —
+        # unchanged pure-addition behavior.
+        for name in new_only_cols:
             if _is_blank(values[name]) and not _is_blank(bare_row[name]):
                 values[name] = bare_row[name]
+
+        # Blank cells in a wholly-blank or consensus-but-no-overwrite
+        # shared column fill from the recorded fallback; non-blank cells
+        # are left untouched (protects formatting variants).
+        for uni_col, fallback in blank_fill_cols.items():
+            if _is_blank(values[uni_col]) and not _is_blank(fallback):
+                values[uni_col] = fallback
+
         values[ctx.refdes_out_col] = tok
 
         notes = [
             f"Carried forward from {ctx.old_label} (manual suffix row of {base})"
         ]
-        for uni_col, (old_text, new_text) in overwrites.items():
+        for uni_col, (old_text, new_text) in overwrite_cols.items():
             values[uni_col] = bare_row[uni_col]
             notes.append(
                 f'{uni_col} updated from "{old_text}" to "{new_text}" '
@@ -727,6 +769,9 @@ def build_unified_bom(
     entries: List[_Entry] = []
     consumed_old_rows: Dict[int, int] = {}  # old row idx -> entry idx
     carried_tokens: set = set()
+    # A base whose suffix group has already been carried under an earlier
+    # new-file row (see the duplicate-bare-row gate below).
+    carried_bases: set = set()
     counts = {
         "added": 0, "deleted": 0, "changed": 0,
         "carried": 0, "superseded": 0, "unchanged": 0,
@@ -755,6 +800,19 @@ def build_unified_bom(
         suffix_entries = _collect_suffix_entries(
             ctx, tokens, old_suffix_rows_for_base, new_all_tokens
         )
+        # Task-3 hardening: a base only carries its suffix group ONCE. A
+        # second new-file row bearing the same bare base (e.g. a straight
+        # duplicate, or the base re-appearing after already matching inside
+        # an earlier multi-token row) must not re-supersede/re-carry it —
+        # it falls through to the ordinary duplicate-token path below.
+        # Gating on carried_bases (rather than new_token_first_row) is
+        # deliberate: the base can legitimately first appear inside a
+        # multi-token new row with the bare row following, and that case
+        # must still carry normally.
+        suffix_base = tokens[0] if suffix_entries else None
+        if suffix_base is not None and suffix_base in carried_bases:
+            suffix_entries = []
+            suffix_base = None
 
         # B1: any old-file duplicate notes owned by the old row(s) this
         # backbone row consumed — surfaced here, before the status
@@ -767,11 +825,21 @@ def build_unified_bom(
         warning_flags += integrity_flags + len(dup_notes) + len(dup_old_notes)
         notes = dup_notes + dup_old_notes + notes
 
-        added_tokens = [t for t in tokens if t not in old_first_row_for_token]
+        # A token whose base was already carried under an earlier row has a
+        # real footprint in the old file (via its carried suffix group)
+        # even though no literal old row uses the bare token — treat it as
+        # known, so a duplicate bare row lands on the ordinary Changed/Both
+        # duplicate path instead of misreading as a brand-new Added part.
+        added_tokens = [
+            t for t in tokens
+            if t not in old_first_row_for_token and t not in carried_bases
+        ]
         # B3: Source reflects genuine token membership in the old file, not
         # whether THIS row happened to win the match (a duplicate new row
         # never matches, even when its token is known to the old file).
-        known_in_old = any(t in old_first_row_for_token for t in tokens)
+        known_in_old = any(
+            t in old_first_row_for_token or t in carried_bases for t in tokens
+        )
 
         if suffix_entries:
             status = STATUS_SUPERSEDED
@@ -784,6 +852,7 @@ def build_unified_bom(
                 f"— delete this row",
             )
             counts["superseded"] += 1
+            carried_bases.add(suffix_base)
         elif tokens and len(added_tokens) == len(tokens):
             status = STATUS_ADDED
             source = src_new_only
@@ -813,6 +882,14 @@ def build_unified_bom(
             warning_flags += cflags
             for (cvalues, cnotes), (old_idx, tok) in zip(carried_rows, suffix_entries):
                 carried_tokens.add(tok)
+                # A duplicate-old-RefDes note owned by this carried row's
+                # OWN old row anchors here — it has nowhere else to land,
+                # since a carried old row never passes through the
+                # backbone-match or Delete-row note sites above.
+                dup_notes_here = old_dup_notes_by_first_row.pop(old_idx, [])
+                if dup_notes_here:
+                    cnotes = cnotes + dup_notes_here
+                    warning_flags += len(dup_notes_here)
                 centry_idx = len(entries)
                 entries.append(_Entry(cvalues, STATUS_CARRIED, src_carried, cnotes))
                 consumed_old_rows.setdefault(old_idx, centry_idx)
