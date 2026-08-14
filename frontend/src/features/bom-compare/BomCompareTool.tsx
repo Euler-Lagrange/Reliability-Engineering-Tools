@@ -1,4 +1,5 @@
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
+import { CustomSelect } from "../../components/CustomSelect";
 import {
   FILE_INSPECTION_PAUSED_REASON,
   InputGrid,
@@ -10,6 +11,7 @@ import { ValidationPreview } from "../../components/ValidationPreview";
 import { WorkflowSelector } from "../../components/WorkflowSelector";
 import { CheckboxField } from "../../components/primitives/CheckboxField";
 import { EmptyState } from "../../components/primitives/EmptyState";
+import { OptionsField } from "../../components/primitives/OptionsField";
 import { OptionsSection } from "../../components/primitives/OptionsSection";
 import { OutputFolderPicker } from "../../components/OutputFolderPicker";
 import { ColumnPairPicker } from "./ColumnPairPicker";
@@ -226,6 +228,10 @@ const OPTION_META: Record<string, { label: string; hint?: string }> = {
     label: "Loose prefix base match",
     hint: "Base-RefDes matching is always on; this adds fuzzy prefix coverage. No effect when exact match is enabled.",
   },
+  create_unified_bom: {
+    label: "Create Unified BOM",
+    hint: "Add a merged Unified BOM tab — new file as backbone, old manual rows carried forward, changes color-coded for review.",
+  },
 };
 
 export function BomCompareTool() {
@@ -280,7 +286,12 @@ export function BomCompareTool() {
     check_part_usage: true,
     check_fmr: false,
     treat_prov_as_covered: true,
+    create_unified_bom: false,
   });
+  // Unified BOM (2026-08-13): which slot holds the NEWER file. Backend
+  // convention: file1 = grouping/bomA slot, file2 = bom/bomB slot. Sent
+  // only when create_unified_bom is on (Wiring Invariant #1).
+  const [unifiedNewerFile, setUnifiedNewerFile] = useState<"file1" | "file2">("file2");
   // v2 N5-clone: the Preview/Run ContextTabs retired — the Run rail and
   // the Validation card are permanently visible siblings.
   const [runMode, setRunMode] = useState<RunMode>("idle");
@@ -729,6 +740,20 @@ export function BomCompareTool() {
 
   const firstInputRole = visibleInputs[0]?.role ?? null;
 
+  // Unified BOM (2026-08-13): file1/file2 map to different roles per
+  // workflow (backend: grouping/bom for the group path, bomA/bomB for
+  // custom). The picker shows the user's own nickname for that role when
+  // one is set, falling back to the role's input-card label.
+  const unifiedRoles: [FileRole, FileRole] =
+    workflowId === "bom_compare_custom" ? ["bomA", "bomB"] : ["grouping", "bom"];
+
+  const unifiedSlotLabel = (slot: "file1" | "file2"): string => {
+    const role = slot === "file1" ? unifiedRoles[0] : unifiedRoles[1];
+    const nickname = (fileNicknames[role] ?? "").trim();
+    const roleLabel = inputStates.find((input) => input.role === role)?.label ?? role;
+    return nickname || roleLabel;
+  };
+
   function buildRunRequest(): RunRequestBody {
     const currentRoles = workflowInputRoles[workflowId] ?? [];
     const currentVisibleInputs = inputStates.filter((i) => currentRoles.includes(i.role));
@@ -757,6 +782,14 @@ export function BomCompareTool() {
         return key && nickname ? [[key, nickname]] : [];
       }),
     );
+    // Unified BOM (2026-08-13): unified_newer_file only means anything when
+    // create_unified_bom is on — omitted otherwise so a default run's
+    // payload is unchanged (mirrors the nickname omission pattern above).
+    // Extraction Compare ignores both keys on the backend, so it stays out
+    // of that branch entirely.
+    const unifiedOptions = options.create_unified_bom
+      ? { unified_newer_file: unifiedNewerFile }
+      : {};
     const runOptions =
       workflowId === "extraction_compare"
         ? nicknameOptions
@@ -764,9 +797,10 @@ export function BomCompareTool() {
           ? {
               ...options,
               ...nicknameOptions,
+              ...unifiedOptions,
               compare_columns: comparePairs.filter((pair) => pair.col_a && pair.col_b),
             }
-          : { ...options, ...nicknameOptions };
+          : { ...options, ...nicknameOptions, ...unifiedOptions };
 
     return {
       workflowId,
@@ -1383,6 +1417,25 @@ export function BomCompareTool() {
                   />
                 );
               })}
+              {options.create_unified_bom && workflowId !== "extraction_compare" ? (
+                // Deviation from the plain CustomSelect sketch: CustomSelect's
+                // `label` prop is aria-only (Select.Trigger aria-label — see
+                // CustomSelect.tsx), so it renders no visible text on its own.
+                // OptionsField is the codebase's existing wrapper for a
+                // visibly-labeled standalone CustomSelect (FailureRateTool's
+                // "Failure rate unit" field is the precedent).
+                <OptionsField label="Newer BOM (merge wins conflicts)">
+                  <CustomSelect
+                    label="Newer BOM (merge wins conflicts)"
+                    value={unifiedNewerFile}
+                    options={[
+                      { value: "file1", label: unifiedSlotLabel("file1") },
+                      { value: "file2", label: unifiedSlotLabel("file2") },
+                    ]}
+                    onChange={(value) => setUnifiedNewerFile(value as "file1" | "file2")}
+                  />
+                </OptionsField>
+              ) : null}
               <OutputFolderPicker
                 value={bomCompareOutputDirectory}
                 onChange={setBomCompareOutputDirectory}

@@ -951,3 +951,58 @@ describe("BomCompareTool browser-preview Load example", () => {
     }
   });
 });
+
+// Task 7 (Unified BOM, 2026-08-13): frontend controls for the backend's
+// create_unified_bom / unified_newer_file options (already read by the
+// group and custom runtime paths; validate rejects a bad picker value;
+// extraction ignores both).
+describe("Create Unified BOM option", () => {
+  it("renders the checkbox and reveals the newer-file picker when checked", async () => {
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+
+    const checkbox = screen.getByRole("checkbox", { name: /^Create Unified BOM/ });
+    expect(checkbox).toBeEnabled();
+    expect(
+      screen.queryByText("Newer BOM (merge wins conflicts)"),
+    ).not.toBeInTheDocument();
+
+    await user.click(checkbox);
+    expect(
+      screen.getByText("Newer BOM (merge wins conflicts)"),
+    ).toBeInTheDocument();
+  });
+
+  it("omits unified_newer_file when the option is off", async () => {
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+    await user.click(screen.getByRole("button", { name: "Compare" }));
+
+    await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
+    const request = backendMocks.executeRun.mock.calls[0][0];
+    expect(request.options.create_unified_bom).toBe(false);
+    expect(request.options).not.toHaveProperty("unified_newer_file");
+  });
+
+  it("carries both unified keys in the run payload when enabled", async () => {
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+    await user.click(screen.getByRole("checkbox", { name: /^Create Unified BOM/ }));
+    await user.click(screen.getByRole("button", { name: "Compare" }));
+
+    await waitFor(() => expect(backendMocks.executeRun).toHaveBeenCalledTimes(1));
+    const request = backendMocks.executeRun.mock.calls[0][0];
+    expect(request.options.create_unified_bom).toBe(true);
+    expect(request.options.unified_newer_file).toBe("file2");
+  });
+
+  it("disables the checkbox in Extraction Compare mode", async () => {
+    const user = userEvent.setup();
+    render(<BomCompareTool />);
+
+    await user.click(screen.getByRole("button", { name: /Extraction Compare/i }));
+    expect(
+      screen.getByRole("checkbox", { name: /Create Unified BOM/i }),
+    ).toBeDisabled();
+  });
+});
