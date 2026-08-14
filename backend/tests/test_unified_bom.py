@@ -364,6 +364,22 @@ def test_blank_new_value_keeps_old_and_warns():
     assert result.warning_count == 1
 
 
+def test_old_blank_filled_by_new_value_is_silent():
+    """J3 (accepted residual, docs/reviews/KNOWN_RESIDUALS.md): the mirror
+    case of the test above. An old cell that was blank getting filled by a
+    real new value is new data landing on the row, not old data being
+    lost — no Changed note, no status, no warning."""
+    result = _merge(
+        [{"RefDes": "R1", "Part Description": ""}],
+        [{"RefDes": "R1", "Part Description": "NEW DESC"}],
+    )
+    row = result.frame.iloc[0]
+    assert row["Part Description"] == "NEW DESC"
+    assert row[COL_STATUS] == ""
+    assert row[COL_NOTES] == ""
+    assert result.warning_count == 0
+
+
 def test_old_only_column_carries_manual_data_silently():
     result = _merge(
         [{"RefDes": "R1", "Sheet Number": "12"}],

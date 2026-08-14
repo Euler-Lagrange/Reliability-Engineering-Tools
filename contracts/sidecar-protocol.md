@@ -349,8 +349,9 @@ body. Currently defined fields:
   mapping set to the sentinel blocks validation with `reason_code`
   `"invalid_do_not_map"` — it must never reach the execute path as a
   literal column name.
-  `"invalid_unified_newer_file"` — `unified_newer_file` is missing or not
-  `"file1"`/`"file2"` while `create_unified_bom` is `true`.
+  `"invalid_unified_newer_file"` — `unified_newer_file` is present but not
+  `"file1"`/`"file2"` while `create_unified_bom` is `true`. (A missing key
+  defaults to `"file2"` and validates fine.)
 
 The legacy `enrichments` field has been removed. The backend tolerates
 legacy payloads for backward compatibility but hard-fails with

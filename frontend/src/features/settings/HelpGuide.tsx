@@ -327,7 +327,10 @@ const SECTIONS: GuideSection[] = [
             added, red delete, blue superseded, yellow changed/carried) with
             a Status / Source / Change Notes triple for filtering. Enabling
             it reveals a newer-file picker to say which input is the newer
-            one.
+            one. Carried manual rows are preserved even when marked DNP, and
+            the merged tab shows physical row identity — a renamed suffix
+            appears as a red delete plus a green add rather than
+            &quot;unchanged&quot;.
           </li>
           <li>
             FMEA-aware checks (Scope Warnings sheet, composite duplicate

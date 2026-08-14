@@ -113,6 +113,30 @@ Do not re-flag these without new evidence; each was examined and accepted.
 - FMEA's onboarding EmptyState is desktop-only by design — the browser-mock
   preview deliberately stages a working demo instead.
 
+### Unified BOM (2026-08-13)
+
+- **J2 — inline delete anchoring can interleave rows**: deletions carried
+  from one old row can land between backbone rows when the old- and
+  new-file orders diverge — deterministic and spec-sanctioned, not a bug.
+- **J3 — silent old-blank-to-new-value fill**: when an old cell is blank and
+  the new file supplies a value, the merged cell shows the new value with
+  no Changed note — the value is correct and no old data was lost; pinned
+  by `test_old_blank_filled_by_new_value_is_silent`.
+- **J5 — 200-row cancel-check stride**: the merge checks cancellation every
+  200 rows vs. the repo's usual 50 elsewhere — sub-millisecond impact at
+  measured scale, left as-is.
+- **J7 — DNP-marked old SUFFIX rows still carry into the unified tab**:
+  preserving manual suffix/pin rows outranks DNP filtering here — the
+  unified tab is not DNP-clean the way compare tabs are.
+- **J8 — a value change on a superseded base reports twice**: once on the
+  bare row, once on each carried row — compare-tab metrics and unified
+  counts describe the same reality from different angles, not a
+  double-count bug.
+- **F-A — the unified tab matches full canonical tokens**: a suffix→suffix
+  rename reads as Delete+Added, where default base-matching compare tabs
+  read "in both" — deliberate: the merge document must show physical row
+  changes, not base-token continuity.
+
 ## Reusable audit lenses
 
 Applied to all four tools during the 2026-07 deep dives; review future

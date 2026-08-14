@@ -344,7 +344,10 @@ def _build_matched_row(
     Returns (values, notes, integrity_flags). New values win; a blank
     new cell keeps the old value (flagged); old-only columns carry
     silently. Multi-token rows diff against every distinct matched old
-    row, prefixing notes with the tokens each row covers.
+    row, prefixing notes with the tokens each row covers. The reverse
+    case — an old cell that was blank getting filled by a real new
+    value — is DELIBERATELY silent (no Changed note, no flag): it is
+    new data landing on the row, not old data being lost.
     """
     values = _blank_row(ctx)
     # Per-row .iloc access (here and throughout the builders below) is the
