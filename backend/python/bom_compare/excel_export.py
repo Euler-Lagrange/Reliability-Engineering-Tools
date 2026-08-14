@@ -70,6 +70,7 @@ def write_bom_compare_excel(
     filename: str,
     bom_a_name: str = "BOM A",
     bom_b_name: str = "BOM B",
+    unified=None,
 ) -> None:
     """Write BOM comparison results to Excel file.
 
@@ -78,6 +79,8 @@ def write_bom_compare_excel(
         filename: Output file path
         bom_a_name: Display name for File 1
         bom_b_name: Display name for File 2
+        unified: Optional UnifiedBomResult; when provided, appends the
+            styled Unified BOM tab before saving.
     """
     from openpyxl import Workbook
     from common.excel_styles import sanitize_for_excel
@@ -264,6 +267,12 @@ def write_bom_compare_excel(
         df_scope = pd.DataFrame(scope_rows)
         write_df_to_sheet(ws_scope, df_scope)
         style_worksheet(ws_scope, df_scope, max_width=50, alternate_rows=True)
+
+    if unified is not None:
+        # Lazy import keeps the module graph acyclic (unified_bom is
+        # re-exported by bom_compare_logic, which re-exports this module).
+        from .unified_bom import write_unified_bom_sheet
+        write_unified_bom_sheet(wb, unified)
 
     wb.save(filename)
     _logger.info(f"BOM comparison results saved to: {filename}")

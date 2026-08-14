@@ -1013,3 +1013,32 @@ def build_unified_bom(
         warning_count=warning_flags,
         notes=notes_out,
     )
+
+
+def write_unified_bom_sheet(wb, unified: UnifiedBomResult, presets=None) -> None:
+    """Append the styled Unified BOM tab to an open workbook.
+
+    The caller owns the workbook lifecycle (atomic write + verify),
+    matching write_extraction_compare_excel.
+    """
+    from common.excel_styles import (
+        PRESETS,
+        style_header_only,
+        style_worksheet,
+        write_df_to_sheet,
+    )
+
+    presets = presets or PRESETS
+    ws = wb.create_sheet(SHEET_UNIFIED)
+    write_df_to_sheet(ws, unified.frame)
+    if unified.frame.empty:
+        style_header_only(ws, len(unified.frame.columns), presets)
+        return
+    styles = unified.row_styles
+    style_worksheet(
+        ws,
+        unified.frame,
+        presets=presets,
+        row_style_func=lambda _row, i: styles[i] if 0 <= i < len(styles) else "default",
+        max_width=60,
+    )

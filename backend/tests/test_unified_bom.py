@@ -4,15 +4,20 @@ Spec: docs/superpowers/specs/2026-08-13-unified-bom-design.md
 """
 from __future__ import annotations
 
+import subprocess
+import sys
 import threading
+from pathlib import Path
 
 import pandas as pd
 import pytest
+from openpyxl import Workbook, load_workbook
 
 from bom_compare.unified_bom import (
     COL_NOTES,
     COL_SOURCE,
     COL_STATUS,
+    SHEET_UNIFIED,
     STATUS_ADDED,
     STATUS_CARRIED,
     STATUS_CHANGED,
@@ -25,6 +30,7 @@ from bom_compare.unified_bom import (
     _row_tokens,
     _values_equal,
     build_unified_bom,
+    write_unified_bom_sheet,
 )
 from common import CancellationError
 
@@ -978,3 +984,113 @@ def test_duplicate_old_suffix_row_note_lands_on_carried_row():
     assert carried["Sheet Number"] == "FIRST"
     assert not any("Duplicate RefDes U2000-1" in n for n in result.notes)
     assert result.warning_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Tasks 4+5: styled sheet writer, facade re-export, writer integration
+# ---------------------------------------------------------------------------
+
+def test_write_unified_bom_sheet_styles_and_layout(tmp_path):
+    result = _merge(
+        [{"RefDes": "R1", "Part Description": "RES 10K"},
+         {"RefDes": "R99", "Part Description": "OLD ONLY"},
+         {"RefDes": "U1-1", "Part Description": "SECTION"}],
+        [{"RefDes": "R1", "Part Description": "RES 12K"},
+         {"RefDes": "R5", "Part Description": "NEW PART"},
+         {"RefDes": "U1", "Part Description": "SECTION"}],
+    )
+    wb = Workbook()
+    write_unified_bom_sheet(wb, result)
+    out = tmp_path / "unified.xlsx"
+    wb.save(out)
+
+    read = load_workbook(out)
+    assert SHEET_UNIFIED in read.sheetnames
+    ws = read[SHEET_UNIFIED]
+    assert ws.freeze_panes == "A2"
+    assert ws.auto_filter.ref is not None
+
+    headers = [c.value for c in ws[1]]
+    status_idx = headers.index(COL_STATUS) + 1
+    fills_by_status = {}
+    for row_idx in range(2, ws.max_row + 1):
+        status = ws.cell(row=row_idx, column=status_idx).value
+        if status:
+            fills_by_status[status] = str(
+                ws.cell(row=row_idx, column=1).fill.start_color.rgb
+            )
+    assert fills_by_status[STATUS_CHANGED].endswith("FFEB9C")     # yellow
+    assert fills_by_status[STATUS_ADDED].endswith("C6EFCE")       # green
+    assert fills_by_status[STATUS_DELETE].endswith("FFC7CE")      # red
+    assert fills_by_status[STATUS_SUPERSEDED].endswith("BDD7EE")  # blue
+    assert fills_by_status[STATUS_CARRIED].endswith("FFEB9C")     # yellow
+
+
+def test_write_unified_bom_sheet_empty_frame_headers_only():
+    result = build_unified_bom(
+        pd.DataFrame(), pd.DataFrame(),
+        old_refdes_col="RefDes", new_refdes_col="RefDes",
+    )
+    wb = Workbook()
+    write_unified_bom_sheet(wb, result)
+    ws = wb[SHEET_UNIFIED]
+    assert ws.freeze_panes == "A2"
+
+
+def test_facade_reexports_unified_names():
+    from bom_compare import bom_compare_logic
+    assert bom_compare_logic.build_unified_bom is build_unified_bom
+    assert bom_compare_logic.SHEET_UNIFIED == SHEET_UNIFIED
+
+
+def test_submodule_first_import_is_order_safe():
+    """The facade re-export must not make `import bom_compare.unified_bom`
+    order-dependent (adversarial-QA finding from Task 1: the cycle is broken
+    only by the lazy DEFAULT_DNP_REGEX import — pin that forever)."""
+    proc = subprocess.run(
+        [sys.executable, "-c",
+         "import bom_compare.unified_bom; import bom_compare.bom_compare_logic"],
+        cwd=str(Path(__file__).resolve().parents[1] / "python"),
+        capture_output=True, text=True, timeout=120,
+    )
+    assert proc.returncode == 0, proc.stderr
+
+
+def test_group_report_includes_unified_tab(tmp_path):
+    from bom_compare.bom_compare_logic import AnalyzeResults, write_excel_report
+
+    unified = _merge([{"RefDes": "R1"}], [{"RefDes": "R1"}])
+    results = AnalyzeResults(
+        summary=pd.DataFrame([("Files", "2")], columns=["Item", "Value"])
+    )
+    out = tmp_path / "group.xlsx"
+    write_excel_report(results, str(out), unified=unified)
+    assert SHEET_UNIFIED in load_workbook(out).sheetnames
+
+
+def test_group_report_without_unified_is_unchanged(tmp_path):
+    from bom_compare.bom_compare_logic import AnalyzeResults, write_excel_report
+
+    results = AnalyzeResults(
+        summary=pd.DataFrame([("Files", "2")], columns=["Item", "Value"])
+    )
+    out = tmp_path / "group_plain.xlsx"
+    write_excel_report(results, str(out))
+    assert SHEET_UNIFIED not in load_workbook(out).sheetnames
+
+
+def test_custom_report_includes_unified_tab(tmp_path):
+    from bom_compare.bom_compare_logic import BomCompareResult, write_bom_compare_excel
+
+    unified = _merge([{"RefDes": "R1"}], [{"RefDes": "R1"}])
+    out = tmp_path / "custom.xlsx"
+    write_bom_compare_excel(BomCompareResult(), str(out), unified=unified)
+    assert SHEET_UNIFIED in load_workbook(out).sheetnames
+
+
+def test_custom_report_without_unified_is_unchanged(tmp_path):
+    from bom_compare.bom_compare_logic import BomCompareResult, write_bom_compare_excel
+
+    out = tmp_path / "custom_plain.xlsx"
+    write_bom_compare_excel(BomCompareResult(), str(out))
+    assert SHEET_UNIFIED not in load_workbook(out).sheetnames

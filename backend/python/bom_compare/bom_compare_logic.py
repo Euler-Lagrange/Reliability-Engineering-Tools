@@ -197,3 +197,9 @@ from .excel_export import (  # noqa: E402
     EXCEL_INVALID_SHEET_CHARS,
     EXCEL_MAX_SHEET_NAME_LEN,
 )
+from .unified_bom import (  # noqa: E402
+    SHEET_UNIFIED,
+    UnifiedBomResult,
+    build_unified_bom,
+    write_unified_bom_sheet,
+)

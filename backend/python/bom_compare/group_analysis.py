@@ -940,7 +940,7 @@ def analyze(
         log="\n".join(log_buffer)
     )
 
-def write_excel_report(results: AnalyzeResults, output_path: str) -> None:
+def write_excel_report(results: AnalyzeResults, output_path: str, unified=None) -> None:
     """
     Writes the analysis results to an Excel file with modern styling.
     Uses shared styling utility for consistent formatting.
@@ -1012,5 +1012,11 @@ def write_excel_report(results: AnalyzeResults, output_path: str) -> None:
         else:
             # Summary sheet - no row coloring, just clean formatting
             style_worksheet(ws, export_df, max_width=60)
+
+    if unified is not None:
+        # Lazy import keeps the module graph acyclic (unified_bom is
+        # re-exported by bom_compare_logic, which re-exports this module).
+        from .unified_bom import write_unified_bom_sheet
+        write_unified_bom_sheet(wb, unified)
 
     wb.save(output_path)
