@@ -643,3 +643,160 @@ def test_validate_ignores_newer_file_when_option_off(tmp_path: Path) -> None:
     body = _build_group_body(tmp_path, options={"unified_newer_file": "banana"})
     result = bom_runtime.validate_run_request(body)
     assert result["ok"] is True
+
+
+# ---------------------------------------------------------------------------
+# QA follow-ups (2026-08-13): custom-path DNP description detection, notes
+# cap, and untested-branch coverage.
+# ---------------------------------------------------------------------------
+
+def test_custom_run_unified_respects_old_side_dnp_description(tmp_path: Path) -> None:
+    """QA F1: custom_compare._resolve_desc_col auto-detects a Description
+    column for DNP filtering on the compare side even though the custom
+    path never sends an explicit description mapping. The Unified BOM tab
+    must apply the SAME detection to the old side — otherwise a DNP-marked
+    old-only row the compare tab correctly drops still surfaces as a
+    Delete row in the Unified tab of the SAME workbook.
+    """
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    old_path = tmp_path / "old_bom.xlsx"
+    new_path = tmp_path / "new_bom.xlsx"
+    pd.DataFrame([
+        {"Reference Designator": "R1", "Description": "Resistor 10K"},
+        {"Reference Designator": "R9", "Description": "DNP - do not populate"},
+    ]).to_excel(old_path, index=False)
+    pd.DataFrame([
+        {"Reference Designator": "R1", "Description": "Resistor 10K"},
+    ]).to_excel(new_path, index=False)
+    body = {
+        "workflowId": "bom_compare_custom",
+        "outputStrategyId": "new_workbook_standard",
+        "outputDirectory": str(tmp_path),
+        "inputs": [
+            _input_state("bomA", "File 1", old_path),
+            _input_state("bomB", "File 2", new_path),
+        ],
+        "mappings": [
+            {"canonical": "refdes_col_a", "mappedTo": "Reference Designator", "status": "mapped"},
+            {"canonical": "refdes_col_b", "mappedTo": "Reference Designator", "status": "mapped"},
+        ],
+        "options": {
+            "ignore_dnp": True,
+            "create_unified_bom": True,
+            "unified_newer_file": "file2",
+        },
+    }
+
+    result = bom_runtime.execute_run_request(body)
+
+    assert result["status"] == "success"
+    ws = load_workbook(result["output_file"])["Unified BOM"]
+    headers = [c.value for c in ws[1]]
+    refdes_idx = headers.index("Reference Designator") + 1
+    refdes_values = [ws.cell(row=r, column=refdes_idx).value for r in range(2, ws.max_row + 1)]
+    assert "R9" not in refdes_values
+    assert any("DNP-only old RefDes" in n for n in result["notes"])
+
+
+def test_capped_unified_notes_truncates_with_rollup() -> None:
+    """QA F2: a large merge can fold 100+ notes into one result payload
+    (182 notes / 14.9 KB observed). The helper keeps the summary line plus
+    19 more verbatim, then collapses the rest into one rollup line."""
+
+    class _FakeUnified:
+        notes = [f"note {i}" for i in range(50)]
+
+    capped = bom_runtime._capped_unified_notes(_FakeUnified())
+
+    assert len(capped) == 21
+    assert capped[:20] == [f"note {i}" for i in range(20)]
+    assert capped[20].startswith("…and 30 more Unified BOM notes")
+
+
+def test_capped_unified_notes_passes_through_when_under_cap() -> None:
+    class _FakeUnified:
+        notes = ["summary", "note 1", "note 2"]
+
+    capped = bom_runtime._capped_unified_notes(_FakeUnified())
+
+    assert capped == ["summary", "note 1", "note 2"]
+
+
+def test_group_run_unified_file1_direction_respects_bom_dnp(tmp_path: Path) -> None:
+    """QA F3(a): with unified_newer_file='file1', the BOM file becomes the
+    OLD side of the merge, so its bom_desc_col mapping (not a synonym
+    auto-detect — the group path always has an explicit mapping) must
+    engage DNP filtering there. A BOM-only row marked DNP in Description
+    must not surface as a Delete row in the Unified tab.
+    """
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    grouping_path = tmp_path / "grouping.xlsx"
+    bom_path = tmp_path / "bom.xlsx"
+
+    pd.DataFrame(
+        [
+            {"Component Group": "CPU-000", "Reference Designator": "R200, R201, R202"},
+        ]
+    ).to_excel(grouping_path, index=False)
+
+    pd.DataFrame(
+        [
+            {"Reference Designator": "R200", "Part Number": "PN-001", "Description": "Resistor 10K"},
+            {"Reference Designator": "R201", "Part Number": "PN-002", "Description": "Resistor 4.7K"},
+            {"Reference Designator": "R202", "Part Number": "PN-003", "Description": "Resistor 1K"},
+            {"Reference Designator": "R209", "Part Number": "PN-009", "Description": "DNP - do not populate"},
+        ]
+    ).to_excel(bom_path, index=False)
+
+    body = {
+        "workflowId": "bom_compare_group",
+        "outputStrategyId": "new_workbook_standard",
+        "outputDirectory": str(tmp_path),
+        "inputs": [
+            _input_state("grouping", "Grouping workbook", grouping_path),
+            _input_state("bom", "BOM workbook", bom_path),
+        ],
+        "mappings": [
+            {"canonical": "grouping_group_col", "mappedTo": "Component Group", "status": "mapped"},
+            {"canonical": "grouping_refdes_col", "mappedTo": "Reference Designator", "status": "mapped"},
+            {"canonical": "bom_refdes_col", "mappedTo": "Reference Designator", "status": "mapped"},
+            {"canonical": "bom_desc_col", "mappedTo": "Description", "status": "mapped"},
+        ],
+        "options": {
+            "ignore_dnp": True,
+            "create_unified_bom": True,
+            "unified_newer_file": "file1",
+        },
+    }
+
+    result = bom_runtime.execute_run_request(body)
+
+    assert result["status"] == "success"
+    wb = load_workbook(result["output_file"])
+    assert "Unified BOM" in wb.sheetnames
+    ws = wb["Unified BOM"]
+    headers = [c.value for c in ws[1]]
+    refdes_idx = headers.index("Reference Designator") + 1
+    refdes_values = [ws.cell(row=r, column=refdes_idx).value for r in range(2, ws.max_row + 1)]
+    assert "R209" not in refdes_values
+
+
+def test_custom_run_unified_cancel_before_build_cleans_temp(tmp_path: Path) -> None:
+    """QA F3(b): a pre-cancelled run with create_unified_bom on must still
+    raise CancellationError cleanly and leave no orphaned .part file behind
+    (mirrors the existing cancel-after-verify pattern in this file)."""
+    body = _build_custom_unified_body(tmp_path)
+    captured = {}
+
+    def capture_processor(processor) -> None:
+        captured["processor"] = processor
+        processor.cancel.cancel()
+
+    with pytest.raises(CancellationError):
+        bom_runtime.execute_run_request(
+            body,
+            processor_ready_callback=capture_processor,
+        )
+
+    assert not list(tmp_path.glob("BomCompare_Custom_*.xlsx"))
+    assert not list(tmp_path.glob(".*.part.xlsx"))

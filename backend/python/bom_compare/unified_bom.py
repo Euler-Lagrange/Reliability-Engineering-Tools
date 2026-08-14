@@ -935,6 +935,19 @@ def build_unified_bom(
                     f"{tok} is not in {new_label}, but its base {base} is — "
                     f"manual expansion was not auto-carried; review before deleting"
                 )
+            elif tok == base and any(
+                t != tok and get_usage_base_refdes(t) == tok for t in new_all_tokens
+            ):
+                # Reverse case (coordinator ruling): the old file's bare row
+                # has no match, but the NEW file lists its expansion/suffix
+                # rows instead — likely a legitimate suffix-row replacement,
+                # not a genuine deletion. Flag it rather than using the plain
+                # delete note.
+                note = (
+                    f"{tok} is not in {new_label} as a bare row, but its "
+                    f"expansion rows are — likely replaced by suffix rows; "
+                    f"review before deleting"
+                )
             else:
                 note = f"Not in {new_label} — remove from the FMEAs"
             row_notes = [note]

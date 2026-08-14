@@ -16,6 +16,8 @@ from common import (
     verify_excel_readable,
     build_output_filename,
     validate_explicit_output_directory,
+    detect_column,
+    get_synonyms,
 )
 from common.excel_styles import sanitize_for_excel
 from common.exceptions import FileAccessError, ValidationError
@@ -218,6 +220,32 @@ _UNIFIED_WORKFLOWS = {"bom_compare_group", "bom_compare_custom"}
 def _unified_newer_file(options: dict[str, Any]) -> str:
     """Normalized picker value; validate_run_request guarantees validity."""
     return str(options.get("unified_newer_file", "file2")).strip().lower() or "file2"
+
+
+# QA F2: a large merge can emit 100+ Unified BOM notes (182 notes / 14.9 KB
+# observed folded into a single result payload). The full detail always
+# still lives in the written Unified BOM sheet's Change Notes column — the
+# result payload only needs enough to orient the user, not a transcript.
+_UNIFIED_NOTES_CAP = 20
+
+
+def _capped_unified_notes(unified: Any) -> list[str]:
+    """Cap ``unified.notes`` for the result payload.
+
+    The first note (the run summary line) is always kept; up to
+    ``_UNIFIED_NOTES_CAP - 1`` more follow verbatim. Anything beyond the cap
+    collapses into a single rollup line instead of being dropped silently.
+    """
+    notes = list(unified.notes)
+    if len(notes) <= _UNIFIED_NOTES_CAP:
+        return notes
+    kept = notes[:_UNIFIED_NOTES_CAP]
+    remaining = len(notes) - _UNIFIED_NOTES_CAP
+    kept.append(
+        f"…and {remaining} more Unified BOM notes — see the Unified BOM "
+        f"tab's Change Notes column."
+    )
+    return kept
 
 
 def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
@@ -599,7 +627,7 @@ def _run_group_compare(
     ]
     if unified is not None:
         warning_count += unified.warning_count
-        notes.extend(unified.notes)
+        notes.extend(_capped_unified_notes(unified))
 
     return {
         "status": "success",
@@ -808,6 +836,14 @@ def _run_custom_compare(
             old_bom, old_ref, old_lbl = bom_a_df, refdes_col_a, name_a
             new_bom, new_ref, new_lbl = bom_b_df, refdes_col_b, name_b
             pairs = [(a, b) for (a, b, _rule) in compare_columns]
+        # QA F1: the custom path never has an explicit description mapping
+        # (unlike the group path's bom_desc_col), so ignore_dnp on the old
+        # side needs the same auto-detected description column
+        # custom_compare._resolve_desc_col uses for the compare-side DNP
+        # scan — without it, a DNP-marked old-only row (whose DNP evidence
+        # lives in Description, not RefDes) surfaces as a Delete row in the
+        # SAME workbook the compare tab correctly dropped it from.
+        old_desc = detect_column(old_bom.columns, get_synonyms("description"))
         unified = build_unified_bom(
             old_bom, new_bom,
             old_refdes_col=old_ref,
@@ -817,6 +853,7 @@ def _run_custom_compare(
             column_pairs=pairs or None,
             ignore_dnp=options.get("ignore_dnp", True),
             dnp_regex=options.get("dnp_regex") or None,
+            old_desc_col=old_desc,
             stop_event=bridge.stop_event,
             log_callback=log,
         )
@@ -863,7 +900,7 @@ def _run_custom_compare(
     ]
     if unified is not None:
         warning_count += unified.warning_count
-        notes.extend(unified.notes)
+        notes.extend(_capped_unified_notes(unified))
 
     return {
         "status": "success",

@@ -491,6 +491,27 @@ def test_unlisted_prefix_suffix_becomes_flagged_delete():
     assert deleted["Sheet Number"] == "4"
 
 
+def test_bare_old_row_flags_new_expansion_rows_when_deleted():
+    """Coordinator ruling on QA judgment call 3 (reverse case): the old
+    file's bare row has no match, but the NEW file lists its expansion/
+    suffix rows instead. This is likely a legitimate suffix-row
+    replacement, not a genuine deletion, so the Delete row's note must say
+    so instead of the plain "remove from the FMEAs" wording."""
+    result = _merge(
+        [{"RefDes": "U2000"}],
+        [{"RefDes": "U2000-1"}, {"RefDes": "U2000-2"}],
+    )
+    frame = result.frame
+    assert list(frame["RefDes"]) == ["U2000", "U2000-1", "U2000-2"]
+    assert list(frame[COL_STATUS]) == [STATUS_DELETE, STATUS_ADDED, STATUS_ADDED]
+    delete_row = frame.iloc[0]
+    assert (
+        "U2000 is not in New BOM as a bare row, but its expansion rows are"
+        in delete_row[COL_NOTES]
+    )
+    assert "likely replaced by suffix rows" in delete_row[COL_NOTES]
+
+
 def test_plan_notes_surface_in_result():
     result = _merge(
         [{"RefDes": "R1", "Part Number": "PN", "Part number": "pn2"}],
