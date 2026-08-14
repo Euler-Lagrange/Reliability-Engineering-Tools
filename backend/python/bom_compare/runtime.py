@@ -38,6 +38,7 @@ from bom_compare.bom_compare_logic import (
     write_excel_report,
     compare_two_boms,
     write_bom_compare_excel,
+    build_unified_bom,
 )
 
 _logger = get_tool_logger("bom_compare_runtime")
@@ -211,6 +212,14 @@ def _build_output_name(
     )
 
 
+_UNIFIED_WORKFLOWS = {"bom_compare_group", "bom_compare_custom"}
+
+
+def _unified_newer_file(options: dict[str, Any]) -> str:
+    """Normalized picker value; validate_run_request guarantees validity."""
+    return str(options.get("unified_newer_file", "file2")).strip().lower() or "file2"
+
+
 def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
     workflow_id = str(body.get("workflowId", "")).strip()
     inputs_by_role = _collect_inputs(body)
@@ -268,6 +277,26 @@ def validate_run_request(body: dict[str, Any]) -> dict[str, Any]:
             toast_text="This BOM Compare workflow is not supported.",
             affected_labels=result.affected_labels,
         )
+
+    # Unified BOM (2026-08-13): the newer-file picker must carry a known
+    # slot value. Checked only when the option is on and only for the two
+    # workflows that offer it (extraction never sends these keys).
+    options = body.get("options") or {}
+    if (
+        result.ok
+        and workflow_id in _UNIFIED_WORKFLOWS
+        and options.get("create_unified_bom")
+    ):
+        if _unified_newer_file(options) not in {"file1", "file2"}:
+            result = type(result)(
+                ok=False,
+                reason_code="invalid_unified_newer_file",
+                toast_text=(
+                    "Unified BOM: choose which file is the newer BOM "
+                    "(File 1 or File 2)."
+                ),
+                affected_labels=result.affected_labels,
+            )
 
     messages: list[dict[str, str]] = []
     if result.ok:
@@ -506,6 +535,33 @@ def _run_group_compare(
     # reads "Comparing..." forever next to a completed state.
     emit_progress("Running comparison", "Comparison finished.", 80)
 
+    unified = None
+    if options.get("create_unified_bom", False):
+        emit_status("running", "Building unified BOM", "Merging old and new BOMs...")
+        emit_progress("Building unified BOM", "Merging...", 82)
+        # UI slot convention: file1 = grouping slot, file2 = BOM slot.
+        if _unified_newer_file(options) == "file1":
+            new_df_u, new_ref, new_lbl = group_df, mapping.grouping_refdes_col, grouping_label or "Grouping file"
+            old_df_u, old_ref, old_lbl = bom_df, mapping.bom_refdes_col, bom_label or "BOM"
+            old_desc = mapping.bom_desc_col
+        else:
+            new_df_u, new_ref, new_lbl = bom_df, mapping.bom_refdes_col, bom_label or "BOM"
+            old_df_u, old_ref, old_lbl = group_df, mapping.grouping_refdes_col, grouping_label or "Grouping file"
+            old_desc = None
+        unified = build_unified_bom(
+            old_df_u, new_df_u,
+            old_refdes_col=old_ref,
+            new_refdes_col=new_ref,
+            old_label=old_lbl,
+            new_label=new_lbl,
+            ignore_dnp=analyze_options.ignore_dnp,
+            dnp_regex=analyze_options.dnp_regex,
+            old_desc_col=old_desc,
+            stop_event=bridge.stop_event,
+            log_callback=log,
+        )
+        emit_progress("Building unified BOM", "Unified BOM built.", 84)
+
     emit_status("running", "Writing workbook", "Writing Excel report...")
     emit_progress("Writing workbook", "Writing...", 85)
     # Atomic write: stage the workbook in a sibling .part file, verify it
@@ -513,7 +569,7 @@ def _run_group_compare(
     # half-written .xlsx in the user's output folder.
     tmp_output = atomic_write_path(output_path)
     try:
-        write_excel_report(results, str(tmp_output))
+        write_excel_report(results, str(tmp_output), unified=unified)
         bridge.cancel.check("Cancelled before finalizing output")
         output_is_readable = verify_excel_readable(tmp_output)
         bridge.cancel.check("Cancelled before finalizing output")
@@ -538,6 +594,12 @@ def _run_group_compare(
     missing_count = len(results.missing_in_bom)
     extra_count = len(results.bom_not_in_groups)
     warning_count = len(results.description_warnings) + len(results.fmr_warnings) + len(results.part_usage_warnings)
+    notes = [
+        f"Group vs BOM mode: compared {grouping_label or 'grouping file'} against {bom_label or 'BOM'}.",
+    ]
+    if unified is not None:
+        warning_count += unified.warning_count
+        notes.extend(unified.notes)
 
     return {
         "status": "success",
@@ -546,9 +608,7 @@ def _run_group_compare(
         "output_file": str(output_path),
         "primary_metric": f"{missing_count} missing in BOM",
         "secondary_metric": f"{warning_count} warnings",
-        "notes": [
-            f"Group vs BOM mode: compared {grouping_label or 'grouping file'} against {bom_label or 'BOM'}.",
-        ],
+        "notes": notes,
         "row_count": missing_count + extra_count,
         "warning_count": warning_count,
         "no_match_count": missing_count,
@@ -734,11 +794,41 @@ def _run_custom_compare(
     # Close the comparison stage (see the group path's note above).
     emit_progress("Comparing entries", "Comparison finished.", 80)
 
+    unified = None
+    if options.get("create_unified_bom", False):
+        emit_status("running", "Building unified BOM", "Merging old and new BOMs...")
+        emit_progress("Building unified BOM", "Merging...", 82)
+        # UI slot convention: file1 = File 1 (bomA), file2 = File 2 (bomB).
+        # compare_columns tuples are (col_a, col_b, rule); orient old->new.
+        if _unified_newer_file(options) == "file1":
+            old_bom, old_ref, old_lbl = bom_b_df, refdes_col_b, name_b
+            new_bom, new_ref, new_lbl = bom_a_df, refdes_col_a, name_a
+            pairs = [(b, a) for (a, b, _rule) in compare_columns]
+        else:
+            old_bom, old_ref, old_lbl = bom_a_df, refdes_col_a, name_a
+            new_bom, new_ref, new_lbl = bom_b_df, refdes_col_b, name_b
+            pairs = [(a, b) for (a, b, _rule) in compare_columns]
+        unified = build_unified_bom(
+            old_bom, new_bom,
+            old_refdes_col=old_ref,
+            new_refdes_col=new_ref,
+            old_label=old_lbl,
+            new_label=new_lbl,
+            column_pairs=pairs or None,
+            ignore_dnp=options.get("ignore_dnp", True),
+            dnp_regex=options.get("dnp_regex") or None,
+            stop_event=bridge.stop_event,
+            log_callback=log,
+        )
+        emit_progress("Building unified BOM", "Unified BOM built.", 84)
+
     emit_status("running", "Writing workbook", "Writing Excel report...")
     emit_progress("Writing workbook", "Writing...", 85)
     tmp_output = atomic_write_path(output_path)
     try:
-        write_bom_compare_excel(result, str(tmp_output), bom_a_name=name_a, bom_b_name=name_b)
+        write_bom_compare_excel(
+            result, str(tmp_output), bom_a_name=name_a, bom_b_name=name_b, unified=unified,
+        )
         bridge.cancel.check("Cancelled before finalizing output")
         output_is_readable = verify_excel_readable(tmp_output)
         bridge.cancel.check("Cancelled before finalizing output")
@@ -768,6 +858,12 @@ def _run_custom_compare(
         + len(result.scope_warnings)
         + len(result.fmr_warnings)
     )
+    notes = [
+        f"Custom Compare mode: compared {name_a} against {name_b}.",
+    ]
+    if unified is not None:
+        warning_count += unified.warning_count
+        notes.extend(unified.notes)
 
     return {
         "status": "success",
@@ -776,9 +872,7 @@ def _run_custom_compare(
         "output_file": str(output_path),
         "primary_metric": f"{only_a + only_b} unique entries",
         "secondary_metric": f"{diff_count} differences, {warning_count} warnings",
-        "notes": [
-            f"Custom Compare mode: compared {name_a} against {name_b}.",
-        ],
+        "notes": notes,
         "row_count": result.in_both_count + only_a + only_b,
         "warning_count": warning_count,
         "no_match_count": only_a + only_b,

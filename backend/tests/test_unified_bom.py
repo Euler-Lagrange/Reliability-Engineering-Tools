@@ -23,6 +23,7 @@ from bom_compare.unified_bom import (
     STATUS_CHANGED,
     STATUS_DELETE,
     STATUS_SUPERSEDED,
+    UnifiedBomResult,
     _cell_text,
     _is_blank,
     _is_suffix_of,
@@ -994,10 +995,12 @@ def test_write_unified_bom_sheet_styles_and_layout(tmp_path):
     result = _merge(
         [{"RefDes": "R1", "Part Description": "RES 10K"},
          {"RefDes": "R99", "Part Description": "OLD ONLY"},
-         {"RefDes": "U1-1", "Part Description": "SECTION"}],
+         {"RefDes": "U1-1", "Part Description": "SECTION"},
+         {"RefDes": "R2", "Part Description": "SAME"}],
         [{"RefDes": "R1", "Part Description": "RES 12K"},
          {"RefDes": "R5", "Part Description": "NEW PART"},
-         {"RefDes": "U1", "Part Description": "SECTION"}],
+         {"RefDes": "U1", "Part Description": "SECTION"},
+         {"RefDes": "R2", "Part Description": "SAME"}],
     )
     wb = Workbook()
     write_unified_bom_sheet(wb, result)
@@ -1013,17 +1016,24 @@ def test_write_unified_bom_sheet_styles_and_layout(tmp_path):
     headers = [c.value for c in ws[1]]
     status_idx = headers.index(COL_STATUS) + 1
     fills_by_status = {}
+    unchanged_row_idx = None
     for row_idx in range(2, ws.max_row + 1):
         status = ws.cell(row=row_idx, column=status_idx).value
         if status:
             fills_by_status[status] = str(
                 ws.cell(row=row_idx, column=1).fill.start_color.rgb
             )
+        elif unchanged_row_idx is None:
+            unchanged_row_idx = row_idx
     assert fills_by_status[STATUS_CHANGED].endswith("FFEB9C")     # yellow
     assert fills_by_status[STATUS_ADDED].endswith("C6EFCE")       # green
     assert fills_by_status[STATUS_DELETE].endswith("FFC7CE")      # red
     assert fills_by_status[STATUS_SUPERSEDED].endswith("BDD7EE")  # blue
     assert fills_by_status[STATUS_CARRIED].endswith("FFEB9C")     # yellow
+
+    # An unchanged row (blank Status) keeps default styling — no solid fill.
+    assert unchanged_row_idx is not None
+    assert ws.cell(row=unchanged_row_idx, column=1).fill.patternType is None
 
 
 def test_write_unified_bom_sheet_empty_frame_headers_only():
@@ -1035,12 +1045,18 @@ def test_write_unified_bom_sheet_empty_frame_headers_only():
     write_unified_bom_sheet(wb, result)
     ws = wb[SHEET_UNIFIED]
     assert ws.freeze_panes == "A2"
+    headers = [c.value for c in ws[1]]
+    assert COL_STATUS in headers
+    assert COL_SOURCE in headers
+    assert COL_NOTES in headers
 
 
 def test_facade_reexports_unified_names():
     from bom_compare import bom_compare_logic
     assert bom_compare_logic.build_unified_bom is build_unified_bom
     assert bom_compare_logic.SHEET_UNIFIED == SHEET_UNIFIED
+    assert bom_compare_logic.UnifiedBomResult is UnifiedBomResult
+    assert bom_compare_logic.write_unified_bom_sheet is write_unified_bom_sheet
 
 
 def test_submodule_first_import_is_order_safe():

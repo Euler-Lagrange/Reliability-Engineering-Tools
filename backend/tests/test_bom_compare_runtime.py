@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from openpyxl import load_workbook
 
 from bom_compare import runtime as bom_runtime
 from common.cancellation import CancellationError
@@ -538,3 +539,105 @@ def test_group_runtime_non_string_display_names_fall_back(tmp_path: Path) -> Non
 
     assert result["status"] == "success"
     assert result["notes"][0] == "Group vs BOM mode: compared grouping file against BOM."
+
+
+# ---------------------------------------------------------------------------
+# Unified BOM option wiring (2026-08-13 feature)
+# ---------------------------------------------------------------------------
+
+def test_group_run_with_unified_bom_adds_tab_and_notes(tmp_path: Path) -> None:
+    body = _build_group_body(tmp_path, options={
+        "ignore_dnp": True,
+        "create_unified_bom": True,
+        "unified_newer_file": "file2",
+    })
+    result = bom_runtime.execute_run_request(body)
+    assert result["status"] == "success"
+    wb = load_workbook(result["output_file"])
+    assert "Unified BOM" in wb.sheetnames
+    assert any(str(n).startswith("Unified BOM:") for n in result["notes"])
+
+
+def test_group_run_without_option_has_no_unified_tab(tmp_path: Path) -> None:
+    body = _build_group_body(tmp_path)
+    result = bom_runtime.execute_run_request(body)
+    wb = load_workbook(result["output_file"])
+    assert "Unified BOM" not in wb.sheetnames
+
+
+def _build_custom_unified_body(tmp_path: Path) -> dict:
+    """Old BOM (File 1) carries manual U2000 suffix rows; new BOM (File 2)
+    has only the bare U2000 — the classic carry-forward scenario."""
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    old_path = tmp_path / "old_bom.xlsx"
+    new_path = tmp_path / "new_bom.xlsx"
+    pd.DataFrame([
+        {"Reference Designator": "U2000-1", "Part Number": "PN-1", "Sheet Number": 5},
+        {"Reference Designator": "U2000-2", "Part Number": "PN-1", "Sheet Number": 6},
+    ]).to_excel(old_path, index=False)
+    pd.DataFrame([
+        {"Reference Designator": "U2000", "Part Number": "PN-2"},
+    ]).to_excel(new_path, index=False)
+    return {
+        "workflowId": "bom_compare_custom",
+        "outputStrategyId": "new_workbook_standard",
+        "outputDirectory": str(tmp_path),
+        "inputs": [
+            _input_state("bomA", "File 1", old_path),
+            _input_state("bomB", "File 2", new_path),
+        ],
+        "mappings": [
+            {"canonical": "refdes_col_a", "mappedTo": "Reference Designator", "status": "mapped"},
+            {"canonical": "refdes_col_b", "mappedTo": "Reference Designator", "status": "mapped"},
+        ],
+        "options": {
+            "create_unified_bom": True,
+            "unified_newer_file": "file2",
+        },
+    }
+
+
+def test_custom_run_unified_carries_suffix_rows(tmp_path: Path) -> None:
+    body = _build_custom_unified_body(tmp_path)
+    result = bom_runtime.execute_run_request(body)
+    assert result["status"] == "success"
+    wb = load_workbook(result["output_file"])
+    ws = wb["Unified BOM"]
+    refdes = [ws.cell(row=r, column=1).value for r in range(2, ws.max_row + 1)]
+    assert refdes == ["U2000", "U2000-1", "U2000-2"]
+    # PN-1 -> PN-2 is a uniform-column overwrite on the carried rows: it
+    # must qualify the run's warning_count.
+    assert result["warning_count"] >= 1
+
+
+def test_custom_run_unified_newer_file1_swaps_direction(tmp_path: Path) -> None:
+    """file1 = File 1 = bomA. With bomA as the NEWER file, the old/new roles
+    invert: bomB's bare U2000 row becomes the old side, so the suffix rows in
+    bomA are backbone rows and nothing is superseded."""
+    body = _build_custom_unified_body(tmp_path)
+    body["options"]["unified_newer_file"] = "file1"
+    result = bom_runtime.execute_run_request(body)
+    assert result["status"] == "success"
+    ws = load_workbook(result["output_file"])["Unified BOM"]
+    refdes = [ws.cell(row=r, column=1).value for r in range(2, ws.max_row + 1)]
+    # Backbone = bomA rows (suffix rows) in order; the old file's bare U2000
+    # is their base — covered by carry logic only when the NEW side is bare,
+    # which it is not here, so U2000-1/U2000-2 lead the sheet.
+    assert refdes[0] == "U2000-1"
+    assert refdes[1] == "U2000-2"
+
+
+def test_validate_rejects_bad_unified_newer_file(tmp_path: Path) -> None:
+    body = _build_group_body(tmp_path, options={
+        "create_unified_bom": True,
+        "unified_newer_file": "banana",
+    })
+    result = bom_runtime.validate_run_request(body)
+    assert result["ok"] is False
+    assert result["reason_code"] == "invalid_unified_newer_file"
+
+
+def test_validate_ignores_newer_file_when_option_off(tmp_path: Path) -> None:
+    body = _build_group_body(tmp_path, options={"unified_newer_file": "banana"})
+    result = bom_runtime.validate_run_request(body)
+    assert result["ok"] is True

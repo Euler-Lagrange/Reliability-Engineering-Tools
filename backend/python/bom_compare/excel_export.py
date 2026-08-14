@@ -269,8 +269,9 @@ def write_bom_compare_excel(
         style_worksheet(ws_scope, df_scope, max_width=50, alternate_rows=True)
 
     if unified is not None:
-        # Lazy import keeps the module graph acyclic (unified_bom is
-        # re-exported by bom_compare_logic, which re-exports this module).
+        # Local import: unified_bom is optional at write time and the real
+        # import-order guard is its own lazy DEFAULT_DNP_REGEX import (see
+        # the NOTE in unified_bom.py).
         from .unified_bom import write_unified_bom_sheet
         write_unified_bom_sheet(wb, unified)
 
